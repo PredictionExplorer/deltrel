@@ -287,6 +287,28 @@ class VariantMixtureConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class PolicyPublicationConfig:
+    """Bounded immutable policy snapshots before a game has an outcome.
+
+    A small initial prefix gives the learner useful work promptly. Subsequent
+    prefixes require a substantial new suffix, bounding file and copy overhead.
+    Final targets supersede the last prefix and never re-credit its positions.
+    """
+
+    enabled: bool = False
+    first_decisions: int = 8
+    interval_decisions: int = 32
+
+    def __post_init__(self) -> None:
+        if type(self.enabled) is not bool:
+            raise ValueError("policy publication enabled must be boolean")
+        for name in ("first_decisions", "interval_decisions"):
+            value = getattr(self, name)
+            if type(value) is not int or not 1 <= value <= 1024:
+                raise ValueError(f"policy publication {name} must be in 1..1024")
+
+
+@dataclass(frozen=True, slots=True)
 class SelfPlayConfig:
     rings: int = 4
     batch_size: int = 1
@@ -297,6 +319,7 @@ class SelfPlayConfig:
     cohort_search_budgets: bool = False
     # Recover policy supervision on clean stop, without inventing outcomes.
     preserve_interrupted_policy: bool = False
+    policy_publication: PolicyPublicationConfig = PolicyPublicationConfig()
     # The variant played by this cohort; the actor replaces these per batch
     # from ``variants.draw`` exactly like ``rings``.
     mode: str = "double"
@@ -330,6 +353,10 @@ class SelfPlayConfig:
     def __post_init__(self) -> None:
         if not isinstance(self.search_execution, SearchExecutionConfig):
             raise ValueError("selfplay.search_execution requires typed settings")
+        if not isinstance(self.policy_publication, PolicyPublicationConfig):
+            raise ValueError("selfplay.policy_publication requires typed settings")
+        if self.policy_publication.enabled and not self.record_fast_policy_targets:
+            raise ValueError("live policy publication requires fast policy targets")
         if type(self.rings) is not int or self.rings not in SUPPORTED_RINGS:
             raise ValueError("self-play rings must be one of (4, 6, 8, 10)")
         if (
@@ -527,6 +554,11 @@ class SelfPlayMetrics:
     salvaged_policy_decisions: int = 0
     salvaged_games: int = 0
     salvaged_sample_weight_sum: float = 0.0
+    policy_published_decisions: int = 0
+    enriched_decisions: int = 0
+    retained_incomplete_decisions: int = 0
+    replay_written_decisions: int = 0
+    replay_revisions: int = 0
     replay_append_calls: int = 0
     replay_append_bytes: int = 0
     replay_append_seconds: float = 0.0
@@ -622,6 +654,10 @@ class SelfPlayActor:
         self.evaluator = evaluator
         self.sink = replay_sink
         self.config = config
+        if config.policy_publication.enabled and not callable(
+            getattr(replay_sink, "append_game_revision", None)
+        ):
+            raise ValueError("live policy publication requires a revision-aware sink")
         require_search_execution(native_module, config.search_execution)
         self.identity = identity or SelfPlayIdentity("manual", "manual", "manual", 0)
         if source_role not in ("champion", "candidate", "history", "unattributed"):
@@ -655,6 +691,12 @@ class SelfPlayActor:
         self.salvaged_policy_decisions = 0
         self.salvaged_games = 0
         self.salvaged_sample_weight_sum = 0.0
+        self.policy_published_decisions = 0
+        self.enriched_decisions = 0
+        self.retained_incomplete_decisions = 0
+        self.replay_written_decisions = 0
+        self.replay_revisions = 0
+        self._published_prefixes: dict[str, int] = {}
         self.replay_append_calls = 0
         self.replay_append_bytes = 0
         self.replay_append_seconds = 0.0
@@ -697,6 +739,11 @@ class SelfPlayActor:
             salvaged_policy_decisions=self.salvaged_policy_decisions,
             salvaged_games=self.salvaged_games,
             salvaged_sample_weight_sum=self.salvaged_sample_weight_sum,
+            policy_published_decisions=self.policy_published_decisions,
+            enriched_decisions=self.enriched_decisions,
+            retained_incomplete_decisions=self.retained_incomplete_decisions,
+            replay_written_decisions=self.replay_written_decisions,
+            replay_revisions=self.replay_revisions,
             replay_append_calls=self.replay_append_calls,
             replay_append_bytes=self.replay_append_bytes,
             replay_append_seconds=self.replay_append_seconds,
@@ -768,7 +815,9 @@ class SelfPlayActor:
             or self.started_games != len(summaries) + self.dropped_games
             or self.completed_games != len(summaries)
             or self.persisted_decisions
-            != completed_decisions + self.salvaged_policy_decisions
+            != completed_decisions + self.retained_incomplete_decisions
+            or self.retained_incomplete_decisions > self.dropped_decisions
+            or self.salvaged_policy_decisions > self.retained_incomplete_decisions
             or self.salvaged_policy_decisions > self.dropped_decisions
             or self.salvaged_games > self.dropped_games
             or self.completed_decisions != completed_decisions
@@ -779,6 +828,222 @@ class SelfPlayActor:
                 "completed-game and persisted-decision accounting disagree"
             )
         return summaries
+
+    def _publication_fields(self) -> dict[str, int]:
+        return {
+            "completed_games": self.completed_games,
+            "persisted_decisions": self.persisted_decisions,
+            "salvaged_policy_decisions": self.salvaged_policy_decisions,
+            "policy_published_decisions": self.policy_published_decisions,
+            "enriched_decisions": self.enriched_decisions,
+            "retained_incomplete_decisions": self.retained_incomplete_decisions,
+            "replay_written_decisions": self.replay_written_decisions,
+            "replay_revisions": self.replay_revisions,
+        }
+
+    def _decision_sample(
+        self,
+        decision: _Decision,
+        *,
+        game_id: str,
+        model_identity: str,
+        final_score: Any = None,
+        final_kind: str = "pending-policy",
+        sample_weight: float = 1.0,
+        clinch: _ClinchFinalization | None = None,
+    ) -> ReplaySample:
+        mode = "full" if decision.full_search else "fast"
+        return ReplaySample.from_position(
+            decision.position,
+            policy=decision.policy,
+            final_score=final_score,
+            include_spatial_targets=final_score is not None,
+            search_provenance=(
+                f"gumbel-completed-q:{mode}:simulations={decision.simulations}:"
+                f"seed={decision.search_seed}:model={model_identity}:"
+                f"game={game_id}:ply={decision.ply}:final={final_kind}:"
+                f"variant={self.config.variant.label}:pda={decision.position.pda}:"
+                f"swap={'taken' if decision.swapped else 'no'}:"
+                f"algorithm={SEARCH_ALGORITHM_ID}"
+                + decision.search_evidence
+                + (
+                    ":seed_contract=game-v1"
+                    if self.config.seed_contract == "game-v1"
+                    else ""
+                )
+                + (
+                    ":budget_schedule=cohort-v1"
+                    if self.config.cohort_search_budgets
+                    else ""
+                )
+            ),
+            policy_provenance=f"completed-q-{mode}"
+            if decision.policy is not None
+            else "none",
+            clinch_auxiliary_targets=(
+                self.config.clinch_auxiliary_targets
+                if clinch is not None and not clinch.exact
+                else "synthetic"
+            ),
+            run_id=self.identity.run_id,
+            generation_family=self.identity.generation_family,
+            actor_id=self.identity.actor_id,
+            generation=self.identity.generation,
+            game_id=game_id,
+            ply=decision.ply,
+            model_identity=model_identity,
+            weight=sample_weight,
+            policy_weight=decision.policy_weight,
+        )
+
+    def _write_game_revision(
+        self,
+        samples: Sequence[ReplaySample],
+        decisions: Sequence[_Decision],
+        version: tuple[str, int, str],
+        *,
+        finalized: bool,
+    ) -> int:
+        import sqlite3
+
+        from .replay_store import GameRevisionReceipt, ShardRecord
+
+        writer = getattr(self.sink, "append_game_revision", None)
+        if not callable(writer):
+            raise RuntimeError("live policy publication lost its revision-aware sink")
+        if not samples or len(samples) != len(decisions):
+            raise RuntimeError("game revision samples and decisions must match")
+        started = time.perf_counter()
+        previous = self._published_prefixes.get(samples[0].game_id, 0)
+        expected_new = len(samples) - previous
+        expected_enriched = previous if finalized else 0
+        options = dict(
+            finalized=finalized,
+            phase_min=min(decision.phase for decision in decisions),
+            phase_max=max(decision.phase for decision in decisions),
+            model_version=version[0],
+            model_step=version[1],
+            model_identity=version[2],
+            run_id=self.identity.run_id,
+            generation_family=self.identity.generation_family,
+            actor_id=self.identity.actor_id,
+            generation=self.identity.generation,
+        )
+        uncertain = False
+        attempts = 0
+        receipt: object = None
+        for attempt in range(2):
+            attempts += 1
+            try:
+                receipt = writer(samples, **options)
+                break
+            except (OSError, sqlite3.OperationalError):
+                if attempt:
+                    raise
+                # The first call may already have committed. Only a retry of
+                # this invocation may reconcile an otherwise unseen receipt.
+                uncertain = True
+        if not isinstance(receipt, GameRevisionReceipt):
+            raise RuntimeError("revision-aware sink returned an untyped receipt")
+        record = receipt.record
+        if (
+            not isinstance(record, ShardRecord)
+            or any(
+                getattr(record, name) != value
+                for name, value in options.items()
+                if name != "finalized"
+            )
+            or (
+                record.ring != samples[0].rings
+                or record.variant != samples[0].variant_label
+                or record.game_count != 1
+            )
+        ):
+            raise RuntimeError(
+                "replay revision returned mismatched model or shard provenance"
+            )
+        new, enriched = receipt.new_samples, receipt.enriched_samples
+        if (
+            type(new) is not int
+            or type(enriched) is not int
+            or min(new, enriched) < 0
+            or new + enriched > len(samples)
+            or type(record.sample_count) is not int
+            or record.sample_count != len(samples)
+            or type(receipt.replayed) is not bool
+            or type(receipt.revision) is not int
+            or receipt.revision <= 0
+            or type(receipt.completed_games) is not int
+            or receipt.completed_games != (0 if receipt.replayed else int(finalized))
+            or (receipt.replayed and (new or enriched))
+        ):
+            raise RuntimeError("replay revision returned invalid publication counts")
+        reconciled = (
+            receipt.replayed
+            and uncertain
+            and (expected_new > 0 or expected_enriched > 0)
+        )
+        if reconciled:
+            # These rows were committed by the first attempt, but none of this
+            # invocation's local bookkeeping ran. Reconstruct that bookkeeping
+            # exactly once; the durable store's zero-credit receipt is untouched.
+            new, enriched = expected_new, expected_enriched
+        if expected_new < 0 or new != expected_new or enriched != expected_enriched:
+            raise RuntimeError(
+                "replay revision credit disagrees with this actor's prefix"
+            )
+        self.replay_append_calls += attempts
+        self.replay_append_seconds += time.perf_counter() - started
+        self.persisted_decisions += new
+        self.enriched_decisions += enriched
+        if not finalized:
+            self.policy_published_decisions += new
+        if not receipt.replayed or reconciled:
+            self.replay_written_decisions += len(samples)
+            self.replay_revisions += 1
+            try:
+                self.replay_append_bytes += receipt.record.path.stat().st_size
+            except OSError:
+                pass
+        field = f"source_{self.source_role}_samples"
+        setattr(self, field, int(getattr(self, field)) + new)
+        if finalized:
+            self._published_prefixes.pop(samples[0].game_id, None)
+        else:
+            self._published_prefixes[samples[0].game_id] = len(samples)
+        return new
+
+    def _publish_policy_prefixes(
+        self,
+        trajectories: Sequence[Sequence[_Decision]],
+        rows: Sequence[int],
+        pinned_versions: Sequence[tuple[str, int, str]],
+        game_ids: Sequence[str],
+        *,
+        force: bool = False,
+    ) -> int:
+        added = 0
+        options = self.config.policy_publication
+        for row in rows:
+            decisions, game_id = trajectories[row], game_ids[row]
+            previous = self._published_prefixes.get(game_id, 0)
+            threshold = (
+                options.interval_decisions if previous else options.first_decisions
+            )
+            if not decisions or len(decisions) == previous:
+                continue
+            if not force and len(decisions) - previous < threshold:
+                continue
+            samples = [
+                self._decision_sample(
+                    d, game_id=game_id, model_identity=pinned_versions[row][2]
+                )
+                for d in decisions
+            ]
+            added += self._write_game_revision(
+                samples, decisions, pinned_versions[row], finalized=False
+            )
+        return added
 
     def _salvage_interrupted_policy(
         self,
@@ -863,6 +1128,8 @@ class SelfPlayActor:
         self._flush(model_version=first_version, model_step=first_step)
         # Only successful durable appends count as salvaged supervision.
         self.salvaged_policy_decisions += sample_count
+        self.retained_incomplete_decisions += sample_count
+        self.policy_published_decisions += sample_count
         self.salvaged_games += len(selected)
         self.salvaged_sample_weight_sum += sample_weight_sum
         field = f"source_{self.source_role}_samples"
@@ -1082,13 +1349,15 @@ class SelfPlayActor:
                 summaries[ordinal] = summary
                 published_rows.add(row)
                 trajectories[row] = []
-            if progress is not None and self.config.stream_completed_games:
+            if progress is not None and (
+                self.config.stream_completed_games
+                or self.config.policy_publication.enabled
+            ):
                 progress(
                     phase="selfplay_completed",
                     cohort=cohort,
                     ply_wave=iteration,
-                    completed_games=self.completed_games,
-                    persisted_decisions=self.persisted_decisions,
+                    **self._publication_fields(),
                     active_games=sum(not bool(value) for value in state_data.terminal),
                 )
 
@@ -1121,7 +1390,10 @@ class SelfPlayActor:
                     solved.completions, clinch_finalizations, exact=True
                 )
             state_data = states.data()
-            if self.config.stream_completed_games:
+            if (
+                self.config.stream_completed_games
+                or self.config.policy_publication.enabled
+            ):
                 publish_finished(state_data)
             all_terminal = all(bool(terminal) for terminal in state_data.terminal)
             if all_terminal and (
@@ -1144,17 +1416,34 @@ class SelfPlayActor:
                 self.dropped_games += len(unfinished)
                 self.dropped_decisions += dropped_decisions
                 salvaged = 0
-                if self.config.preserve_interrupted_policy:
+                if self.config.policy_publication.enabled:
+                    unflushed_games = sum(
+                        len(trajectories[row])
+                        > self._published_prefixes.get(game_ids[row], 0)
+                        for row in unfinished
+                    )
+                    salvaged = self._publish_policy_prefixes(
+                        trajectories, unfinished, pinned_versions, game_ids, force=True
+                    )
+                    self.salvaged_policy_decisions += salvaged
+                    self.salvaged_games += unflushed_games
+                    self.salvaged_sample_weight_sum += salvaged
+                    self.retained_incomplete_decisions += dropped_decisions
+                    for row in unfinished:
+                        self._published_prefixes.pop(game_ids[row], None)
+                        trajectories[row] = []
+                elif self.config.preserve_interrupted_policy:
                     salvaged = self._salvage_interrupted_policy(
                         trajectories, unfinished, pinned_versions, game_ids, variant
                     )
-                if progress is not None and salvaged:
+                if progress is not None and (
+                    salvaged
+                    or (self.config.policy_publication.enabled and dropped_decisions)
+                ):
                     progress(
                         phase="selfplay_policy_salvaged",
                         cohort=cohort,
-                        completed_games=self.completed_games,
-                        persisted_decisions=self.persisted_decisions,
-                        salvaged_policy_decisions=self.salvaged_policy_decisions,
+                        **self._publication_fields(),
                         salvaged_games=self.salvaged_games,
                     )
                 if progress is not None:
@@ -1166,6 +1455,24 @@ class SelfPlayActor:
                         dropped_decisions=dropped_decisions,
                     )
                 return [summaries[index] for index in sorted(summaries)]
+            if self.config.policy_publication.enabled:
+                published = self._publish_policy_prefixes(
+                    trajectories,
+                    [
+                        row
+                        for row, terminal in enumerate(state_data.terminal)
+                        if not terminal
+                    ],
+                    pinned_versions,
+                    game_ids,
+                )
+                if published and progress is not None:
+                    progress(
+                        phase="selfplay_policy_published",
+                        cohort=cohort,
+                        ply_wave=iteration,
+                        **self._publication_fields(),
+                    )
             if self.config.rolling_game_slots:
                 if stop_refill_requested():
                     self._refill_stopped = True
@@ -1658,62 +1965,35 @@ class SelfPlayActor:
                 bool(swapped_rows[row]) if swapped_rows is not None else False
             )
             sample_weights = self._policy_surprise_sample_weights(decisions)
-            for decision, sample_weight in zip(decisions, sample_weights, strict=True):
-                mode = "full" if decision.full_search else "fast"
-                self.pending_samples.append(
-                    ReplaySample.from_position(
-                        decision.position,
-                        policy=decision.policy,
-                        final_score=scores[row],
-                        search_provenance=(
-                            f"gumbel-completed-q:{mode}:"
-                            f"simulations={decision.simulations}:"
-                            f"seed={decision.search_seed}:model={model_identity}:"
-                            f"game={game_id}:ply={decision.ply}:"
-                            f"final={'exact-endgame' if clinch and clinch.exact else 'clinch-loser-fill' if clinch else 'board-full'}:"
-                            f"variant={variant.label}:pda={decision.position.pda}:"
-                            f"swap={'taken' if decision.swapped else 'no'}:"
-                            f"algorithm={SEARCH_ALGORITHM_ID}"
-                            + decision.search_evidence
-                            + (
-                                ":seed_contract=game-v1"
-                                if self.config.seed_contract == "game-v1"
-                                else ""
-                            )
-                            + (
-                                ":budget_schedule=cohort-v1"
-                                if self.config.cohort_search_budgets
-                                else ""
-                            )
-                        ),
-                        policy_provenance=(
-                            (
-                                "completed-q-full"
-                                if decision.full_search
-                                else "completed-q-fast"
-                            )
-                            if decision.policy is not None
-                            else "none"
-                        ),
-                        clinch_auxiliary_targets=(
-                            self.config.clinch_auxiliary_targets
-                            if clinch is not None and not clinch.exact
-                            else "synthetic"
-                        ),
-                        run_id=self.identity.run_id,
-                        generation_family=self.identity.generation_family,
-                        actor_id=self.identity.actor_id,
-                        generation=self.identity.generation,
-                        game_id=game_id,
-                        ply=decision.ply,
-                        model_identity=model_identity,
-                        weight=sample_weight,
-                        policy_weight=decision.policy_weight,
-                    )
+            game_samples = [
+                self._decision_sample(
+                    decision,
+                    game_id=game_id,
+                    model_identity=model_identity,
+                    final_score=scores[row],
+                    final_kind=(
+                        "exact-endgame"
+                        if clinch and clinch.exact
+                        else "clinch-loser-fill"
+                        if clinch
+                        else "board-full"
+                    ),
+                    sample_weight=sample_weight,
+                    clinch=clinch,
                 )
-                self.sample_weight_sum += sample_weight
-                self.pending_phases.append(decision.phase)
-                self.completed_decisions += 1
+                for decision, sample_weight in zip(
+                    decisions, sample_weights, strict=True
+                )
+            ]
+            if self.config.policy_publication.enabled:
+                self._write_game_revision(
+                    game_samples, decisions, pinned_versions[row], finalized=True
+                )
+            else:
+                self.pending_samples.extend(game_samples)
+                self.pending_phases.extend(decision.phase for decision in decisions)
+            self.sample_weight_sum += sum(sample_weights)
+            self.completed_decisions += len(decisions)
             metadata = trajectory_rows[row]
             finish_reason: Literal["board-full", "clinch", "exact-endgame"] = (
                 "exact-endgame"
@@ -1728,7 +2008,11 @@ class SelfPlayActor:
                 self.clinch_empty_nodes += clinch.empty_nodes
             if seats != (0, 0):
                 self.asymmetric_games += 1
-            self._record_source_role(samples=len(decisions))
+            if self.config.policy_publication.enabled:
+                # Revision receipts already counted every newly published row.
+                self._record_source_game()
+            else:
+                self._record_source_role(samples=len(decisions))
             self.completed_games += 1
             summaries.append(
                 GameSummary(
@@ -1768,14 +2052,17 @@ class SelfPlayActor:
     def _record_source_role(self, *, samples: int) -> None:
         if isinstance(samples, bool) or not isinstance(samples, int) or samples <= 0:
             raise ValueError("source-role sample count must be a positive integer")
-        games_field = f"source_{self.source_role}_games"
+        self._record_source_game()
         samples_field = f"source_{self.source_role}_samples"
-        setattr(self, games_field, int(getattr(self, games_field)) + 1)
         setattr(
             self,
             samples_field,
             int(getattr(self, samples_field)) + samples,
         )
+
+    def _record_source_game(self) -> None:
+        games_field = f"source_{self.source_role}_games"
+        setattr(self, games_field, int(getattr(self, games_field)) + 1)
 
     def _policy_surprise_sample_weights(
         self,
@@ -1851,6 +2138,7 @@ class SelfPlayActor:
         self.replay_append_bytes += append_bytes
         self.replay_append_seconds += append_seconds
         self.persisted_decisions += persisted
+        self.replay_written_decisions += persisted
         self.pending_samples = []
         self.pending_phases = []
 

@@ -17,7 +17,11 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 
 from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
-from startrain.replay_store import MANIFEST_SCHEMA_VERSION
+from startrain.replay_store import (
+    MANIFEST_SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
+    SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
+    validate_game_publications,
+)
 from startrain.runtime import atomic_json
 
 
@@ -69,6 +73,9 @@ def _integrity_ok(path: Path, *, run_root: Path, full: bool = True) -> tuple[boo
         run_id, family = _run_identity(run_root)
         uri = f"{path.resolve().as_uri()}?mode=ro"
         with closing(sqlite3.connect(uri, uri=True, timeout=30.0)) as connection:
+            # A publication atomically updates several tables. Validate one
+            # read snapshot rather than mixing observations across revisions.
+            connection.execute("BEGIN")
             if full:
                 rows = connection.execute("PRAGMA integrity_check").fetchall()
                 messages = [str(row[0]) for row in rows]
@@ -96,11 +103,12 @@ def _integrity_ok(path: Path, *, run_root: Path, full: bool = True) -> tuple[boo
                 connection.execute("SELECT key, value FROM store_metadata").fetchall()
             )
             expected_metadata = {
-                "manifest_schema_version": str(MANIFEST_SCHEMA_VERSION),
                 "rules_hash": RULES_HASH_WIRE,
                 "feature_schema_hash": f"{FEATURE_SCHEMA_HASH:016x}",
             }
-            if any(
+            if metadata.get("manifest_schema_version") not in {
+                str(version) for version in SUPPORTED_MANIFEST_SCHEMA_VERSIONS
+            } or any(
                 metadata.get(key) != value for key, value in expected_metadata.items()
             ):
                 return False, "replay metadata is incompatible"
@@ -113,9 +121,12 @@ def _integrity_ok(path: Path, *, run_root: Path, full: bool = True) -> tuple[boo
             ).fetchone()
             if registered is None:
                 return False, "active run identity is absent from replay ledger"
+            validate_game_publications(
+                connection, run_id=run_id, generation_family=family
+            )
     except sqlite3.Error as exc:
         return False, str(exc)
-    except RuntimeError as exc:
+    except (RuntimeError, ValueError) as exc:
         return False, str(exc)
     return True, "ok"
 
@@ -140,7 +151,7 @@ def _unregistered_database_is_empty(path: Path) -> bool:
                     "SELECT name FROM sqlite_master WHERE type = 'table'"
                 )
             }
-            for table in ("runs", "shards", "games"):
+            for table in ("runs", "shards", "games", "game_publications"):
                 if table in tables and int(
                     connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                 ):

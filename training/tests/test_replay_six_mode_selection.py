@@ -273,7 +273,12 @@ def test_mode_filtered_recency_obeys_upper_snapshot_boundary(tmp_path, monkeypat
 
         def concurrent_append(**kwargs):
             if not appended:
-                appended.append(append_mode(store, identity, "classic", 20, pie=True))
+                # A concurrent writer owns another connection; the selector's
+                # connection now pins counters and rows in one read transaction.
+                with ReplayStore(tmp_path / "replay") as writer:
+                    appended.append(
+                        append_mode(writer, identity, "classic", 20, pie=True)
+                    )
             return original(**kwargs)
 
         monkeypatch.setattr(store, "recent_shards", concurrent_append)

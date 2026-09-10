@@ -124,7 +124,48 @@ def compatible_config_epoch_payloads(
         previous_training = without_training_execution_defaults(variant)
         if previous_training != variant:
             variants.append(previous_training)
+    for variant in tuple(variants):
+        previous_fresh_data = without_fresh_data_defaults(variant)
+        if previous_fresh_data != variant:
+            variants.append(previous_fresh_data)
     return tuple(variants)
+
+
+def without_fresh_data_defaults(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """One release epoch for live policy, fleet scheduling and refresh timing."""
+    result = deepcopy(dict(payload))
+
+    def exact(actual: object, expected: object) -> bool:
+        if type(actual) is not type(expected):
+            return False
+        if isinstance(expected, dict):
+            assert isinstance(actual, dict)
+            return actual.keys() == expected.keys() and all(
+                exact(actual[key], value) for key, value in expected.items()
+            )
+        return actual == expected
+
+    for path, default in (
+        (
+            ("selfplay", "policy_publication"),
+            {"enabled": False, "first_decisions": 8, "interval_decisions": 32},
+        ),
+        (
+            ("orchestration", "model_refresh", "work_scheduling"),
+            {"enabled": False, "games_per_lease": None, "coverage_first": True},
+        ),
+        (("learner", "replay_refresh_seconds"), 300.0),
+    ):
+        parent = result
+        for name in path[:-1]:
+            child = parent.get(name)
+            if not isinstance(child, dict):
+                break
+            parent = child
+        else:
+            if path[-1] in parent and exact(parent[path[-1]], default):
+                del parent[path[-1]]
+    return result
 
 
 def without_training_execution_defaults(payload: Mapping[str, Any]) -> dict[str, Any]:

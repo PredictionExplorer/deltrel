@@ -45,9 +45,11 @@ from startrain.replay import (
     decode_replay_shard,
 )
 from startrain.replay_store import (
-    MANIFEST_SCHEMA_VERSION,
+    MANIFEST_SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
+    SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
     ReplaySpan,
     ShardRecord,
+    validate_game_publications,
 )
 from startrain.runtime import validate_identifier
 from startrain.symmetry import deterministic_transform
@@ -249,6 +251,7 @@ def open_replay_manifest_read_only(
     connection.row_factory = sqlite3.Row
     try:
         connection.execute("PRAGMA query_only=ON")
+        connection.execute("BEGIN")
         yield connection
     finally:
         connection.close()
@@ -268,12 +271,21 @@ def _validate_manifest_metadata(connection: sqlite3.Connection) -> None:
     )
     metadata = {str(row["key"]): str(row["value"]) for row in rows}
     expected = {
-        "manifest_schema_version": str(MANIFEST_SCHEMA_VERSION),
         "rules_hash": RULES_HASH_WIRE,
         "feature_schema_hash": f"{FEATURE_SCHEMA_HASH:016x}",
     }
-    if metadata != expected:
+    if (
+        metadata.get("manifest_schema_version")
+        not in {str(version) for version in SUPPORTED_MANIFEST_SCHEMA_VERSIONS}
+        or {
+            key: value
+            for key, value in metadata.items()
+            if key != "manifest_schema_version"
+        }
+        != expected
+    ):
         raise ValueError("replay manifest metadata is incompatible")
+    validate_game_publications(connection)
 
 
 def _record_from_row(root: Path, row: sqlite3.Row) -> ShardRecord:

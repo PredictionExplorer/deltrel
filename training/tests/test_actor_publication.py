@@ -1,5 +1,7 @@
 from startrain import actor_publication as publication
+from startrain.actor_publication import PublicationProgress
 import pytest
+import time
 
 
 def test_publications_are_rate_limited_and_final_flush_preserves_all_counters(
@@ -113,3 +115,92 @@ def test_policy_only_publication_counts_new_samples_without_relabeling_old_ones(
     callback.finish()
     assert sum(row["published_samples"] for row in records) == 15
     assert sum(row["published_policy_only_samples"] for row in records) == 5
+
+
+def test_revision_metrics_separate_fresh_credit_from_enrichment_and_physical_rows():
+    records = []
+    progress = PublicationProgress(
+        metadata={},
+        base_games=0,
+        base_samples=0,
+        base_evaluator_rows=0,
+        base_wall_seconds=0,
+        task_started=time.monotonic(),
+        evaluator_rows=lambda: 0,
+        heartbeat=lambda **_fields: None,
+        emit=records.append,
+        interval_seconds=0,
+    )
+    progress.progress(
+        phase="selfplay_policy_published",
+        completed_games=0,
+        persisted_decisions=4,
+        policy_published_decisions=4,
+        enriched_decisions=0,
+        replay_written_decisions=4,
+        retained_incomplete_decisions=0,
+    )
+    progress.progress(
+        phase="selfplay_policy_published",
+        completed_games=0,
+        persisted_decisions=6,
+        policy_published_decisions=6,
+        enriched_decisions=0,
+        replay_written_decisions=10,
+        retained_incomplete_decisions=0,
+    )
+    progress.progress(
+        phase="selfplay_completed",
+        completed_games=1,
+        persisted_decisions=6,
+        policy_published_decisions=6,
+        enriched_decisions=6,
+        replay_written_decisions=16,
+        retained_incomplete_decisions=0,
+    )
+    progress.finish()
+    assert sum(row["published_samples"] for row in records) == 6
+    assert sum(row["published_written_samples"] for row in records) == 16
+    assert sum(row["published_enriched_samples"] for row in records) == 6
+    assert sum(row["published_games"] for row in records) == 1
+    assert records[-1]["published_samples"] == 0
+    assert records[-1]["pending_policy_rows"] == 0
+
+
+def test_abandoned_already_published_prefix_is_classified_without_new_credit():
+    records = []
+    progress = PublicationProgress(
+        metadata={},
+        base_games=0,
+        base_samples=0,
+        base_evaluator_rows=0,
+        base_wall_seconds=0,
+        task_started=time.monotonic(),
+        evaluator_rows=lambda: 0,
+        heartbeat=lambda **_fields: None,
+        emit=records.append,
+        interval_seconds=0,
+    )
+    common = dict(
+        completed_games=0,
+        persisted_decisions=4,
+        policy_published_decisions=4,
+        enriched_decisions=0,
+        replay_written_decisions=4,
+        salvaged_policy_decisions=0,
+    )
+    progress.progress(
+        phase="selfplay_policy_published", retained_incomplete_decisions=0, **common
+    )
+    progress.progress(
+        phase="selfplay_policy_salvaged", retained_incomplete_decisions=4, **common
+    )
+    progress.finish()
+    assert sum(row["published_samples"] for row in records) == 4
+    assert sum(row["published_policy_only_samples"] for row in records) == 4
+    assert (
+        records[-1]["published_samples"]
+        == records[-1]["published_written_samples"]
+        == 0
+    )
+    assert records[-1]["pending_policy_rows"] == 4

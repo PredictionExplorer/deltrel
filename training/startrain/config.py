@@ -19,7 +19,7 @@ from .losses import LossWeights
 from .model import ModelConfig
 from .optim import OptimizerConfig
 from .gradient_clipping import GradientClippingConfig
-from .selfplay import SelfPlayConfig, VariantMixtureConfig
+from .selfplay import PolicyPublicationConfig, SelfPlayConfig, VariantMixtureConfig
 from .search_options import SearchExecutionConfig, parse_search_execution
 from .topology import SUPPORTED_RINGS
 
@@ -260,6 +260,7 @@ class LearnerConfig:
     target_updates_per_new_sample: float | None = None
     metrics_interval: int = 10
     replay_poll_seconds: float = 2.0
+    replay_refresh_seconds: float = 300.0
     replay_wait_timeout_seconds: float = 0.0
     resume_latest: bool = True
     device: str = "cpu"
@@ -271,6 +272,13 @@ class LearnerConfig:
     def __post_init__(self) -> None:
         if type(self.unlimited) is not bool:
             raise ConfigError("unlimited must be boolean")
+        if (
+            isinstance(self.replay_refresh_seconds, bool)
+            or not isinstance(self.replay_refresh_seconds, (int, float))
+            or not math.isfinite(self.replay_refresh_seconds)
+            or self.replay_refresh_seconds <= 0
+        ):
+            raise ConfigError("replay_refresh_seconds must be finite and positive")
         if type(self.use_ring_mixture_curriculum) is not bool:
             raise ConfigError("use_ring_mixture_curriculum must be boolean")
         if self.segment_quotas is not None:
@@ -737,6 +745,29 @@ class ActorInferenceConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class ActorWorkSchedulingConfig:
+    """Shared fleet assignment credit with an optional bounded game quantum."""
+
+    enabled: bool = False
+    games_per_lease: int | None = None
+    # Existing ledger credit/coverage is never reset when this flag changes.
+    coverage_first: bool = True
+
+    def __post_init__(self) -> None:
+        if type(self.enabled) is not bool or type(self.coverage_first) is not bool:
+            raise ConfigError(
+                "work_scheduling enabled and coverage_first must be boolean"
+            )
+        if self.games_per_lease is not None and (
+            type(self.games_per_lease) is not int
+            or not 1 <= self.games_per_lease <= 1_000_000
+        ):
+            raise ConfigError(
+                "work_scheduling games_per_lease must be in 1..1000000 or null"
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class ModelRefreshConfig:
     manifest_poll_seconds: float = 2.0
     startup_timeout_seconds: float = 600.0
@@ -756,8 +787,11 @@ class ModelRefreshConfig:
     history_pool_size: int = 8
     compatible_cohort_work: bool = False
     inference: ActorInferenceConfig = ActorInferenceConfig()
+    work_scheduling: ActorWorkSchedulingConfig = ActorWorkSchedulingConfig()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.work_scheduling, ActorWorkSchedulingConfig):
+            raise ConfigError("work_scheduling must be an ActorWorkSchedulingConfig")
         if (
             type(self.refresh_only_between_batches) is not bool
             or type(self.inference_compile_dynamic) is not bool
@@ -1291,6 +1325,39 @@ class OrchestrationConfig:
                 )
         learners = [gpu for gpu in self.gpus if gpu.role == "learner"]
         actors = [gpu for gpu in self.gpus if gpu.role == "actor"]
+        work = self.model_refresh.work_scheduling
+        if work.enabled:
+            if (
+                self.device != "cuda"
+                or not actors
+                or not self.model_refresh.inference.shared_batching
+            ):
+                raise ConfigError(
+                    "work scheduling requires shared CUDA actor inference"
+                )
+            for gpu in actors:
+                compatible = (
+                    gpu.actor_pipeline.compatible_work
+                    if gpu.actor_pipeline is not None
+                    else self.model_refresh.compatible_cohort_work
+                )
+                if gpu.actor_cohorts < 2 or gpu.actor_lanes != 1 or not compatible:
+                    raise ConfigError(
+                        "work scheduling requires compatible shared actor cohorts"
+                    )
+                batch = gpu.actor_batch_size
+                games = work.games_per_lease
+                if games is None:
+                    games = (
+                        gpu.actor_pipeline.games_per_task
+                        if gpu.actor_pipeline is not None
+                        and gpu.actor_pipeline.games_per_task is not None
+                        else self.actor_games_per_batch
+                    )
+                if games > 1_000_000 or (batch is not None and games < batch):
+                    raise ConfigError(
+                        "work scheduling game quantum must cover the actor batch and be bounded"
+                    )
         if any(gpu.actor_cohorts > 1 for gpu in actors) and not (
             self.model_refresh.inference.shared_batching
         ):
@@ -1927,6 +1994,9 @@ def _normalize_selfplay(values: object) -> dict[str, Any]:
     """Build the nested variant mixture from its YAML mapping."""
 
     output = _mapping("selfplay", values)
+    output["policy_publication"] = _construct(
+        PolicyPublicationConfig, output.get("policy_publication", {})
+    )
     if "search_execution" in output:
         try:
             output["search_execution"] = parse_search_execution(
@@ -2112,6 +2182,9 @@ def load_config(path: str | Path) -> ExperimentConfig:
     )
     refresh_values["inference"] = _construct(
         ActorInferenceConfig, refresh_values.get("inference", {})
+    )
+    refresh_values["work_scheduling"] = _construct(
+        ActorWorkSchedulingConfig, refresh_values.get("work_scheduling", {})
     )
     orchestration_values["model_refresh"] = refresh_values
     for key, cls in (

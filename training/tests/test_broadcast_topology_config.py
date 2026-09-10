@@ -1,6 +1,7 @@
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
+import json
 
 import pytest
 
@@ -80,10 +81,15 @@ def test_broadcast_topology_epoch_preserves_all_previous_release_representations
         is True
     )
     payload["orchestration"]["promotion"]["pause_strategy"] = "terminate"
-    for epoch in compatible_config_epoch_payloads(payload):
-        assert without_pause_strategy_default(
-            epoch
-        ) in compatible_config_epoch_payloads(payload)
+    epochs = compatible_config_epoch_payloads(payload)
+    # Compare serialized configuration authority once per representation. Rebuilding
+    # the complete epoch graph inside this loop made the check quadratic.
+    serialized = {json.dumps(epoch, sort_keys=True) for epoch in epochs}
+    for epoch in epochs:
+        assert (
+            json.dumps(without_pause_strategy_default(epoch), sort_keys=True)
+            in serialized
+        )
 
 
 @pytest.mark.parametrize("value", [True, 0, 1, None, "false"])

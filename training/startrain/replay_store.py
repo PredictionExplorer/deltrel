@@ -11,7 +11,7 @@ import stat
 import time
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Iterator, Mapping, Sequence
 
@@ -29,6 +29,23 @@ from .runtime import RunIdentity, atomic_json, validate_identifier
 from .topology import SUPPORTED_RINGS, get_topology
 
 MANIFEST_SCHEMA_VERSION = 5
+REPLAY_PUBLICATION_MANIFEST_SCHEMA_VERSION = 6
+SUPPORTED_MANIFEST_SCHEMA_VERSIONS = (5, 6)
+
+
+def validate_game_publications(
+    connection: sqlite3.Connection,
+    *,
+    run_id: str | None = None,
+    generation_family: str | None = None,
+) -> None:
+    """Read-only schema-six logical-publication integrity validation."""
+
+    from .replay_publication import validate_publications
+
+    validate_publications(
+        connection, run_id=run_id, generation_family=generation_family
+    )
 
 
 def _validated_rings(rings: Sequence[int]) -> tuple[int, ...]:
@@ -214,6 +231,16 @@ class ShardRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class GameRevisionReceipt:
+    record: ShardRecord
+    new_samples: int
+    enriched_samples: int
+    completed_games: int
+    revision: int
+    replayed: bool
+
+
+@dataclass(frozen=True, slots=True)
 class ReplaySpan:
     record: ShardRecord
     sample_start: int
@@ -227,6 +254,9 @@ class ReplaySelection:
     max_shard_id: int
     minimum_shard_id_exclusive: int | None = None
     samples_by_segment: dict[str, int] | None = None
+    publication_revision: int = 0
+    enriched_samples: int = 0
+    committed_samples: int | None = None
 
     def __post_init__(self) -> None:
         _validated_optional_shard_id(
@@ -284,6 +314,15 @@ def prove_legacy_committed_sample_history(
         (run_id, family),
     ).fetchone()
     failures: list[str] = []
+    metadata = connection.execute(
+        "SELECT value FROM store_metadata WHERE key = 'manifest_schema_version'"
+    ).fetchone()
+    if metadata is not None and str(metadata[0]) == str(
+        REPLAY_PUBLICATION_MANIFEST_SCHEMA_VERSION
+    ):
+        failures.append(
+            "schema-six revision payload totals cannot prove logical fresh credit"
+        )
     if run is None:
         failures.append("run is not registered to this generation family")
 
@@ -434,6 +473,7 @@ class ReplayStore:
 
     def _initialize(self) -> None:
         _check_cancelled(self._startup_cancel_requested)
+        validate_game_publications(self.connection)
         counter_table_preexisting = (
             self.connection.execute(
                 """
@@ -539,6 +579,9 @@ class ReplayStore:
                 CHECK(history_complete IN (0, 1))
                 """
             )
+        from .replay_publication import initialize_publication_tables
+
+        initialize_publication_tables(self.connection)
         expected = {
             "manifest_schema_version": str(MANIFEST_SCHEMA_VERSION),
             "rules_hash": RULES_HASH_WIRE,
@@ -555,7 +598,11 @@ class ReplayStore:
                         "INSERT INTO store_metadata(key, value) VALUES (?, ?)",
                         (key, value),
                     )
-                elif row["value"] != value:
+                elif row["value"] != value and not (
+                    key == "manifest_schema_version"
+                    and str(row["value"])
+                    in {str(version) for version in SUPPORTED_MANIFEST_SCHEMA_VERSIONS}
+                ):
                     raise ValueError(f"replay store {key} is incompatible")
             self.connection.execute("COMMIT")
         except Exception:
@@ -1019,11 +1066,7 @@ class ReplayStore:
                 max_model_lag_steps=max_model_lag_steps,
                 minimum_shard_id_exclusive=minimum_shard_id_exclusive,
                 segment_quotas=segment_quotas,
-                **(
-                    {"within_segment_classic_shares": classic_shares}
-                    if classic_shares
-                    else {}
-                ),
+                within_segment_classic_shares=classic_shares or None,
             )
             sample_floor_ids = {span.record.shard_id for span in selection.spans}
             sample_floor_rows = sum(span.sample_count for span in selection.spans)
@@ -1061,6 +1104,17 @@ class ReplayStore:
                     retained += 1
                     continue
                 candidates.append(record)
+        # Old immutable versions are no longer selectable, but existing loader
+        # windows still own their files until their watermark is released.
+        for row in self.connection.execute(
+            "SELECT * FROM shards WHERE state='superseded' AND run_id=? AND generation_family=?",
+            (run_id, generation_family),
+        ):
+            record = self._record(row)
+            if not any(
+                lower <= record.shard_id <= upper for lower, upper in protected_ranges
+            ):
+                candidates.append(record)
         bytes_reclaimable = sum(
             record.path.stat().st_size for record in candidates if record.path.is_file()
         )
@@ -1079,6 +1133,21 @@ class ReplayStore:
             return metrics
         self.connection.execute("BEGIN IMMEDIATE")
         try:
+            # A loader may have pinned a selected version since the planning
+            # snapshot. Serialize this final check with watermark insertion.
+            current_pins = [
+                (int(row[0]), int(row[1]))
+                for row in self.connection.execute(
+                    "SELECT minimum_shard_id, maximum_shard_id FROM gc_watermarks"
+                )
+            ]
+            candidates = [
+                record
+                for record in candidates
+                if not any(
+                    lower <= record.shard_id <= upper for lower, upper in current_pins
+                )
+            ]
             self.connection.executemany(
                 "DELETE FROM shards WHERE id = ?",
                 ((record.shard_id,) for record in candidates),
@@ -1092,6 +1161,47 @@ class ReplayStore:
         metrics["deleted_shards"] = len(candidates)
         metrics["deleted_bytes"] = bytes_reclaimable
         return metrics
+
+    def append_game_revision(
+        self,
+        samples: Sequence[ReplaySample],
+        *,
+        finalized: bool,
+        phase_min: int,
+        phase_max: int,
+        model_version: str,
+        model_step: int,
+        model_identity: str,
+        run_id: str,
+        generation_family: str,
+        actor_id: str,
+        generation: int,
+    ) -> GameRevisionReceipt:
+        from .replay_publication import append_revision
+
+        return append_revision(
+            self,
+            samples,
+            finalized=finalized,
+            phase_min=phase_min,
+            phase_max=phase_max,
+            model_version=model_version,
+            model_step=model_step,
+            model_identity=model_identity,
+            run_id=run_id,
+            generation_family=generation_family,
+            actor_id=actor_id,
+            generation=generation,
+        )
+
+    def replay_revision_counts(
+        self, *, run_id: str, generation_family: str
+    ) -> tuple[int, int]:
+        """Return publication revision and enriched-row counters, not UTD credit."""
+
+        from .replay_publication import revision_counts
+
+        return revision_counts(self.connection, run_id, generation_family)
 
     def append(
         self,
@@ -1724,6 +1834,62 @@ class ReplayStore:
         minimum_shard_id_exclusive: int | None = None,
         segment_quotas: Mapping[str, float] | None = None,
         within_segment_classic_shares: Mapping[str, float] | None = None,
+        gc_watermark_name: str | None = None,
+    ) -> ReplaySelection:
+        """Pin counters and selected immutable revisions to one read snapshot."""
+
+        if gc_watermark_name is not None and (
+            not isinstance(gc_watermark_name, str) or not gc_watermark_name
+        ):
+            raise ValueError("GC watermark requires a nonempty name")
+        owns = not self.connection.in_transaction
+        if owns:
+            self.connection.execute("BEGIN IMMEDIATE" if gc_watermark_name else "BEGIN")
+        try:
+            revision, enriched = self.replay_revision_counts(
+                run_id=run_id, generation_family=generation_family
+            )
+            committed = self.total_committed_sample_count(
+                run_id=run_id, generation_family=generation_family
+            )
+            selection = self._select_recent_spans_snapshot(
+                rings=rings,
+                per_ring_quota=per_ring_quota,
+                run_id=run_id,
+                generation_family=generation_family,
+                current_model_step=current_model_step,
+                max_model_lag_steps=max_model_lag_steps,
+                minimum_shard_id_exclusive=minimum_shard_id_exclusive,
+                segment_quotas=segment_quotas,
+                within_segment_classic_shares=within_segment_classic_shares,
+            )
+            selected = replace(
+                selection,
+                publication_revision=revision,
+                enriched_samples=enriched,
+                committed_samples=committed,
+            )
+            if gc_watermark_name and selected.spans:
+                self.set_gc_watermark(gc_watermark_name, selected)
+            if owns and gc_watermark_name:
+                self.connection.execute("COMMIT")
+            return selected
+        finally:
+            if owns and self.connection.in_transaction:
+                self.connection.execute("ROLLBACK")
+
+    def _select_recent_spans_snapshot(
+        self,
+        *,
+        rings: Sequence[int],
+        per_ring_quota: int,
+        run_id: str,
+        generation_family: str,
+        current_model_step: int,
+        max_model_lag_steps: int,
+        minimum_shard_id_exclusive: int | None = None,
+        segment_quotas: Mapping[str, float] | None = None,
+        within_segment_classic_shares: Mapping[str, float] | None = None,
     ) -> ReplaySelection:
         """Select the most recent samples per ring, optionally stratified by segment.
 
@@ -1944,7 +2110,7 @@ class ReplayStore:
         self, name: str, *, limit: int | None = None
     ) -> Iterator[tuple[ShardRecord, list[ReplaySample]]]:
         cursor = self.get_cursor(name)
-        query = "SELECT * FROM shards WHERE id >= ? ORDER BY id"
+        query = "SELECT * FROM shards WHERE id >= ? AND state='ready' ORDER BY id"
         parameters: list[object] = [max(1, cursor.shard_id)]
         if limit is not None:
             if limit <= 0:

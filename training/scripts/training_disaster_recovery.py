@@ -46,7 +46,11 @@ from startrain.checkpoint import (
 )
 from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
 from startrain.model import MODEL_SCHEMA_VERSION
-from startrain.replay_store import MANIFEST_SCHEMA_VERSION
+from startrain.replay_store import (
+    MANIFEST_SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
+    SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
+    validate_game_publications,
+)
 from startrain.runtime import load_run_identity, validate_identifier
 
 SNAPSHOT_REPORT = "startrain-disaster-recovery-snapshot"
@@ -1703,14 +1707,18 @@ def _validate_replay_database(
                 for row in connection.execute("SELECT key, value FROM store_metadata")
             }
             expected_metadata = {
-                "manifest_schema_version": str(MANIFEST_SCHEMA_VERSION),
                 "rules_hash": RULES_HASH_WIRE,
                 "feature_schema_hash": f"{FEATURE_SCHEMA_HASH:016x}",
             }
-            if any(
+            if metadata.get("manifest_schema_version") not in {
+                str(version) for version in SUPPORTED_MANIFEST_SCHEMA_VERSIONS
+            } or any(
                 metadata.get(key) != value for key, value in expected_metadata.items()
             ):
                 raise DisasterRecoveryError("replay metadata is incompatible")
+            validate_game_publications(
+                connection, run_id=run_id, generation_family=generation_family
+            )
             registered = connection.execute(
                 """
                 SELECT generation_family, created_ns FROM runs
@@ -1802,7 +1810,7 @@ def _validate_replay_database(
                     "replay shard catalog disagrees with ledger ready rows"
                 )
             return len(expected_shards), committed_samples
-    except sqlite3.Error as exc:
+    except (sqlite3.Error, ValueError) as exc:
         raise DisasterRecoveryError(
             f"cannot validate replay SQLite ledger: {exc}"
         ) from exc

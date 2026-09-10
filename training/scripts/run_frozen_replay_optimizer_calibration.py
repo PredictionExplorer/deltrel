@@ -55,7 +55,11 @@ from startrain.replay import (
     collate_replay_samples,
     decode_replay_shard,
 )
-from startrain.replay_store import MANIFEST_SCHEMA_VERSION
+from startrain.replay_store import (
+    MANIFEST_SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
+    SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
+    validate_game_publications,
+)
 from startrain.runtime import atomic_json
 from startrain.symmetry import deterministic_transform
 from startrain.training import (
@@ -476,12 +480,21 @@ def _replay_metadata(connection: sqlite3.Connection) -> dict[str, str]:
     )
     metadata = {str(row["key"]): str(row["value"]) for row in rows}
     expected = {
-        "manifest_schema_version": str(MANIFEST_SCHEMA_VERSION),
         "rules_hash": RULES_HASH_WIRE,
         "feature_schema_hash": f"{FEATURE_SCHEMA_HASH:016x}",
     }
-    if metadata != expected:
+    if (
+        metadata.get("manifest_schema_version")
+        not in {str(version) for version in SUPPORTED_MANIFEST_SCHEMA_VERSIONS}
+        or {
+            key: value
+            for key, value in metadata.items()
+            if key != "manifest_schema_version"
+        }
+        != expected
+    ):
         raise ValueError("source replay metadata is incompatible")
+    validate_game_publications(connection)
     return metadata
 
 

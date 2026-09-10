@@ -603,7 +603,6 @@ fn validate_schema_version(schema_version: u8) -> Result<(), String> {
     }
 }
 
-#[derive(Clone)]
 struct PackedFeatureRow {
     rings: u8,
     node_count: usize,
@@ -1122,7 +1121,7 @@ fn validate_pda(pda: i8) -> Result<(), String> {
 struct PyEvalBatch {
     tree_indices: Vec<usize>,
     tokens: Vec<u64>,
-    states: PyStateData,
+    states: Arc<OnceLock<PyStateData>>,
     request_states: Arc<Vec<GameState>>,
     feature_rows: Arc<Vec<OnceLock<PackedFeatureRow>>>,
     features: Arc<OnceLock<PyFeatureData>>,
@@ -1149,8 +1148,14 @@ impl PyEvalBatch {
     }
 
     #[getter]
-    fn states(&self) -> PyStateData {
-        self.states.clone()
+    fn states(&self, py: Python<'_>) -> PyStateData {
+        py.detach(|| self.legacy_state_data().clone())
+    }
+
+    /// Whether the legacy state export has been requested, without computing it.
+    #[getter]
+    fn state_data_materialized(&self) -> bool {
+        self.states.get().is_some()
     }
 
     /// Lazily computed schema-v4 features; exported writable buffers are copies.
@@ -1167,14 +1172,18 @@ impl PyEvalBatch {
 
     /// Board size without forcing feature generation.
     #[getter]
-    const fn rings(&self) -> u8 {
-        self.states.rings
+    fn rings(&self) -> u8 {
+        self.request_states
+            .first()
+            .map_or(0, |state| state.board().rings())
     }
 
     /// Dense node count without forcing feature generation.
     #[getter]
-    const fn node_count(&self) -> u16 {
-        self.states.node_count
+    fn node_count(&self) -> u16 {
+        self.request_states
+            .first()
+            .map_or(0, |state| state.board().node_count())
     }
 
     /// Rows scored/encoded by this immutable request snapshot.
@@ -1265,6 +1274,11 @@ impl PyEvalBatch {
 }
 
 impl PyEvalBatch {
+    fn legacy_state_data(&self) -> &PyStateData {
+        self.states
+            .get_or_init(|| pack_states(&self.request_states))
+    }
+
     fn prefetch_rows_unchecked(&self, indices: &[usize]) {
         indices
             .par_iter()
@@ -1282,15 +1296,11 @@ impl PyEvalBatch {
     fn select_rows_unchecked(&self, indices: &[usize]) -> PyFeatureData {
         self.prefetch_rows_unchecked(indices);
         pack_feature_rows(
-            indices
-                .iter()
-                .map(|index| {
-                    self.feature_rows[*index]
-                        .get()
-                        .expect("requested feature row is initialized")
-                        .clone()
-                })
-                .collect(),
+            indices.iter().map(|index| {
+                self.feature_rows[*index]
+                    .get()
+                    .expect("requested feature row is initialized")
+            }),
             FEATURE_SCHEMA_VERSION,
         )
     }
@@ -2458,7 +2468,7 @@ fn pack_feature_states(
 ) -> Result<PyFeatureData, String> {
     validate_schema_version(schema_version)?;
     debug_assert_eq!(states.len(), contexts.len());
-    let rows = states
+    let rows: Vec<_> = states
         .par_iter()
         .zip(contexts.par_iter())
         .map_init(ScoringScratch::default, |scratch, (state, context)| {
@@ -2470,7 +2480,7 @@ fn pack_feature_states(
             }
         })
         .collect();
-    Ok(pack_feature_rows(rows, schema_version))
+    Ok(pack_feature_rows(rows.iter(), schema_version))
 }
 
 fn max_degree(board: &Board) -> usize {
@@ -2673,11 +2683,14 @@ fn pack_feature_row(
     }
 }
 
-fn pack_feature_rows(rows: Vec<PackedFeatureRow>, schema_version: u8) -> PyFeatureData {
+fn pack_feature_rows<'a>(
+    rows: impl ExactSizeIterator<Item = &'a PackedFeatureRow> + Clone,
+    schema_version: u8,
+) -> PyFeatureData {
     let node_dim = node_feature_dim(schema_version);
     let global_dim = global_feature_dim(schema_version);
     let batch_size = rows.len();
-    let max_nodes = rows.iter().map(|row| row.node_count).max().unwrap_or(0);
+    let max_nodes = rows.clone().map(|row| row.node_count).max().unwrap_or(0);
     let mut rings = Vec::with_capacity(batch_size);
     let mut node_features = vec![0.0_f32; batch_size * max_nodes * node_dim];
     let mut global_features = Vec::with_capacity(batch_size * global_dim);
@@ -2686,7 +2699,7 @@ fn pack_feature_rows(rows: Vec<PackedFeatureRow>, schema_version: u8) -> PyFeatu
     let mut score_components = Vec::with_capacity(batch_size * SCORE_COMPONENT_DIM);
     let mut node_owner = vec![-1_i8; batch_size * max_nodes];
     let mut alive_stones = vec![0_u8; batch_size * max_nodes];
-    for (row_index, row) in rows.into_iter().enumerate() {
+    for (row_index, row) in rows.enumerate() {
         rings.push(row.rings);
         let feature_start = row_index * max_nodes * node_dim;
         let feature_end = feature_start + row.node_count * node_dim;
@@ -3237,7 +3250,6 @@ fn pack_requests(
         .zip(&request_states)
         .map(|(tree_index, state)| pda_by_seat[*tree_index][state.to_move().index()])
         .collect();
-    let states = pack_states(&request_states);
     let mut legal_offsets = Vec::with_capacity(requests.len() + 1);
     let mut legal_actions = Vec::new();
     legal_offsets.push(0);
@@ -3254,7 +3266,7 @@ fn pack_requests(
     PyEvalBatch {
         tree_indices,
         tokens,
-        states,
+        states: Arc::new(OnceLock::new()),
         feature_rows: Arc::new((0..request_states.len()).map(|_| OnceLock::new()).collect()),
         request_states: Arc::new(request_states),
         features: Arc::new(OnceLock::new()),
@@ -3583,6 +3595,122 @@ mod tests {
             .chunks_exact(std::mem::size_of::<f32>())
             .map(|chunk| f32::from_ne_bytes(chunk.try_into().unwrap()))
             .collect()
+    }
+
+    #[test]
+    fn state_export_stays_lazy_and_shared_across_concurrent_request_clones() {
+        let board = Arc::new(Board::new(10).unwrap());
+        let states: Vec<_> = (0..4)
+            .map(|offset| {
+                let mut state = GameState::new(Arc::clone(&board));
+                for node in offset..offset + 5 {
+                    state.apply(Action::Place(node)).unwrap();
+                }
+                state
+            })
+            .collect();
+        let requests = states
+            .iter()
+            .enumerate()
+            .map(|(row, state)| EvaluationRequest {
+                token: row as u64 + 1,
+                state: state.clone(),
+                legal_actions: state.legal_actions().to_vec(),
+            })
+            .collect();
+        let request = pack_requests(vec![0, 1, 2, 3], requests, &[[0, 0]; 4]);
+        assert!(!request.state_data_materialized());
+        assert_eq!(request.rings(), 10);
+        assert_eq!(request.node_count(), 275);
+        let features = request.select_rows_unchecked(&[3, 1, 3]);
+        assert_eq!(features.buffers.rings, [10, 10, 10]);
+        assert_eq!(request.encoded_feature_rows(), 2);
+        assert!(!request.state_data_materialized());
+        let cloned = request.clone();
+        assert!(Arc::ptr_eq(&request.states, &cloned.states));
+        let pool = ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+        let pointers: Vec<_> = pool.install(|| {
+            (0..16)
+                .into_par_iter()
+                .map(|_| {
+                    let state_data = cloned.legacy_state_data();
+                    let features = cloned.select_rows_unchecked(&[2, 0, 2]);
+                    assert_eq!(features.batch_size, 3);
+                    state_data as *const PyStateData as usize
+                })
+                .collect()
+        });
+        assert!(request.state_data_materialized());
+        assert!(pointers.iter().all(|pointer| *pointer == pointers[0]));
+        assert_eq!(request.encoded_feature_rows(), 4);
+        let expected = pack_states(&states);
+        let actual = request.legacy_state_data();
+        assert_eq!(actual.hashes, expected.hashes);
+        assert_eq!(actual.current_turn_bits, expected.current_turn_bits);
+        assert_eq!(actual.previous_turn_bits, expected.previous_turn_bits);
+        assert_eq!(
+            actual.own_previous_turn_bits,
+            expected.own_previous_turn_bits
+        );
+        assert_eq!(actual.handicap_bits, expected.handicap_bits);
+        assert_eq!(actual.turn_count, expected.turn_count);
+        assert_eq!(actual.legal_bits, expected.legal_bits);
+        let restored = decode_semantic_states(board, actual.semantic_rows()).unwrap();
+        assert!(restored.iter().zip(states).all(|(a, b)| a.key() == b.key()));
+    }
+
+    #[test]
+    fn borrowed_feature_rows_preserve_duplicates_mixed_padding_and_empty_batches() {
+        for schema in [LEGACY_FEATURE_SCHEMA_VERSION, FEATURE_SCHEMA_VERSION] {
+            let small = GameState::new(Arc::new(Board::new(4).unwrap()));
+            let mut large = GameState::new(Arc::new(Board::new(10).unwrap()));
+            large.apply(Action::Place(9)).unwrap();
+            let rows: Vec<_> = [&small, &large]
+                .into_iter()
+                .map(|state| {
+                    let score = ScoringScratch::default().score_state(state);
+                    if schema == LEGACY_FEATURE_SCHEMA_VERSION {
+                        pack_legacy_feature_row(state, &score)
+                    } else {
+                        pack_feature_row(state, FeatureContext::known(2), &score)
+                    }
+                })
+                .collect();
+            let selected = pack_feature_rows([&rows[1], &rows[0], &rows[1]].into_iter(), schema);
+            assert_eq!(selected.batch_size, 3);
+            assert_eq!(selected.max_nodes, 275);
+            assert_eq!(selected.buffers.rings, [10, 4, 10]);
+            let features = f32s(&selected.buffers.node_features);
+            let stride = 275 * node_feature_dim(schema);
+            assert_eq!(features[..stride], rows[1].node_features);
+            assert_eq!(features[2 * stride..], rows[1].node_features);
+            let small_end = stride + rows[0].node_features.len();
+            assert_eq!(features[stride..small_end], rows[0].node_features);
+            assert!(
+                features[small_end..2 * stride]
+                    .iter()
+                    .all(|value| *value == 0.0)
+            );
+            assert!(
+                selected.buffers.node_mask[275..325]
+                    .iter()
+                    .all(|value| *value == 1)
+            );
+            assert!(
+                selected.buffers.node_mask[325..550]
+                    .iter()
+                    .all(|value| *value == 0)
+            );
+            let empty = pack_feature_rows(rows[..0].iter(), schema);
+            assert_eq!(empty.batch_size, 0);
+            assert_eq!(empty.max_nodes, 0);
+            assert!(empty.buffers.node_features.is_empty());
+        }
+        let empty = pack_requests(Vec::new(), Vec::new(), &[]);
+        assert!(!empty.state_data_materialized());
+        assert_eq!((empty.rings(), empty.node_count()), (0, 0));
+        assert_eq!(empty.legacy_state_data().batch_size, 0);
+        assert!(empty.state_data_materialized());
     }
 
     #[test]
@@ -4137,7 +4265,7 @@ mod tests {
                 let leaves = search.next_requests(py).unwrap();
                 if !leaves.tokens.is_empty() {
                     for (tree_index, to_move) in
-                        leaves.tree_indices.iter().zip(&leaves.states.to_move)
+                        leaves.tree_indices.iter().zip(&leaves.states(py).to_move)
                     {
                         let expected = search.pda_by_seat[*tree_index][usize::from(*to_move)];
                         let row = leaves

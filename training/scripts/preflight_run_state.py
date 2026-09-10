@@ -27,8 +27,11 @@ from startrain.checkpoint import (
 from startrain.config import ExperimentConfig, load_config
 from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
 from startrain.replay_store import (
-    MANIFEST_SCHEMA_VERSION,
+    MANIFEST_SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
+    REPLAY_PUBLICATION_MANIFEST_SCHEMA_VERSION,
+    SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
     prove_legacy_committed_sample_history,
+    validate_game_publications,
 )
 from startrain.runtime import atomic_json, load_run_identity
 
@@ -216,6 +219,7 @@ def _validate_replay(
     path = run_root / "replay" / "manifest.sqlite3"
     try:
         with _open_replay(path, writable=False) as connection:
+            connection.execute("BEGIN")
             integrity = [
                 str(row[0]) for row in connection.execute("PRAGMA quick_check")
             ]
@@ -228,12 +232,16 @@ def _validate_replay(
                 for row in connection.execute("SELECT key, value FROM store_metadata")
             }
             expected = {
-                "manifest_schema_version": str(MANIFEST_SCHEMA_VERSION),
                 "rules_hash": RULES_HASH_WIRE,
                 "feature_schema_hash": f"{FEATURE_SCHEMA_HASH:016x}",
             }
-            if any(metadata.get(key) != value for key, value in expected.items()):
+            if metadata.get("manifest_schema_version") not in {
+                str(version) for version in SUPPORTED_MANIFEST_SCHEMA_VERSIONS
+            } or any(metadata.get(key) != value for key, value in expected.items()):
                 raise StatePreflightError("replay manifest metadata is incompatible")
+            validate_game_publications(
+                connection, run_id=run_id, generation_family=generation_family
+            )
             run = connection.execute(
                 """
                 SELECT generation_family, created_ns
@@ -276,6 +284,12 @@ def _validate_replay(
                 if "committed_samples" in columns and not counter_has_history
                 else None
             )
+            if metadata["manifest_schema_version"] == str(
+                REPLAY_PUBLICATION_MANIFEST_SCHEMA_VERSION
+            ) and (counter is None or int(counter["history_complete"]) != 1):
+                raise StatePreflightError(
+                    "revisioned replay requires a complete durable fresh-sample counter"
+                )
             proof = prove_legacy_committed_sample_history(
                 connection,
                 run_id=run_id,
@@ -294,7 +308,7 @@ def _validate_replay(
                     (run_id, generation_family),
                 )
             }
-    except sqlite3.Error as exc:
+    except (sqlite3.Error, ValueError) as exc:
         raise StatePreflightError(f"cannot validate replay manifest: {exc}") from exc
     committed = _nonnegative_int(
         "committed replay samples",
@@ -574,6 +588,16 @@ def _apply_history_reconciliation(
     try:
         with _open_replay(path, writable=True) as connection:
             connection.execute("BEGIN IMMEDIATE")
+            schema = connection.execute(
+                "SELECT value FROM store_metadata WHERE key = 'manifest_schema_version'"
+            ).fetchone()
+            if schema is not None and str(schema[0]) == str(
+                REPLAY_PUBLICATION_MANIFEST_SCHEMA_VERSION
+            ):
+                raise StatePreflightError(
+                    "revisioned replay requires its durable fresh-sample counter; "
+                    "physical shard totals cannot reconstruct publication credit"
+                )
             columns = {
                 str(row["name"])
                 for row in connection.execute("PRAGMA table_info(run_counters)")

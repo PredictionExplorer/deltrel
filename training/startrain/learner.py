@@ -935,10 +935,13 @@ class ReplayWindowSession:
     closed: bool = False
     opened_monotonic: float = field(default_factory=time.monotonic)
     opened_committed_samples: int = 0
+    opened_publication_revision: int = 0
+    opened_enriched_samples: int = 0
     freshness_last_checked_monotonic: float | None = None
     freshness_probes: int = 0
     freshness_new_committed_rows: int = 0
     freshness_additional_selected_rows: int = 0
+    freshness_enriched_rows: int = 0
 
     @property
     def batches_remaining(self) -> int:
@@ -1676,6 +1679,7 @@ class LearnerLoop:
         interval_copy_events: list[tuple[torch.cuda.Event, torch.cuda.Event]] = []
         interval_train_metrics = TrainMetricAccumulator()
         window: ReplayWindowSession | None = None
+        pending_selection_pin = False
         next_refresh_reason = "initial"
         exit_reason = "stop"
         run_failure: BaseException | None = None
@@ -1779,13 +1783,17 @@ class LearnerLoop:
                         exit_reason = "stop"
                         break
                     self._synchronize_last_recovery_step()
-                    selection = self._select_replay_spans()
+                    pending_selection_pin = True
+                    selection = self._select_replay_spans(pin=True)
                     batches = self._window_allocation_budget(
                         selection,
                         target=target,
                     )
                     batches = self._collective_min_int(batches)
                     if batches <= 0:
+                        if self.rank == 0:
+                            self.store.clear_gc_watermark(self._watermark_name())
+                        pending_selection_pin = False
                         if target is not None and self.step >= target:
                             exit_reason = "target"
                             break
@@ -1804,6 +1812,7 @@ class LearnerLoop:
                         batches=batches,
                         refresh_reason=next_refresh_reason,
                     )
+                    pending_selection_pin = False
                     if self.rank == 0:
                         interval_window_setup_seconds += window.setup_seconds
                     window_reused = False
@@ -1848,6 +1857,8 @@ class LearnerLoop:
                                 self._latest_total_replay_samples
                                 - spin_window.opened_committed_samples,
                             ),
+                            enriched_samples_since_window_open=spin_window.freshness_enriched_rows,
+                            window_publication_revision=spin_window.opened_publication_revision,
                         )
                     time.sleep(self.learner_config.replay_poll_seconds)
                     continue
@@ -2276,6 +2287,11 @@ class LearnerLoop:
                     checkpoint_failure = exc
             cleanup_failure: BaseException | None = None
             try:
+                if pending_selection_pin and self.rank == 0:
+                    try:
+                        self.store.clear_gc_watermark(self._watermark_name())
+                    except BaseException as exc:
+                        cleanup_failure = exc
                 if window is not None:
                     try:
                         close_active_window(exit_reason)
@@ -2415,9 +2431,15 @@ class LearnerLoop:
                 ),
                 shutdown_loader_workers=not pooled_loader,
                 opened_monotonic=time.monotonic(),
-                opened_committed_samples=self.store.total_committed_sample_count(
-                    run_id=self.run_identity.run_id,
-                    generation_family=self.run_identity.generation_family,
+                opened_publication_revision=selection.publication_revision,
+                opened_enriched_samples=selection.enriched_samples,
+                opened_committed_samples=(
+                    selection.committed_samples
+                    if selection.committed_samples is not None
+                    else self.store.total_committed_sample_count(
+                        run_id=self.run_identity.run_id,
+                        generation_family=self.run_identity.generation_family,
+                    )
                 ),
             )
         except BaseException:
@@ -2578,6 +2600,8 @@ class LearnerLoop:
                         "freshness_probes": window.freshness_probes,
                         "freshness_new_committed_rows": window.freshness_new_committed_rows,
                         "freshness_additional_selected_rows": window.freshness_additional_selected_rows,
+                        "freshness_enriched_rows": window.freshness_enriched_rows,
+                        "window_publication_revision": window.opened_publication_revision,
                     }
                 )
             except BaseException as exc:
@@ -2721,7 +2745,7 @@ class LearnerLoop:
 
     def _rank_zero_has_fresh_replay(self, window: ReplayWindowSession) -> bool:
         now = time.monotonic()
-        if now - window.opened_monotonic < REPLAY_WINDOW_MAX_AGE_SECONDS:
+        if now - window.opened_monotonic < self.learner_config.replay_refresh_seconds:
             return False
         if (
             window.freshness_last_checked_monotonic is not None
@@ -2739,8 +2763,19 @@ class LearnerLoop:
             0, committed - window.opened_committed_samples
         )
         window.freshness_additional_selected_rows = 0
+        publication_revision, enriched = self.store.replay_revision_counts(
+            run_id=self.run_identity.run_id,
+            generation_family=self.run_identity.generation_family,
+        )
+        window.freshness_enriched_rows = max(
+            0, enriched - window.opened_enriched_samples
+        )
         batch = self.train_config.global_batch_size(self.world_size)
-        if window.freshness_new_committed_rows < batch:
+        has_enrichment = (
+            publication_revision > window.opened_publication_revision
+            and window.freshness_enriched_rows > 0
+        )
+        if window.freshness_new_committed_rows < batch and not has_enrichment:
             return False
         successor = self._rank_zero_select_replay_spans()
         previous = {
@@ -2758,7 +2793,10 @@ class LearnerLoop:
                 0, min(end, old_end) - max(start, old_start)
             )
         window.freshness_additional_selected_rows = added
-        return added >= batch and self._maximum_unique_batches(successor) > 0
+        # An outcome-only revision is new supervision, not a new position. It
+        # must become visible without manufacturing a fresh-data allowance.
+        changed = added > 0 if has_enrichment else added >= batch
+        return changed and self._maximum_unique_batches(successor) > 0
 
     def _ring_weight_fingerprint(
         self,
@@ -3332,10 +3370,24 @@ class LearnerLoop:
             return batches
         return 0
 
-    def _select_replay_spans(self) -> ReplaySelection:
-        selection = self._broadcast_object(
-            self._rank_zero_select_replay_spans() if self.rank == 0 else None
-        )
+    def _select_replay_spans(self, *, pin: bool = False) -> ReplaySelection:
+        result: object = None
+        if self.rank == 0:
+            try:
+                result = (
+                    self._rank_zero_select_replay_spans(
+                        gc_watermark_name=self._watermark_name()
+                    )
+                    if pin
+                    else self._rank_zero_select_replay_spans()
+                )
+            except Exception as error:
+                result = {"replay_selection_error": f"{type(error).__name__}: {error}"}
+        selection = self._broadcast_object(result)
+        if isinstance(selection, dict) and "replay_selection_error" in selection:
+            raise RuntimeError(
+                f"replay selection failed: {selection['replay_selection_error']}"
+            )
         if not isinstance(selection, ReplaySelection):
             raise RuntimeError("rank 0 broadcast invalid replay selection metadata")
         return selection
@@ -3349,7 +3401,9 @@ class LearnerLoop:
             return {"handicap": 0.5, "pie": 0.5}
         return None
 
-    def _rank_zero_select_replay_spans(self) -> ReplaySelection:
+    def _rank_zero_select_replay_spans(
+        self, *, gc_watermark_name: str | None = None
+    ) -> ReplaySelection:
         rings = self.ring_mixture_config.rings
         if self.learner_config.use_ring_mixture_curriculum:
             rings = self._active_replay_rings(self._eligible_replay_counts())
@@ -3365,6 +3419,11 @@ class LearnerLoop:
             ),
             segment_quotas=self.learner_config.segment_quotas,
             within_segment_classic_shares=self._within_segment_classic_shares(),
+            **(
+                {"gc_watermark_name": gc_watermark_name}
+                if gc_watermark_name is not None
+                else {}
+            ),
         )
 
     def _eligible_replay_counts(self) -> dict[int, int]:

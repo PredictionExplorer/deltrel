@@ -27,7 +27,12 @@ from .checkpoint import (
     load_resume_cutover,
 )
 from .config import ExperimentConfig, GPUWorkerConfig, RingMixtureConfig
-from .cohort_work import CompatibleWorkCoordinator, WorkBundle, WorkLease
+from .cohort_work import (
+    CompatibleWorkCoordinator,
+    PersistentWorkSchedule,
+    WorkBundle,
+    WorkLease,
+)
 from .device import (
     empty_device_cache,
     peak_memory_stats,
@@ -702,6 +707,9 @@ class ActorSupervisor:
         cumulative_games = 0
         cumulative_samples = 0
         cumulative_policy_only_samples = 0
+        cumulative_policy_first_samples = 0
+        cumulative_enriched_samples = 0
+        cumulative_written_samples = 0
         cumulative_evaluator_rows = 0
         cumulative_batch_wall_seconds = 0.0
         self.heartbeat.start()
@@ -976,6 +984,9 @@ class ActorSupervisor:
                             base_games=cumulative_games,
                             base_samples=cumulative_samples,
                             base_policy_only_samples=cumulative_policy_only_samples,
+                            base_policy_first_samples=cumulative_policy_first_samples,
+                            base_enriched_samples=cumulative_enriched_samples,
+                            base_written_samples=cumulative_written_samples,
                             base_evaluator_rows=cumulative_evaluator_rows,
                             base_wall_seconds=cumulative_batch_wall_seconds,
                             task_started=started,
@@ -987,6 +998,7 @@ class ActorSupervisor:
                             emit=lambda record: append_jsonl(self.metrics_path, record),
                         )
                         if batch_config.stream_completed_games
+                        or batch_config.policy_publication.enabled
                         else None
                     )
                     try:
@@ -1070,13 +1082,16 @@ class ActorSupervisor:
                     if wins + losses != len(summaries):
                         raise RuntimeError("self-play summaries cannot contain ties")
                     completed_samples = sum(summary.samples for summary in summaries)
-                    samples = (
-                        completed_samples + selfplay_metrics.salvaged_policy_decisions
+                    retained_samples = (
+                        selfplay_metrics.retained_incomplete_decisions
+                        if batch_config.policy_publication.enabled
+                        else selfplay_metrics.salvaged_policy_decisions
                     )
+                    samples = completed_samples + retained_samples
                     policy_samples = sum(
                         summary.policy_samples for summary in summaries
                     )
-                    policy_samples += selfplay_metrics.salvaged_policy_decisions
+                    policy_samples += retained_samples
                     search_simulations = sum(
                         summary.search_simulations for summary in summaries
                     )
@@ -1137,8 +1152,15 @@ class ActorSupervisor:
                     )
                     cumulative_games += len(summaries)
                     cumulative_samples += samples
-                    cumulative_policy_only_samples += (
-                        selfplay_metrics.salvaged_policy_decisions
+                    cumulative_policy_only_samples += retained_samples
+                    cumulative_policy_first_samples += (
+                        selfplay_metrics.policy_published_decisions
+                    )
+                    cumulative_enriched_samples += selfplay_metrics.enriched_decisions
+                    cumulative_written_samples += (
+                        selfplay_metrics.replay_written_decisions
+                        if batch_config.policy_publication.enabled
+                        else samples
                     )
                     cumulative_evaluator_rows += evaluator_rows
                     cumulative_batch_wall_seconds += elapsed
@@ -1209,7 +1231,12 @@ class ActorSupervisor:
                             "games": len(summaries),
                             "samples": samples,
                             "outcome_samples": completed_samples,
-                            "policy_only_samples": selfplay_metrics.salvaged_policy_decisions,
+                            "policy_only_samples": retained_samples,
+                            "retained_incomplete_samples": retained_samples,
+                            "policy_first_samples": selfplay_metrics.policy_published_decisions,
+                            "enriched_samples": selfplay_metrics.enriched_decisions,
+                            "written_samples": selfplay_metrics.replay_written_decisions,
+                            "replay_revisions": selfplay_metrics.replay_revisions,
                             "salvaged_games": selfplay_metrics.salvaged_games,
                             "salvaged_sample_weight_sum": selfplay_metrics.salvaged_sample_weight_sum,
                             "policy_samples": policy_samples,
@@ -1225,6 +1252,9 @@ class ActorSupervisor:
                             "cumulative_games": cumulative_games,
                             "cumulative_samples": cumulative_samples,
                             "cumulative_policy_only_samples": cumulative_policy_only_samples,
+                            "cumulative_policy_first_samples": cumulative_policy_first_samples,
+                            "cumulative_enriched_samples": cumulative_enriched_samples,
+                            "cumulative_written_samples": cumulative_written_samples,
                             "cumulative_evaluator_rows": cumulative_evaluator_rows,
                             "cumulative_batch_wall_seconds": (
                                 cumulative_batch_wall_seconds
@@ -1414,10 +1444,25 @@ class ActorSupervisor:
             max_wait_seconds=configuration.max_wait_seconds,
         )
         registry = SharedModelRegistry(broker, max_entries=self.gpu.actor_cohorts + 2)
+        scheduling = self.experiment.orchestration.model_refresh.work_scheduling
+        persistent_schedule = (
+            PersistentWorkSchedule(
+                self.run_identity.path.parent
+                / self.experiment.orchestration.directories.status
+                / "work-schedule.json",
+                namespace=f"{self.run_identity.run_id}:{self.run_identity.generation_family}",
+                seed=self.experiment.selfplay.seed,
+                coverage_first=scheduling.coverage_first,
+            )
+            if scheduling.enabled
+            else None
+        )
         work_coordinator = (
             CompatibleWorkCoordinator(
                 cohort_count=self.gpu.actor_cohorts,
                 seed=self.experiment.selfplay.seed + self.gpu.gpu_id * 1_000_003,
+                bundle_cohorts=1 if scheduling.enabled else None,
+                schedule=persistent_schedule,
             )
             if self.experiment.orchestration.model_refresh.compatible_cohort_work
             else None
@@ -1581,6 +1626,8 @@ class ActorSupervisor:
                 gate.close()
             if work_coordinator is not None:
                 work_coordinator.close()
+            if persistent_schedule is not None:
+                persistent_schedule.close()
             broker.shutdown(wait=True, cancel_pending=False)
             registry.close()
             self.heartbeat.close(final_phase=phase)
@@ -1637,6 +1684,20 @@ class ActorSupervisor:
         preserved_variant: GameVariant | None = None,
     ) -> WorkBundle:
         refresh = self.experiment.orchestration.model_refresh
+        lease_games = self.games_per_batch if games is None else games
+        if (
+            games is None
+            and coordinator is not None
+            and refresh.work_scheduling.enabled
+        ):
+            if refresh.work_scheduling.games_per_lease is not None:
+                lease_games = refresh.work_scheduling.games_per_lease
+            if lease_games < (
+                self.gpu.actor_batch_size or self.experiment.selfplay.batch_size
+            ):
+                raise ValueError(
+                    "work scheduling game quantum is smaller than the actor batch"
+                )
         candidate = self._read_candidate()
         champion = self._read_champion()
         for manifest in (candidate, champion):
@@ -1670,12 +1731,8 @@ class ActorSupervisor:
                 generation_family=self.run_identity.generation_family,
             )
             rings = self._work_ring_weights(counts, step)
-            requested, ring = coordinator.choice.choose(
-                {
-                    (role, board): rw * bw
-                    for role, rw in roles.items()
-                    for board, bw in rings.items()
-                }
+            requested, ring = coordinator.choose_role_and_ring(
+                roles, rings, units=lease_games * coordinator.bundle_cohorts
             )
         else:
             requested, ring, _ = selection
@@ -1695,14 +1752,16 @@ class ActorSupervisor:
         )
         lease_modes = []
         count = (
-            coordinator.cohort_count
+            coordinator.bundle_cohorts
             if selection is None and coordinator is not None
             else 1
         )
         for _ in range(count):
             if selection is None:
                 assert coordinator is not None
-                category = coordinator.choose_mode((requested, ring), modes)
+                category = coordinator.choose_mode(
+                    (requested, ring), modes, units=lease_games
+                )
             else:
                 category = selection[2]
             lease_selection = (requested, ring, category)
@@ -1718,7 +1777,10 @@ class ActorSupervisor:
                 mode = category.removesuffix("-handicap")
                 severity = (
                     coordinator.choose_severity(
-                        lease_selection, variants.handicap_min, variants.handicap_max
+                        lease_selection,
+                        variants.handicap_min,
+                        variants.handicap_max,
+                        units=lease_games,
                     )
                     if coordinator is not None
                     else self.model_random.randint(
@@ -1782,7 +1844,7 @@ class ActorSupervisor:
             "scheduling_step_source": step_source,
             "fallback_reason": fallback,
             "history_metrics": history_metrics,
-            "games": self.games_per_batch if games is None else games,
+            "games": lease_games,
             "transient_provider": True,
         }
 

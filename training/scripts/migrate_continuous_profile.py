@@ -50,6 +50,15 @@ _ALLOWED_PROFILE_PATHS = {
     ("selfplay", "seed_contract"),
     ("selfplay", "cohort_search_budgets"),
     ("selfplay", "preserve_interrupted_policy"),
+    *(
+        ("selfplay", "policy_publication", name)
+        for name in ("enabled", "first_decisions", "interval_decisions")
+    ),
+    *(
+        ("orchestration", "model_refresh", "work_scheduling", name)
+        for name in ("enabled", "games_per_lease", "coverage_first")
+    ),
+    ("learner", "replay_refresh_seconds"),
     ("orchestration", "model_refresh", "compatible_cohort_work"),
     ("train", "gradient_diagnostics"),
     ("train", "share_homogeneous_geometry"),
