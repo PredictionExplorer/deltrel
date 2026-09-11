@@ -486,6 +486,16 @@ class GraphInferenceAdapter:
             ],
         }
 
+    def clear_prediction_cache(self) -> None:
+        """Drop cached neural results while retaining warmed execution state.
+
+        Unlike clear_inference_cache, this preserves graph residency, model
+        geometry caches and namespace stamps. Existing model/input validation
+        still invalidates those caches normally when their context changes.
+        """
+        with self._evaluation_lock:
+            self._prediction_cache.clear()
+
     def clear_inference_cache(self) -> None:
         with self._evaluation_lock:
             if self._graphs is not None:

@@ -770,6 +770,7 @@ class DeviceBatchPrefetcher(Iterator[ReplayBatch]):
             targets=source.targets.to(self.device, non_blocking=True),
             feature_path=source.feature_path,
             variant_labels=source.variant_labels,
+            policy_metrics=source.policy_metrics,
             _homogeneous_geometry=_bind_homogeneous_geometry(encoded, ring),
         )
 

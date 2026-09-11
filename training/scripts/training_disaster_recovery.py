@@ -1299,6 +1299,92 @@ def _capture_state_fence(run_root: Path, profile: Path) -> dict[str, tuple[int, 
     return fence
 
 
+def _active_allocation_gate(profile_path: Path) -> str | None:
+    """Ordinary and legacy profiles require no new parsing or dependencies."""
+    try:
+        raw = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+        selfplay = raw.get("selfplay", {}) if isinstance(raw, dict) else {}
+        allocations = (
+            selfplay.get("ring_search_allocations", ())
+            if isinstance(selfplay, dict)
+            else ()
+        )
+        if not isinstance(allocations, (list, tuple)):
+            raise ValueError("ring_search_allocations must be a sequence")
+        if not allocations:
+            return None
+        from startrain.config import load_config
+        from startrain.search_allocation_gate import canonical_config_sha256
+
+        config = load_config(profile_path)
+        if not any(
+            row.full_probability < 0.35
+            for row in config.selfplay.ring_search_allocations
+        ):
+            return None
+        return f"status/search-allocation-gates/{canonical_config_sha256(config)}.json"
+    except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
+        raise DisasterRecoveryError(f"invalid allocation-gate profile: {exc}") from exc
+
+
+def _allocation_gate_references(
+    payload: Mapping[str, Any],
+) -> list[tuple[str, str, str]]:
+    try:
+        if (
+            payload.get("format") != "startrain.ring-search-allocation-gate"
+            or payload.get("schema_version") != 1
+        ):
+            raise ValueError("incompatible gate format")
+        references = [(payload["baseline_profile"], "profile")]
+        for group in payload["groups"]:
+            references.extend(
+                (group[name], "status-json")
+                for name in ("report", "selection", "model_manifest")
+            )
+            references.extend(
+                (reference, "status-json") for reference in group["excluded_selections"]
+            )
+        result = []
+        for reference, kind in references:
+            if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
+                raise ValueError("invalid evidence reference")
+            logical = _logical_path(reference["path"])
+            result.append(
+                (
+                    logical,
+                    _sha256_text("allocation evidence hash", reference["sha256"]),
+                    kind,
+                )
+            )
+        return result
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DisasterRecoveryError(
+            f"invalid allocation-gate dependencies: {exc}"
+        ) from exc
+
+
+def _capture_allocation_gate_dependencies(
+    builder: _SnapshotBuilder, profile_path: Path
+) -> None:
+    logical = _active_allocation_gate(profile_path)
+    if logical is None:
+        return
+    from startrain.config import load_config
+    from startrain.search_allocation_gate import validate_production_ring_allocations
+
+    try:
+        validate_production_ring_allocations(load_config(profile_path))
+    except ValueError as exc:
+        raise DisasterRecoveryError(
+            f"active allocation evidence is invalid: {exc}"
+        ) from exc
+    _, entry = builder.add_run_file(builder.run_root / logical, "status-json")
+    payload = _read_catalog_json(builder, entry, name="active allocation gate")
+    for reference, digest, kind in _allocation_gate_references(payload):
+        builder.add_run_file(builder.run_root / reference, kind, expected_sha256=digest)
+
+
 def _collect_payloads(
     run_root: Path,
     profile: Path,
@@ -1322,6 +1408,7 @@ def _collect_payloads(
     except ValueError:
         profile_logical = _logical_path(f"profile/{profile_path.name}")
     builder.add(profile_path, profile_logical, "profile")
+    _capture_allocation_gate_dependencies(builder, profile_path)
 
     checksum_paths: list[Path] = []
     for checksum in (profile_path.with_suffix(".sha256"), run_root / "profile.sha256"):
@@ -2195,6 +2282,28 @@ def _verify_snapshot_document(
     profile_entry = catalog.get(profile_logical)
     if profile_entry is None or profile_entry.kind != "profile":
         raise DisasterRecoveryError("snapshot source profile is missing")
+    gate_logical = _active_allocation_gate(
+        _object_path(backup_root, profile_entry.sha256)
+    )
+    if gate_logical is not None:
+        gate_payload = reader.json(gate_logical, name="active allocation gate")
+        if (
+            gate_payload.get("target_config_sha256") != Path(gate_logical).stem
+            or gate_payload.get("run_id") != run_id
+        ):
+            raise DisasterRecoveryError(
+                "snapshot allocation gate does not match the active profile"
+            )
+        for logical, checksum, kind in _allocation_gate_references(gate_payload):
+            entry = catalog.get(logical)
+            if entry is None or entry.sha256 != checksum:
+                raise DisasterRecoveryError(
+                    f"snapshot allocation evidence dependency is missing or mismatched: {logical}"
+                )
+            if kind == "profile" and entry.kind != "profile":
+                raise DisasterRecoveryError(
+                    "snapshot allocation baseline profile has the wrong kind"
+                )
     for logical, entry in catalog.items():
         if entry.kind != "profile-checksum":
             continue
@@ -3204,6 +3313,16 @@ def restore_snapshot(
     if not isinstance(source, dict):
         raise DisasterRecoveryError("snapshot source information is invalid")
     legacy_missing = bool(source["legacy_initialized_missing"])
+    profile_entry = verified.catalog[str(source["profile_logical_path"])]
+    if (
+        relocate_profile
+        and str(target) != source["run_root"]
+        and _active_allocation_gate(_object_path(root, profile_entry.sha256))
+        is not None
+    ):
+        raise DisasterRecoveryError(
+            "cannot relocate a below-floor search-allocation gate: its approval is tied to the original run root; restore to the original root without --relocate-profile, or prepare a new measured gate for the destination"
+        )
     marker_missing = "replay/initialized.json" not in verified.catalog
     if marker_missing and (not legacy_missing or not recreate_initialized):
         raise DisasterRecoveryError(

@@ -309,6 +309,42 @@ class PolicyPublicationConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class RingSearchAllocation:
+    """An explicit per-ring fast cap and full/fast training-data allocation."""
+
+    rings: int
+    fast_simulations: int
+    full_probability: float
+    fast_policy_weight: float
+
+    def __post_init__(self) -> None:
+        if type(self.rings) is not int or self.rings not in SUPPORTED_RINGS:
+            raise ValueError("allocation rings must be one of (4, 6, 8, 10)")
+        if (
+            type(self.fast_simulations) is not int
+            or not 1 <= self.fast_simulations <= 1_000_000
+        ):
+            raise ValueError(
+                "allocation fast_simulations must be an integer in 1..1000000"
+            )
+        for name, lower_inclusive in (
+            ("full_probability", False),
+            ("fast_policy_weight", True),
+        ):
+            value = getattr(self, name)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or value > 1
+                or (value < 0 if lower_inclusive else value <= 0)
+            ):
+                interval = "[0, 1]" if lower_inclusive else "(0, 1]"
+                raise ValueError(f"allocation {name} must be finite and in {interval}")
+            object.__setattr__(self, name, float(value))
+
+
+@dataclass(frozen=True, slots=True)
 class SelfPlayConfig:
     rings: int = 4
     batch_size: int = 1
@@ -337,6 +373,7 @@ class SelfPlayConfig:
     max_considered_cap: int = 64
     record_fast_policy_targets: bool = False
     fast_policy_weight: float = 0.25
+    ring_search_allocations: tuple[RingSearchAllocation, ...] = ()
     policy_surprise_weight: float = 0.0
     policy_surprise_max_weight: float = 4.0
     c_visit: float = 50.0
@@ -351,6 +388,21 @@ class SelfPlayConfig:
     search_execution: SearchExecutionConfig = SearchExecutionConfig()
 
     def __post_init__(self) -> None:
+        if type(self.ring_search_allocations) is not tuple or any(
+            not isinstance(row, RingSearchAllocation)
+            for row in self.ring_search_allocations
+        ):
+            raise ValueError(
+                "ring_search_allocations requires a tuple of typed allocations"
+            )
+        rings = [row.rings for row in self.ring_search_allocations]
+        if len(rings) != len(set(rings)):
+            raise ValueError("ring_search_allocations rings must be unique")
+        if any(
+            row.fast_simulations > self.full_simulations
+            for row in self.ring_search_allocations
+        ):
+            raise ValueError("allocation fast_simulations cannot exceed the full cap")
         if not isinstance(self.search_execution, SearchExecutionConfig):
             raise ValueError("selfplay.search_execution requires typed settings")
         if not isinstance(self.policy_publication, PolicyPublicationConfig):
@@ -440,6 +492,49 @@ class SelfPlayConfig:
     @property
     def variant(self) -> GameVariant:
         return GameVariant(mode=self.mode, handicap=self.handicap, pie=self.pie)
+
+    def resolved_search_allocation(self) -> "SelfPlayConfig":
+        """Resolve after selecting the actual batch ring, from the master profile.
+
+        This leaves full-search caps, candidate limits and PDA rules untouched.
+        Repeated resolution for the same ring is idempotent.
+        """
+        allocation = next(
+            (row for row in self.ring_search_allocations if row.rings == self.rings),
+            None,
+        )
+        if allocation is None:
+            return self
+        if (
+            self.fast_simulations == allocation.fast_simulations
+            and self.full_probability == allocation.full_probability
+            and self.fast_probability == 1.0 - allocation.full_probability
+            and self.fast_policy_weight == allocation.fast_policy_weight
+        ):
+            return self
+        return replace(
+            self,
+            fast_simulations=allocation.fast_simulations,
+            full_probability=allocation.full_probability,
+            fast_probability=1.0 - allocation.full_probability,
+            fast_policy_weight=allocation.fast_policy_weight,
+        )
+
+    def search_allocation_facts(self) -> dict[str, int | float | bool]:
+        resolved = self.resolved_search_allocation()
+        return {
+            "rings": self.rings,
+            "ring_override": any(
+                row.rings == self.rings for row in self.ring_search_allocations
+            ),
+            "fast_simulations_base": resolved.fast_simulations,
+            "full_simulations_base": resolved.full_simulations,
+            "fast_simulations": resolved.simulation_budget(full=False),
+            "full_simulations": resolved.simulation_budget(full=True),
+            "full_probability": resolved.full_probability,
+            "fast_probability": resolved.fast_probability,
+            "fast_policy_weight": resolved.fast_policy_weight,
+        }
 
     def with_variant(self, variant: GameVariant) -> "SelfPlayConfig":
         return replace(
@@ -653,6 +748,7 @@ class SelfPlayActor:
         self.native = native_module
         self.evaluator = evaluator
         self.sink = replay_sink
+        config = config.resolved_search_allocation()
         self.config = config
         if config.policy_publication.enabled and not callable(
             getattr(replay_sink, "append_game_revision", None)

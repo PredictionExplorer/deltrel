@@ -19,7 +19,12 @@ from .losses import LossWeights
 from .model import ModelConfig
 from .optim import OptimizerConfig
 from .gradient_clipping import GradientClippingConfig
-from .selfplay import PolicyPublicationConfig, SelfPlayConfig, VariantMixtureConfig
+from .selfplay import (
+    PolicyPublicationConfig,
+    RingSearchAllocation,
+    SelfPlayConfig,
+    VariantMixtureConfig,
+)
 from .search_options import SearchExecutionConfig, parse_search_execution
 from .topology import SUPPORTED_RINGS
 
@@ -227,10 +232,12 @@ class DataConfig:
         if self.schema_version != DATA_SCHEMA_VERSION:
             raise ConfigError(f"data schema_version must be {DATA_SCHEMA_VERSION}")
         if (
-            self.workers < 0
+            type(self.workers) is not int
+            or self.workers < 0
             or isinstance(self.min_batches_for_workers, bool)
             or not isinstance(self.min_batches_for_workers, int)
             or self.min_batches_for_workers <= 0
+            or type(self.prefetch_factor) is not int
             or self.prefetch_factor <= 0
             or self.shard_cache_size <= 0
             or isinstance(self.shards_per_batch, bool)
@@ -1968,7 +1975,13 @@ class ExperimentConfig:
             )
 
     def as_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        result = asdict(self)
+        # This optional group has never appeared in a released profile.
+        # Omitting only its typed empty default preserves existing authority
+        # without multiplying the historical compatibility representations.
+        if self.selfplay.ring_search_allocations == ():
+            del result["selfplay"]["ring_search_allocations"]
+        return result
 
 
 def _construct(cls: type[_T], values: object) -> _T:
@@ -1994,6 +2007,13 @@ def _normalize_selfplay(values: object) -> dict[str, Any]:
     """Build the nested variant mixture from its YAML mapping."""
 
     output = _mapping("selfplay", values)
+    if "ring_search_allocations" in output:
+        allocations = output["ring_search_allocations"]
+        if not isinstance(allocations, (list, tuple)):
+            raise ConfigError("selfplay.ring_search_allocations must be a list")
+        output["ring_search_allocations"] = tuple(
+            _construct(RingSearchAllocation, row) for row in allocations
+        )
     output["policy_publication"] = _construct(
         PolicyPublicationConfig, output.get("policy_publication", {})
     )

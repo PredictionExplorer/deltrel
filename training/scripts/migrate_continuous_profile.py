@@ -45,6 +45,10 @@ _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _MISSING = object()
 
 _ALLOWED_PROFILE_PATHS = {
+    ("selfplay", "ring_search_allocations"),
+    ("selfplay", "search_execution", "first_visit_batch_size"),
+    ("data", "workers"),
+    ("data", "prefetch_factor"),
     ("selfplay", "stream_completed_games"),
     ("selfplay", "rolling_game_slots"),
     ("selfplay", "seed_contract"),
@@ -549,6 +553,7 @@ def _profile_diffs(
     # it as one allocation field so stage additions/removals are reviewable
     # without allowing arbitrary changes to the surrounding ring configuration.
     if path in {
+        ("selfplay", "ring_search_allocations"),
         ("orchestration", "ring_mixture", "step_weights"),
         ("orchestration", "cpu_actors"),
         ("arena", "handicap_severity_cycle"),

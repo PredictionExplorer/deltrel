@@ -21,16 +21,23 @@ from startrain.config import (
 from startrain.features import EncodedBatch
 from startrain.model import StarModelOutput
 from startrain.runtime import RunIdentity
-from startrain.selfplay import SelfPlayMetrics
+from startrain.selfplay import RingSearchAllocation, SelfPlayMetrics
 
 
 @pytest.mark.parametrize("games_override", [None, 2])
+@pytest.mark.parametrize("allocation_ring", [None, 4, 10])
 def test_actor_supervisor_refreshes_only_at_batch_boundaries_and_emits_metrics(
-    tmp_path, monkeypatch, games_override
+    tmp_path, monkeypatch, games_override, allocation_ring
 ) -> None:
     experiment = load_config(Path(__file__).parents[1] / "configs" / "small.yaml")
     experiment = replace(
         experiment,
+        selfplay=replace(
+            experiment.selfplay,
+            ring_search_allocations=(RingSearchAllocation(10, 1, 0.125, 0.053),)
+            if allocation_ring is not None
+            else (),
+        ),
         orchestration=replace(
             experiment.orchestration,
             model_refresh=replace(
@@ -76,6 +83,15 @@ def test_actor_supervisor_refreshes_only_at_batch_boundaries_and_emits_metrics(
         ) -> None:
             assert selected is evaluator
             assert source_role == "candidate"
+            expected = replace(
+                experiment.selfplay, rings=config.rings
+            ).resolved_search_allocation()
+            assert config.fast_simulations == expected.fast_simulations
+            assert config.full_probability == expected.full_probability
+            assert config.fast_probability == expected.fast_probability
+            assert config.fast_policy_weight == expected.fast_policy_weight
+            assert config.full_simulations == experiment.selfplay.full_simulations
+            assert config.resolved_search_allocation() is config
             assert config.games == (
                 experiment.orchestration.actor_games_per_batch
                 if games_override is None
@@ -140,6 +156,10 @@ def test_actor_supervisor_refreshes_only_at_batch_boundaries_and_emits_metrics(
         model_step=7,
     )
     monkeypatch.setattr(supervisor, "_read_candidate", lambda: candidate)
+    if allocation_ring is not None:
+        monkeypatch.setattr(
+            supervisor.scheduler, "choose", lambda *_args, **_kwargs: allocation_ring
+        )
 
     completed = supervisor.run(stop_requested=lambda: stopped["value"])
     assert completed == 1
@@ -151,6 +171,11 @@ def test_actor_supervisor_refreshes_only_at_batch_boundaries_and_emits_metrics(
 
     metric = json.loads((tmp_path / "metrics.jsonl").read_text().strip())
     assert metric["games"] == 1
+    assert (
+        metric["search_allocation"]
+        == replace(experiment.selfplay, rings=ring).search_allocation_facts()
+    )
+    assert experiment.selfplay.fast_simulations != 1
     assert metric["gpu_id"] == 2
     assert metric["batch_completed_ns"] >= metric["batch_started_ns"]
     assert metric["samples"] == 3

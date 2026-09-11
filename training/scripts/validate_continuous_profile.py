@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 
 from startrain.config import SUPPORTED_RINGS, ExperimentConfig, load_config
+from startrain.search_allocation_gate import validate_production_ring_allocations
 
 
 def _validate_learner_shared_promotion(config: ExperimentConfig) -> None:
@@ -373,6 +374,7 @@ def validate_continuous_config(config: ExperimentConfig) -> None:
         _validate_throughput_config(config)
     else:
         raise ValueError(f"unsupported training objective: {objective!r}")
+    validate_production_ring_allocations(config)
 
 
 def main() -> None:

@@ -61,6 +61,7 @@ from .features import (
     variant_segment,
 )
 from .losses import TrainingTargets
+from .policy_batch_metrics import PolicyBatchMetrics
 from .runtime import validate_identifier
 from .scoring import ScoreResult
 from .symmetry import D5Transform
@@ -1261,6 +1262,7 @@ class ReplayBatch:
     # Original rules survive resolved pie openings, whose encoded features no
     # longer distinguish them from standard play. This is diagnostic metadata.
     variant_labels: tuple[str, ...] | None = None
+    policy_metrics: PolicyBatchMetrics | None = None
     _homogeneous_geometry: _HomogeneousGeometry | None = field(
         default=None, repr=False, compare=False
     )
@@ -1289,6 +1291,7 @@ class ReplayBatch:
             targets=self.targets.to(device, non_blocking=non_blocking),
             feature_path=self.feature_path,
             variant_labels=self.variant_labels,
+            policy_metrics=self.policy_metrics,
             _homogeneous_geometry=_bind_homogeneous_geometry(
                 inputs, self.homogeneous_ring
             ),
@@ -1301,6 +1304,7 @@ class ReplayBatch:
             targets=self.targets.pin_memory(),
             feature_path=self.feature_path,
             variant_labels=self.variant_labels,
+            policy_metrics=self.policy_metrics,
             _homogeneous_geometry=_bind_homogeneous_geometry(
                 inputs, self.homogeneous_ring
             ),
@@ -1451,5 +1455,6 @@ def collate_replay_samples(
         ),
         feature_path=feature_path,
         variant_labels=tuple(sample.variant_label for sample in samples),
+        policy_metrics=PolicyBatchMetrics.from_samples(samples),
         _homogeneous_geometry=_validate_homogeneous_geometry(inputs),
     )

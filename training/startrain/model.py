@@ -18,6 +18,7 @@ import torch.nn.functional as functional
 from torch import Tensor, nn
 
 from .attention_bias_autograd import relation_bias_gradient_carrier
+from .local_message_inference import source_class_aggregate
 
 from .contracts import (
     FEATURE_SCHEMA_VERSION,
@@ -40,6 +41,8 @@ from .topology import (
 MODEL_SCHEMA_VERSION = 3
 LocalOperator = Literal["mean", "source_gated"]
 LOCAL_OPERATORS: tuple[LocalOperator, ...] = ("mean", "source_gated")
+LocalMessageExecution = Literal["baseline", "project-first", "source-class"]
+LOCAL_MESSAGE_EXECUTIONS = ("baseline", "project-first", "source-class")
 FEATURE_DIMENSIONS: dict[int, tuple[int, int]] = {
     FEATURE_SCHEMA_VERSION: (NODE_FEATURE_DIM, GLOBAL_FEATURE_DIM),
     LEGACY_FEATURE_SCHEMA_VERSION: (LEGACY_NODE_FEATURE_DIM, LEGACY_GLOBAL_FEATURE_DIM),
@@ -299,6 +302,7 @@ class LocalEdgeBlock(nn.Module):
         self.local_operator = local_operator
         # Runtime-only inference option; never part of checkpoint parameters.
         self.compact_inference_gather = False
+        self.local_message_execution: LocalMessageExecution = "baseline"
         self.norm = nn.RMSNorm(width, eps=norm_eps)
         self.self_projection = nn.Linear(width, bottleneck, bias=False)
         self.neighbor_projection = nn.Linear(width, bottleneck, bias=False)
@@ -329,6 +333,18 @@ class LocalEdgeBlock(nn.Module):
             scale, shift = self.modulation(condition).unsqueeze(1).chunk(2, dim=-1)
             normalized = normalized * (1.0 + scale) + shift
         neighbor_inputs = normalized
+        if self.local_message_execution != "baseline":
+            if (
+                self.training
+                or torch.is_grad_enabled()
+                or torch.compiler.is_exporting()
+            ):
+                raise ValueError(
+                    "local message execution requires inference without export"
+                )
+            if self.source_gate_projection is not None:
+                raise ValueError("local message execution requires the mean operator")
+            neighbor_inputs = self.neighbor_projection(normalized)
         if self.compact_inference_gather:
             if self.training or torch.is_grad_enabled():
                 raise ValueError("compact neighbor gathering requires inference")
@@ -337,20 +353,37 @@ class LocalEdgeBlock(nn.Module):
                 # gathered matrix immediately before neighbor_projection.
                 # Casting per node first avoids repeating that storage for
                 # every incident edge; normalization/residuals stay unchanged.
-                neighbor_inputs = normalized.to(
+                # Project-first modes already hold the projected tensor here;
+                # preserve it when composing the two runtime options.
+                neighbor_inputs = neighbor_inputs.to(
                     dtype=torch.get_autocast_dtype(normalized.device.type)
                 )
-        neighbors = _gather_neighbors(neighbor_inputs, neighbor_index)
-        messages = self.neighbor_projection(neighbors)
-        messages = messages + self.edge_embedding(neighbor_edge_type)
-        if self.source_gate_projection is not None:
-            source_gate = self.source_gate_projection(normalized).unsqueeze(2)
-            messages = functional.silu(messages) * torch.sigmoid(source_gate + messages)
+        if self.local_message_execution == "source-class":
+            aggregated = source_class_aggregate(
+                neighbor_inputs,
+                self.edge_embedding.weight,
+                neighbor_index,
+                neighbor_edge_type,
+                neighbor_mask,
+            )
         else:
-            messages = functional.silu(messages)
-        weights = neighbor_mask.unsqueeze(-1).to(dtype=messages.dtype)
-        aggregated = (messages * weights).sum(dim=2)
-        aggregated = aggregated / weights.sum(dim=2).clamp_min(1.0)
+            neighbors = _gather_neighbors(neighbor_inputs, neighbor_index)
+            messages = (
+                neighbors
+                if self.local_message_execution == "project-first"
+                else self.neighbor_projection(neighbors)
+            )
+            messages = messages + self.edge_embedding(neighbor_edge_type)
+            if self.source_gate_projection is not None:
+                source_gate = self.source_gate_projection(normalized).unsqueeze(2)
+                messages = functional.silu(messages) * torch.sigmoid(
+                    source_gate + messages
+                )
+            else:
+                messages = functional.silu(messages)
+            weights = neighbor_mask.unsqueeze(-1).to(dtype=messages.dtype)
+            aggregated = (messages * weights).sum(dim=2)
+            aggregated = aggregated / weights.sum(dim=2).clamp_min(1.0)
         update = self.update(self.self_projection(normalized) + aggregated)
         output = inputs + self.dropout(update) * self.layer_scale
         return output * node_mask.unsqueeze(-1).to(dtype=output.dtype)
@@ -662,15 +695,39 @@ class GraphResTNet(nn.Module):
         self._inference_relation_bias_cache.clear()
 
     @property
-    def inference_execution_signature(self) -> tuple[str, bool]:
+    def inference_execution_signature(self) -> tuple[object, ...]:
         """Cache identity for runtime choices that can affect neural execution."""
         enabled = False
+        local_modes = []
         for group in self.rrt_groups:
             assert isinstance(group, RRTGroup)
             for block in group.local_blocks:
                 assert isinstance(block, LocalEdgeBlock)
                 enabled = enabled or block.compact_inference_gather
-        return ("graph-inference-v1", enabled)
+                local_modes.append(block.local_message_execution)
+        baseline = ("graph-inference-v1", enabled)
+        return (
+            baseline
+            if all(mode == "baseline" for mode in local_modes)
+            else (*baseline, "local-message-v1", tuple(local_modes))
+        )
+
+    def set_local_message_execution(self, mode: LocalMessageExecution) -> None:
+        """Experimental inference execution; never changes checkpoint weights."""
+        if type(mode) is not str or mode not in LOCAL_MESSAGE_EXECUTIONS:
+            raise ValueError("invalid local message execution")
+        if mode != "baseline" and (
+            self.training or self.config.local_operator != "mean"
+        ):
+            raise ValueError(
+                "local message execution requires an eval model with mean operator"
+            )
+        for group in self.rrt_groups:
+            assert isinstance(group, RRTGroup)
+            for block in group.local_blocks:
+                assert isinstance(block, LocalEdgeBlock)
+                block.local_message_execution = mode
+        self.clear_inference_caches()
 
     def set_compact_inference_gather(self, enabled: bool) -> None:
         """Select cast-before-gather execution without changing saved weights."""

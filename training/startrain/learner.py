@@ -90,6 +90,13 @@ from .training import (
     train_step,
     unwrap_model,
 )
+from .policy_batch_metrics import PolicyBatchAccumulator
+from .utd_wait import (
+    AdaptiveCreditWait,
+    WaitSummary,
+    new_samples_for_batch,
+    sleep_interruptibly,
+)
 
 UTD_SEGMENT_SCHEMA_VERSION = 1
 UTD_SEGMENT_FILENAME = "utd-segment.json"
@@ -100,6 +107,7 @@ STATE_REBASE_PENDING_FILENAME = "state-rebase.pending.json"
 LOADER_LIFECYCLE_ENV = "STARTRAIN_LOADER_LIFECYCLE"
 LOADER_LIFECYCLES = ("process", "per_window")
 PROCESS_LOADER_TIMEOUT_SECONDS = 120.0
+REPLAY_LOADER_SHUTDOWN_DRAIN_SECONDS = 10.0
 REPLAY_WINDOW_MAX_AGE_SECONDS = 300.0
 REPLAY_FRESHNESS_RETRY_SECONDS = 30.0
 _UNSET = object()
@@ -779,10 +787,53 @@ class SpawnedReplayLoaderPool:
             return None
         failure: BaseException | None = None
         iterator = getattr(self.loader, "_iterator", None)
+        self.batch_sampler.clear()
         try:
             shutdown_workers = getattr(iterator, "_shutdown_workers", None)
-            if callable(shutdown_workers):
-                shutdown_workers()
+            if iterator is not None and callable(shutdown_workers):
+                try:
+                    if hasattr(iterator, "_sampler_iter") and not getattr(
+                        iterator, "_shutdown", False
+                    ):
+                        # Stop scheduling new batches, then consume the bounded
+                        # prefetched tail while workers and the pinning thread
+                        # are still alive. Their tensor queue feeder threads
+                        # must finish before Torch closes the result queue.
+                        # Ordinary next() retains queued exception/SIGCHLD
+                        # checks; persistent-loader reset would discard them.
+                        iterator._sampler_iter = iter(())
+                        previous_timeout = iterator._timeout
+                        deadline = (
+                            time.monotonic() + REPLAY_LOADER_SHUTDOWN_DRAIN_SECONDS
+                        )
+                        try:
+                            while True:
+                                remaining = deadline - time.monotonic()
+                                if remaining <= 0:
+                                    raise TimeoutError(
+                                        "replay loader shutdown drain timed out"
+                                    )
+                                iterator._timeout = (
+                                    min(previous_timeout, remaining)
+                                    if previous_timeout > 0
+                                    else remaining
+                                )
+                                try:
+                                    next(iterator)
+                                except StopIteration:
+                                    break
+                        finally:
+                            iterator._timeout = previous_timeout
+                except BaseException as exc:
+                    failure = exc
+                finally:
+                    # Even a failed drain must reap workers. Preserve the
+                    # original error instead of treating SIGABRT as success.
+                    try:
+                        shutdown_workers()
+                    except BaseException as exc:
+                        if failure is None:
+                            failure = exc
         except BaseException as exc:
             failure = exc
         finally:
@@ -1376,6 +1427,8 @@ class LearnerLoop:
         self.examples_consumed = 0
         self._last_recovery_step = 0
         self._latest_total_replay_samples = 0
+        self._utd_credit_wait: AdaptiveCreditWait | None = None
+        self._utd_missing_new_samples: int | None = None
         self._gpu_pause_generation = 0
         # Replay batches are fixed-size and ring-homogeneous. Static compilation
         # avoids Inductor's dynamic backward reductions (which fail on variable
@@ -1674,10 +1727,13 @@ class LearnerLoop:
         interval_steps = 0
         interval_data_wait_seconds = 0.0
         interval_window_setup_seconds = 0.0
+        interval_utd_sleep_seconds = 0.0
+        interval_utd_poll_count = 0
         interval_cpu_device_seconds = 0.0
         interval_device_events: list[tuple[torch.cuda.Event, torch.cuda.Event]] = []
         interval_copy_events: list[tuple[torch.cuda.Event, torch.cuda.Event]] = []
         interval_train_metrics = TrainMetricAccumulator()
+        interval_policy_metrics = PolicyBatchAccumulator()
         window: ReplayWindowSession | None = None
         pending_selection_pin = False
         next_refresh_reason = "initial"
@@ -1860,7 +1916,21 @@ class LearnerLoop:
                             enriched_samples_since_window_open=spin_window.freshness_enriched_rows,
                             window_publication_revision=spin_window.opened_publication_revision,
                         )
-                    time.sleep(self.learner_config.replay_poll_seconds)
+                    waited = self._wait_for_utd_credit(stop_requested=stop_requested)
+                    interval_utd_sleep_seconds += float(waited["actual_sleep_seconds"])
+                    interval_utd_poll_count += int(waited["credit_polls"])
+                    if self.rank == 0:
+                        self.metrics.append(
+                            {
+                                "schema_version": 1,
+                                "timestamp_ns": time.time_ns(),
+                                "worker": "learner",
+                                "event": "utd_wait",
+                                "step": self.step,
+                                "examples_consumed": self.examples_consumed,
+                                **waited,
+                            }
+                        )
                     continue
 
                 consumed_this_spin = 0
@@ -1967,6 +2037,7 @@ class LearnerLoop:
                     if self.rank == 0:
                         interval_steps += 1
                         interval_train_metrics.update(result)
+                        interval_policy_metrics.update(batch.policy_metrics)
                     if (
                         self.rank == 0
                         and self.step % self.learner_config.metrics_interval == 0
@@ -2192,6 +2263,9 @@ class LearnerLoop:
                                     else []
                                 ),
                                 "utd_wait_spins": spin_window.utd_wait_spins,
+                                "metrics_interval_utd_sleep_seconds": interval_utd_sleep_seconds,
+                                "metrics_interval_utd_credit_polls": interval_utd_poll_count,
+                                "policy_batch_metrics": interval_policy_metrics.as_dict(),
                                 "metrics_interval_steps": measured_steps,
                                 "metrics_interval_wall_seconds": wall_seconds,
                                 "examples_consumed": self.examples_consumed,
@@ -2230,10 +2304,13 @@ class LearnerLoop:
                         interval_steps = 0
                         interval_data_wait_seconds = 0.0
                         interval_window_setup_seconds = 0.0
+                        interval_utd_sleep_seconds = 0.0
+                        interval_utd_poll_count = 0
                         interval_cpu_device_seconds = 0.0
                         interval_device_events.clear()
                         interval_copy_events.clear()
                         interval_train_metrics.reset()
+                        interval_policy_metrics.reset()
                     if self.rank == 0:
                         self._publish_due_models()
                     if progress is not None and self.rank == 0:
@@ -3945,7 +4022,127 @@ class LearnerLoop:
         segment_allowance = ratio.numerator * segment_samples // ratio.denominator
         allowed_examples = state.baseline_examples_consumed + segment_allowance
         remaining = max(0, allowed_examples - self.examples_consumed)
+        self._utd_missing_new_samples = new_samples_for_batch(
+            target=ratio,
+            segment_samples=segment_samples,
+            segment_examples=self.examples_consumed - state.baseline_examples_consumed,
+            batch_size=self.train_config.global_batch_size(self.world_size),
+        )
+        if self.rank == 0:
+            self._credit_wait_policy().observe(
+                self._latest_total_replay_samples, time.monotonic()
+            )
         return remaining // self.train_config.global_batch_size(self.world_size)
+
+    def _credit_wait_policy(self) -> AdaptiveCreditWait:
+        policy = getattr(self, "_utd_credit_wait", None)
+        maximum = self.learner_config.replay_poll_seconds
+        if policy is None or policy.maximum_seconds != maximum:
+            policy = AdaptiveCreditWait(maximum)
+            self._utd_credit_wait = policy
+        return policy
+
+    def _wait_for_utd_credit(
+        self, *, stop_requested: Callable[[], bool]
+    ) -> WaitSummary:
+        """Poll only the lightweight credit boundary between normal validations.
+
+        The outer loop still rechecks replay eligibility, paths and freshness
+        after at most the original polling period. Fast wakeup forecasts do not
+        multiply those full-window scans or heartbeat writes.
+        """
+        started = time.monotonic()
+        actual_sleep = requested_sleep = 0.0
+        polls = 0
+        credit_ready = False
+        reason = "stopped"
+        rate: float | None = None
+        missing: int | None = None
+        while True:
+            if self._collective_stop(stop_requested()):
+                reason = "stopped"
+                break
+            polls += 1
+            control = None
+            if self.rank == 0:
+                try:
+                    # Initialization can itself broadcast. It must have finished
+                    # collectively before entering this rank-zero-only probe.
+                    if (
+                        self.learner_config.target_updates_per_new_sample is not None
+                        and self._utd_segment_state is None
+                    ):
+                        raise RuntimeError(
+                            "UTD segment was not initialized before waiting"
+                        )
+                    credit_ready = self._utd_step_budget() > 0
+                    remaining = max(
+                        0.0,
+                        self.learner_config.replay_poll_seconds
+                        - (time.monotonic() - started),
+                    )
+                    decision = self._credit_wait_policy().decide(
+                        getattr(self, "_utd_missing_new_samples", None),
+                        time.monotonic(),
+                    )
+                    expired = remaining <= min(
+                        1e-6, self.learner_config.replay_poll_seconds / 1000
+                    )
+                    control = {
+                        "credit_ready": credit_ready,
+                        "done": credit_ready or expired,
+                        "seconds": min(remaining, decision.seconds),
+                        "reason": "credit_ready"
+                        if credit_ready
+                        else "poll_deadline"
+                        if expired
+                        else decision.reason,
+                        "rows_per_second": decision.rows_per_second,
+                        "missing_rows": decision.missing_rows,
+                    }
+                except Exception as exc:
+                    control = {"error": f"{type(exc).__name__}: {exc}"}
+            control = self._broadcast_object(control)
+            if not isinstance(control, dict):
+                raise RuntimeError("distributed UTD wakeup control is invalid")
+            if isinstance(control.get("error"), str):
+                raise RuntimeError(f"UTD credit probe failed: {control['error']}")
+            if (
+                type(control.get("done")) is not bool
+                or type(control.get("credit_ready")) is not bool
+            ):
+                raise RuntimeError("distributed UTD wakeup control is invalid")
+            credit_ready = control["credit_ready"]
+            reason = str(control["reason"])
+            rate, missing = control["rows_per_second"], control["missing_rows"]
+            if control["done"]:
+                break
+            seconds = control["seconds"]
+            if (
+                isinstance(seconds, bool)
+                or not isinstance(seconds, (int, float))
+                or not math.isfinite(seconds)
+                or not 0 < seconds <= self.learner_config.replay_poll_seconds
+            ):
+                raise RuntimeError("distributed UTD sleep duration is invalid")
+            requested_sleep += seconds
+            actual_sleep += sleep_interruptibly(
+                seconds,
+                stop_requested=stop_requested,
+                clock=time.monotonic,
+                sleep=time.sleep,
+            )
+        return {
+            "actual_sleep_seconds": actual_sleep,
+            "requested_sleep_seconds": requested_sleep,
+            "wait_wall_seconds": max(0.0, time.monotonic() - started),
+            "credit_polls": polls,
+            "credit_ready": credit_ready,
+            "wake_reason": reason,
+            "estimated_committed_rows_per_second": rate,
+            "new_rows_for_next_batch": missing,
+            "poll_ceiling_seconds": self.learner_config.replay_poll_seconds,
+        }
 
     def _utd_metric_values(self) -> dict[str, object]:
         lifetime = (

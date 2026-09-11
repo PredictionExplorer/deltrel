@@ -854,12 +854,16 @@ class ActorSupervisor:
                         if work_lease is not None
                         else self.games_per_batch
                     )
-                    batch_config = replace(
-                        self.experiment.selfplay,
-                        rings=ring,
-                        batch_size=self.gpu.actor_batch_size,
-                        games=requested_games,
-                    ).with_variant(variant)
+                    batch_config = (
+                        replace(
+                            self.experiment.selfplay,
+                            rings=ring,
+                            batch_size=self.gpu.actor_batch_size,
+                            games=requested_games,
+                        )
+                        .with_variant(variant)
+                        .resolved_search_allocation()
+                    )
                     if work_lease is None and batch_config.rolling_game_slots:
                         champion = self._read_champion()
                         category = f"{variant.mode}-{'pie' if variant.pie else 'handicap' if variant.handicap > 1 else 'standard'}"
@@ -890,6 +894,7 @@ class ActorSupervisor:
                     self.heartbeat.advance(
                         phase="selfplay",
                         cohort_search_budgets=batch_config.cohort_search_budgets,
+                        search_allocation=batch_config.search_allocation_facts(),
                         batch=batches,
                         generation=generation,
                         ring=ring,
@@ -944,6 +949,7 @@ class ActorSupervisor:
                                 "process_started_ns": process_started_ns,
                                 "task_started_ns": batch_started_ns,
                                 "cohort_search_budgets": batch_config.cohort_search_budgets,
+                                "search_allocation": batch_config.search_allocation_facts(),
                                 "gpu_id": self.gpu.gpu_id,
                                 "physical_gpu_id": self.gpu.gpu_id
                                 if self.device.type == "cuda"
@@ -1172,6 +1178,7 @@ class ActorSupervisor:
                             "batch_started_ns": batch_started_ns,
                             "batch_completed_ns": batch_completed_ns,
                             "cohort_search_budgets": batch_config.cohort_search_budgets,
+                            "search_allocation": batch_config.search_allocation_facts(),
                             "worker": self.actor_id,
                             "gpu_id": self.gpu.gpu_id,
                             "compute_device": str(self.device),

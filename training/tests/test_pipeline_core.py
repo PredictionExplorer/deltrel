@@ -1197,11 +1197,15 @@ def test_persistent_replay_window_reuses_loader_across_utd_waits(
             loader_batches.append(batches)
             return original_loader(selection, batches=batches)
 
-        budgets = iter((1, 0, 1, 2))
+        credit_arrived = False
 
         def utd_budget() -> int:
             learner._latest_total_replay_samples = 8
-            return next(budgets)
+            # Credit reads are idempotent: the wait loop may probe readiness
+            # before the ordinary consumption-budget check reads it again.
+            if learner.step == 1 and not credit_arrived:
+                return 0
+            return 1 if learner.step < 2 else 2
 
         selected_indices: list[int] = []
         original_sampler_iter = UniqueReplayBatchSampler.__iter__
@@ -1215,12 +1219,14 @@ def test_persistent_replay_window_reuses_loader_across_utd_waits(
         pause_exercised = False
 
         def progress(**payload) -> None:
+            nonlocal credit_arrived
             if payload.get("phase") == "update_to_data_wait":
                 watermark_during_wait.append(
                     store.connection.execute(
                         "SELECT COUNT(*) FROM gc_watermarks"
                     ).fetchone()[0]
                 )
+                credit_arrived = True
 
         def gpu_pause_control(
             *,
