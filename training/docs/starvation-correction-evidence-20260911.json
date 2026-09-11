@@ -1,0 +1,727 @@
+{
+  "source_commit": "7d874bba9206e07c4b17156e2dba169758d35720",
+  "active_profile_sha256": "6cf8ceba830b4be34368f92824d2b8d32e8b866696ec810d03c9e7c2252a6d93",
+  "canonical_config_sha256": "78b6b4ed7961791492ed43628aa99c67010e5fa4ab051fd144dd0b3f905ad9e1",
+  "gate_sha256": "b9f033f8638eb63a505bdd7f63412580b83e6d53cc35bad72e9b347a7726c5b6",
+  "server_evidence_directory": "/home/ubuntu/edgeconnect-rollouts/starvation-deploy-v4-20260911",
+  "baseline": {
+    "window": {
+      "start": "2026-09-11T11:59:17.651163+00:00",
+      "end": "2026-09-11T12:09:39.038503+00:00",
+      "seconds": 621.387340043
+    },
+    "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
+    "profile_sha256": "e7f6420f08d1b5efdad9490d1ee0521041840a717936c25ffbc61556109458da",
+    "coordinator_pid": 2046183,
+    "worker_pids": {
+      "actor-cpu-ring4": 2046265,
+      "actor-gpu-1": 2046258,
+      "actor-gpu-2": 2046259,
+      "actor-gpu-3": 2046260,
+      "actor-gpu-4": 2046261,
+      "actor-gpu-5": 2046262,
+      "actor-gpu-6": 2046263,
+      "actor-gpu-7": 2046264,
+      "arena-promotion": 2046266,
+      "learner": 2046257
+    },
+    "healthy_monitor_records": 124,
+    "unhealthy_or_other_pid_records": 0,
+    "monitor_covered_seconds": 615.0,
+    "monitor_gaps_over15s": [],
+    "learner_phase_fraction": {
+      "update_to_data_wait": 0.6926829268292682,
+      "training": 0.25040650406504067,
+      "replay_wait": 0.056910569105691054
+    },
+    "logged_counter_rate": {
+      "start": "2026-09-11T11:59:25.259791+00:00",
+      "end": "2026-09-11T12:09:06.443987+00:00",
+      "seconds": 581.184196427,
+      "positions": 65428,
+      "positions_per_hour": 405277.3655031504,
+      "steps": 190,
+      "steps_per_hour": 1176.9074317661943,
+      "scope": "exact lifetime committed-counter values from learner logs; timestamps are log emission after the credit read"
+    },
+    "device_step_seconds": 0.4019689360367625,
+    "device_metric_steps": 190,
+    "gpus": {
+      "0": {
+        "mean_utilization_percent": 10.959349593495935,
+        "mean_memory_mib": 68361.60162601626
+      },
+      "1": {
+        "mean_utilization_percent": 48.300813008130085,
+        "mean_memory_mib": 7287.276422764227
+      },
+      "2": {
+        "mean_utilization_percent": 48.6650406504065,
+        "mean_memory_mib": 6863.1463414634145
+      },
+      "3": {
+        "mean_utilization_percent": 48.333333333333336,
+        "mean_memory_mib": 6613.0
+      },
+      "4": {
+        "mean_utilization_percent": 54.16260162601626,
+        "mean_memory_mib": 7423.0
+      },
+      "5": {
+        "mean_utilization_percent": 48.204878048780486,
+        "mean_memory_mib": 8302.69105691057
+      },
+      "6": {
+        "mean_utilization_percent": 52.81788617886179,
+        "mean_memory_mib": 6775.0
+      },
+      "7": {
+        "mean_utilization_percent": 42.82113821138211,
+        "mean_memory_mib": 7683.4390243902435
+      }
+    },
+    "actual_utd_sleep": {
+      "fully_contained_seconds": 0,
+      "fully_contained_events": 0,
+      "partial_event_sleep_upper_seconds": 0,
+      "available": false,
+      "scope": "completed wait events only; fully-contained total is a lower bound and an in-flight boundary wait may not yet be logged"
+    },
+    "full_target_completed_task_lower_bound": {
+      "full_rows": 221,
+      "complete_tasks": 2,
+      "scope": "only zero-drop tasks entirely inside the interval; active/straddling tasks excluded; not a fleet full-target-rate estimate"
+    },
+    "logged_publications": {
+      "unique_rows": 67720,
+      "enriched_rows": 28976,
+      "written_rows": 251024,
+      "records": 249,
+      "scope": "emission-timed actor deltas only, final task counters excluded"
+    },
+    "diagnostic_label_rows": {
+      "alive": 6412,
+      "outcome": 6412,
+      "ownership": 6412,
+      "policy": 9728,
+      "score_margin": 6412,
+      "soft_policy": 9728
+    },
+    "diagnostic_sample_rows": 9728,
+    "policy_batch_metrics": null,
+    "full_classification": {
+      "head_new_by_ring": {
+        "8": 1657,
+        "10": 62368,
+        "6": 3076,
+        "4": 971
+      },
+      "changed_games": 1789,
+      "head_new_rows": 68072,
+      "covered_new_rows": 68072,
+      "full_rows": 22249,
+      "files_read": 1789,
+      "missing_files": 0,
+      "invalid_files": 0,
+      "by_ring": {
+        "8": {
+          "new_rows": 1657,
+          "full_rows": 405
+        },
+        "10": {
+          "new_rows": 62368,
+          "full_rows": 20342
+        },
+        "6": {
+          "new_rows": 3076,
+          "full_rows": 1182
+        },
+        "4": {
+          "new_rows": 971,
+          "full_rows": 320
+        }
+      },
+      "scope": "new prefix suffixes only; immutable NPZ metadata, no ReplayStore/pins; ZIP CRC and game/ply checks, no full-file SHA scan",
+      "seconds": 0.9440510091371834
+    },
+    "snapshot_delta": {
+      "valid_steady_comparison": true,
+      "seconds": 621.382500506,
+      "committed_samples": 68072,
+      "enriched_rows": 28976,
+      "replay_revision": 2366,
+      "positions_per_hour": 394377.37593261,
+      "unchanged_source_profile_and_all_pids": true,
+      "wall_minus_monotonic_seconds": 2.24e-07,
+      "learner_step_start": 189537,
+      "learner_step_end": 189736,
+      "heartbeat_step_delta": 199,
+      "heartbeat_steps_per_hour": 1152.9130598570541,
+      "head_counter_matches": true,
+      "full_count_exact": true,
+      "full_logical_rows_bounds": [
+        22249,
+        22249
+      ],
+      "full_logical_rows_per_hour_bounds": [
+        128900.31491838994,
+        128900.31491838994
+      ],
+      "by_ring": {
+        "8": {
+          "new_logical_rows": 1657,
+          "new_rows_per_hour": 9599.88412152331,
+          "classified_full_rows": 405,
+          "full_rows_per_hour_lower_bound": 2346.3808504628487
+        },
+        "10": {
+          "new_logical_rows": 62368,
+          "new_rows_per_hour": 361331.0639053505,
+          "classified_full_rows": 20342,
+          "full_rows_per_hour_lower_bound": 117852.04755584018
+        },
+        "6": {
+          "new_logical_rows": 3076,
+          "new_rows_per_hour": 17820.90739758944,
+          "classified_full_rows": 1182,
+          "full_rows_per_hour_lower_bound": 6847.955963573056
+        },
+        "4": {
+          "new_logical_rows": 971,
+          "new_rows_per_hour": 5625.520508146731,
+          "classified_full_rows": 320,
+          "full_rows_per_hour_lower_bound": 1853.930548513856
+        }
+      }
+    }
+  },
+  "post_deployment": {
+    "window": {
+      "start": "2026-09-11T13:17:14.098252+00:00",
+      "end": "2026-09-11T13:37:41.080979+00:00",
+      "seconds": 1226.982726801
+    },
+    "source_commit": "7d874bba9206e07c4b17156e2dba169758d35720",
+    "profile_sha256": "6cf8ceba830b4be34368f92824d2b8d32e8b866696ec810d03c9e7c2252a6d93",
+    "coordinator_pid": 2071498,
+    "worker_pids": {
+      "actor-cpu-ring4": 2071578,
+      "actor-gpu-1": 2071571,
+      "actor-gpu-2": 2071572,
+      "actor-gpu-3": 2071573,
+      "actor-gpu-4": 2071574,
+      "actor-gpu-5": 2071575,
+      "actor-gpu-6": 2071576,
+      "actor-gpu-7": 2071577,
+      "arena-promotion": 2071579,
+      "learner": 2071570
+    },
+    "healthy_monitor_records": 245,
+    "unhealthy_or_other_pid_records": 0,
+    "monitor_covered_seconds": 1220.0,
+    "monitor_gaps_over15s": [],
+    "learner_phase_fraction": {
+      "training": 0.30327868852459017,
+      "update_to_data_wait": 0.6516393442622951,
+      "replay_wait": 0.045081967213114756
+    },
+    "logged_counter_rate": {
+      "start": "2026-09-11T13:17:23.874840+00:00",
+      "end": "2026-09-11T13:37:40.398190+00:00",
+      "seconds": 1216.523350341,
+      "positions": 184365,
+      "positions_per_hour": 545582.6226549259,
+      "steps": 540,
+      "steps_per_hour": 1597.9964539563366,
+      "scope": "exact lifetime committed-counter values from learner logs; timestamps are log emission after the credit read"
+    },
+    "device_step_seconds": 0.4057527246263292,
+    "device_metric_steps": 540,
+    "gpus": {
+      "0": {
+        "mean_utilization_percent": 15.78688524590164,
+        "mean_memory_mib": 67350.4344262295
+      },
+      "1": {
+        "mean_utilization_percent": 50.43852459016394,
+        "mean_memory_mib": 25996.83606557377
+      },
+      "2": {
+        "mean_utilization_percent": 51.17622950819672,
+        "mean_memory_mib": 19475.0
+      },
+      "3": {
+        "mean_utilization_percent": 50.69672131147541,
+        "mean_memory_mib": 18738.926229508197
+      },
+      "4": {
+        "mean_utilization_percent": 51.66393442622951,
+        "mean_memory_mib": 9761.0
+      },
+      "5": {
+        "mean_utilization_percent": 54.614754098360656,
+        "mean_memory_mib": 13653.311475409837
+      },
+      "6": {
+        "mean_utilization_percent": 49.38934426229508,
+        "mean_memory_mib": 16476.680327868853
+      },
+      "7": {
+        "mean_utilization_percent": 40.06967213114754,
+        "mean_memory_mib": 18366.508196721312
+      }
+    },
+    "actual_utd_sleep": {
+      "fully_contained_seconds": 459.24271756550297,
+      "fully_contained_events": 366,
+      "partial_event_sleep_upper_seconds": 0,
+      "available": true,
+      "scope": "completed wait events only; fully-contained total is a lower bound and an in-flight boundary wait may not yet be logged"
+    },
+    "full_target_completed_task_lower_bound": {
+      "full_rows": 392,
+      "complete_tasks": 4,
+      "scope": "only zero-drop tasks entirely inside the interval; active/straddling tasks excluded; not a fleet full-target-rate estimate"
+    },
+    "logged_publications": {
+      "unique_rows": 185501,
+      "enriched_rows": 45320,
+      "written_rows": 537637,
+      "records": 509,
+      "scope": "emission-timed actor deltas only, final task counters excluded"
+    },
+    "diagnostic_label_rows": {
+      "alive": 14356,
+      "outcome": 14356,
+      "ownership": 14356,
+      "policy": 27648,
+      "score_margin": 14356,
+      "soft_policy": 27648
+    },
+    "diagnostic_sample_rows": 27648,
+    "policy_batch_metrics": {
+      "batches": 540,
+      "rows": 276480,
+      "full_rows": 92600,
+      "fast_rows": 183880,
+      "missing_batches": 0,
+      "mean_batch_full_weight_fraction": 0.7545120290233146,
+      "mean_batch_effective_policy_rows": 263.99354266490553,
+      "all_fast_batch_fraction": 0.0
+    },
+    "full_classification": {
+      "head_new_by_ring": {
+        "10": 164942,
+        "6": 6394,
+        "4": 5769,
+        "8": 8772
+      },
+      "changed_games": 2214,
+      "head_new_rows": 185877,
+      "covered_new_rows": 185877,
+      "full_rows": 44146,
+      "files_read": 2214,
+      "missing_files": 0,
+      "invalid_files": 0,
+      "by_ring": {
+        "10": {
+          "new_rows": 164942,
+          "full_rows": 37377
+        },
+        "6": {
+          "new_rows": 6394,
+          "full_rows": 2120
+        },
+        "4": {
+          "new_rows": 5769,
+          "full_rows": 1961
+        },
+        "8": {
+          "new_rows": 8772,
+          "full_rows": 2688
+        }
+      },
+      "scope": "new prefix suffixes only; immutable NPZ metadata, no ReplayStore/pins; ZIP CRC and game/ply checks, no full-file SHA scan",
+      "seconds": 1.2854696898721159
+    },
+    "snapshot_delta": {
+      "valid_steady_comparison": true,
+      "seconds": 1226.983099582,
+      "committed_samples": 185877,
+      "enriched_rows": 45456,
+      "replay_revision": 6431,
+      "positions_per_hour": 545367.9029710871,
+      "unchanged_source_profile_and_all_pids": true,
+      "wall_minus_monotonic_seconds": -1.051e-06,
+      "learner_step_start": 190562,
+      "learner_step_end": 191110,
+      "heartbeat_step_delta": 548,
+      "heartbeat_steps_per_hour": 1607.8461069855646,
+      "head_counter_matches": true,
+      "full_count_exact": true,
+      "full_logical_rows_bounds": [
+        44146,
+        44146
+      ],
+      "full_logical_rows_per_hour_bounds": [
+        129525.50043610352,
+        129525.50043610352
+      ],
+      "by_ring": {
+        "10": {
+          "new_logical_rows": 164942,
+          "new_rows_per_hour": 483944.0740481989,
+          "classified_full_rows": 37377,
+          "full_rows_per_hour_lower_bound": 109665.08018394059
+        },
+        "6": {
+          "new_logical_rows": 6394,
+          "new_rows_per_hour": 18760.160598660037,
+          "classified_full_rows": 2120,
+          "full_rows_per_hour_lower_bound": 6220.134574469702
+        },
+        "4": {
+          "new_logical_rows": 5769,
+          "new_rows_per_hour": 16926.394509488542,
+          "classified_full_rows": 1961,
+          "full_rows_per_hour_lower_bound": 5753.624481384474
+        },
+        "8": {
+          "new_logical_rows": 8772,
+          "new_rows_per_hour": 25737.27381473973,
+          "classified_full_rows": 2688,
+          "full_rows_per_hour_lower_bound": 7886.661196308754
+        }
+      }
+    }
+  },
+  "scope_notes": [
+    "Before/after throughput is observational, not causal Elo evidence.",
+    "Old phase fractions and new actual-sleep durations are not interchangeable.",
+    "Fleet full-target rate is flat; ring-10 full-target rate was lower in this observation.",
+    "Qualification combines the full application run with the corrected compiler sequence; overlapping test counts are not added."
+  ],
+  "deployment": {
+    "status": "complete",
+    "completed_ns": 1789133351349129682,
+    "readiness_step": 190450,
+    "source": "7d874bba9206e07c4b17156e2dba169758d35720",
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-starvation-corrected-20260911.yaml",
+    "migration": {
+      "backup_bundle": "/home/ubuntu/edgeconnect-runs/variant-network/migration-backups/1789132071695781917-profile-starvation-corrected-20260911",
+      "boundary": {
+        "champion_model_identity": "sha256-37fd6c1ae569a1bbc55015815afaab755fb1c7ab40d4149c7ba80cb28961c585",
+        "committed_replay_samples": 71700318,
+        "discarded_uncheckpointed_steps": 0,
+        "examples_consumed": 97473024,
+        "heartbeat_step": 190377,
+        "learner_step": 190377,
+        "recovery_interval_steps": 1000
+      },
+      "changes": [
+        {
+          "from": 4,
+          "path": "data.prefetch_factor",
+          "to": 2
+        },
+        {
+          "from": 16,
+          "path": "data.workers",
+          "to": 4
+        },
+        {
+          "from": "<missing>",
+          "path": "selfplay.ring_search_allocations",
+          "to": [
+            {
+              "fast_policy_weight": 0.11094619666048239,
+              "fast_simulations": 16,
+              "full_probability": 0.23,
+              "rings": 10
+            }
+          ]
+        },
+        {
+          "from": 1,
+          "path": "selfplay.search_execution.first_visit_batch_size",
+          "to": 8
+        }
+      ],
+      "coordinator_lock": "absent",
+      "generation_family": "variant-network-a",
+      "kind": "profile",
+      "mode": "apply",
+      "run_id": "variant-network",
+      "source": {
+        "config_sha256": "6fba967f63a761a643fa2ecb1636606ae1fb9c34d2667f7c1539c20d870b9536",
+        "profile": "profile-live-replay-20260911.yaml",
+        "profile_sha256": "e7f6420f08d1b5efdad9490d1ee0521041840a717936c25ffbc61556109458da",
+        "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1"
+      },
+      "status": "ok",
+      "target": {
+        "config_sha256": "78b6b4ed7961791492ed43628aa99c67010e5fa4ab051fd144dd0b3f905ad9e1",
+        "profile": "profile-starvation-corrected-20260911.yaml",
+        "profile_sha256": "6cf8ceba830b4be34368f92824d2b8d32e8b866696ec810d03c9e7c2252a6d93",
+        "source_commit": "7d874bba9206e07c4b17156e2dba169758d35720"
+      },
+      "utd_segment": null,
+      "writes": [
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile-starvation-corrected-20260911.yaml",
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile-starvation-corrected-20260911.sha256",
+        "/home/ubuntu/edgeconnect-runs/variant-network/continuous-migrations.jsonl",
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile.sha256",
+        "/home/ubuntu/edgeconnect-runs/variant-network/source-commit.txt"
+      ]
+    },
+    "stop_checkpoint": {
+      "checkpoint": "recovery/sha256-46ce93fa07a892ceaca22391fe6077ad6b06ae7189e5a7020e1211ae0dc35354.pt",
+      "checkpoint_bytes": 212717927,
+      "checkpoint_sha256": "46ce93fa07a892ceaca22391fe6077ad6b06ae7189e5a7020e1211ae0dc35354",
+      "epoch": 1181,
+      "examples_consumed": 97473024,
+      "format": "startrain.recovery-pointer",
+      "generation_family": "variant-network-a",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "step": 190377,
+      "updated_ns": 1789131153874574120
+    },
+    "control_files_preserved": 138,
+    "h100_smoke": {
+      "status": "passed",
+      "execution": "eager BF16 interface smoke, not a benchmark",
+      "release": "/home/ubuntu/edgeconnect-releases/variant-starvation-7d874bb",
+      "source_commit": "7d874bba9206e07c4b17156e2dba169758d35720",
+      "profile_sha256": "6cf8ceba830b4be34368f92824d2b8d32e8b866696ec810d03c9e7c2252a6d93",
+      "native_binary": "/home/ubuntu/edgeconnect-releases/variant-starvation-7d874bb/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+      "native_binary_sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b",
+      "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+      "manifest_sha256": "be4ecd6f7905b954e2ba4c3b66d742cb1cc80ebc8143c5037f79a213a5af2e64",
+      "checkpoint_sha256": "0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+      "device": "NVIDIA H100 80GB HBM3",
+      "precision": "bf16",
+      "physical_gpu_index": 0,
+      "physical_gpu_uuid": "GPU-ae118622-5e0c-da99-3a41-2df94f7d9f60",
+      "baseline_compute_processes": [],
+      "native_search_budget_per_root": 8,
+      "root_count": 2,
+      "trusted_lazy_export": true,
+      "warm_prediction_reuse": true,
+      "inference": {
+        "evaluator_calls": 10,
+        "evaluator_rows": 20,
+        "neural_calls": 9,
+        "neural_rows": 18,
+        "neural_padding_rows": 0,
+        "cache_hits": 2,
+        "cache_misses": 18,
+        "cache_evictions": 0,
+        "deduplicated_rows": 0,
+        "graph_captures": 0,
+        "graph_replays": 0,
+        "graph_evictions": 0,
+        "graph_fallbacks": 0,
+        "graph_warmup_calls": 0,
+        "graph_warmup_rows": 0,
+        "graph_validation_failures": 0,
+        "graph_validation_replays": 0,
+        "cache_seconds": 9.074434638023376e-05,
+        "h2d_enqueue_seconds": 0.007558719255030155,
+        "neural_round_trip_seconds": 0.4349289401434362,
+        "return_seconds": 0.0035923602990806103
+      },
+      "policy_only_step": {
+        "losses": {
+          "total": 5.205156326293945,
+          "policy": 3.912978410720825,
+          "outcome": 0.0,
+          "score_margin": 0.0,
+          "ownership": 0.0,
+          "alive": 0.0,
+          "soft_policy": 5.168712615966797
+        },
+        "gradient_norm": 1.6841014623641968
+      },
+      "enriched_step": {
+        "losses": {
+          "total": 6.950090408325195,
+          "policy": 3.9065709114074707,
+          "outcome": 0.6800186634063721,
+          "score_margin": 3.580570697784424,
+          "ownership": 0.6932460069656372,
+          "alive": 0.04229086637496948,
+          "soft_policy": 5.163269519805908
+        },
+        "gradient_norm": 2.248333215713501
+      },
+      "fresh_position_credit": 2,
+      "enriched_rows": 2,
+      "retry_credit": 0,
+      "shared_training_geometry": true,
+      "peak_cuda_allocated_bytes": 488418304,
+      "elapsed_seconds": 12.503254000097513,
+      "neural_smoke_report": {
+        "path": "/home/ubuntu/edgeconnect-rollouts/starvation-deploy-v4-20260911/single-cutover/h100-smoke-neural.json",
+        "bytes": 2658,
+        "sha256": "82393bbbb07b140149895aebd84c96559a223dc2c8a41cc47f03a228e7140c2f"
+      },
+      "pinned_loader_shutdown": {
+        "exit_code": 0,
+        "timed_out": false,
+        "stdout": ".                                                                        [100%]\n",
+        "stderr": "",
+        "verified_test_executed": true,
+        "junit_parse_error": null,
+        "junit": {
+          "path": "/home/ubuntu/edgeconnect-rollouts/starvation-deploy-v4-20260911/single-cutover/h100-smoke-pinned-loader.xml",
+          "bytes": 395,
+          "sha256": "b474b45f2efa9705f97dd2c457b66b6d4b585a9c9b45d8c18ce12137a95b1eef"
+        },
+        "log": {
+          "path": "/home/ubuntu/edgeconnect-rollouts/starvation-deploy-v4-20260911/single-cutover/h100-smoke-pinned-loader.log",
+          "bytes": 80,
+          "sha256": "423b1d0e014eb1eab96f4420f7b344c2615be505dd574b756ac884826ca74f2d"
+        }
+      }
+    },
+    "before_backup": {
+      "catalog_bytes": 13282788357,
+      "catalog_files": 23767,
+      "created_ns": 1789131691974629022,
+      "generation_family": "variant-network-a",
+      "objects": 23765,
+      "run_id": "variant-network",
+      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789131691974629022-2f6fbfa1c075a3803ffef190b37113243377c63b0cdb80373fd439d4353464e1.json",
+      "snapshot_bytes": 4603438,
+      "snapshot_sha256": "2f6fbfa1c075a3803ffef190b37113243377c63b0cdb80373fd439d4353464e1",
+      "status": "ok"
+    },
+    "after_backup": {
+      "catalog_bytes": 13299787467,
+      "catalog_files": 24719,
+      "created_ns": 1789132744622155182,
+      "generation_family": "variant-network-a",
+      "objects": 24717,
+      "run_id": "variant-network",
+      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789132744622155182-51cc1af8746e7a1e2bca9e42dfb432617be0bab5af6e8d0b9b6095960e449c68.json",
+      "snapshot_bytes": 4787200,
+      "snapshot_sha256": "51cc1af8746e7a1e2bca9e42dfb432617be0bab5af6e8d0b9b6095960e449c68",
+      "status": "ok"
+    },
+    "artifact_hashes": {
+      "after-readiness-verified.json": {
+        "sha256": "7333cc1af47c9c09348558e645ebae1ed8f7f3907ff4a793db1b356152d0490d",
+        "bytes": 520
+      },
+      "h100-smoke.json": {
+        "sha256": "e50ea1d76e36d769e9d235ea0150b27bae7eb1ba5d4db1fd272ebd70be9670a8",
+        "bytes": 3666
+      },
+      "before-migration-verified.json": {
+        "sha256": "548af0ab2a41aaa4dd3bc09a224752d460a86630124f967b7d7a1da97b86372a",
+        "bytes": 520
+      },
+      "migration.json": {
+        "sha256": "1c2d162f408e3667264f19b12d8dfe92516f270ae48785942f087a628bf3cba0",
+        "bytes": 2306
+      },
+      "migration-controls-after.json": {
+        "sha256": "4108ab162c963d47071bee492a9e5eb861dd6d3c3f07be42c3abafc5bf2fadd1",
+        "bytes": 29186
+      },
+      "complete.json": {
+        "sha256": "a63a87d9972ca3115f6a6f138141e28fdc659cc8b5535a92fb1b8630a91bab6d",
+        "bytes": 158520
+      },
+      "migration-controls-before.json": {
+        "sha256": "4108ab162c963d47071bee492a9e5eb861dd6d3c3f07be42c3abafc5bf2fadd1",
+        "bytes": 29186
+      },
+      "stop-boundary.json": {
+        "sha256": "d42bc7ef4bc8aa14b28df0a7aef8192178ae83613f8c74012325de8a52681129",
+        "bytes": 15445
+      }
+    }
+  },
+  "independent_audit": {
+    "backup_authority_detail": "/tmp/starvation-final-audit.n8oK1e/backup-authority.json",
+    "canonical_config_sha256": "78b6b4ed7961791492ed43628aa99c67010e5fa4ab051fd144dd0b3f905ad9e1",
+    "checked_utc": "2026-09-11T13:48:34.167276+00:00",
+    "checks": {
+      "all_unit_sources_profiles_and_support_preserved": true,
+      "gate_dependencies_current": true,
+      "post_backup_verified_and_dependencies_captured": true,
+      "profile_and_canonical_authority": true,
+      "release_native_immutable": true,
+      "source_and_native_verified": true,
+      "steady_telemetry_valid": true,
+      "ten_healthy_same_workers": true,
+      "zero_discard_unchanged_control_files_and_utd": true
+    },
+    "control_files_preserved": 138,
+    "gate_dependency_files_verified": 9,
+    "gate_sha256": "b9f033f8638eb63a505bdd7f63412580b83e6d53cc35bad72e9b347a7726c5b6",
+    "input_artifacts": {
+      "baseline-full-10min.json": {
+        "path": "/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-fresh-data-observer-sfnb2c2h/baseline-full-10min.json",
+        "sha256": "dfe6dc44e3b256da91bf2fd3244596adbcf9cef4a0e7769a4bac50a42ffba64d"
+      },
+      "post-20min.json": {
+        "path": "/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-fresh-data-observer-sfnb2c2h/post-20min.json",
+        "sha256": "33503d407ddd8e98305e8e82085157cd4bd9a358271f42486eace02a485d2e64"
+      }
+    },
+    "latest_observed_learner_step": 191368,
+    "limitations": [
+      "Sequential20min post vs10min baseline windows are observational, not a controlled causal or Elo measurement.",
+      "Ring10 full-search targets/hour fell6.95% in these windows; do not claim per-ring teacher throughput improved.",
+      "Actual wait is a lower bound from completed events; the baseline has no comparable actual-sleep timer. The phase label also includes useful work and must not be equated to idle time.",
+      "No extra tests, GPU work, service or configuration mutations were performed."
+    ],
+    "performance": {
+      "actual_utd_sleep_fraction_lower_bound": 0.37428609874248026,
+      "actual_utd_sleep_seconds": 459.24271756550297,
+      "all_ring_full_targets_per_hour": {
+        "after": 129525.50043610352,
+        "before": 128900.31491838994,
+        "change_percent": 0.4850147325934806
+      },
+      "baseline_actual_sleep_available": false,
+      "baseline_seconds": 621.382500506,
+      "device_step_seconds": {
+        "after": 0.4057527246263292,
+        "before": 0.4019689360367625
+      },
+      "gradient_updates_per_hour": {
+        "after": 1607.8461069855646,
+        "before": 1152.9130598570541,
+        "change_percent": 39.45944086928081
+      },
+      "phase_indicator_fraction": {
+        "after": 0.6516393442622951,
+        "before": 0.6926829268292682
+      },
+      "post_gradient_steps": 548,
+      "post_seconds": 1226.983099582,
+      "post_unique_rows": 185877,
+      "ring10_full_targets_per_hour": {
+        "after": 109665.08018394059,
+        "before": 117852.04755584018,
+        "change_percent": -6.946818100907814
+      },
+      "unique_positions_per_hour": {
+        "after": 545367.9029710871,
+        "before": 394377.37593261,
+        "change_percent": 38.28579838826198
+      }
+    },
+    "post_backup_sha256": "51cc1af8746e7a1e2bca9e42dfb432617be0bab5af6e8d0b9b6095960e449c68",
+    "profile_sha256": "6cf8ceba830b4be34368f92824d2b8d32e8b866696ec810d03c9e7c2252a6d93",
+    "resumed_checkpoint_step": 190377,
+    "schema_version": 1,
+    "server_detail": "/tmp/starvation-final-audit.n8oK1e/server.json",
+    "source_commit": "7d874bba9206e07c4b17156e2dba169758d35720",
+    "status": "consistent"
+  }
+}
