@@ -48,7 +48,8 @@ def _mean_kernel(
     batch, node = rows // N, rows % N
     total = tl.full((BLOCK_ROWS, BLOCK_CHANNELS), 0, tl.float32)
     count = tl.full((BLOCK_ROWS,), 0, tl.float32)
-    for edge in tl.static_range(D):
+    # @triton.jit rewrites this DSL loop; static_range is not a Python iterator.
+    for edge in tl.static_range(D):  # pyright: ignore[reportGeneralTypeIssues]
         source = tl.load(
             indices + batch * IS0 + node * IS1 + edge * IS2, rows < ROWS, 0
         )
