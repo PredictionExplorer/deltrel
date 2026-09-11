@@ -178,9 +178,9 @@ workers, selection/GC races and pin cleanup. Rust binding tests, strict workspac
 Clippy, Ruff and Pyright also passed. Backup/restore and profile compatibility
 have dedicated regression coverage.
 
-Production activation and an after-activation performance window have not been
-performed as part of this implementation. Compare matched steady-state windows
-before attributing a throughput improvement:
+The subsequent [production rollout](live-replay-rollout-20260911.md) records
+activation, checkpoint continuity, live accounting and backup evidence. Compare
+matched steady-state windows before attributing a throughput improvement:
 
 - Distinct eligible rows/hour and their distribution by board, role and mode.
 - Policy-first rows, enriched rows and completed-game rows; do not treat physical

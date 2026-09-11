@@ -1,0 +1,970 @@
+{
+  "schema_version": 1,
+  "deployment": "live-replay-20260911",
+  "status": "verified",
+  "artifact": {
+    "local": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-live-replay-deploy-eh10ji7e",
+    "commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
+    "tree": "51673763b8aedf4bb1a514f057f782d2403b5711",
+    "archive_sha256": "b792a6b9493fa761ec254a700aad2d8019f0c0732510d760136e599e56cbb879",
+    "source_files": 513,
+    "release": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1",
+    "rollout": "/home/ubuntu/edgeconnect-rollouts/live-replay-20260911"
+  },
+  "validation": {
+    "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
+    "source_files": 513,
+    "python_tests": {
+      "passed": 2522,
+      "skipped": 12
+    },
+    "rust_tests_passed": 99,
+    "clippy": "passed",
+    "ruff": "passed",
+    "pyright": "passed",
+    "helper_failure_cases": 21,
+    "native_sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b",
+    "frozen_ns": 1789089599411726366
+  },
+  "runtime_versions_identical": true,
+  "source_phase": {
+    "complete": {
+      "status": "complete",
+      "source": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
+      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-baseline-20260911.yaml",
+      "completed_ns": 1789091679010570099
+    },
+    "migration": {
+      "backup_bundle": "/home/ubuntu/edgeconnect-runs/variant-network/migration-backups/1789090773921255027-profile-live-replay-baseline-20260911",
+      "boundary": {
+        "champion_model_identity": "sha256-37fd6c1ae569a1bbc55015815afaab755fb1c7ab40d4149c7ba80cb28961c585",
+        "committed_replay_samples": 68264675,
+        "discarded_uncheckpointed_steps": 0,
+        "examples_consumed": 92161024,
+        "heartbeat_step": 180002,
+        "learner_step": 180002,
+        "recovery_interval_steps": 1000
+      },
+      "changes": [],
+      "coordinator_lock": "absent",
+      "generation_family": "variant-network-a",
+      "kind": "source-only",
+      "mode": "apply",
+      "run_id": "variant-network",
+      "source": {
+        "config_sha256": "6af7df9bf422e2befbcf3c4a19a9090271996cb4183c80e466aaac0c33ce57b1",
+        "profile": "profile-training-optimized-20260910.yaml",
+        "profile_sha256": "1db1a8b29a177e9b92a455d1468247e88e5fcfc5e74ce0aef1d9867a09265d62",
+        "source_commit": "e8e877cd7292dd44558e280c8117e6242820c2ce"
+      },
+      "status": "ok",
+      "target": {
+        "config_sha256": "6af7df9bf422e2befbcf3c4a19a9090271996cb4183c80e466aaac0c33ce57b1",
+        "profile": "profile-live-replay-baseline-20260911.yaml",
+        "profile_sha256": "1db1a8b29a177e9b92a455d1468247e88e5fcfc5e74ce0aef1d9867a09265d62",
+        "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1"
+      },
+      "utd_segment": null,
+      "writes": [
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-baseline-20260911.yaml",
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-baseline-20260911.sha256",
+        "/home/ubuntu/edgeconnect-runs/variant-network/continuous-migrations.jsonl",
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile.sha256",
+        "/home/ubuntu/edgeconnect-runs/variant-network/source-commit.txt"
+      ]
+    },
+    "checkpoint": {
+      "checkpoint": "recovery/sha256-3c49171f1287fc725834f7fbb09069dd6388aaca1dd1ce03e14daf29c2c0f799.pt",
+      "checkpoint_bytes": 212717671,
+      "checkpoint_sha256": "3c49171f1287fc725834f7fbb09069dd6388aaca1dd1ce03e14daf29c2c0f799",
+      "epoch": 615,
+      "examples_consumed": 92161024,
+      "format": "startrain.recovery-pointer",
+      "generation_family": "variant-network-a",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "step": 180002,
+      "updated_ns": 1789089843285360592
+    },
+    "worker_exit_codes": {
+      "actor-cpu-ring4": 0,
+      "actor-gpu-1": 0,
+      "actor-gpu-2": 0,
+      "actor-gpu-3": 0,
+      "actor-gpu-4": 0,
+      "actor-gpu-5": 0,
+      "actor-gpu-6": 0,
+      "actor-gpu-7": 0,
+      "arena-promotion": 0,
+      "learner": 0
+    },
+    "replay_boundary": {
+      "schema": 5,
+      "counter": {
+        "run_id": "variant-network",
+        "generation_family": "variant-network-a",
+        "committed_samples": 68264675,
+        "updated_ns": 1789089887610172914,
+        "history_complete": 1
+      },
+      "heads": [],
+      "checked_ns": 1789089890957566468
+    },
+    "frozen_control_files": 132,
+    "frozen_controls_identical": true,
+    "frozen_controls_sha256": "b366b4bbebffdc40fe6716ebe2236bdee19f9d604c0e534451ea441be4a65c06",
+    "launch": {
+      "launch_ns": 1789090780779805874,
+      "checkpoint": {
+        "checkpoint": "recovery/sha256-3c49171f1287fc725834f7fbb09069dd6388aaca1dd1ce03e14daf29c2c0f799.pt",
+        "checkpoint_bytes": 212717671,
+        "checkpoint_sha256": "3c49171f1287fc725834f7fbb09069dd6388aaca1dd1ce03e14daf29c2c0f799",
+        "epoch": 615,
+        "examples_consumed": 92161024,
+        "format": "startrain.recovery-pointer",
+        "generation_family": "variant-network-a",
+        "run_id": "variant-network",
+        "schema_version": 1,
+        "step": 180002,
+        "updated_ns": 1789089843285360592
+      }
+    },
+    "readiness_step": 180190,
+    "before_migration_backup": {
+      "catalog_bytes": 21714666686,
+      "catalog_files": 15100,
+      "created_ns": 1789090285073462574,
+      "generation_family": "variant-network-a",
+      "objects": 15099,
+      "run_id": "variant-network",
+      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789090285073462574-5e1df6e953c69737afe78f5f8a26f88edeb3c12756b6ab58172fe4ff7218791a.json",
+      "snapshot_bytes": 2934560,
+      "snapshot_sha256": "5e1df6e953c69737afe78f5f8a26f88edeb3c12756b6ab58172fe4ff7218791a",
+      "status": "ok"
+    },
+    "after_readiness_backup": {
+      "catalog_bytes": 21714498056,
+      "catalog_files": 15100,
+      "created_ns": 1789091176038009690,
+      "generation_family": "variant-network-a",
+      "objects": 15099,
+      "run_id": "variant-network",
+      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789091176038009690-ab953e23a33e6d74c26a4a1ded064fdb24a005b8aa8ee6a7f3c66236c9c34953.json",
+      "snapshot_bytes": 2934532,
+      "snapshot_sha256": "ab953e23a33e6d74c26a4a1ded064fdb24a005b8aa8ee6a7f3c66236c9c34953",
+      "status": "ok"
+    }
+  },
+  "activation_phase": {
+    "complete": {
+      "status": "complete",
+      "source": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
+      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-20260911.yaml",
+      "completed_ns": 1789094239866245457
+    },
+    "migration": {
+      "backup_bundle": "/home/ubuntu/edgeconnect-runs/variant-network/migration-backups/1789093078153904316-profile-live-replay-20260911",
+      "boundary": {
+        "champion_model_identity": "sha256-37fd6c1ae569a1bbc55015815afaab755fb1c7ab40d4149c7ba80cb28961c585",
+        "committed_replay_samples": 68419884,
+        "discarded_uncheckpointed_steps": 0,
+        "examples_consumed": 92353024,
+        "heartbeat_step": 180377,
+        "learner_step": 180377,
+        "recovery_interval_steps": 1000
+      },
+      "changes": [
+        {
+          "from": 300.0,
+          "path": "learner.replay_refresh_seconds",
+          "to": 60.0
+        },
+        {
+          "from": false,
+          "path": "orchestration.model_refresh.work_scheduling.enabled",
+          "to": true
+        },
+        {
+          "from": false,
+          "path": "selfplay.policy_publication.enabled",
+          "to": true
+        }
+      ],
+      "coordinator_lock": "absent",
+      "generation_family": "variant-network-a",
+      "kind": "profile",
+      "mode": "apply",
+      "run_id": "variant-network",
+      "source": {
+        "config_sha256": "6af7df9bf422e2befbcf3c4a19a9090271996cb4183c80e466aaac0c33ce57b1",
+        "profile": "profile-live-replay-baseline-20260911.yaml",
+        "profile_sha256": "1db1a8b29a177e9b92a455d1468247e88e5fcfc5e74ce0aef1d9867a09265d62",
+        "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1"
+      },
+      "status": "ok",
+      "target": {
+        "config_sha256": "6fba967f63a761a643fa2ecb1636606ae1fb9c34d2667f7c1539c20d870b9536",
+        "profile": "profile-live-replay-20260911.yaml",
+        "profile_sha256": "e7f6420f08d1b5efdad9490d1ee0521041840a717936c25ffbc61556109458da",
+        "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1"
+      },
+      "utd_segment": null,
+      "writes": [
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-20260911.yaml",
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-20260911.sha256",
+        "/home/ubuntu/edgeconnect-runs/variant-network/continuous-migrations.jsonl",
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile.sha256",
+        "/home/ubuntu/edgeconnect-runs/variant-network/source-commit.txt"
+      ]
+    },
+    "checkpoint": {
+      "checkpoint": "recovery/sha256-e2a7bcd362eb85cb36da9ed4d22494135b5c2885b8d5d4ac61c059a639d39eb5.pt",
+      "checkpoint_bytes": 212717927,
+      "checkpoint_sha256": "e2a7bcd362eb85cb36da9ed4d22494135b5c2885b8d5d4ac61c059a639d39eb5",
+      "epoch": 618,
+      "examples_consumed": 92353024,
+      "format": "startrain.recovery-pointer",
+      "generation_family": "variant-network-a",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "step": 180377,
+      "updated_ns": 1789092329655458262
+    },
+    "worker_exit_codes": {
+      "actor-cpu-ring4": 0,
+      "actor-gpu-1": 0,
+      "actor-gpu-2": 0,
+      "actor-gpu-3": 0,
+      "actor-gpu-4": 0,
+      "actor-gpu-5": 0,
+      "actor-gpu-6": 0,
+      "actor-gpu-7": 0,
+      "arena-promotion": 0,
+      "learner": 0
+    },
+    "replay_boundary": {
+      "schema": 5,
+      "counter": {
+        "run_id": "variant-network",
+        "generation_family": "variant-network-a",
+        "committed_samples": 68419884,
+        "updated_ns": 1789092379702413464,
+        "history_complete": 1,
+        "replay_revision": 0,
+        "enriched_rows": 0
+      },
+      "heads": [],
+      "checked_ns": 1789092382265924444
+    },
+    "frozen_control_files": 132,
+    "frozen_controls_identical": true,
+    "frozen_controls_sha256": "9fd0c70f3cd02a614c422995bad8f5403afe5b487fd2b33f2be78131599fe18c",
+    "launch": {
+      "launch_ns": 1789093084928513649,
+      "checkpoint": {
+        "checkpoint": "recovery/sha256-e2a7bcd362eb85cb36da9ed4d22494135b5c2885b8d5d4ac61c059a639d39eb5.pt",
+        "checkpoint_bytes": 212717927,
+        "checkpoint_sha256": "e2a7bcd362eb85cb36da9ed4d22494135b5c2885b8d5d4ac61c059a639d39eb5",
+        "epoch": 618,
+        "examples_consumed": 92353024,
+        "format": "startrain.recovery-pointer",
+        "generation_family": "variant-network-a",
+        "run_id": "variant-network",
+        "schema_version": 1,
+        "step": 180377,
+        "updated_ns": 1789092329655458262
+      }
+    },
+    "readiness_step": 180685,
+    "before_migration_backup": {
+      "catalog_bytes": 22113705445,
+      "catalog_files": 15175,
+      "created_ns": 1789092759147497842,
+      "generation_family": "variant-network-a",
+      "objects": 15174,
+      "run_id": "variant-network",
+      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789092759147497842-93acbf9fe3a5157ab26f8ba6e9c2b0fbe23060c17b1821c1b17df34d0d4feee6.json",
+      "snapshot_bytes": 2949080,
+      "snapshot_sha256": "93acbf9fe3a5157ab26f8ba6e9c2b0fbe23060c17b1821c1b17df34d0d4feee6",
+      "status": "ok"
+    },
+    "after_readiness_backup": {
+      "catalog_bytes": 22129935845,
+      "catalog_files": 16072,
+      "created_ns": 1789093700187518757,
+      "generation_family": "variant-network-a",
+      "objects": 16071,
+      "run_id": "variant-network",
+      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789093700187518757-2cd38d2c970dd28c594674d27ba8fc02e328efadbf73f19db850b019300b922b.json",
+      "snapshot_bytes": 3122152,
+      "snapshot_sha256": "2cd38d2c970dd28c594674d27ba8fc02e328efadbf73f19db850b019300b922b",
+      "status": "ok"
+    }
+  },
+  "activation_exact_snapshot": {
+    "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789092759147497842-93acbf9fe3a5157ab26f8ba6e9c2b0fbe23060c17b1821c1b17df34d0d4feee6.json",
+    "snapshot_sha256": "93acbf9fe3a5157ab26f8ba6e9c2b0fbe23060c17b1821c1b17df34d0d4feee6",
+    "snapshot_bytes": 2949080,
+    "created_ns": 1789092759147497842,
+    "run_id": "variant-network",
+    "generation_family": "variant-network-a",
+    "backup_root": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network",
+    "invocation_started_ns": 1789092386223721483,
+    "pointer_sha256": "518d95f16c9487d26420ef229b554cd81c83d30ea5dd9a2b0642d137cef7c850",
+    "commit_marker_sha256": "c366601f3a430ae603f1d85c868a206b81a6695a783c37eac7f6740d3a115d6d",
+    "boundary": {
+      "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+      "run_id": "variant-network",
+      "generation_family": "variant-network-a",
+      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-baseline-20260911.yaml",
+      "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
+      "checkpoint_step": 180377,
+      "files": {
+        "run.json": {
+          "bytes": 121,
+          "sha256": "0dd3e1cac21ecc0ecfa98b8754084bd52a0465fcb9dfabf88298eeee2017e0c4",
+          "kind": "run-identity"
+        },
+        "profile-live-replay-baseline-20260911.yaml": {
+          "bytes": 10749,
+          "sha256": "1db1a8b29a177e9b92a455d1468247e88e5fcfc5e74ce0aef1d9867a09265d62",
+          "kind": "profile"
+        },
+        "source-commit.txt": {
+          "bytes": 41,
+          "sha256": "4b216ad15228ee0befac7ae762fbe40755cd2f0cd012890178a3c78fad50e9ae",
+          "kind": "source-commit"
+        },
+        "learner/recovery.json": {
+          "bytes": 429,
+          "sha256": "009e5e59841f708085d85f3ab57ddef31f02e482d5d34ce1209af71a38b61a44",
+          "kind": "recovery-pointer"
+        },
+        "continuous-migrations.jsonl": {
+          "bytes": 45845,
+          "sha256": "298111ac1493e5c7173c79f87da695eed3f175fa639fbcb631fb7644ff62c3a4",
+          "kind": "run-metadata"
+        }
+      }
+    }
+  },
+  "first_live_publication": {
+    "schema": 6,
+    "counter": {
+      "run_id": "variant-network",
+      "generation_family": "variant-network-a",
+      "committed_samples": 68429421,
+      "updated_ns": 1789093338262505937,
+      "history_complete": 1,
+      "replay_revision": 1183,
+      "enriched_rows": 40
+    },
+    "heads": [
+      {
+        "ring": 4,
+        "games": 72,
+        "positions": 689,
+        "enriched": 40,
+        "revisions": 77,
+        "finalized": 5
+      },
+      {
+        "ring": 6,
+        "games": 64,
+        "positions": 512,
+        "enriched": 0,
+        "revisions": 64,
+        "finalized": 0
+      },
+      {
+        "ring": 8,
+        "games": 64,
+        "positions": 512,
+        "enriched": 0,
+        "revisions": 64,
+        "finalized": 0
+      },
+      {
+        "ring": 10,
+        "games": 978,
+        "positions": 7824,
+        "enriched": 0,
+        "revisions": 978,
+        "finalized": 0
+      }
+    ],
+    "checked_ns": 1789093338285690247
+  },
+  "h100_smoke": {
+    "status": "passed",
+    "execution": "eager BF16 interface smoke, not a benchmark",
+    "release": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1",
+    "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
+    "profile_sha256": "1db1a8b29a177e9b92a455d1468247e88e5fcfc5e74ce0aef1d9867a09265d62",
+    "native_binary": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+    "native_binary_sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b",
+    "model_identity": "sha256-7b1b6ece2c61d8becaae62fa18392a220e587409c714e5b09101267eab6e066c",
+    "manifest_sha256": "19e83361d04afec1d09bb9e664f8383897d049e83b92858ca51b45824dc41f90",
+    "checkpoint_sha256": "7b1b6ece2c61d8becaae62fa18392a220e587409c714e5b09101267eab6e066c",
+    "device": "NVIDIA H100 80GB HBM3",
+    "precision": "bf16",
+    "physical_gpu_index": 0,
+    "physical_gpu_uuid": "GPU-ae118622-5e0c-da99-3a41-2df94f7d9f60",
+    "baseline_compute_processes": [],
+    "native_search_budget_per_root": 8,
+    "root_count": 2,
+    "trusted_lazy_export": true,
+    "warm_prediction_reuse": true,
+    "inference": {
+      "evaluator_calls": 10,
+      "evaluator_rows": 20,
+      "neural_calls": 9,
+      "neural_rows": 18,
+      "neural_padding_rows": 0,
+      "cache_hits": 2,
+      "cache_misses": 18,
+      "cache_evictions": 0,
+      "deduplicated_rows": 0,
+      "graph_captures": 0,
+      "graph_replays": 0,
+      "graph_evictions": 0,
+      "graph_fallbacks": 0,
+      "graph_warmup_calls": 0,
+      "graph_warmup_rows": 0,
+      "graph_validation_failures": 0,
+      "graph_validation_replays": 0,
+      "cache_seconds": 8.83336178958416e-05,
+      "h2d_enqueue_seconds": 0.007621582597494125,
+      "neural_round_trip_seconds": 0.8952042050659657,
+      "return_seconds": 0.0037059811875224113
+    },
+    "policy_only_step": {
+      "losses": {
+        "total": 4.962986469268799,
+        "policy": 3.6616663932800293,
+        "outcome": 0.0,
+        "score_margin": 0.0,
+        "ownership": 0.0,
+        "alive": 0.0,
+        "soft_policy": 5.20527982711792
+      },
+      "gradient_norm": 0.9678587913513184
+    },
+    "enriched_step": {
+      "losses": {
+        "total": 6.693863868713379,
+        "policy": 3.659939765930176,
+        "outcome": 0.6591405868530273,
+        "score_margin": 3.610386371612549,
+        "ownership": 0.696398138999939,
+        "alive": 0.04126158356666565,
+        "soft_policy": 5.175845146179199
+      },
+      "gradient_norm": 2.1723532676696777
+    },
+    "fresh_position_credit": 2,
+    "enriched_rows": 2,
+    "retry_credit": 0,
+    "shared_training_geometry": true,
+    "peak_cuda_allocated_bytes": 488418304,
+    "elapsed_seconds": 12.672381239011884
+  },
+  "audit": {
+    "audit": "independent-live-replay-post-deployment",
+    "schema_version": 1,
+    "started_ns": 1789106765611826386,
+    "expected_source": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
+    "read_only": true,
+    "checks": {
+      "source_and_profile": {
+        "status": "passed",
+        "evidence": {
+          "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
+          "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-20260911.yaml",
+          "profile_sha256": "e7f6420f08d1b5efdad9490d1ee0521041840a717936c25ffbc61556109458da",
+          "changes": [
+            {
+              "path": "learner.replay_refresh_seconds",
+              "from": 300.0,
+              "to": 60.0
+            },
+            {
+              "path": "orchestration.model_refresh.work_scheduling.enabled",
+              "from": false,
+              "to": true
+            },
+            {
+              "path": "selfplay.policy_publication.enabled",
+              "from": false,
+              "to": true
+            }
+          ],
+          "source_files_verified": 513,
+          "native_path": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+          "native_sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b",
+          "completed_ns": 1789094239866245457
+        }
+      },
+      "worker_and_learner_health": {
+        "status": "passed",
+        "evidence": {
+          "checked_ns": 1789106767067826602,
+          "launch_ns": 1789093084928513649,
+          "activation_stop_step": 180377,
+          "learner_step": 184405,
+          "advanced_steps": 4028,
+          "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-e2a7bcd362eb85cb36da9ed4d22494135b5c2885b8d5d4ac61c059a639d39eb5.pt",
+          "coordinator": {
+            "pid": 1945009,
+            "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+            "state": "S (sleeping)",
+            "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python"
+          },
+          "workers": {
+            "actor-cpu-ring4": {
+              "pid": 1945086,
+              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "state": "running",
+              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "phase": "selfplay_policy_published",
+              "heartbeat_age_seconds": 0.243457038,
+              "restart_count": 0,
+              "completed_inference_requests": null,
+              "failed_inference_requests": 0,
+              "inference_worker_failures": 0
+            },
+            "actor-gpu-1": {
+              "pid": 1945079,
+              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "state": "running",
+              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "phase": "shared_cohorts",
+              "heartbeat_age_seconds": 0.174489834,
+              "restart_count": 0,
+              "completed_inference_requests": 1104930,
+              "failed_inference_requests": 0,
+              "inference_worker_failures": 0
+            },
+            "actor-gpu-2": {
+              "pid": 1945080,
+              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "state": "running",
+              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "phase": "shared_cohorts",
+              "heartbeat_age_seconds": 0.032569478,
+              "restart_count": 0,
+              "completed_inference_requests": 1241917,
+              "failed_inference_requests": 0,
+              "inference_worker_failures": 0
+            },
+            "actor-gpu-3": {
+              "pid": 1945081,
+              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "state": "running",
+              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "phase": "shared_cohorts",
+              "heartbeat_age_seconds": 0.152924375,
+              "restart_count": 0,
+              "completed_inference_requests": 1281705,
+              "failed_inference_requests": 0,
+              "inference_worker_failures": 0
+            },
+            "actor-gpu-4": {
+              "pid": 1945082,
+              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "state": "running",
+              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "phase": "shared_cohorts",
+              "heartbeat_age_seconds": 0.552833281,
+              "restart_count": 0,
+              "completed_inference_requests": 1184619,
+              "failed_inference_requests": 0,
+              "inference_worker_failures": 0
+            },
+            "actor-gpu-5": {
+              "pid": 1945083,
+              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "state": "running",
+              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "phase": "shared_cohorts",
+              "heartbeat_age_seconds": 0.536690045,
+              "restart_count": 0,
+              "completed_inference_requests": 1213663,
+              "failed_inference_requests": 0,
+              "inference_worker_failures": 0
+            },
+            "actor-gpu-6": {
+              "pid": 1945084,
+              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "state": "running",
+              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "phase": "shared_cohorts",
+              "heartbeat_age_seconds": 0.337678101,
+              "restart_count": 0,
+              "completed_inference_requests": 1154465,
+              "failed_inference_requests": 0,
+              "inference_worker_failures": 0
+            },
+            "actor-gpu-7": {
+              "pid": 1945085,
+              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "state": "running",
+              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "phase": "shared_cohorts",
+              "heartbeat_age_seconds": 1.717300314,
+              "restart_count": 0,
+              "completed_inference_requests": 840536,
+              "failed_inference_requests": 0,
+              "inference_worker_failures": 0
+            },
+            "arena-promotion": {
+              "pid": 1945088,
+              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "state": "running",
+              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "phase": "awaiting_new_candidate",
+              "heartbeat_age_seconds": 3.585020639,
+              "restart_count": 0,
+              "completed_inference_requests": null,
+              "failed_inference_requests": 0,
+              "inference_worker_failures": 0
+            },
+            "learner": {
+              "pid": 1945078,
+              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "state": "running",
+              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "phase": "update_to_data_wait",
+              "heartbeat_age_seconds": 2.040582446,
+              "restart_count": 0,
+              "completed_inference_requests": null,
+              "failed_inference_requests": 0,
+              "inference_worker_failures": 0
+            }
+          },
+          "hardware_healthy": true
+        }
+      },
+      "replay_logical_credit": {
+        "status": "passed",
+        "evidence": {
+          "schema": 6,
+          "baseline_committed_samples": 68419884,
+          "logical_credit_delta": 1223347,
+          "all_game_head_positions": 1223347,
+          "publication_revisions": 48245,
+          "enriched_samples": 1025160,
+          "counter": {
+            "run_id": "variant-network",
+            "generation_family": "variant-network-a",
+            "committed_samples": 69643231,
+            "updated_ns": 1789106766944912348,
+            "history_complete": 1,
+            "replay_revision": 48245,
+            "enriched_rows": 1025160
+          },
+          "heads_by_ring": [
+            {
+              "ring": 4,
+              "games": 968,
+              "positions": 38840,
+              "enriched": 25472,
+              "revisions": 2484,
+              "finalized": 960
+            },
+            {
+              "ring": 6,
+              "games": 384,
+              "positions": 30717,
+              "enriched": 25376,
+              "revisions": 1465,
+              "finalized": 384
+            },
+            {
+              "ring": 8,
+              "games": 384,
+              "positions": 47358,
+              "enriched": 40864,
+              "revisions": 1949,
+              "finalized": 384
+            },
+            {
+              "ring": 10,
+              "games": 6704,
+              "positions": 1106432,
+              "enriched": 933448,
+              "revisions": 42347,
+              "finalized": 5613
+            }
+          ],
+          "ready": {
+            "shards": 17607,
+            "physical_ready_rows": 15371255
+          },
+          "game_publications_validated": true
+        }
+      },
+      "optional_payload_samples": {
+        "status": "passed",
+        "evidence": {
+          "records": [
+            {
+              "shard_id": 118042,
+              "ring": 10,
+              "finalized": false,
+              "rows": 104,
+              "status": "verified"
+            },
+            {
+              "shard_id": 118016,
+              "ring": 10,
+              "finalized": true,
+              "rows": 221,
+              "status": "verified"
+            },
+            {
+              "shard_id": 107589,
+              "ring": 6,
+              "finalized": true,
+              "rows": 101,
+              "status": "verified"
+            },
+            {
+              "shard_id": 114497,
+              "ring": 8,
+              "finalized": true,
+              "rows": 145,
+              "status": "verified"
+            }
+          ],
+          "verified": 4,
+          "skipped_gc_races": 0,
+          "note": "Optional samples; no production pins were installed."
+        }
+      },
+      "protection_and_global_continuity": {
+        "status": "passed",
+        "evidence": {
+          "units": {
+            "edgeconnect-startrain-variant-network.service": {
+              "ActiveState": "active",
+              "SubState": "running",
+              "MainPID": "1945009",
+              "NRestarts": "0",
+              "ExecMainStatus": "0",
+              "UnitFileState": "enabled",
+              "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training"
+            },
+            "edgeconnect-startrain-variant-network-monitor.service": {
+              "ActiveState": "active",
+              "SubState": "running",
+              "MainPID": "1945091",
+              "NRestarts": "0",
+              "ExecMainStatus": "0",
+              "UnitFileState": "enabled",
+              "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training"
+            },
+            "edgeconnect-startrain-variant-network-report.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting",
+              "MainPID": null,
+              "NRestarts": null,
+              "ExecMainStatus": null,
+              "UnitFileState": "enabled",
+              "WorkingDirectory": null
+            },
+            "edgeconnect-startrain-variant-network-backup.timer": {
+              "ActiveState": "active",
+              "SubState": "waiting",
+              "MainPID": null,
+              "NRestarts": null,
+              "ExecMainStatus": null,
+              "UnitFileState": "enabled",
+              "WorkingDirectory": null
+            },
+            "edgeconnect-startrain-variant-network-disaster-backup.timer": {
+              "ActiveState": "active",
+              "SubState": "running",
+              "MainPID": null,
+              "NRestarts": null,
+              "ExecMainStatus": null,
+              "UnitFileState": "enabled",
+              "WorkingDirectory": null
+            },
+            "edgeconnect-startrain-variant-network-report.service": {
+              "ActiveState": "inactive",
+              "SubState": "dead",
+              "MainPID": "0",
+              "NRestarts": "0",
+              "ExecMainStatus": "0",
+              "UnitFileState": "static",
+              "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training"
+            },
+            "edgeconnect-startrain-variant-network-backup.service": {
+              "ActiveState": "inactive",
+              "SubState": "dead",
+              "MainPID": "0",
+              "NRestarts": "0",
+              "ExecMainStatus": "0",
+              "UnitFileState": "static",
+              "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training"
+            },
+            "edgeconnect-startrain-variant-network-disaster-backup.service": {
+              "ActiveState": "activating",
+              "SubState": "start",
+              "MainPID": "1981867",
+              "NRestarts": "0",
+              "ExecMainStatus": "0",
+              "UnitFileState": "static",
+              "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training"
+            }
+          },
+          "global_continuity": {
+            "edgeconnect-startrain-continuity.service": {
+              "ActiveState": "inactive",
+              "SubState": "dead",
+              "UnitFileState": "static",
+              "MainPID": "0"
+            },
+            "edgeconnect-startrain-continuity.timer": {
+              "ActiveState": "inactive",
+              "SubState": "dead",
+              "UnitFileState": "disabled"
+            }
+          },
+          "global_continuity_unchanged": true
+        }
+      },
+      "backup_evidence": {
+        "status": "passed",
+        "evidence": {
+          "verified_disaster_receipt": {
+            "catalog_bytes": 22129935845,
+            "catalog_files": 16072,
+            "created_ns": 1789093700187518757,
+            "generation_family": "variant-network-a",
+            "objects": 16071,
+            "run_id": "variant-network",
+            "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789093700187518757-2cd38d2c970dd28c594674d27ba8fc02e328efadbf73f19db850b019300b922b.json",
+            "snapshot_bytes": 3122152,
+            "snapshot_sha256": "2cd38d2c970dd28c594674d27ba8fc02e328efadbf73f19db850b019300b922b",
+            "status": "ok"
+          },
+          "current_disaster_snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789106581182799457-08bbba90ee8c44a698ea582c15ef75c725c88a26cb2c07a094924715ffb71d90.json",
+          "current_disaster_snapshot_matches_verified_receipt": false,
+          "current_disaster_created_ns": 1789106581182799457,
+          "local_replay_snapshot": "/home/ubuntu/edgeconnect-runs/variant-network/recovery/replay-manifest/manifest-1789106128145413968.sqlite3",
+          "local_replay_schema": 6,
+          "local_replay_sha256": "16e2dae09454e4ea0f03d016690625cde435a226cd2899dbc1a066645559491a",
+          "note": "The controller already verified disaster payload objects; this audit verifies that immutable receipt and current pointer/documents without rerunning a large NFS payload scan."
+        }
+      }
+    },
+    "errors": [],
+    "completed_ns": 1789106772866361550,
+    "status": "passed"
+  },
+  "temporary_services": {
+    "checked_ns": 1789106961467834456,
+    "all_temporary_processes_stopped": true,
+    "cleared_failed_build_units": [
+      "edgeconnect-live-replay-build-70058b1.service",
+      "edgeconnect-live-replay-build-finish-70058b1.service"
+    ],
+    "units_before_cleanup": {
+      "edgeconnect-live-replay-build-70058b1.service": {
+        "MainPID": "0",
+        "ControlGroup": "",
+        "ActiveState": "failed",
+        "SubState": "failed"
+      },
+      "edgeconnect-live-replay-build-finish-70058b1.service": {
+        "MainPID": "0",
+        "ControlGroup": "",
+        "ActiveState": "failed",
+        "SubState": "failed"
+      },
+      "edgeconnect-live-replay-final-checks-70058b1.service": {
+        "MainPID": "0",
+        "ControlGroup": "",
+        "ActiveState": "inactive",
+        "SubState": "dead"
+      },
+      "edgeconnect-live-replay-source-70058b1.service": {
+        "MainPID": "0",
+        "ControlGroup": "",
+        "ActiveState": "inactive",
+        "SubState": "dead"
+      },
+      "edgeconnect-live-replay-activation-70058b1.service": {
+        "MainPID": "0",
+        "ControlGroup": "",
+        "ActiveState": "inactive",
+        "SubState": "dead"
+      },
+      "edgeconnect-live-replay-h100-smoke.service": {
+        "MainPID": "0",
+        "ControlGroup": "",
+        "ActiveState": "inactive",
+        "SubState": "dead"
+      }
+    }
+  },
+  "source_helper_hashes": {
+    "rollout.py": "b421dc2c9f099a89d0f113ea69208136ea8e00f6a5f16e3de41ca829ea84547c",
+    "record_epoch.py": "c390c8008935a081fcffaec004b845254b025f8357d5e379f26f573f5489807e",
+    "h100_smoke.py": "532a7b7315c4757116fc9990df8aff5a0d293a76dc725d870637bc99ea8ffeda"
+  },
+  "activation_helper_hashes": {
+    "rollout_activation.py": "cec8a5bf6ff62bf60b829c859d610e5c8b3e11f55dca57ec309f4b97bd515925",
+    "snapshot_verify_helper.py": "94ab0a67294038968afbfe5b4bf1ad4751caf04f769ffaa41afff182729c1e66",
+    "record_epoch.py": "c390c8008935a081fcffaec004b845254b025f8357d5e379f26f573f5489807e",
+    "h100_smoke.py": "532a7b7315c4757116fc9990df8aff5a0d293a76dc725d870637bc99ea8ffeda"
+  },
+  "observational_performance_screen": {
+    "window_start_utc": "2026-09-11T05:00:00Z",
+    "last_observation_utc": "2026-09-11T05:59:55Z",
+    "observations": 720,
+    "elapsed_seconds": 3595,
+    "worker_identity_changes": 0,
+    "nonfinite_loss_or_gradient_events": 0,
+    "graph_validation_or_fallback_failures": 0,
+    "new_positions": 312265,
+    "enriched_positions": 309104,
+    "physical_rows_written": 1246745,
+    "completed_games": 2074,
+    "freshness_refreshes": 55,
+    "refreshes_observing_enrichment": 55,
+    "enriched_rows_observed_by_refreshes": 301624,
+    "refresh_age_seconds": {
+      "min": 60.36,
+      "median": 61.37,
+      "max": 62.82
+    },
+    "utd_wait_percent": 80.25,
+    "median_device_step_seconds": 0.407,
+    "optimizer_steps_per_hour": 901.3,
+    "useful_neural_rows_per_second_gpu1_through6": 17042,
+    "replay_wait_seconds": 150,
+    "replay_wait_percent": 4.17,
+    "completed_gpu_tasks_append_percent_of_summed_task_wall": 2.82,
+    "completed_gpu_task_count": 26,
+    "prior_window": {
+      "start_utc": "2026-09-10T17:00:00Z",
+      "end_utc": "2026-09-10T18:00:00Z",
+      "utd_wait_percent": 81.45,
+      "median_device_step_seconds": 0.407,
+      "optimizer_steps_per_hour": 1150.6,
+      "useful_neural_rows_per_second_gpu1_through6": 18471,
+      "replay_wait_seconds": 19,
+      "replay_wait_percent": 0.53,
+      "completed_gpu_tasks_append_percent_of_summed_task_wall": 0.056,
+      "completed_gpu_task_count": 30
+    },
+    "limits": [
+      "Different models, tasks and scheduling; observational comparison cannot isolate causal throughput changes.",
+      "Completed-task timings may include time outside the hourly observation window.",
+      "Delivery is working; no throughput gain or Elo/hour multiplier has been established."
+    ]
+  }
+}
