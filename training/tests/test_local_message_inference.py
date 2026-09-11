@@ -12,6 +12,18 @@ from test_model import position, randomize_v3_parameters
 from test_inference_efficiency import encoded_requests
 
 
+@pytest.fixture(autouse=True)
+def isolate_experimental_compilation():
+    # These cases compile several modes, dtypes and shapes of the same forward
+    # code object. Keep their variants out of subsequent training tests, and
+    # start each experiment independently without changing Dynamo's limits.
+    torch.compiler.reset()
+    try:
+        yield
+    finally:
+        torch.compiler.reset()
+
+
 def model():
     torch.manual_seed(127)
     result = GraphResTNet(
