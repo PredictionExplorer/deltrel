@@ -1,7 +1,7 @@
 # Arena, checkpoint and graph-cache efficiency — September 12, 2026
 
-Implementation is complete; production activation and isolated H100 results are
-pending. This release removes repeated learner checkpoint verification, adds
+Implementation is complete; production activation and the corrected cache-capacity
+comparison are pending. This release removes repeated learner checkpoint verification, adds
 optional exact arena endings, and prepares a measured increase in actor graph-cache
 capacity. No end-to-end throughput or Elo/hour gain is established yet.
 
@@ -38,6 +38,14 @@ implemented resume reader independently revalidated all 192 shortened completion
 with the option enabled and disabled. These are historical work counts and CPU
 proof checks; H100 timing and a full arena comparison remain pending.
 
+The isolated H100 selected-tail smoke subsequently passed all twelve games, with
+the original winners, openings, swaps and PDA intact. Controls searched 96 remaining
+moves and evaluated 8,561 neural rows; proof termination added no moves or inference.
+The six proof checks took 32.75 ms total. The 108.93-second worker included cold
+compilation and model loading, so these selected tails are not a whole-arena speedup
+measurement. The smoke derives the original per-match promotion seed from the frozen
+model identities rather than substituting the profile's seed namespace.
+
 **Actor graph capacity.** The production 16-entry cache can hold the sixteen
 current batch buckets for one board size. A shared model serving multiple board
 sizes can evict and recapture useful graphs. The candidate changes only
@@ -63,7 +71,7 @@ PYTHONPATH=. .venv/bin/python scripts/benchmark_graph_cache_capacity.py \
   --config /path/to/original-baseline-profile.yaml \
   --manifest /path/to/immutable-model-manifest.json \
   --actor-gpu-id 1 --device cuda:7 \
-  --graph-cache-bytes 8589934592 --repeats 2 --cycles 3 \
+  --graph-cache-bytes 8589934592 --repeats 2 --cycles 2 \
   --execute --output /path/to/new-graph-capacity-report.json
 ```
 
@@ -77,8 +85,10 @@ Arms run serially in alternating order. Each begins with an empty graph cache;
 every cold capture, subsequent recapture, validation, transfer and inference return
 is timed. Graphs remain resident across cycles. Only prediction caches are cleared
 between repeated fixtures, preventing prediction hits from hiding graph churn.
-Compilation is primed at matching physical shapes and reported separately, as is
-producer preparation. Reports include exact response fingerprints, per-cycle
+Compilation is primed through the actual production graph-16 path for all 48
+board/shape pairs, and those graph outputs establish the bitwise reference. Priming
+graphs are then closed and discarded before fresh timed arms. Priming and producer
+preparation are reported separately. Reports include exact response fingerprints, per-cycle
 counters, cold/steady totals, peak memory, retained bytes and GPU owner observations.
 
 Admission recomputes evidence rather than trusting saved success flags. It requires
@@ -88,6 +98,19 @@ throughput ratios of at least 1.0 in every scenario. At least one mixed case mus
 reduce captures. Baseline model/config hashes, inference settings, compilation,
 precision and producer topology remain bound to the evidence. Original search
 quality and full-target-production evidence remains mandatory.
+
+The benchmark preserves the actor processes' math settings: highest FP32 matmul
+precision, CUDA TF32 disabled, cuDNN TF32 enabled, and no environment-level TF32
+overrides. These are recorded before priming and before/after every arm, and the
+evidence validator checks them independently.
+
+The first rollout attempt was withdrawn before migration because its cache benchmark
+enabled the learner's FP32 math settings and used graph-off outputs as its reference.
+Its two cache capacities produced identical responses on all 48 shapes, but the
+graph-off oracle differed on 45 shapes and capture-context compilation contaminated
+the first timed arm. Those results cannot authorize a capacity change. The original
+training release resumed from the exact saved step 208,701. The corrected benchmark
+retains the original strict parity and throughput gates; no tolerance was relaxed.
 
 ## Compatibility, deployment and rollback
 

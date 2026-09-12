@@ -8,6 +8,7 @@ complete per-cycle counters, response fingerprints, memory and owner records.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 import hashlib
 import json
 import math
@@ -22,6 +23,28 @@ SCENARIOS = {
     "mixed-8-10": (8, 10),
     "mixed-6-8-10": (6, 8, 10),
 }
+
+# Actors start independent Python processes and do not enable the learner's
+# fast FP32 math. Evidence for changing only cache capacity must preserve these
+# settings, including the absence of environment-level TF32 overrides.
+ACTOR_INFERENCE_MATH = {
+    "float32_matmul_precision": "highest",
+    "cuda_matmul_allow_tf32": False,
+    "cudnn_allow_tf32": True,
+    "environment": {
+        "NVIDIA_TF32_OVERRIDE": None,
+        "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE": None,
+    },
+}
+
+
+def actor_inference_math_expected() -> dict[str, Any]:
+    """Return an independently owned copy for plans and report fixtures."""
+    return deepcopy(ACTOR_INFERENCE_MATH)
+
+
+def validate_actor_inference_math(state: Any, *, phase: str) -> None:
+    _equal(state, ACTOR_INFERENCE_MATH, f"actor inference math at {phase}")
 
 
 def build_trace(
@@ -225,6 +248,16 @@ def validate_graph_cache_report(
         _equal(plan["treatment_entries"], 32, "treatment entry count")
         _equal(plan["entries"], [16, 32], "entry choices")
         _equal(
+            plan["reference_execution"], "production-graph-16", "reference execution"
+        )
+        validate_actor_inference_math(plan["actor_inference_math"], phase="plan")
+        for phase in (
+            "worker_initial_math",
+            "priming_math_before",
+            "priming_math_after",
+        ):
+            validate_actor_inference_math(report[phase], phase=phase)
+        _equal(
             profile_inference.get("cuda_graph_max_entries"),
             16,
             "baseline entry capacity",
@@ -277,6 +310,42 @@ def validate_graph_cache_report(
             raise ValueError("graph cache evidence reference responses are incomplete")
         for digest in references.values():
             _sha(digest, "reference response")
+        priming = report["reference_priming"]
+        expected_shapes = sorted(
+            {tuple(key) for trace in expected_traces.values() for key in trace}
+        )
+        _equal(priming["execution"], "production-graph-16", "reference execution")
+        _equal(priming["entries"], 16, "reference cache capacity")
+        _equal(priming["cuda_graphs"], True, "reference graphs")
+        _equal(
+            priming["requested_shapes"],
+            [list(key) for key in expected_shapes],
+            "reference capture shapes",
+        )
+        _equal(priming["cache_empty_after_close"], True, "discarded priming graphs")
+        for phase in ("math_before", "math_after"):
+            validate_actor_inference_math(priming[phase], phase=f"reference/{phase}")
+        _positive(priming["seconds"], "reference priming duration")
+        priming_metrics = priming["metrics"]
+        for name, expected in (
+            ("evaluator_calls", len(expected_shapes)),
+            ("neural_calls", len(expected_shapes)),
+            ("graph_captures", len(expected_shapes)),
+            ("graph_replays", len(expected_shapes)),
+            ("graph_validation_replays", len(expected_shapes)),
+            ("graph_warmup_calls", 4 * len(expected_shapes)),
+            ("evaluator_rows", sum(size for _, size in expected_shapes)),
+            ("neural_rows", sum(size for _, size in expected_shapes)),
+        ):
+            _equal(priming_metrics[name], expected, f"reference {name}")
+        for name in (
+            "cache_hits",
+            "deduplicated_rows",
+            "neural_padding_rows",
+            "graph_fallbacks",
+            "graph_validation_failures",
+        ):
+            _equal(priming_metrics[name], 0, f"reference {name}")
         records = report["records"]
         expected_sequence = [
             (scenario, repeat, entries)
@@ -298,6 +367,10 @@ def validate_graph_cache_report(
                 "arm order",
             )
             _equal(record["graph_cache_bytes"], byte_limit, "arm byte cap")
+            for phase in ("math_before", "math_after"):
+                validate_actor_inference_math(
+                    record[phase], phase=f"{scenario}/{repeat}/{entries}/{phase}"
+                )
             trace = expected_traces[scenario]
             calls, rows = len(trace), sum(key[1] for key in trace)
             cycle_records = record["cycles"]

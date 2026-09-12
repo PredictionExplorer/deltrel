@@ -10,7 +10,12 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import benchmark_graph_cache_capacity as benchmark
-from startrain.graph_cache_evidence import validate_graph_cache_report
+from startrain.graph_cache_evidence import (
+    ACTOR_INFERENCE_MATH,
+    actor_inference_math_expected,
+    validate_actor_inference_math,
+    validate_graph_cache_report,
+)
 from startrain.inference import InferenceMetrics, InferenceResponse
 
 SNAPSHOT_STAMPS = itertools.count(1)
@@ -48,6 +53,15 @@ class Adapter:
         self.cache = OrderedDict()
         self.metrics = InferenceMetrics()
         self.resets = 0
+        self.config = SimpleNamespace(cuda_graphs=True, cuda_graph_max_entries=entries)
+        self.closed = False
+
+    def prepare_requests(self, request):
+        return request
+
+    def close(self):
+        self.closed = True
+        self.cache.clear()
 
     def clear_prediction_cache(self):
         self.resets += 1
@@ -90,7 +104,7 @@ class Adapter:
         return [(result, None)]
 
 
-def run_arm(scenario, entries, *, byte_slots=64, corrupt=False):
+def run_arm(scenario, entries, *, byte_slots=64, corrupt=False, cycles=3):
     clock = Clock()
     adapter = Adapter(clock, entries, byte_slots=byte_slots, corrupt=corrupt)
     trace = benchmark.build_trace(scenario)
@@ -103,7 +117,7 @@ def run_arm(scenario, entries, *, byte_slots=64, corrupt=False):
         trace,
         prepared,
         reference,
-        cycles=3,
+        cycles=cycles,
         sync=lambda: None,
         snapshot=snapshot_factory(),
         memory=lambda: {
@@ -112,6 +126,7 @@ def run_arm(scenario, entries, *, byte_slots=64, corrupt=False):
             "graph_retained_bytes": len(adapter.cache) * 1024**2,
         },
         clock=clock,
+        math_state=actor_inference_math_expected,
     )
     return measured, adapter
 
@@ -171,7 +186,7 @@ def test_nonfinite_or_bad_routing_is_rejected():
         benchmark.response_digest(response(1), 2)
 
 
-def fixture_report():
+def fixture_report(*, cycles=2):
     profile = {
         "cuda_graph_max_entries": 16,
         "cuda_graphs": True,
@@ -194,13 +209,15 @@ def fixture_report():
         "control_entries": 16,
         "treatment_entries": 32,
         "entries": [16, 32],
+        "actor_inference_math": actor_inference_math_expected(),
+        "reference_execution": "production-graph-16",
         "graph_cache_bytes_per_arm": 8 * 1024**3,
         "production_graph_cache_bytes_per_model": 8 * 1024**3,
         "traces": {
             name: [list(key) for key in benchmark.build_trace(name)]
             for name in benchmark.SCENARIOS
         },
-        "cycles": 3,
+        "cycles": cycles,
         "repeats": 2,
         "memory_fraction": 0.5,
         "actor_gpu_id": 1,
@@ -209,7 +226,7 @@ def fixture_report():
     for scenario in benchmark.SCENARIOS:
         for repeat in range(2):
             for entries in (16, 32) if repeat == 0 else (32, 16):
-                record, _ = run_arm(scenario, entries)
+                record, _ = run_arm(scenario, entries, cycles=cycles)
                 records.append(
                     {
                         "scenario": scenario,
@@ -220,6 +237,14 @@ def fixture_report():
                     }
                 )
     keys = {tuple(key) for trace in plan["traces"].values() for key in trace}
+    clock = Clock()
+    _, priming = benchmark.prime_reference(
+        lambda entries: Adapter(clock, entries),
+        {key: key for key in keys},
+        sync=lambda: None,
+        math_state=actor_inference_math_expected,
+        clock=clock,
+    )
     report = {
         "plan": plan,
         "plan_sha256": hashlib.sha256(
@@ -229,6 +254,10 @@ def fixture_report():
         "gpu_uuid": "GPU-test",
         "device_name": "NVIDIA H100 80GB HBM3",
         "device_total_memory_bytes": 80 * 1024**3,
+        "worker_initial_math": actor_inference_math_expected(),
+        "priming_math_before": actor_inference_math_expected(),
+        "priming_math_after": actor_inference_math_expected(),
+        "reference_priming": priming,
         "reference_response_sha256": {
             f"{ring}:{rows}": benchmark.response_digest(response(rows), rows)
             for ring, rows in keys
@@ -319,6 +348,7 @@ def test_cli_bounds_and_manifest_alias():
         ["--config", "config.yaml", "--manifest", "model.json"]
     )
     assert str(args.checkpoint) == "model.json"
+    assert args.cycles == 2 and args.repeats == 2
     benchmark.validate(args)
     for field, value in (
         ("repeats", 3),
@@ -331,3 +361,139 @@ def test_cli_bounds_and_manifest_alias():
         setattr(invalid, field, value)
         with pytest.raises(ValueError):
             benchmark.validate(invalid)
+
+
+def test_two_cycles_retain_cold_cost_and_complete_capacity_revisit():
+    old, _ = run_arm("mixed-6-10", 16, cycles=2)
+    new, _ = run_arm("mixed-6-10", 32, cycles=2)
+    assert new["cold_cycle"]["metrics"]["graph_captures"] == 32
+    assert new["steady_totals"]["graph_captures"] == 0
+    assert old["steady_totals"]["graph_captures"] > 0
+    assert len(old["cycles"]) == len(new["cycles"]) == 2
+    assert old["useful_rows"] == new["useful_rows"]
+
+
+def test_reference_uses_graph16_captures_every_shape_and_closes_before_timing():
+    clock = Clock()
+    created = []
+
+    def make_adapter(entries):
+        adapter = Adapter(clock, entries)
+        created.append(adapter)
+        return adapter
+
+    keys = {key for name in benchmark.SCENARIOS for key in benchmark.build_trace(name)}
+    reference, priming = benchmark.prime_reference(
+        make_adapter,
+        {key: key for key in keys},
+        sync=lambda: None,
+        math_state=actor_inference_math_expected,
+        clock=clock,
+    )
+    assert len(created) == 1 and created[0].entries == 16
+    assert created[0].closed and not created[0].cache
+    assert priming["execution"] == "production-graph-16"
+    assert priming["metrics"]["graph_captures"] == 48
+    assert priming["metrics"]["graph_replays"] == 48
+    assert priming["cache_empty_after_close"]
+    assert len(reference) == 48
+    # A measured control is a fresh object: its first cycle must still capture.
+    control, _ = run_arm("ring10-control", 16, cycles=2)
+    assert control["cold_cycle"]["metrics"]["graph_captures"] == 16
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    ["graph_off", "missing_capture", "retained_graphs", "incomplete_shapes"],
+)
+def test_nonproduction_reference_or_hidden_priming_is_rejected(evidence, corruption):
+    original, expected = evidence
+    report = deepcopy(original)
+    priming = report["reference_priming"]
+    if corruption == "graph_off":
+        priming["cuda_graphs"] = False
+    elif corruption == "missing_capture":
+        priming["metrics"]["graph_captures"] -= 1
+    elif corruption == "retained_graphs":
+        priming["cache_empty_after_close"] = False
+    else:
+        priming["requested_shapes"].pop()
+    with pytest.raises(ValueError):
+        validate_graph_cache_report(report, **expected)
+
+
+def test_math_reader_observes_flags_and_environment_without_normalizing_them():
+    torch = SimpleNamespace(
+        get_float32_matmul_precision=lambda: "high",
+        backends=SimpleNamespace(
+            cuda=SimpleNamespace(matmul=SimpleNamespace(allow_tf32=True)),
+            cudnn=SimpleNamespace(allow_tf32=False),
+        ),
+    )
+    environment = {"NVIDIA_TF32_OVERRIDE": "1"}
+    actual = benchmark.read_actor_inference_math(torch, environment)
+    assert actual == {
+        "float32_matmul_precision": "high",
+        "cuda_matmul_allow_tf32": True,
+        "cudnn_allow_tf32": False,
+        "environment": {
+            "NVIDIA_TF32_OVERRIDE": "1",
+            "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE": None,
+        },
+    }
+    assert environment == {"NVIDIA_TF32_OVERRIDE": "1"}
+    with pytest.raises(ValueError, match="actor inference math"):
+        validate_actor_inference_math(actual, phase="test")
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [
+        "plan",
+        "worker_initial_math",
+        "priming_math_before",
+        "priming_math_after",
+        "math_before",
+        "math_after",
+    ],
+)
+@pytest.mark.parametrize(
+    "alteration", ["missing", "precision", "cuda", "cudnn", "environment"]
+)
+def test_admission_requires_actor_math_at_every_phase(evidence, phase, alteration):
+    original, expected = evidence
+    report = deepcopy(original)
+    if phase == "plan":
+        owner, key = report["plan"], "actor_inference_math"
+    elif phase in ("math_before", "math_after"):
+        owner, key = report["records"][0], phase
+    else:
+        owner, key = report, phase
+    if alteration == "missing":
+        owner.pop(key)
+    elif alteration == "precision":
+        owner[key]["float32_matmul_precision"] = "high"
+    elif alteration == "cuda":
+        owner[key]["cuda_matmul_allow_tf32"] = True
+    elif alteration == "cudnn":
+        owner[key]["cudnn_allow_tf32"] = False
+    else:
+        owner[key]["environment"]["TORCH_ALLOW_TF32_CUBLAS_OVERRIDE"] = "1"
+    report["plan_sha256"] = hashlib.sha256(
+        json.dumps(report["plan"], sort_keys=True).encode()
+    ).hexdigest()
+    report["assessment"]["eligible_for_controlled_activation"] = True
+    with pytest.raises(ValueError):
+        validate_graph_cache_report(report, **expected)
+
+
+def test_math_contract_copies_and_untyped_flags_are_not_accepted():
+    state = actor_inference_math_expected()
+    state["environment"]["NVIDIA_TF32_OVERRIDE"] = "0"
+    assert ACTOR_INFERENCE_MATH["environment"]["NVIDIA_TF32_OVERRIDE"] is None
+    with pytest.raises(ValueError):
+        validate_actor_inference_math(state, phase="override")
+    state = actor_inference_math_expected()
+    state["cuda_matmul_allow_tf32"] = 0
+    with pytest.raises(ValueError):
+        validate_actor_inference_math(state, phase="untyped")

@@ -4,8 +4,9 @@
 The default only prints a pinned plan. Execution requires an already exclusive
 GPU and a new output path; this tool never controls other workloads. Each arm
 starts with an empty graph cache and times every capture, recapture, validation,
-transfer and normal inference response. Compilation is primed separately using
-the same model and shapes. Prediction caches alone are cleared between calls so
+transfer and normal inference response. Compilation and the reference outputs are
+primed separately through the production 16-entry graph path; those graphs are
+discarded before timing. Prediction caches alone are cleared between calls so
 repeated fixtures cannot hide graph-cache thrashing behind prediction hits.
 """
 
@@ -31,9 +32,30 @@ from startrain.graph_cache_evidence import (
     BUCKETS,
     SCENARIOS,
     assess,
+    actor_inference_math_expected,
     build_trace,
+    validate_actor_inference_math,
     validate_graph_cache_report,
 )
+
+
+def read_actor_inference_math(
+    torch_module: Any = None, environment: Any = None
+) -> dict[str, Any]:
+    """Observe actual process settings without changing any precision flags."""
+    if torch_module is None:
+        import torch as torch_module
+    if environment is None:
+        environment = os.environ
+    return {
+        "float32_matmul_precision": torch_module.get_float32_matmul_precision(),
+        "cuda_matmul_allow_tf32": torch_module.backends.cuda.matmul.allow_tf32,
+        "cudnn_allow_tf32": torch_module.backends.cudnn.allow_tf32,
+        "environment": {
+            name: environment.get(name)
+            for name in ("NVIDIA_TF32_OVERRIDE", "TORCH_ALLOW_TF32_CUBLAS_OVERRIDE")
+        },
+    }
 
 
 def response_digest(response: Any, rows: int) -> str:
@@ -67,6 +89,77 @@ def response_digest(response: Any, rows: int) -> str:
     return digest.hexdigest()
 
 
+def prime_reference(
+    make_adapter: Any,
+    requests: dict[tuple[int, int], Any],
+    *,
+    sync: Any,
+    math_state: Any = read_actor_inference_math,
+    clock: Any = time.perf_counter,
+) -> tuple[dict[tuple[int, int], str], dict[str, Any]]:
+    """Warm capture-specific compiler paths with the actual production oracle.
+
+    This adapter is never reused for measurements. Every timed arm still starts
+    empty and pays its own capture, validation and recapture costs.
+    """
+    prime = make_adapter(16)
+    reference = {}
+    before_math = math_state()
+    validate_actor_inference_math(before_math, phase="priming start")
+    tick = clock()
+    try:
+        if not prime.config.cuda_graphs or prime.config.cuda_graph_max_entries != 16:
+            raise ValueError("reference requires the production 16-entry graph path")
+        before = prime.metrics_snapshot()
+        for key in sorted(requests):
+            prime.clear_prediction_cache()
+            prepared = prime.prepare_requests(requests[key])
+            response = prime.evaluate_prepared([prepared])[0][0]
+            reference[key] = response_digest(response, key[1])
+        sync()
+        seconds = clock() - tick
+        metrics = asdict(prime.metrics_snapshot().delta(before))
+        if any(
+            metrics[name] != len(requests)
+            for name in (
+                "evaluator_calls",
+                "neural_calls",
+                "graph_captures",
+                "graph_replays",
+            )
+        ) or any(
+            metrics[name] != 0
+            for name in (
+                "cache_hits",
+                "deduplicated_rows",
+                "neural_padding_rows",
+                "graph_fallbacks",
+                "graph_validation_failures",
+            )
+        ):
+            raise ValueError(
+                "production graph reference priming did not complete valid captures"
+            )
+    finally:
+        prime.close()
+        sync()
+    after_math = math_state()
+    validate_actor_inference_math(after_math, phase="priming end")
+    closed = prime.graph_residency_snapshot()
+    return reference, {
+        "execution": "production-graph-16",
+        "entries": 16,
+        "cuda_graphs": True,
+        "requested_shapes": [list(key) for key in sorted(requests)],
+        "seconds": seconds,
+        "metrics": metrics,
+        "cache_empty_after_close": isinstance(closed, dict)
+        and closed.get("entries") == [],
+        "math_before": before_math,
+        "math_after": after_math,
+    }
+
+
 def measure_arm(
     adapter: Any,
     trace: list[tuple[int, int]],
@@ -77,9 +170,12 @@ def measure_arm(
     sync: Any,
     snapshot: Any,
     memory: Any,
+    math_state: Any = read_actor_inference_math,
     clock: Any = time.perf_counter,
 ) -> dict[str, Any]:
     """Keep graphs across cycles, including the first empty-cache cycle in time."""
+    math_before = math_state()
+    validate_actor_inference_math(math_before, phase="arm start")
     snapshots = [snapshot()]
     if not _load_assessment(snapshots, declared="isolated", worker_pid=os.getpid())[
         "comparison_adoptable"
@@ -131,7 +227,11 @@ def measure_arm(
     )
     seconds = sum(record["seconds"] for record in records)
     load = _load_assessment(snapshots, declared="isolated", worker_pid=os.getpid())
+    math_after = math_state()
+    validate_actor_inference_math(math_after, phase="arm end")
     return {
+        "math_before": math_before,
+        "math_after": math_after,
         "cycles": records,
         "cold_cycle": records[0],
         "steady_totals": {
@@ -182,7 +282,7 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--batch-sizes", type=int, nargs="+", default=list(BUCKETS))
     result.add_argument("--repeats", type=int, default=2)
-    result.add_argument("--cycles", type=int, default=3)
+    result.add_argument("--cycles", type=int, default=2)
     result.add_argument("--graph-cache-bytes", type=int, default=8 * 1024**3)
     result.add_argument("--memory-fraction", type=float, default=0.50)
     result.add_argument("--minimum-speedup", type=float, default=1.0)
@@ -293,6 +393,8 @@ def plan(args: argparse.Namespace) -> tuple[dict[str, Any], Any, Any, Any]:
         "repeats": args.repeats,
         "cycles": args.cycles,
         "entries": [16, 32],
+        "actor_inference_math": actor_inference_math_expected(),
+        "reference_execution": "production-graph-16",
         "graph_cache_bytes_per_arm": args.graph_cache_bytes,
         "production_graph_cache_bytes_per_model": inference_config.cuda_graph_max_bytes
         // (actor.actor_cohorts + 2 if actor.actor_cohorts > 1 else 1),
@@ -339,17 +441,17 @@ def worker(
 ) -> dict[str, Any]:
     import torch
     from startrain.checkpoint import load_ema_checkpoint
-    from startrain.device import enable_fast_math
     from startrain.inference import GraphInferenceAdapter, InferenceConfig
     from startrain.model import GraphResTNet
     from startrain.native import load_star_native
     from startrain.training import maybe_compile_model
 
+    worker_initial_math = read_actor_inference_math()
+    validate_actor_inference_math(worker_initial_math, phase="fresh worker")
     if not torch.cuda.is_available():
         raise ValueError("execution requires CUDA")
     device = torch.device(args.device)
     torch.cuda.set_device(device)
-    enable_fast_math(device)
     torch.cuda.set_per_process_memory_fraction(args.memory_fraction, device)
     torch.set_num_threads(actor.blas_threads or actor.cpu_threads)
     torch.set_num_interop_threads(1)
@@ -397,25 +499,15 @@ def worker(
     )
     base = InferenceConfig(**settings)
 
-    class PrimeAdapter(GraphInferenceAdapter):
-        def _inference_batch_rows(self, rows: int) -> int:
-            # Reference compilation must use the same physical shape as the
-            # production graph bucket, including 3/6/12/etc. Legacy graph-off
-            # planning otherwise rounds these to powers of two and changes BF16.
-            if rows not in BUCKETS:
-                raise ValueError("reference rows are not a production bucket")
-            return rows
-
-    def adapter(entries: int, *, graphs: bool = True) -> Any:
-        adapter_type = GraphInferenceAdapter if graphs else PrimeAdapter
-        return adapter_type(
+    def adapter(entries: int) -> Any:
+        return GraphInferenceAdapter(
             model,
             device=device,
             model_identity=manifest.model_identity,
             model_version=manifest.model_version,
             model_step=manifest.model_step,
             homogeneous_relational_bias=refresh.inference.homogeneous_relational_bias,
-            config=replace(base, cuda_graphs=graphs, cuda_graph_max_entries=entries),
+            config=replace(base, cuda_graphs=True, cuda_graph_max_entries=entries),
         )
 
     native = load_star_native(required=True)
@@ -424,21 +516,14 @@ def worker(
     native.configure_rayon_threads(actor.native_threads or actor.cpu_threads)
     keys = sorted({tuple(key) for trace in pinned["traces"].values() for key in trace})
     requests = {key: native_request(native, *key) for key in keys}
-    reference = {}
     key_digest = hashlib.sha256()
-    prime = adapter(16, graphs=False)
-    tick = time.perf_counter()
-    try:
-        for key, request in requests.items():
-            for semantic in request.inference_keys():
-                key_digest.update(len(semantic).to_bytes(8, "little"))
-                key_digest.update(semantic)
-            prime.clear_prediction_cache()
-            reference[key] = response_digest(prime.evaluate(request), key[1])
-        torch.cuda.synchronize(device)
-        priming_seconds = time.perf_counter() - tick
-    finally:
-        prime.close()
+    for request in requests.values():
+        for semantic in request.inference_keys():
+            key_digest.update(len(semantic).to_bytes(8, "little"))
+            key_digest.update(semantic)
+    reference, priming = prime_reference(
+        adapter, requests, sync=lambda: torch.cuda.synchronize(device)
+    )
     records = []
     for scenario in args.scenarios:
         trace = [tuple(key) for key in pinned["traces"][scenario]]
@@ -506,6 +591,10 @@ def worker(
     assessment["eligible_for_controlled_activation"] &= production_scope
     return {
         "plan": pinned,
+        "worker_initial_math": worker_initial_math,
+        "priming_math_before": priming["math_before"],
+        "priming_math_after": priming["math_after"],
+        "reference_priming": priming,
         "pid": os.getpid(),
         "gpu_uuid": uuid,
         "device_name": torch.cuda.get_device_name(device),
@@ -514,7 +603,7 @@ def worker(
         ).total_memory,
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
-        "compiled_priming_seconds": priming_seconds,
+        "compiled_priming_seconds": priming["seconds"],
         "native_request_keys_sha256": key_digest.hexdigest(),
         "reference_response_sha256": {
             f"{ring}:{rows}": digest for (ring, rows), digest in reference.items()
