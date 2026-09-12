@@ -29,11 +29,15 @@ from scripts.benchmark_graph_buckets import _gpu_snapshot, _load_assessment, _nv
 from scripts.benchmark_training_shared_geometry import _run_process
 from scripts.benchmark_local_message_adapter import actor_experiment
 from startrain.graph_cache_evidence import (
+    BOUNDED_NONINFERIORITY_POLICY,
     BUCKETS,
     SCENARIOS,
+    PERFORMANCE_POLICIES,
+    STRICT_PERFORMANCE_POLICY,
     assess,
     actor_inference_math_expected,
     build_trace,
+    performance_policy_contract,
     validate_actor_inference_math,
     validate_graph_cache_report,
 )
@@ -286,6 +290,11 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--graph-cache-bytes", type=int, default=8 * 1024**3)
     result.add_argument("--memory-fraction", type=float, default=0.50)
     result.add_argument("--minimum-speedup", type=float, default=1.0)
+    result.add_argument(
+        "--performance-policy",
+        choices=PERFORMANCE_POLICIES,
+        default=STRICT_PERFORMANCE_POLICY,
+    )
     result.add_argument("--timeout-seconds", type=float, default=1800)
     result.add_argument("--output", type=Path)
     result.add_argument("--execute", action="store_true")
@@ -315,6 +324,16 @@ def validate(args: argparse.Namespace) -> None:
         )
     for scenario in args.scenarios:
         build_trace(scenario, tuple(args.batch_sizes))
+    if args.performance_policy == BOUNDED_NONINFERIORITY_POLICY and (
+        args.repeats != 4
+        or args.cycles != 2
+        or args.scenarios != list(SCENARIOS)
+        or tuple(args.batch_sizes) != BUCKETS
+        or args.minimum_speedup != 1.0
+    ):
+        raise ValueError(
+            "bounded noninferiority requires four repeats, two cycles, every default scenario/bucket, and its fixed prospective thresholds"
+        )
     if args.worker and (not args.execute or not args.pinned_plan):
         raise ValueError("worker requires an executed pinned plan")
 
@@ -394,6 +413,10 @@ def plan(args: argparse.Namespace) -> tuple[dict[str, Any], Any, Any, Any]:
         "cycles": args.cycles,
         "entries": [16, 32],
         "actor_inference_math": actor_inference_math_expected(),
+        "performance_policy": args.performance_policy,
+        "performance_policy_contract": performance_policy_contract(
+            args.performance_policy
+        ),
         "reference_execution": "production-graph-16",
         "graph_cache_bytes_per_arm": args.graph_cache_bytes,
         "production_graph_cache_bytes_per_model": inference_config.cuda_graph_max_bytes
@@ -580,7 +603,13 @@ def worker(
                     gc.collect()
                     torch.cuda.synchronize(device)
                     torch.cuda.empty_cache()
-    assessment = assess(records, args.scenarios, args.repeats, args.minimum_speedup)
+    assessment = assess(
+        records,
+        args.scenarios,
+        args.repeats,
+        args.minimum_speedup,
+        performance_policy=args.performance_policy,
+    )
     production_scope = (
         args.graph_cache_bytes == pinned["production_graph_cache_bytes_per_model"]
         and set(args.scenarios) == set(SCENARIOS)

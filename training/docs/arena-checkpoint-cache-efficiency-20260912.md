@@ -1,7 +1,8 @@
 # Arena, checkpoint and graph-cache efficiency — September 12, 2026
 
-Implementation is complete; production activation and the corrected cache-capacity
-comparison are pending. This release removes repeated learner checkpoint verification, adds
+The arena and checkpoint-cache changes are running in production from release
+`99ef5a43088d68e481492471d0b27226be4dd42e`, preserving checkpoint 209,544. A separate
+prospective cache-capacity confirmation is pending. This release removes repeated learner checkpoint verification, adds
 optional exact arena endings, and prepares a measured increase in actor graph-cache
 capacity. No end-to-end throughput or Elo/hour gain is established yet.
 
@@ -36,7 +37,7 @@ proof in every game, preserving their winners. Their omitted tails account for
 16,477 searched moves and 7,195,904 of 21,205,248 nominal simulations (33.9%). The
 implemented resume reader independently revalidated all 192 shortened completions
 with the option enabled and disabled. These are historical work counts and CPU
-proof checks; H100 timing and a full arena comparison remain pending.
+proof checks; a full-arena throughput comparison remains pending.
 
 The isolated H100 selected-tail smoke subsequently passed all twelve games, with
 the original winners, openings, swaps and PDA intact. Controls searched 96 remaining
@@ -111,6 +112,24 @@ graph-off oracle differed on 45 shapes and capture-context compilation contamina
 the first timed arm. Those results cannot authorize a capacity change. The original
 training release resumed from the exact saved step 208,701. The corrected benchmark
 retains the original strict parity and throughput gates; no tolerance was relaxed.
+
+The corrected two-repeat comparison preserved every response bit and the memory
+limit. Its mixed two-board cases improved approximately 39–41%, while near-parity
+control/stress estimates missed the strict zero-tolerance rule by 0.0007–0.16%.
+Production therefore retained 16 entries. Those observations do not by themselves
+authorize a change under a new acceptance rule.
+
+The separate opt-in `bounded-noninferiority-v1` policy is pinned **before fresh
+confirmation measurements**. It requires exactly four counterbalanced repeats and
+two cycles, every individual paired throughput ratio at least 0.995, both two-board
+median gains at least 1.05, and unchanged bitwise, math, ownership and memory checks.
+This is a bounded engineering margin, not a statistical confidence claim. Two-repeat
+v2 reports cannot be relabeled to meet it. The runtime gate additionally multiplies
+the original conservative full-target production ratio by the smallest observed
+execution ratio (capped at one) and requires the product to remain at least one.
+The original evidence-based acceptance floor remains enforced; measured gains
+cannot repair inadequate prior evidence. This calculation does not establish a
+lower bound for every possible live workload.
 
 ## Compatibility, deployment and rollback
 

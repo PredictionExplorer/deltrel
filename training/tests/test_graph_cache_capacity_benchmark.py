@@ -12,7 +12,10 @@ import pytest
 from scripts import benchmark_graph_cache_capacity as benchmark
 from startrain.graph_cache_evidence import (
     ACTOR_INFERENCE_MATH,
+    BOUNDED_NONINFERIORITY_POLICY,
+    STRICT_PERFORMANCE_POLICY,
     actor_inference_math_expected,
+    performance_policy_contract,
     validate_actor_inference_math,
     validate_graph_cache_report,
 )
@@ -186,7 +189,9 @@ def test_nonfinite_or_bad_routing_is_rejected():
         benchmark.response_digest(response(1), 2)
 
 
-def fixture_report(*, cycles=2):
+def fixture_report(
+    *, cycles=2, repeats=2, performance_policy=STRICT_PERFORMANCE_POLICY
+):
     profile = {
         "cuda_graph_max_entries": 16,
         "cuda_graphs": True,
@@ -211,6 +216,8 @@ def fixture_report(*, cycles=2):
         "entries": [16, 32],
         "actor_inference_math": actor_inference_math_expected(),
         "reference_execution": "production-graph-16",
+        "performance_policy": performance_policy,
+        "performance_policy_contract": performance_policy_contract(performance_policy),
         "graph_cache_bytes_per_arm": 8 * 1024**3,
         "production_graph_cache_bytes_per_model": 8 * 1024**3,
         "traces": {
@@ -218,14 +225,14 @@ def fixture_report(*, cycles=2):
             for name in benchmark.SCENARIOS
         },
         "cycles": cycles,
-        "repeats": 2,
+        "repeats": repeats,
         "memory_fraction": 0.5,
         "actor_gpu_id": 1,
     }
     records = []
     for scenario in benchmark.SCENARIOS:
-        for repeat in range(2):
-            for entries in (16, 32) if repeat == 0 else (32, 16):
+        for repeat in range(repeats):
+            for entries in (16, 32) if repeat % 2 == 0 else (32, 16):
                 record, _ = run_arm(scenario, entries, cycles=cycles)
                 records.append(
                     {
@@ -497,3 +504,181 @@ def test_math_contract_copies_and_untyped_flags_are_not_accepted():
     state["cuda_matmul_allow_tf32"] = 0
     with pytest.raises(ValueError):
         validate_actor_inference_math(state, phase="untyped")
+
+
+def rehash_plan(report):
+    report["plan_sha256"] = hashlib.sha256(
+        json.dumps(report["plan"], sort_keys=True).encode()
+    ).hexdigest()
+
+
+def set_paired_ratio(report, scenario, repeat, ratio):
+    pair = {
+        row["entries"]: row
+        for row in report["records"]
+        if row["scenario"] == scenario and row["repeat"] == repeat
+    }
+    treatment = pair[32]
+    factor = pair[16]["seconds"] / (ratio * treatment["seconds"])
+    for cycle in treatment["cycles"]:
+        cycle["seconds"] *= factor
+    treatment["seconds"] = sum(cycle["seconds"] for cycle in treatment["cycles"])
+    treatment["steady_totals"]["seconds"] = sum(
+        cycle["seconds"] for cycle in treatment["cycles"][1:]
+    )
+
+
+@pytest.fixture(scope="module")
+def bounded_evidence():
+    return fixture_report(
+        repeats=4, cycles=2, performance_policy=BOUNDED_NONINFERIORITY_POLICY
+    )
+
+
+def test_prospective_bounded_policy_accepts_small_observed_noninferiority(
+    bounded_evidence,
+):
+    source, expected = bounded_evidence
+    report = deepcopy(source)
+    set_paired_ratio(report, "ring10-control", 1, 0.9951)
+    set_paired_ratio(report, "mixed-6-8-10", 3, 0.997)
+    report["assessment"] = {
+        "eligible_for_controlled_activation": False,
+        "conservative_min_speedup": 99,
+    }
+    result = validate_graph_cache_report(report, **expected)
+    assert result["performance_policy"] == BOUNDED_NONINFERIORITY_POLICY
+    assert result["eligible_for_controlled_activation"]
+    assert result["conservative_min_speedup"] == pytest.approx(0.9951)
+    assert (
+        result["performance_policy_contract"]["statistical_confidence_claim"] is False
+    )
+
+
+@pytest.mark.parametrize("scenario", list(benchmark.SCENARIOS))
+def test_each_individual_pair_must_respect_margin_even_when_median_improves(
+    bounded_evidence, scenario
+):
+    source, expected = bounded_evidence
+    report = deepcopy(source)
+    set_paired_ratio(report, scenario, 2, 0.9949)
+    with pytest.raises(ValueError, match="nonregression"):
+        validate_graph_cache_report(report, **expected)
+
+
+@pytest.mark.parametrize("scenario", ["mixed-6-10", "mixed-8-10"])
+def test_both_two_board_medians_need_five_percent_improvement(
+    bounded_evidence, scenario
+):
+    source, expected = bounded_evidence
+    report = deepcopy(source)
+    for repeat in range(4):
+        set_paired_ratio(report, scenario, repeat, 1.049)
+    with pytest.raises(ValueError, match="nonregression"):
+        validate_graph_cache_report(report, **expected)
+
+
+def test_v2_report_cannot_be_relabelled_as_prospective_confirmation(evidence):
+    source, expected = evidence
+    report = deepcopy(source)
+    report["plan"]["performance_policy"] = BOUNDED_NONINFERIORITY_POLICY
+    report["plan"]["performance_policy_contract"] = performance_policy_contract(
+        BOUNDED_NONINFERIORITY_POLICY
+    )
+    rehash_plan(report)
+    with pytest.raises(ValueError, match="four prospective repeats"):
+        validate_graph_cache_report(report, **expected)
+    report["plan"]["repeats"] = 4
+    rehash_plan(report)
+    with pytest.raises(ValueError, match="records are incomplete"):
+        validate_graph_cache_report(report, **expected)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing_contract",
+        "changed_margin",
+        "wrong_cycles",
+        "wrong_repeats",
+        "unknown_policy",
+    ],
+)
+def test_bounded_contract_is_explicit_fixed_and_complete(bounded_evidence, change):
+    source, expected = bounded_evidence
+    report = deepcopy(source)
+    plan = report["plan"]
+    if change == "missing_contract":
+        plan.pop("performance_policy_contract")
+    elif change == "changed_margin":
+        plan["performance_policy_contract"]["every_individual_pair_min"] = 0.99
+    elif change == "wrong_cycles":
+        plan["cycles"] = 3
+    elif change == "wrong_repeats":
+        plan["repeats"] = 6
+    else:
+        plan["performance_policy"] = "accept-anything"
+    rehash_plan(report)
+    with pytest.raises(ValueError):
+        validate_graph_cache_report(report, **expected)
+
+
+def test_missing_policy_retains_strict_legacy_semantics(evidence):
+    source, expected = evidence
+    report = deepcopy(source)
+    report["plan"].pop("performance_policy")
+    report["plan"].pop("performance_policy_contract")
+    rehash_plan(report)
+    assert (
+        validate_graph_cache_report(report, **expected)["performance_policy"]
+        == STRICT_PERFORMANCE_POLICY
+    )
+    for repeat in (0, 1):
+        set_paired_ratio(report, "ring10-control", repeat, 0.999)
+    with pytest.raises(ValueError, match="nonregression"):
+        validate_graph_cache_report(report, **expected)
+
+
+def test_bounded_cli_cannot_silently_reduce_confirmation_work():
+    args = benchmark.parser().parse_args(
+        [
+            "--config",
+            "profile.yaml",
+            "--manifest",
+            "model.json",
+            "--performance-policy",
+            BOUNDED_NONINFERIORITY_POLICY,
+            "--repeats",
+            "4",
+            "--cycles",
+            "2",
+        ]
+    )
+    benchmark.validate(args)
+    default = benchmark.parser().parse_args(
+        ["--config", "profile.yaml", "--manifest", "model.json"]
+    )
+    assert default.performance_policy == STRICT_PERFORMANCE_POLICY
+    for key, value in (
+        ("repeats", 2),
+        ("cycles", 3),
+        ("batch_sizes", [64]),
+        ("scenarios", ["mixed-6-10"]),
+        ("minimum_speedup", 1.05),
+    ):
+        altered = SimpleNamespace(**vars(args))
+        setattr(altered, key, value)
+        with pytest.raises(ValueError, match="bounded noninferiority"):
+            benchmark.validate(altered)
+
+
+def test_conservative_factor_never_credits_apparent_speedups(bounded_evidence):
+    source, expected = bounded_evidence
+    report = deepcopy(source)
+    for scenario in benchmark.SCENARIOS:
+        for repeat in range(4):
+            set_paired_ratio(report, scenario, repeat, 1.10)
+    assert (
+        validate_graph_cache_report(report, **expected)["conservative_min_speedup"]
+        == 1.0
+    )

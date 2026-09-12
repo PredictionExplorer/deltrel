@@ -23,6 +23,26 @@ SCENARIOS = {
     "mixed-8-10": (8, 10),
     "mixed-6-8-10": (6, 8, 10),
 }
+STRICT_PERFORMANCE_POLICY = "strict-v1"
+BOUNDED_NONINFERIORITY_POLICY = "bounded-noninferiority-v1"
+PERFORMANCE_POLICIES = (STRICT_PERFORMANCE_POLICY, BOUNDED_NONINFERIORITY_POLICY)
+
+
+def performance_policy_contract(policy: str) -> dict[str, Any]:
+    """A prospective engineering rule, never a fitted confidence interval."""
+    if policy == STRICT_PERFORMANCE_POLICY:
+        return {"every_scenario_median_min": 1.0, "requires_capture_reduction": True}
+    if policy == BOUNDED_NONINFERIORITY_POLICY:
+        return {
+            "counterbalanced_repeats": 4,
+            "cycles": 2,
+            "every_individual_pair_min": 0.995,
+            "two_board_median_min": 1.05,
+            "requires_capture_reduction": True,
+            "statistical_confidence_claim": False,
+        }
+    raise ValueError("unknown graph cache performance policy")
+
 
 # Actors start independent Python processes and do not enable the learner's
 # fast FP32 math. Evidence for changing only cache capacity must preserve these
@@ -75,8 +95,11 @@ def assess(
     scenarios: list[str],
     repeats: int,
     min_speedup: float,
+    *,
+    performance_policy: str = STRICT_PERFORMANCE_POLICY,
 ) -> dict[str, Any]:
     """Summarize benchmark observations; strict admission uses validation below."""
+    policy_contract = performance_policy_contract(performance_policy)
     comparisons = []
     valid = len(records) == len(scenarios) * repeats * 2
     for scenario in scenarios:
@@ -116,25 +139,62 @@ def assess(
             }
         )
     mixed = [row for row in comparisons if row["scenario"] != "ring10-control"]
-    performance = (
-        bool(mixed)
-        and all(
-            row["median_speedup"] is not None and row["median_speedup"] >= 1.0
-            for row in comparisons
-        )
-        and all(
-            row["median_speedup"] is not None and row["median_speedup"] >= min_speedup
-            for row in mixed
-        )
-        and any(row["graph_captures"][32] < row["graph_captures"][16] for row in mixed)
+    all_ratios = [
+        ratio for row in comparisons for ratio in row["paired_speedup_ratios"]
+    ]
+    capture_reduction = any(
+        row["graph_captures"][32] < row["graph_captures"][16] for row in mixed
     )
+    if performance_policy == BOUNDED_NONINFERIORITY_POLICY:
+        two_board = [
+            row
+            for row in comparisons
+            if row["scenario"] in ("mixed-6-10", "mixed-8-10")
+        ]
+        valid = (
+            valid
+            and repeats == 4
+            and scenarios == list(SCENARIOS)
+            and all(len(row["cycles"]) == 2 for row in records)
+        )
+        performance = (
+            len(all_ratios) == 16
+            and all(ratio >= 0.995 for ratio in all_ratios)
+            and len(two_board) == 2
+            and all(
+                row["median_speedup"] is not None and row["median_speedup"] >= 1.05
+                for row in two_board
+            )
+            and capture_reduction
+        )
+        description = "prospective observed noninferiority: every individual paired ratio>=0.995; both two-board medians>=1.05; four counterbalanced repeats and two cycles; no statistical confidence claim"
+    else:
+        performance = (
+            bool(mixed)
+            and all(
+                row["median_speedup"] is not None and row["median_speedup"] >= 1.0
+                for row in comparisons
+            )
+            and all(
+                row["median_speedup"] is not None
+                and row["median_speedup"] >= min_speedup
+                for row in mixed
+            )
+            and capture_reduction
+        )
+        description = f"exact outputs, exclusive ownership, complete work, retained-byte bound; mixed-case median>={min_speedup}x; fewer captures in at least one mixed case; every-case median>=1x"
     return {
+        "performance_policy": performance_policy,
+        "performance_policy_contract": policy_contract,
+        # Never credit apparent speedups to make otherwise inadequate original
+        # teacher-rate evidence pass. Only measured slowdowns reduce its bound.
+        "conservative_min_speedup": min(1.0, *all_ratios) if all_ratios else None,
         "comparisons": comparisons,
         "valid_complete_comparison": valid,
         "performance_gate_passed": performance,
         "eligible_for_controlled_activation": valid and performance,
-        "gate": f"exact outputs, exclusive ownership, complete work, retained-byte bound; mixed-case median>={min_speedup}x; fewer captures in at least one mixed case; every-case median>=1x",
-        "limitation": "Synthetic adapter traces do not establish live self-play throughput or Elo/hour; ownership observations are point samples.",
+        "gate": description,
+        "limitation": "Synthetic adapter traces do not establish live self-play throughput or Elo/hour; ownership observations are point samples. The engineering margin is an observed bound, not statistical confidence.",
     }
 
 
@@ -288,6 +348,21 @@ def validate_graph_cache_report(
         cycles = _integer(plan["cycles"], "cycles", minimum=2, maximum=8)
         if repeats % 2:
             raise ValueError("graph cache evidence is not counterbalanced")
+        policy = plan.get("performance_policy", STRICT_PERFORMANCE_POLICY)
+        contract = performance_policy_contract(policy)
+        if (
+            "performance_policy_contract" in plan
+            or policy == BOUNDED_NONINFERIORITY_POLICY
+        ):
+            _equal(
+                plan["performance_policy_contract"],
+                contract,
+                "prospective performance contract",
+            )
+        if policy == BOUNDED_NONINFERIORITY_POLICY and (repeats != 4 or cycles != 2):
+            raise ValueError(
+                "bounded noninferiority requires four prospective repeats and two cycles"
+            )
         if "H100" not in report["device_name"]:
             raise ValueError("graph cache evidence was not measured on H100")
         pid = _integer(report["pid"], "PID", minimum=1)
@@ -472,7 +547,9 @@ def validate_graph_cache_report(
             )
         if len(owner_starts) != 1:
             raise ValueError("graph cache evidence owner identity changed between arms")
-        assessment = assess(verified_records, list(SCENARIOS), repeats, 1.0)
+        assessment = assess(
+            verified_records, list(SCENARIOS), repeats, 1.0, performance_policy=policy
+        )
         if not assessment["eligible_for_controlled_activation"]:
             raise ValueError(
                 "graph cache evidence fails recomputed nonregression/capture gate"

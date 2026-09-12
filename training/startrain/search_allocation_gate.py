@@ -62,6 +62,7 @@ def _validate_graph_capacity_reports(
     baseline: ExperimentConfig,
     target: ExperimentConfig,
     verified: dict[str, tuple[int, ...]],
+    full_target_rate_ratios: Mapping[str, float],
 ) -> None:
     """Extend measured search authority only for a proven cache-entry increase.
 
@@ -69,7 +70,10 @@ def _validate_graph_capacity_reports(
     These separately pinned H100 comparisons cover the same frozen models and
     preserve prediction settings, graph byte limits, and producer topology.
     """
-    from .graph_cache_evidence import validate_graph_cache_report
+    from .graph_cache_evidence import (
+        BOUNDED_NONINFERIORITY_POLICY,
+        validate_graph_cache_report,
+    )
 
     before = baseline.orchestration.model_refresh.inference
     after = target.orchestration.model_refresh.inference
@@ -145,7 +149,7 @@ def _validate_graph_capacity_reports(
             ):
                 _fail(f"graph cache report {name} differs from baseline")
         manifest_sha, checkpoint_sha = models[identity]
-        validate_graph_cache_report(
+        assessment = validate_graph_cache_report(
             report,
             source_config_sha256=gate["baseline_profile"]["sha256"],
             source_config_canonical_sha256=source_canonical,
@@ -158,6 +162,19 @@ def _validate_graph_capacity_reports(
             ),
             actor_gpu_id=actor.gpu_id,
         )
+        if assessment["performance_policy"] == BOUNDED_NONINFERIORITY_POLICY:
+            # A bounded execution regression may consume some existing timing
+            # headroom, but may never waive the original teacher-production
+            # floor. Gains are capped at one; they cannot repair weak evidence.
+            execution_floor = _number(
+                assessment["conservative_min_speedup"],
+                "graph execution floor",
+                positive=True,
+            )
+            if execution_floor > 1 or (
+                full_target_rate_ratios[identity] * execution_floor < 1
+            ):
+                _fail("graph execution margin violates original full-target rate floor")
         seen.add(identity)
 
 
@@ -542,6 +559,7 @@ def validate_production_ring_allocations(config: ExperimentConfig) -> None:
             _fail(
                 "each affected ring requires exactly one frozen actor and champion group"
             )
+        full_target_rate_ratios: dict[str, float] = {}
         for group in groups:
             report, digest = _validate_group_inputs(
                 root, group, baseline, gate["baseline_profile"]["sha256"], verified
@@ -588,7 +606,14 @@ def validate_production_ring_allocations(config: ExperimentConfig) -> None:
                 _fail(
                     f"{group['role']} conservative full-target rate falls below baseline"
                 )
-        _validate_graph_capacity_reports(root, gate, baseline, config, verified)
+            identity = report["plan"]["model_identity"]
+            ratio = float(cost["conservative_full_target_rate_ratio"])
+            full_target_rate_ratios[identity] = min(
+                full_target_rate_ratios.get(identity, ratio), ratio
+            )
+        _validate_graph_capacity_reports(
+            root, gate, baseline, config, verified, full_target_rate_ratios
+        )
         if not _unchanged(root, verified):
             _fail("evidence changed before validation completed")
         _VERIFIED_GATES[cache_key] = verified

@@ -12,7 +12,9 @@ from test_graph_cache_capacity_benchmark import fixture_report
 from test_search_allocation_gate import fixture, reference, update_plan, write_json
 
 
-def graph_admission_fixture(tmp_path, monkeypatch, *, root=None, **kwargs):
+def graph_admission_fixture(
+    tmp_path, monkeypatch, *, root=None, report_options=None, **kwargs
+):
     base, target, root, envelope = fixture(tmp_path, monkeypatch, root=root, **kwargs)
     inference = replace(
         base.orchestration.model_refresh.inference,
@@ -53,7 +55,7 @@ def graph_admission_fixture(tmp_path, monkeypatch, *, root=None, **kwargs):
     ).hexdigest()
     actor = next(gpu for gpu in gpus if gpu.role == "actor")
     envelope["graph_cache_reports"] = []
-    template, _ = fixture_report()
+    template, _ = fixture_report(**(report_options or {}))
     for group in envelope["groups"]:
         selection_path = root / group["selection"]["path"]
         selection = json.loads(selection_path.read_text())
@@ -207,3 +209,51 @@ def test_unchanged_capacity_rejects_any_unused_report_extension(
     write_json(gate.allocation_gate_path(target), envelope)
     with pytest.raises(ValueError, match="require a cache-capacity treatment"):
         gate.validate_production_ring_allocations(target)
+
+
+@pytest.mark.parametrize("original_rate,accepted", [(1.01, True), (1.003, False)])
+def test_noninferiority_never_waives_original_teacher_production_floor(
+    tmp_path, monkeypatch, original_rate, accepted
+):
+    from startrain.graph_cache_evidence import BOUNDED_NONINFERIORITY_POLICY
+    from test_search_allocation_gate import GOOD
+
+    _, target, root, envelope = graph_admission_fixture(
+        tmp_path,
+        monkeypatch,
+        report_options={
+            "repeats": 4,
+            "cycles": 2,
+            "performance_policy": BOUNDED_NONINFERIORITY_POLICY,
+        },
+    )
+    quality = deepcopy(GOOD)
+    quality["cost"]["conservative_full_target_rate_ratio"] = original_rate
+    monkeypatch.setattr(gate, "_analysis", lambda *_: deepcopy(quality))
+    for index, reference_value in enumerate(envelope["graph_cache_reports"]):
+        path = root / reference_value["path"]
+        report = json.loads(path.read_text())
+        controls = {
+            row["repeat"]: row
+            for row in report["records"]
+            if row["scenario"] == "ring10-control" and row["entries"] == 16
+        }
+        for row in report["records"]:
+            if row["scenario"] != "ring10-control" or row["entries"] != 32:
+                continue
+            factor = controls[row["repeat"]]["seconds"] / (0.996 * row["seconds"])
+            for cycle in row["cycles"]:
+                cycle["seconds"] *= factor
+            row["seconds"] = sum(cycle["seconds"] for cycle in row["cycles"])
+            row["cold_cycle"] = deepcopy(row["cycles"][0])
+            row["steady_totals"]["seconds"] = sum(
+                cycle["seconds"] for cycle in row["cycles"][1:]
+            )
+        write_json(path, report)
+        envelope["graph_cache_reports"][index] = reference(root, path)
+    write_json(gate.allocation_gate_path(target), envelope)
+    if accepted:
+        gate.validate_production_ring_allocations(target)
+    else:
+        with pytest.raises(ValueError, match="original full-target rate floor"):
+            gate.validate_production_ring_allocations(target)
