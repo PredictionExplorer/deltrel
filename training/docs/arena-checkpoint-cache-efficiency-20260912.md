@@ -1,10 +1,17 @@
 # Arena, checkpoint and graph-cache efficiency — September 12, 2026
 
-The arena and checkpoint-cache changes are running in production from release
-`99ef5a43088d68e481492471d0b27226be4dd42e`, preserving checkpoint 209,544. A separate
-prospective cache-capacity confirmation is pending. This release removes repeated learner checkpoint verification, adds
-optional exact arena endings, and prepares a measured increase in actor graph-cache
-capacity. No end-to-end throughput or Elo/hour gain is established yet.
+The arena and checkpoint-cache changes were activated in production from release
+`99ef5a43088d68e481492471d0b27226be4dd42e`, preserving checkpoint 209,544. The graph
+capacity benchmark and admission checks are implemented, but the increase is
+**not enabled**: the fresh confirmation failed its predeclared performance rule.
+Production retains 16 entries.
+The v3 rollout was withdrawn before migration and recovered the v2 runtime from
+the exact checkpoint 210,397. Final verification observed step 210,498, zero worker
+restarts or failed inference requests, and restored monitoring and backup schedules.
+No end-to-end throughput or Elo/hour gain is established yet.
+
+The [measurement and validation ledger](arena-checkpoint-cache-efficiency-evidence-20260912.json)
+records source identities, report hashes, observed outcomes and validation scopes.
 
 ## Changes and evidence
 
@@ -42,7 +49,8 @@ proof checks; a full-arena throughput comparison remains pending.
 The isolated H100 selected-tail smoke subsequently passed all twelve games, with
 the original winners, openings, swaps and PDA intact. Controls searched 96 remaining
 moves and evaluated 8,561 neural rows; proof termination added no moves or inference.
-The six proof checks took 32.75 ms total. The 108.93-second worker included cold
+The six proof-termination cases, including prefix reconstruction and bookkeeping,
+took 32.75 ms total. The 108.93-second worker included cold
 compilation and model loading, so these selected tails are not a whole-arena speedup
 measurement. The smoke derives the original per-match promotion seed from the frozen
 model identities rather than substituting the profile's seed namespace.
@@ -92,7 +100,8 @@ graphs are then closed and discarded before fresh timed arms. Priming and produc
 preparation are reported separately. Reports include exact response fingerprints, per-cycle
 counters, cold/steady totals, peak memory, retained bytes and GPU owner observations.
 
-Admission recomputes evidence rather than trusting saved success flags. It requires
+Default strict admission recomputes evidence rather than trusting saved success
+flags. It requires
 both original frozen models, the full production traces, exact outputs, complete
 work/capture accounting, verified H100 ownership, unchanged byte limits, and median
 throughput ratios of at least 1.0 in every scenario. At least one mixed case must
@@ -131,6 +140,31 @@ The original evidence-based acceptance floor remains enforced; measured gains
 cannot repair inadequate prior evidence. This calculation does not establish a
 lower bound for every possible live workload.
 
+The fresh four-repeat confirmation completed on source
+`690663b1b49aff18cc80e1fcfbd600cc1432afa4`. Ratios below are graph-32 throughput
+divided by graph-16 throughput; each cell shows **median / lowest paired ratio**.
+
+| Scenario | Actor model | Champion model |
+| --- | ---: | ---: |
+| Ring 10 control | 1.0018 / 0.9736 | 1.0036 / 0.9986 |
+| Mixed 6 + 10 | 1.4060 / 1.3885 | 1.3919 / 1.3811 |
+| Mixed 8 + 10 | 1.3976 / 1.3867 | 1.3989 / 1.3832 |
+| Mixed 6 + 8 + 10 | 1.0010 / 0.9994 | 0.9995 / 0.9838 |
+
+Both two-board gains replicated, but the actor control and champion three-board
+minimum ratios fell below 0.995. Therefore neither report authorized adoption.
+The original full-target floor products remained above one (1.0037 and 1.0091),
+but that separate requirement cannot override the failed execution rule. The result
+does not prove an inherent 2.6% or 1.6% regression; it means these measurements did
+not demonstrate the predeclared bound. No threshold was changed after this run.
+
+Both models preserved exact responses on all 48 shapes, with matching actor math
+throughout. Peak charged graph memory was 7.646 GiB against the 8 GiB limit;
+allocator-reserved memory peaked at 8.879 GiB and includes other allocations.
+All completed reports remain retained, including unsuccessful comparisons. The
+v3 controller was stopped before any migration intent; recovery uses the already
+validated v2 runtime, retains both deployed improvements and preserves step 210,397.
+
 ## Compatibility, deployment and rollback
 
 The disabled arena option preserves existing configuration authority through an
@@ -157,7 +191,22 @@ replay revisions.
 Focused tests cover control-cache invalidation and replacement races; classic,
 double, handicap and pie arena paths; stable seeds, interruption/resume, forged
 winners and rollback; graph byte pressure, exact outputs, incomplete/corrupt
-evidence, admission and backup dependencies. The graph benchmark and prior bucket
-suite passed 47 CPU tests, Ruff and Pyright; 48 real native fixture shapes also
-passed a local smoke check. These checks do not substitute for the pending H100
-qualification and production readiness evidence.
+evidence, admission and backup dependencies. The broad CPU/native validation and
+its corrective regression run cover 2,905 unique passing cases. The final
+prospective-policy changes passed a separate 176-case targeted server suite;
+the rollout helpers passed 86 tests, including cancellation, PID reuse, source-only
+recovery and graph-capacity rollback. These overlapping scopes are not an additive
+test total or a claim that the entire suite ran again on the final source.
+Ruff and Pyright passed; the native binary and all 103 runtime packages stayed
+unchanged. Repository-wide formatting is not claimed clean: three untouched files
+already differed from the formatter.
+
+The first production activation completed with zero discarded learner steps,
+checkpoint 209,544 intact, healthy worker readiness and a verified disaster-recovery
+snapshot containing 27,549 objects. Its H100 neural and selected-tail arena checks
+passed. The later graph-capacity confirmation preserved checkpoint 210,397 and
+withdrew before any migration intent. Its backup completed successfully; recovery
+then passed sustained readiness and a separate check of the exact resumed checkpoint
+hash, current source/profile authority, advancing step and inference activity.
+The final snapshot header was checked; an additional independent full-object scan
+was not repeated after that snapshot.
