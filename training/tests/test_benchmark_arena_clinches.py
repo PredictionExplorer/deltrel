@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
 
 import pytest
@@ -31,6 +31,12 @@ class Evaluator:
         )
 
 
+@dataclass(frozen=True)
+class FrozenConfig:
+    arena: ArenaConfig
+    train: object = field(default_factory=lambda: SimpleNamespace(precision="bf16"))
+
+
 @pytest.fixture
 def native_inputs():
     native = pytest.importorskip("star_native")
@@ -44,6 +50,11 @@ def native_inputs():
         max_considered=2,
         bootstrap_samples=200,
     )
+    cfg = benchmark.promotion_runtime_config(
+        FrozenConfig(cfg),
+        SimpleNamespace(model_identity="candidate"),
+        SimpleNamespace(model_identity="baseline"),
+    ).arena
     subject = ArenaRunner(
         native_module=native,
         candidate=Evaluator("candidate"),
@@ -92,6 +103,78 @@ def native_inputs():
             }
         )
     return native, cfg, saved, {"games": proofs}
+
+
+def test_actual_production_match_derives_saved_seed_without_changing_other_fields():
+    profile = FrozenConfig(ArenaConfig(seed=17))
+    actual = benchmark.promotion_runtime_config(
+        profile,
+        SimpleNamespace(
+            model_identity="sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a"
+        ),
+        SimpleNamespace(
+            model_identity="sha256-37fd6c1ae569a1bbc55015815afaab755fb1c7ab40d4149c7ba80cb28961c585"
+        ),
+    )
+    assert actual.arena.seed == 617840392505327039
+    assert replace(actual.arena, seed=17) == profile.arena
+
+
+@pytest.mark.native
+def test_prepare_uses_frozen_promotion_seed_before_strict_snapshot_validation(
+    native_inputs, tmp_path, monkeypatch
+):
+    _native, cfg, saved, proof = native_inputs
+    paths = {
+        name: tmp_path / name
+        for name in (
+            "profile",
+            "resume",
+            "proof",
+            "candidate",
+            "baseline",
+            "checkpoint",
+        )
+    }
+    for path in paths.values():
+        path.write_text("fixture")
+    paths["resume"].write_text(
+        json.dumps(
+            {
+                "arena_state": saved,
+                "candidate_manifest": str(paths["candidate"]),
+                "baseline_manifest": str(paths["baseline"]),
+            }
+        )
+    )
+    paths["proof"].write_text(json.dumps(proof))
+    monkeypatch.setattr(
+        "startrain.config.load_config",
+        lambda _path: FrozenConfig(replace(cfg, seed=17)),
+    )
+    monkeypatch.setattr(
+        "startrain.checkpoint.load_model_manifest",
+        lambda path: SimpleNamespace(
+            model_identity=path.name,
+            model_step=1,
+            checkpoint=paths["checkpoint"],
+        ),
+    )
+    args = SimpleNamespace(
+        profile=paths["profile"],
+        resume=paths["resume"],
+        proof=paths["proof"],
+        candidate_manifest=None,
+        baseline_manifest=None,
+        max_tail_moves=3,
+        timeout_seconds=300,
+        gpu_uuid=None,
+    )
+    plan, cases, runtime, *_ = benchmark.prepare(args)
+    assert plan["profile_arena_seed"] == 17
+    assert plan["effective_promotion_arena_seed"] == saved["config"]["seed"]
+    assert runtime.arena.seed == cfg.seed != 17
+    assert len(cases) == 6
 
 
 @pytest.mark.native

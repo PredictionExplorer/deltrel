@@ -425,9 +425,14 @@ def _without_field(
 
 def _compatible_source_config_sha256s(config: ExperimentConfig) -> set[str]:
     materialized = config.as_dict()
-    variants: list[dict[str, object]] = list(
-        compatible_config_epoch_payloads(materialized)
-    )
+    # Epoch adapters overlap (for example, removing the inference service also
+    # removes its additive fields). Collapse those exact representations before
+    # expanding omissions; otherwise duplicate payloads multiply at every field.
+    # Keep their encoding so each final distinct representation is hashed once.
+    variants = {
+        _canonical_config_bytes(payload): payload
+        for payload in compatible_config_epoch_payloads(materialized)
+    }
     for path, default in _ADDITIVE_DEFAULT_FIELDS:
         current = materialized
         for key in path:
@@ -437,15 +442,11 @@ def _compatible_source_config_sha256s(config: ExperimentConfig) -> set[str]:
             continue
         # Every combination of absent additive fields is a hash some earlier
         # release may have recorded.
-        variants.extend(
-            stripped
-            for variant in list(variants)
-            if (stripped := _without_field(variant, path)) is not None
-        )
-    return {
-        hashlib.sha256(_canonical_config_bytes(variant)).hexdigest()
-        for variant in variants
-    }
+        for variant in tuple(variants.values()):
+            stripped = _without_field(variant, path)
+            if stripped is not None:
+                variants.setdefault(_canonical_config_bytes(stripped), stripped)
+    return {hashlib.sha256(encoded).hexdigest() for encoded in variants}
 
 
 def _json_bytes(payload: Mapping[str, object]) -> bytes:

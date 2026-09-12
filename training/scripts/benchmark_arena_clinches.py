@@ -179,6 +179,21 @@ def validate_cases(cases: list[dict], native, arena_config) -> None:
             runner._verify_resume_winner(entry, variant, game)
 
 
+def promotion_runtime_config(config, candidate, baseline):
+    """Use the exact immutable-match seed that the promotion worker uses.
+
+    The profile seed is a seed namespace, not the actual frozen arena seed.
+    Reusing the production derivation keeps strict snapshot/seed validation.
+    No supervisor is started and no model/run files are modified.
+    """
+    from startrain.promotion import PromotionSupervisor
+
+    arena = PromotionSupervisor._arena_config(
+        cast(Any, SimpleNamespace(experiment=config)), candidate, baseline
+    )
+    return replace(config, arena=arena)
+
+
 def prepare(args):
     from startrain.checkpoint import load_model_manifest
     from startrain.config import load_config
@@ -198,6 +213,8 @@ def prepare(args):
         or baseline.model_identity != saved["baseline"]
     ):
         raise ValueError("frozen model identities do not match saved arena")
+    profile_arena_seed = config.arena.seed
+    config = promotion_runtime_config(config, candidate, baseline)
     cases = select_cases(saved, proof, args.max_tail_moves)
     validate_cases(cases, native, config.arena)
     files = [
@@ -232,6 +249,8 @@ def prepare(args):
         "candidate_step": candidate.model_step,
         "baseline_step": baseline.model_step,
         "search": saved["candidate_search"],
+        "profile_arena_seed": profile_arena_seed,
+        "effective_promotion_arena_seed": config.arena.seed,
         "precision": config.train.precision,
         "gpu_uuid": args.gpu_uuid,
         "source_and_input_sha256": {
