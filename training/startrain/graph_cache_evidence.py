@@ -275,6 +275,69 @@ def validate_graph_cache_report(
     graph_cache_bytes: int,
     actor_gpu_id: int | None = None,
 ) -> dict[str, Any]:
+    """Validate execution and require the originally planned performance gate."""
+    return _validate_graph_cache_report(
+        report,
+        source_config_sha256=source_config_sha256,
+        source_config_canonical_sha256=source_config_canonical_sha256,
+        model_identity=model_identity,
+        manifest_sha256=manifest_sha256,
+        checkpoint_sha256=checkpoint_sha256,
+        profile_inference=profile_inference,
+        graph_cache_bytes=graph_cache_bytes,
+        actor_gpu_id=actor_gpu_id,
+        require_performance=True,
+    )
+
+
+def validate_graph_cache_execution_report(
+    report: Mapping[str, Any],
+    *,
+    source_config_sha256: str,
+    source_config_canonical_sha256: str,
+    model_identity: str,
+    manifest_sha256: str,
+    checkpoint_sha256: str,
+    profile_inference: Mapping[str, Any],
+    graph_cache_bytes: int,
+    actor_gpu_id: int | None = None,
+) -> dict[str, Any]:
+    """Validate all execution evidence without authorizing an adoption or trial.
+
+    Only the final performance rejection is returned rather than raised. The
+    original recomputed performance result, including false eligibility, remains
+    unchanged. Callers need a separately verified, explicitly scoped authority to
+    act on a report whose planned performance gate failed. Model/config/math,
+    oracle, exact outputs, counters, memory, ownership and ordering checks are
+    identical to the strict API; malformed evidence still raises.
+    """
+    return _validate_graph_cache_report(
+        report,
+        source_config_sha256=source_config_sha256,
+        source_config_canonical_sha256=source_config_canonical_sha256,
+        model_identity=model_identity,
+        manifest_sha256=manifest_sha256,
+        checkpoint_sha256=checkpoint_sha256,
+        profile_inference=profile_inference,
+        graph_cache_bytes=graph_cache_bytes,
+        actor_gpu_id=actor_gpu_id,
+        require_performance=False,
+    )
+
+
+def _validate_graph_cache_report(
+    report: Mapping[str, Any],
+    *,
+    source_config_sha256: str,
+    source_config_canonical_sha256: str,
+    model_identity: str,
+    manifest_sha256: str,
+    checkpoint_sha256: str,
+    profile_inference: Mapping[str, Any],
+    graph_cache_bytes: int,
+    actor_gpu_id: int | None = None,
+    require_performance: bool,
+) -> dict[str, Any]:
     """Return independently recomputed admission, or raise on invalid evidence.
 
     The caller supplies trusted frozen baseline and model identities and checks
@@ -550,7 +613,7 @@ def validate_graph_cache_report(
         assessment = assess(
             verified_records, list(SCENARIOS), repeats, 1.0, performance_policy=policy
         )
-        if not assessment["eligible_for_controlled_activation"]:
+        if require_performance and not assessment["eligible_for_controlled_activation"]:
             raise ValueError(
                 "graph cache evidence fails recomputed nonregression/capture gate"
             )

@@ -72,14 +72,22 @@ def _validate_graph_capacity_reports(
     """
     from .graph_cache_evidence import (
         BOUNDED_NONINFERIORITY_POLICY,
+        validate_graph_cache_execution_report,
         validate_graph_cache_report,
+    )
+    from .graph_cache_controlled_activation import (
+        GRAPH_CACHE_BYTES,
+        validate_controlled_activation_assessments,
+        validate_controlled_activation_receipt,
+        validate_live_workload_evidence,
     )
 
     before = baseline.orchestration.model_refresh.inference
     after = target.orchestration.model_refresh.inference
     references = gate.get("graph_cache_reports")
+    controlled = "graph_cache_controlled_activation" in gate
     if before == after:
-        if "graph_cache_reports" in gate:
+        if "graph_cache_reports" in gate or controlled:
             _fail("graph cache reports require a cache-capacity treatment")
         return
     if (
@@ -95,6 +103,42 @@ def _validate_graph_capacity_reports(
         _fail("only measured graph capacity 16-to-32 may extend inference authority")
     if not isinstance(references, list) or not references:
         _fail("changed graph capacity requires pinned H100 reports")
+    if controlled:
+        run_id = target.orchestration.run_id
+        if not isinstance(run_id, str) or not run_id:
+            _fail("controlled graph activation requires an explicit run identity")
+        _, contents = _read_ref(
+            root, gate["graph_cache_controlled_activation"], verified
+        )
+        receipt = _json(contents)
+        # This is the current cache16 configuration, not the older baseline
+        # before the measured search-allocation change. Every other field stays.
+        control = replace(
+            target,
+            orchestration=replace(
+                target.orchestration,
+                model_refresh=replace(
+                    target.orchestration.model_refresh,
+                    inference=replace(after, cuda_graph_max_entries=16),
+                ),
+            ),
+        )
+        control_sha = canonical_config_sha256(control)
+        live_reference = validate_controlled_activation_receipt(
+            receipt,
+            run_id=run_id,
+            source_config_sha256=control_sha,
+            target_config_sha256=canonical_config_sha256(target),
+            baseline_profile=gate["baseline_profile"],
+            graph_cache_reports=references,
+        )
+        _, live_contents = _read_ref(root, live_reference, verified)
+        validate_live_workload_evidence(
+            _json(live_contents),
+            run_id=run_id,
+            source_config_sha256=control_sha,
+            actor_gpu_ids={gpu.gpu_id for gpu in target.orchestration.actor_gpus},
+        )
     models: dict[str, tuple[str, str]] = {}
     for group in gate["groups"]:
         _, contents = _read_ref(root, group["model_manifest"], verified)
@@ -107,6 +151,7 @@ def _validate_graph_capacity_reports(
     if len(references) != len(models):
         _fail("graph cache reports must cover every frozen search model once")
     seen = set()
+    assessments = {}
     source_canonical = hashlib.sha256(
         json.dumps(baseline.as_dict(), sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -149,7 +194,17 @@ def _validate_graph_capacity_reports(
             ):
                 _fail(f"graph cache report {name} differs from baseline")
         manifest_sha, checkpoint_sha = models[identity]
-        assessment = validate_graph_cache_report(
+        byte_cap = max(1, before.cuda_graph_max_bytes // (actor.actor_cohorts + 2))
+        if controlled and byte_cap != GRAPH_CACHE_BYTES:
+            _fail(
+                "controlled graph activation requires the original eight-GiB byte cap"
+            )
+        validator = (
+            validate_graph_cache_execution_report
+            if controlled
+            else validate_graph_cache_report
+        )
+        assessment = validator(
             report,
             source_config_sha256=gate["baseline_profile"]["sha256"],
             source_config_canonical_sha256=source_canonical,
@@ -157,9 +212,7 @@ def _validate_graph_capacity_reports(
             manifest_sha256=manifest_sha,
             checkpoint_sha256=checkpoint_sha,
             profile_inference=asdict(replace(before, cuda_graphs=True)),
-            graph_cache_bytes=max(
-                1, before.cuda_graph_max_bytes // (actor.actor_cohorts + 2)
-            ),
+            graph_cache_bytes=byte_cap,
             actor_gpu_id=actor.gpu_id,
         )
         if assessment["performance_policy"] == BOUNDED_NONINFERIORITY_POLICY:
@@ -176,6 +229,9 @@ def _validate_graph_capacity_reports(
             ):
                 _fail("graph execution margin violates original full-target rate floor")
         seen.add(identity)
+        assessments[identity] = assessment
+    if controlled:
+        validate_controlled_activation_assessments(assessments, full_target_rate_ratios)
 
 
 def _fail(message: str) -> NoReturn:
@@ -502,7 +558,7 @@ def validate_production_ring_allocations(config: ExperimentConfig) -> None:
             _fail("gate changed during validation")
         verified = {str(path.relative_to(root)): before}
         if (
-            set(gate) - {"graph_cache_reports"}
+            set(gate) - {"graph_cache_reports", "graph_cache_controlled_activation"}
             != {
                 "format",
                 "schema_version",

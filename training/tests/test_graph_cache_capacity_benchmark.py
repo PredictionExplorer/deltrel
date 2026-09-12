@@ -17,6 +17,7 @@ from startrain.graph_cache_evidence import (
     actor_inference_math_expected,
     performance_policy_contract,
     validate_actor_inference_math,
+    validate_graph_cache_execution_report,
     validate_graph_cache_report,
 )
 from startrain.inference import InferenceMetrics, InferenceResponse
@@ -682,3 +683,75 @@ def test_conservative_factor_never_credits_apparent_speedups(bounded_evidence):
         validate_graph_cache_report(report, **expected)["conservative_min_speedup"]
         == 1.0
     )
+
+
+def test_execution_only_validation_preserves_failed_performance_and_input(
+    bounded_evidence,
+):
+    source, expected = bounded_evidence
+    report = deepcopy(source)
+    set_paired_ratio(report, "ring10-control", 0, 0.98)
+    before = json.dumps(report, sort_keys=True)
+    result = validate_graph_cache_execution_report(report, **expected)
+    assert result["valid_complete_comparison"]
+    assert not result["performance_gate_passed"]
+    assert not result["eligible_for_controlled_activation"]
+    assert result["conservative_min_speedup"] == pytest.approx(0.98)
+    assert json.dumps(report, sort_keys=True) == before
+    with pytest.raises(ValueError, match="fails recomputed nonregression/capture gate"):
+        validate_graph_cache_report(report, **expected)
+
+
+def test_execution_only_and_strict_use_identical_validation_for_passing_report(
+    evidence,
+):
+    report, expected = evidence
+    assert validate_graph_cache_execution_report(
+        report, **expected
+    ) == validate_graph_cache_report(report, **expected)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "math",
+        "oracle",
+        "parity",
+        "memory",
+        "ownership",
+        "ordering",
+        "counters",
+        "model",
+        "missing_arm",
+        "plan_hash",
+    ],
+)
+def test_execution_only_does_not_bypass_any_execution_guard(evidence, failure):
+    source, expected = evidence
+    report = deepcopy(source)
+    first = report["records"][0]
+    if failure == "math":
+        report["worker_initial_math"]["cuda_matmul_allow_tf32"] = True
+    elif failure == "oracle":
+        report["reference_priming"]["cuda_graphs"] = False
+    elif failure == "parity":
+        first["cycles"][0]["output_digests"][0] = "f" * 64
+    elif failure == "memory":
+        first["cycles"][0]["graph_retained_bytes"] = 9 * 1024**3
+    elif failure == "ownership":
+        first["gpu_observations"][0]["owners"][0]["pid"] += 1
+    elif failure == "ordering":
+        report["records"][0], report["records"][1] = (
+            report["records"][1],
+            report["records"][0],
+        )
+    elif failure == "counters":
+        first["cycles"][0]["metrics"]["neural_calls"] += 1
+    elif failure == "model":
+        expected = {**expected, "model_identity": "sha256-other-model"}
+    elif failure == "missing_arm":
+        report["records"].pop()
+    else:
+        report["plan_sha256"] = "f" * 64
+    with pytest.raises(ValueError):
+        validate_graph_cache_execution_report(report, **expected)

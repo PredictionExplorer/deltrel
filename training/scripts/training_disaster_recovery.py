@@ -1349,6 +1349,10 @@ def _allocation_gate_references(
         if not isinstance(graph_reports, list):
             raise ValueError("graph cache reports must be a list")
         references.extend((reference, "status-json") for reference in graph_reports)
+        if "graph_cache_controlled_activation" in payload:
+            references.append(
+                (payload["graph_cache_controlled_activation"], "status-json")
+            )
         result = []
         for reference, kind in references:
             if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
@@ -1365,6 +1369,33 @@ def _allocation_gate_references(
     except (KeyError, TypeError, ValueError) as exc:
         raise DisasterRecoveryError(
             f"invalid allocation-gate dependencies: {exc}"
+        ) from exc
+
+
+def _controlled_graph_activation_references(
+    payload: Mapping[str, Any],
+) -> list[tuple[str, str, str]]:
+    """The explicit activation receipt also pins its live workload evidence."""
+    try:
+        if (
+            payload.get("format") != "startrain.graph-cache-controlled-activation"
+            or type(payload.get("schema_version")) is not int
+            or payload["schema_version"] != 1
+        ):
+            raise ValueError("incompatible controlled activation receipt")
+        reference = payload["live_workload_evidence"]
+        if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
+            raise ValueError("invalid live workload evidence reference")
+        return [
+            (
+                _logical_path(reference["path"]),
+                _sha256_text("live workload evidence hash", reference["sha256"]),
+                "status-json",
+            )
+        ]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DisasterRecoveryError(
+            f"invalid controlled activation dependencies: {exc}"
         ) from exc
 
 
@@ -1385,8 +1416,21 @@ def _capture_allocation_gate_dependencies(
         ) from exc
     _, entry = builder.add_run_file(builder.run_root / logical, "status-json")
     payload = _read_catalog_json(builder, entry, name="active allocation gate")
+    activation = payload.get("graph_cache_controlled_activation")
     for reference, digest, kind in _allocation_gate_references(payload):
-        builder.add_run_file(builder.run_root / reference, kind, expected_sha256=digest)
+        _, dependency = builder.add_run_file(
+            builder.run_root / reference, kind, expected_sha256=digest
+        )
+        if activation is not None and reference == activation["path"]:
+            receipt = _read_catalog_json(
+                builder, dependency, name="controlled graph activation"
+            )
+            for child, checksum, child_kind in _controlled_graph_activation_references(
+                receipt
+            ):
+                builder.add_run_file(
+                    builder.run_root / child, child_kind, expected_sha256=checksum
+                )
 
 
 def _collect_payloads(
@@ -2298,7 +2342,21 @@ def _verify_snapshot_document(
             raise DisasterRecoveryError(
                 "snapshot allocation gate does not match the active profile"
             )
-        for logical, checksum, kind in _allocation_gate_references(gate_payload):
+        dependencies = _allocation_gate_references(gate_payload)
+        activation = gate_payload.get("graph_cache_controlled_activation")
+        if activation is not None:
+            # Resolve the receipt through the snapshot catalog, never the live
+            # run. Verification must still work after the original run is lost.
+            receipt_logical = _logical_path(activation["path"])
+            receipt_entry = catalog.get(receipt_logical)
+            if receipt_entry is None or receipt_entry.sha256 != activation["sha256"]:
+                raise DisasterRecoveryError(
+                    "snapshot allocation evidence dependency is missing or mismatched: "
+                    + receipt_logical
+                )
+            receipt = reader.json(receipt_logical, name="controlled graph activation")
+            dependencies.extend(_controlled_graph_activation_references(receipt))
+        for logical, checksum, kind in dependencies:
             entry = catalog.get(logical)
             if entry is None or entry.sha256 != checksum:
                 raise DisasterRecoveryError(
