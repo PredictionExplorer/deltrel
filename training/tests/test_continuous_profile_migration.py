@@ -16,7 +16,10 @@ import yaml
 
 from scripts import migrate_continuous_profile as migration
 from startrain.config import load_config
-from startrain.config_compatibility import without_fresh_data_defaults
+from startrain.config_compatibility import (
+    without_arena_clinch_default,
+    without_fresh_data_defaults,
+)
 
 
 @dataclass(frozen=True)
@@ -853,7 +856,9 @@ def test_additive_default_field_accepts_legacy_chain_hash(tmp_path: Path) -> Non
     # Preserve the full 120-representation pre-neural-execution epoch, not just
     # the one legacy chain head below. The new disabled-field representations
     # add 64 distinct combinations after all earlier omissions are deduplicated.
-    prior_payload = without_fresh_data_defaults(config.as_dict())
+    prior_payload = without_arena_clinch_default(
+        without_fresh_data_defaults(config.as_dict())
+    )
     before_fresh_data = migration._compatible_source_config_sha256s(
         SimpleNamespace(as_dict=lambda: deepcopy(prior_payload))
     )
@@ -874,7 +879,9 @@ def test_additive_default_field_accepts_legacy_chain_hash(tmp_path: Path) -> Non
     )
     assert len(prior) == 120 * len(expected)
     assert prior <= compatible
-    assert len(compatible) == 736 * len(expected)
+    # The exact disabled arena flag adds the current representation alongside
+    # each unchanged historical representation checked above.
+    assert len(compatible) == 2 * 736 * len(expected)
     # A profile that opts into a new field no longer matches releases that
     # never had it, but keeps the variants for the other additive fields.
     opted = yaml.safe_load(fixture.old_profile.read_text(encoding="utf-8"))
@@ -883,7 +890,7 @@ def test_additive_default_field_accepts_legacy_chain_hash(tmp_path: Path) -> Non
     opted_path = tmp_path / "opted.yaml"
     opted_path.write_text(yaml.safe_dump(opted, sort_keys=False), encoding="utf-8")
     opted_config = load_config(opted_path)
-    assert len(migration._compatible_source_config_sha256s(opted_config)) == 5888
+    assert len(migration._compatible_source_config_sha256s(opted_config)) == 2 * 5888
 
     opted.setdefault("selfplay", {}).setdefault("variants", {})[
         "handicap_classic_share"
@@ -892,7 +899,7 @@ def test_additive_default_field_accepts_legacy_chain_hash(tmp_path: Path) -> Non
     opted_path.write_text(yaml.safe_dump(opted, sort_keys=False), encoding="utf-8")
     assert (
         len(migration._compatible_source_config_sha256s(load_config(opted_path)))
-        == 1472
+        == 2 * 1472
     )
 
     # The head a release without scheduling or plateau additions recorded.
@@ -907,6 +914,7 @@ def test_additive_default_field_accepts_legacy_chain_hash(tmp_path: Path) -> Non
         ("orchestration", "promotion", "pause_strategy"),
         ("selfplay", "search_execution"),
         ("arena", "search_execution"),
+        ("arena", "exact_clinch_termination"),
         ("selfplay", "preserve_interrupted_policy"),
         ("train", "share_homogeneous_geometry"),
         ("selfplay", "policy_publication"),
