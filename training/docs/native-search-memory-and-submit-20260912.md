@@ -1,8 +1,9 @@
 # Native search memory and response submission — September 12, 2026
 
 These local changes preserve search budgets, arithmetic, response ordering within
-each search, and output contracts. They have not been deployed to the training
-server. Neither a whole-machine throughput gain nor an Elo/hour gain is established.
+each search, and output contracts. The corrected server implementation is
+[deployed and verified](cpu-efficiency-deployment-20260912.md). Neither a
+whole-machine throughput gain nor an Elo/hour gain is established.
 
 ## Changes
 

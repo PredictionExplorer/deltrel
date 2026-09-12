@@ -29,7 +29,9 @@ including pending H100 qualification, compatibility and rollback requirements.
 The subsequent local replay, arena, inference-return, loss, and native-memory
 improvements are described in the
 [CPU efficiency implementation report](docs/cpu-efficiency-implementation-20260912.md),
-with reproducible component benchmarks and the remaining H100/strength checks.
+with reproducible component benchmarks. The corrected H100 deployment,
+checkpoint preservation, and final verification are recorded in the
+[graceful CPU efficiency rollout](docs/cpu-efficiency-deployment-20260912.md).
 
 ## Architecture
 

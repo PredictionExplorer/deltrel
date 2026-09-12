@@ -5,9 +5,10 @@ search budgets, replay eligibility, target weights, and arena decisions. The
 objective remains measured playing strength per provisioned wall-clock hour.
 Component latency and memory savings are not equivalent to Elo improvements.
 
-The baseline is `c607372`, after the recorded graph-cache activation. This is a
-local implementation and validation report; these changes have not been deployed
-to the H100 server. The earlier unqualified local-message kernels remain disabled.
+The baseline is `c607372`, after the recorded graph-cache activation. This report
+records the local implementation and validation. The corrected release was
+subsequently [deployed and verified on the H100 server](cpu-efficiency-deployment-20260912.md).
+The earlier unqualified local-message kernels remain disabled.
 The rebuilt native wheel is installed in the local training environment; its
 binary SHA-256 matches the isolated candidate used for the native comparisons.
 
@@ -124,8 +125,10 @@ GPU actor throughput.
 
 ## H100 and strength acceptance
 
-CUDA production qualification and an equal-wall-time strength comparison remain
-required before claiming an Elo/hour improvement. Use the existing
+H100 execution checks and deployment are recorded in the
+[rollout report](cpu-efficiency-deployment-20260912.md). An equal-wall-time
+strength comparison remains required before claiming an Elo/hour improvement.
+Use the existing
 [ablation protocol](training-ablation-protocol.md) and
 [equal-time runbook](elo-per-hour-ablation-runbook.md), with identical starting
 checkpoints, frozen replay/search settings, and the same six-cell evaluation
