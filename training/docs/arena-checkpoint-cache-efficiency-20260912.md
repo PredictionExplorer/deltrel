@@ -1,10 +1,16 @@
 # Arena, checkpoint and graph-cache efficiency — September 12, 2026
 
+This document records the initial rollout outcome at 05:26 UTC. The cache was
+subsequently enabled under a separately recorded controlled activation after the
+user's follow-up request and inspection of live mixed-board work. See the
+[controlled activation report](graph-cache-controlled-activation-20260912.md)
+for the later deployment; the original benchmark failures below remain unchanged.
+
 The arena and checkpoint-cache changes were activated in production from release
 `99ef5a43088d68e481492471d0b27226be4dd42e`, preserving checkpoint 209,544. The graph
-capacity benchmark and admission checks are implemented, but the increase is
-**not enabled**: the fresh confirmation failed its predeclared performance rule.
-Production retains 16 entries.
+capacity benchmark and admission checks were implemented, but the increase had
+**not been enabled**: the fresh confirmation failed its predeclared performance rule.
+Production retained 16 entries at that initial rollout boundary.
 The v3 rollout was withdrawn before migration and recovered the v2 runtime from
 the exact checkpoint 210,397. Final verification observed step 210,498, zero worker
 restarts or failed inference requests, and restored monitoring and backup schedules.

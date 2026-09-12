@@ -1,0 +1,2342 @@
+{
+  "authorization": {
+    "kind": "explicit-user-request",
+    "request": "Can we enable the third improvement on the server if it will improve the performance. Deploy it gracefully."
+  },
+  "backup": {
+    "exact_snapshot_pin": {
+      "backup_root": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network",
+      "boundary": {
+        "checkpoint_step": 213452,
+        "files": {
+          "continuous-migrations.jsonl": {
+            "bytes": 51417,
+            "kind": "run-metadata",
+            "sha256": "5bec9f8057a8bb4d10d8c7bc335cfc039cb4b66f5f291a187a6beab52c753783"
+          },
+          "learner/recovery.json": {
+            "bytes": 431,
+            "kind": "recovery-pointer",
+            "sha256": "901a1ffd93a95d7397b93f55a7eb8a0007c538fb2d79cd186a7e1fba0794c10b"
+          },
+          "profile-efficiency-v2-20260912.yaml": {
+            "bytes": 12850,
+            "kind": "profile",
+            "sha256": "2cb05ebdc385fc92bb8ce99b109928e22409fac96b829c5a4f44cfb40f44d978"
+          },
+          "run.json": {
+            "bytes": 121,
+            "kind": "run-identity",
+            "sha256": "0dd3e1cac21ecc0ecfa98b8754084bd52a0465fcb9dfabf88298eeee2017e0c4"
+          },
+          "source-commit.txt": {
+            "bytes": 41,
+            "kind": "source-commit",
+            "sha256": "90a7926f20c8bbc8058c47446ce019290664086d44697b0d3f3f22b5e7fb61a0"
+          }
+        },
+        "generation_family": "variant-network-a",
+        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-efficiency-v2-20260912.yaml",
+        "run_id": "variant-network",
+        "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+        "source_commit": "99ef5a43088d68e481492471d0b27226be4dd42e"
+      },
+      "commit_marker_sha256": "f03422f63632d31a6575556e51547c0a94fa007ff3093a242b679046ebd0ab95",
+      "created_ns": 1789199160358505137,
+      "generation_family": "variant-network-a",
+      "invocation_started_ns": 1789198644181654159,
+      "pointer_sha256": "eb0b4ed002ae0c1a21e36196b6876a028993e9df7e3a62710bda4a02211e6973",
+      "run_id": "variant-network",
+      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789199160358505137-5da0946f565ae233a5f91f39f0954b137c530a44a6fcf776b6cd3f3a0a9acd43.json",
+      "snapshot_bytes": 5262031,
+      "snapshot_sha256": "5da0946f565ae233a5f91f39f0954b137c530a44a6fcf776b6cd3f3a0a9acd43"
+    },
+    "preverification": {
+      "metrics": {
+        "cache_hits": 2,
+        "full_hash_bytes": 12542880596,
+        "full_hash_seconds": 34.516426305286586,
+        "full_hashes": 27885,
+        "reused_bytes": 0,
+        "reused_without_upload": 0,
+        "source_hash_seconds": 0.0,
+        "store_seconds": 0.0
+      },
+      "path": "/home/ubuntu/edgeconnect-rollouts/cache-activation-20260912/verified-objects-final.json",
+      "seconds": 62.644090293,
+      "sha256": "d2ad6913c11edd35a58bb5b649073f2f2679343180eceff56485ce3af4ae3eb6"
+    },
+    "stopped_snapshot": {
+      "metrics": {
+        "cache_hits": 78083,
+        "full_hash_bytes": 1783911108,
+        "full_hash_seconds": 11.461855148430914,
+        "full_hashes": 3436,
+        "reused_bytes": 4931059833,
+        "reused_without_upload": 176,
+        "source_hash_seconds": 5.3270909008570015,
+        "store_seconds": 28.885188496671617
+      },
+      "mode": "exact-stopped-snapshot",
+      "proof": {
+        "age_seconds": 2035.960395046,
+        "path": "/home/ubuntu/edgeconnect-rollouts/cache-activation-20260912/verified-objects-final.json",
+        "reused": true,
+        "sha256": "d2ad6913c11edd35a58bb5b649073f2f2679343180eceff56485ce3af4ae3eb6"
+      },
+      "seconds": 899.527068591,
+      "snapshot": {
+        "catalog_bytes": 8681768736,
+        "catalog_files": 27173,
+        "created_ns": 1789199160358505137,
+        "generation_family": "variant-network-a",
+        "objects": 27171,
+        "run_id": "variant-network",
+        "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789199160358505137-5da0946f565ae233a5f91f39f0954b137c530a44a6fcf776b6cd3f3a0a9acd43.json",
+        "snapshot_bytes": 5262031,
+        "snapshot_sha256": "5da0946f565ae233a5f91f39f0954b137c530a44a6fcf776b6cd3f3a0a9acd43",
+        "status": "ok"
+      },
+      "status": "ok"
+    }
+  },
+  "baseline": {
+    "duration_seconds": 600.0,
+    "gpu_processes": {
+      "1": {
+        "context_first": [],
+        "context_last": [],
+        "counter_seconds": 599.932140638,
+        "delta": {
+          "cache_hits": 97869,
+          "cache_misses": 1450834,
+          "deduplicated_rows": 4386,
+          "graph_captures": 16,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 64,
+          "graph_warmup_rows": 3568,
+          "logical_requested_rows": 1548703,
+          "neural_calls": 40755,
+          "neural_padding_rows": 182997,
+          "neural_rows": 1629445,
+          "total_neural_rows": 1633013,
+          "useful_neural_rows": 1446448
+        },
+        "mixed_board_observations": 0,
+        "pid": 2247578,
+        "useful_rows_per_second": 2410.7466666666664
+      },
+      "2": {
+        "context_first": [],
+        "context_last": [],
+        "counter_seconds": 598.398708075,
+        "delta": {
+          "cache_hits": 36363,
+          "cache_misses": 1666408,
+          "deduplicated_rows": 0,
+          "graph_captures": 3,
+          "graph_evictions": 3,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 12,
+          "graph_warmup_rows": 92,
+          "logical_requested_rows": 1702771,
+          "neural_calls": 29350,
+          "neural_padding_rows": 148318,
+          "neural_rows": 1814726,
+          "total_neural_rows": 1814818,
+          "useful_neural_rows": 1666408
+        },
+        "mixed_board_observations": 0,
+        "pid": 2247579,
+        "useful_rows_per_second": 2777.346666666667
+      },
+      "3": {
+        "context_first": [],
+        "context_last": [],
+        "counter_seconds": 600.289200071,
+        "delta": {
+          "cache_hits": 21894,
+          "cache_misses": 1647208,
+          "deduplicated_rows": 0,
+          "graph_captures": 0,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 0,
+          "graph_warmup_rows": 0,
+          "logical_requested_rows": 1669102,
+          "neural_calls": 26082,
+          "neural_padding_rows": 271660,
+          "neural_rows": 1918868,
+          "total_neural_rows": 1918868,
+          "useful_neural_rows": 1647208
+        },
+        "mixed_board_observations": 0,
+        "pid": 2247580,
+        "useful_rows_per_second": 2745.346666666667
+      },
+      "4": {
+        "context_first": [],
+        "context_last": [],
+        "counter_seconds": 599.039277305,
+        "delta": {
+          "cache_hits": 48989,
+          "cache_misses": 1754082,
+          "deduplicated_rows": 0,
+          "graph_captures": 0,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 0,
+          "graph_warmup_rows": 0,
+          "logical_requested_rows": 1803071,
+          "neural_calls": 43840,
+          "neural_padding_rows": 187794,
+          "neural_rows": 1941876,
+          "total_neural_rows": 1941876,
+          "useful_neural_rows": 1754082
+        },
+        "mixed_board_observations": 0,
+        "pid": 2247581,
+        "useful_rows_per_second": 2923.47
+      },
+      "5": {
+        "context_first": [
+          {
+            "model_role": "candidate",
+            "model_step": 209996,
+            "rings": [
+              8,
+              10
+            ]
+          }
+        ],
+        "context_last": [
+          {
+            "model_role": "candidate",
+            "model_step": 209996,
+            "rings": [
+              8,
+              10
+            ]
+          }
+        ],
+        "counter_seconds": 600.226131215,
+        "delta": {
+          "cache_hits": 32448,
+          "cache_misses": 1573650,
+          "deduplicated_rows": 0,
+          "graph_captures": 261,
+          "graph_evictions": 261,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 1044,
+          "graph_warmup_rows": 41760,
+          "logical_requested_rows": 1606098,
+          "neural_calls": 42963,
+          "neural_padding_rows": 232906,
+          "neural_rows": 1806556,
+          "total_neural_rows": 1848316,
+          "useful_neural_rows": 1573650
+        },
+        "mixed_board_observations": 121,
+        "pid": 2247582,
+        "useful_rows_per_second": 2622.75
+      },
+      "6": {
+        "context_first": [],
+        "context_last": [],
+        "counter_seconds": 599.759991931,
+        "delta": {
+          "cache_hits": 100256,
+          "cache_misses": 1780740,
+          "deduplicated_rows": 10345,
+          "graph_captures": 0,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 0,
+          "graph_warmup_rows": 0,
+          "logical_requested_rows": 1880996,
+          "neural_calls": 40496,
+          "neural_padding_rows": 230158,
+          "neural_rows": 2000553,
+          "total_neural_rows": 2000553,
+          "useful_neural_rows": 1770395
+        },
+        "mixed_board_observations": 0,
+        "pid": 2247583,
+        "useful_rows_per_second": 2950.6583333333333
+      },
+      "7": {
+        "context_first": [],
+        "context_last": [],
+        "counter_seconds": 598.329714316,
+        "delta": {
+          "cache_hits": 20938,
+          "cache_misses": 898223,
+          "deduplicated_rows": 0,
+          "graph_captures": 0,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 0,
+          "graph_warmup_rows": 0,
+          "logical_requested_rows": 919161,
+          "neural_calls": 16946,
+          "neural_padding_rows": 117616,
+          "neural_rows": 1015839,
+          "total_neural_rows": 1015839,
+          "useful_neural_rows": 898223
+        },
+        "mixed_board_observations": 0,
+        "pid": 2247584,
+        "useful_rows_per_second": 1497.0383333333334
+      }
+    },
+    "observations": 121,
+    "observed_from": "2026-09-12T07:17:58Z",
+    "observed_until": "2026-09-12T07:27:58Z",
+    "raw_observations_sha256": "fde3a2db128c2a7d16814f2da6490978815ed73ace3803174c9f3267609f21f0",
+    "scope": "Pre-deployment observational baseline; no admission/threshold change or causal performance claim. Counter scope is GPU process; cohort model-step/ring metadata only corroborates mixed workload.",
+    "source": {
+      "bytes": 22959,
+      "path": "/tmp/edgeconnect-cache-assessment-20260912/predeployment-cache16-summary.json",
+      "sha256": "2492baab35cbb2968577f706069dbe8ec043cf601e9132b0065b065beedc9bd6"
+    }
+  },
+  "candidate": {
+    "changes": [
+      {
+        "from": 16,
+        "path": "orchestration.model_refresh.inference.cuda_graph_max_entries",
+        "to": 32
+      }
+    ],
+    "gate": {
+      "path": "/home/ubuntu/edgeconnect-runs/variant-network/status/search-allocation-gates/7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3.json",
+      "sha256": "1133b04604a8f6a93804064aece054450c1764f32c09cbad824e031d1a8569b3"
+    },
+    "record_strength_epoch": false,
+    "source": {
+      "config_sha256": "2443d35fa7447777beb68f58d47a334bf85d9b3c590daedb5c34718c96aafd6e",
+      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-efficiency-v2-20260912.yaml",
+      "profile_sha256": "2cb05ebdc385fc92bb8ce99b109928e22409fac96b829c5a4f44cfb40f44d978",
+      "source_commit": "99ef5a43088d68e481492471d0b27226be4dd42e"
+    },
+    "target": {
+      "config_sha256": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3",
+      "profile": "/home/ubuntu/edgeconnect-rollouts/cache-activation-20260912/profile-efficiency-graph32-candidate.yaml",
+      "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a"
+    }
+  },
+  "checkpoint": {
+    "checkpoint": "recovery/sha256-60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01.pt",
+    "checkpoint_bytes": 212718055,
+    "checkpoint_sha256": "60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01",
+    "epoch": 2150,
+    "examples_consumed": 109287424,
+    "format": "startrain.recovery-pointer",
+    "generation_family": "variant-network-a",
+    "run_id": "variant-network",
+    "schema_version": 1,
+    "step": 213452,
+    "updated_ns": 1789198540722678142
+  },
+  "controlled_activation_scope": "Expected-benefit engineering trial supported by actual mixed-board churn; no statistical fleet or Elo lower-bound claim.",
+  "deployment_completion": {
+    "completed_ns": 1789201137194250085,
+    "migration": {
+      "backup_bundle": "/home/ubuntu/edgeconnect-runs/variant-network/migration-backups/1789199555758524330-profile-cache-activation-20260912",
+      "boundary": {
+        "champion_model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+        "committed_replay_samples": 79571915,
+        "discarded_uncheckpointed_steps": 0,
+        "examples_consumed": 109287424,
+        "heartbeat_step": 213452,
+        "learner_step": 213452,
+        "recovery_interval_steps": 1000
+      },
+      "changes": [
+        {
+          "from": 16,
+          "path": "orchestration.model_refresh.inference.cuda_graph_max_entries",
+          "to": 32
+        }
+      ],
+      "coordinator_lock": "absent",
+      "generation_family": "variant-network-a",
+      "kind": "profile",
+      "mode": "apply",
+      "run_id": "variant-network",
+      "source": {
+        "config_sha256": "2443d35fa7447777beb68f58d47a334bf85d9b3c590daedb5c34718c96aafd6e",
+        "profile": "profile-efficiency-v2-20260912.yaml",
+        "profile_sha256": "2cb05ebdc385fc92bb8ce99b109928e22409fac96b829c5a4f44cfb40f44d978",
+        "source_commit": "99ef5a43088d68e481492471d0b27226be4dd42e"
+      },
+      "status": "ok",
+      "target": {
+        "config_sha256": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3",
+        "profile": "profile-cache-activation-20260912.yaml",
+        "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a",
+        "source_commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14"
+      },
+      "utd_segment": null,
+      "writes": [
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.yaml",
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.sha256",
+        "/home/ubuntu/edgeconnect-runs/variant-network/continuous-migrations.jsonl",
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile.sha256",
+        "/home/ubuntu/edgeconnect-runs/variant-network/source-commit.txt"
+      ]
+    },
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.yaml",
+    "receipt_sha256": "dfe450b7a1bf97b0bb2b290d241dfe7dfac163963fca5c2cb7442c1a54664109",
+    "source": "b21e120418f41ca5402ff4dfb034dd96396e9f14"
+  },
+  "elo_per_hour_gain_measured": null,
+  "final_live_verification": {
+    "checkpoint_sha256": "60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01",
+    "completion_receipt_sha256": "dfe450b7a1bf97b0bb2b290d241dfe7dfac163963fca5c2cb7442c1a54664109",
+    "config_sha256": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3",
+    "current_step": 214099,
+    "examples_consumed": 109618688,
+    "learner_resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01.pt",
+    "main_pid": 2275828,
+    "migration": {
+      "champion_manifest_sha256": "be4ecd6f7905b954e2ba4c3b66d742cb1cc80ebc8143c5037f79a213a5af2e64",
+      "champion_model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+      "champion_model_step": 185554,
+      "champion_pointer_sha256": "8be7f38f28b23aec4473b4fd3647cf67481fb4c4a8b76a89f5140ab9af5990da",
+      "changes": [
+        {
+          "from": 16,
+          "path": "orchestration.model_refresh.inference.cuda_graph_max_entries",
+          "to": 32
+        }
+      ],
+      "committed_replay_samples": 79571915,
+      "discarded_uncheckpointed_steps": 0,
+      "examples_consumed": 109287424,
+      "from_config_sha256": "2443d35fa7447777beb68f58d47a334bf85d9b3c590daedb5c34718c96aafd6e",
+      "from_profile": "profile-efficiency-v2-20260912.yaml",
+      "from_profile_sha256": "2cb05ebdc385fc92bb8ce99b109928e22409fac96b829c5a4f44cfb40f44d978",
+      "from_source_commit": "99ef5a43088d68e481492471d0b27226be4dd42e",
+      "generation_family": "variant-network-a",
+      "heartbeat_examples_consumed": 109287424,
+      "heartbeat_step": 213452,
+      "kind": "profile",
+      "learner_step": 213452,
+      "reason": "Measured execution efficiency with preserved checkpoint, optimizer, UTD and arena evidence; owned-cutover=3442dc3f419e45dcab810f70d54c4f04",
+      "recovery_checkpoint_bytes": 212718055,
+      "recovery_checkpoint_sha256": "60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01",
+      "recovery_pointer_sha256": "901a1ffd93a95d7397b93f55a7eb8a0007c538fb2d79cd186a7e1fba0794c10b",
+      "replay_counter_updated_ns": 1789198622421878023,
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "timestamp_ns": 1789199555758524330,
+      "to_config_sha256": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3",
+      "to_profile": "profile-cache-activation-20260912.yaml",
+      "to_profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a",
+      "to_source_commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14"
+    },
+    "observed_ns": 1789201198250682127,
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.yaml",
+    "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a",
+    "resumed_step": 213452,
+    "settings": {
+      "cuda_graph_max_entries": 32,
+      "exact_clinch_termination": true,
+      "per_model_graph_bytes": 8589934592,
+      "process_graph_bytes": 51539607552
+    },
+    "source_commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14",
+    "status": "healthy-cache32-deployment-complete",
+    "support_services": {
+      "edgeconnect-startrain-variant-network-backup.timer": {
+        "enabled": "enabled",
+        "state": "active"
+      },
+      "edgeconnect-startrain-variant-network-disaster-backup.timer": {
+        "enabled": "enabled",
+        "state": "active"
+      },
+      "edgeconnect-startrain-variant-network-monitor.service": {
+        "enabled": "enabled",
+        "state": "active"
+      },
+      "edgeconnect-startrain-variant-network-report.timer": {
+        "enabled": "enabled",
+        "state": "active"
+      }
+    },
+    "verified_backup": {
+      "catalog_bytes": 8679918824,
+      "catalog_files": 28007,
+      "created_ns": 1789200394881943732,
+      "generation_family": "variant-network-a",
+      "objects": 28005,
+      "run_id": "variant-network",
+      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789200394881943732-c3bd8613ea81623260e061a10c4d402ab207528ab27481189fdb5d4e4c458320.json",
+      "snapshot_bytes": 5422926,
+      "snapshot_sha256": "c3bd8613ea81623260e061a10c4d402ab207528ab27481189fdb5d4e4c458320",
+      "status": "ok"
+    },
+    "workers": {
+      "actor-cpu-ring4": {
+        "completed_requests": null,
+        "failed_requests": 0,
+        "graph_residency": [],
+        "phase": "selfplay_policy_published",
+        "physical_inference": {},
+        "pid": 2275906,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-1": {
+        "completed_requests": 84386,
+        "failed_requests": 0,
+        "graph_residency": [
+          {
+            "charged_graph_bytes": 5866596352,
+            "entries": 16,
+            "model_identity": "sha256-0d63d2c1557a8120118dcd2a1ba75f1b6c7fb83c6771159a7fbe5d4b64b34c5b",
+            "model_step": 180696,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 5864555008,
+            "entries": 16,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "model_step": 185554,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 5867693568,
+            "entries": 16,
+            "model_identity": "sha256-ea7380fd513d133a96fdcd2cbad135932f260711b08d3a86cfc998abda860817",
+            "model_step": 209996,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 5866459136,
+            "entries": 16,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "model_step": 212926,
+            "node_counts": [
+              275
+            ]
+          }
+        ],
+        "phase": "shared_cohorts",
+        "physical_inference": {
+          "cache_evictions": 4804645,
+          "cache_hits": 203834,
+          "cache_misses": 4888768,
+          "cache_seconds": 5.903857723809779,
+          "deduplicated_rows": 17459,
+          "graph_captures": 64,
+          "graph_entries": 64,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 83952,
+          "graph_retained_bytes": 23465304064,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 64,
+          "graph_warmup_calls": 256,
+          "graph_warmup_rows": 14272,
+          "h2d_enqueue_seconds": 54.0396445854567,
+          "key_seconds": 39.49362506251782,
+          "neural_calls": 83952,
+          "neural_padding_rows": 327575,
+          "neural_round_trip_seconds": 1049.2766786185093,
+          "neural_rows": 5198884,
+          "prepare_seconds": 109.30938783474267,
+          "return_seconds": 142.8133895304054,
+          "total_neural_calls": 84208,
+          "total_neural_rows": 5213156
+        },
+        "pid": 2275899,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-2": {
+        "completed_requests": 109363,
+        "failed_requests": 0,
+        "graph_residency": [
+          {
+            "charged_graph_bytes": 5868296704,
+            "entries": 16,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "model_step": 185554,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 5866026496,
+            "entries": 16,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "model_step": 212926,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 5976245248,
+            "entries": 32,
+            "model_identity": "sha256-3d7c26000fb667646a7aa13527f7d1d50f4961c82241e401c41d6a8f08f69a93",
+            "model_step": 127956,
+            "node_counts": [
+              105,
+              180
+            ]
+          }
+        ],
+        "phase": "shared_cohorts",
+        "physical_inference": {
+          "cache_evictions": 5518627,
+          "cache_hits": 124387,
+          "cache_misses": 5575170,
+          "cache_seconds": 6.67865731799975,
+          "deduplicated_rows": 6545,
+          "graph_captures": 64,
+          "graph_entries": 64,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 108939,
+          "graph_retained_bytes": 17710568448,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 64,
+          "graph_warmup_calls": 256,
+          "graph_warmup_rows": 14272,
+          "h2d_enqueue_seconds": 55.05476252408698,
+          "key_seconds": 42.06583355460316,
+          "neural_calls": 108939,
+          "neural_padding_rows": 455503,
+          "neural_round_trip_seconds": 1053.9222895610146,
+          "neural_rows": 6024128,
+          "prepare_seconds": 108.16372996987775,
+          "return_seconds": 134.3483892744407,
+          "total_neural_calls": 109195,
+          "total_neural_rows": 6038400
+        },
+        "pid": 2275900,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-3": {
+        "completed_requests": 88975,
+        "failed_requests": 0,
+        "graph_residency": [
+          {
+            "charged_graph_bytes": 5867113984,
+            "entries": 16,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "model_step": 212926,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 5869156352,
+            "entries": 16,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "model_step": 185554,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 5865387008,
+            "entries": 16,
+            "model_identity": "sha256-0d63d2c1557a8120118dcd2a1ba75f1b6c7fb83c6771159a7fbe5d4b64b34c5b",
+            "model_step": 180696,
+            "node_counts": [
+              275
+            ]
+          }
+        ],
+        "phase": "shared_cohorts",
+        "physical_inference": {
+          "cache_evictions": 5034892,
+          "cache_hits": 182040,
+          "cache_misses": 5098082,
+          "cache_seconds": 5.971105813514441,
+          "deduplicated_rows": 13192,
+          "graph_captures": 48,
+          "graph_entries": 48,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 71333,
+          "graph_retained_bytes": 17601657344,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 48,
+          "graph_warmup_calls": 192,
+          "graph_warmup_rows": 10704,
+          "h2d_enqueue_seconds": 51.72958823014051,
+          "key_seconds": 34.85197248496115,
+          "neural_calls": 71333,
+          "neural_padding_rows": 409111,
+          "neural_round_trip_seconds": 1049.8562635099515,
+          "neural_rows": 5494001,
+          "prepare_seconds": 113.62442728644237,
+          "return_seconds": 143.1381030282937,
+          "total_neural_calls": 71525,
+          "total_neural_rows": 5504705
+        },
+        "pid": 2275901,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-4": {
+        "completed_requests": 90053,
+        "failed_requests": 0,
+        "graph_residency": [
+          {
+            "charged_graph_bytes": 4049794048,
+            "entries": 16,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "model_step": 212926,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 924973568,
+            "entries": 16,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "model_step": 185554,
+            "node_counts": [
+              50
+            ]
+          }
+        ],
+        "phase": "shared_cohorts",
+        "physical_inference": {
+          "cache_evictions": 6105969,
+          "cache_hits": 188483,
+          "cache_misses": 6146949,
+          "cache_seconds": 6.353519078809768,
+          "deduplicated_rows": 7648,
+          "graph_captures": 32,
+          "graph_entries": 32,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 53700,
+          "graph_retained_bytes": 4974767616,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 32,
+          "graph_warmup_calls": 128,
+          "graph_warmup_rows": 7136,
+          "h2d_enqueue_seconds": 45.799702127464116,
+          "key_seconds": 46.780325973872095,
+          "neural_calls": 53700,
+          "neural_padding_rows": 298827,
+          "neural_round_trip_seconds": 948.62879281817,
+          "neural_rows": 6438128,
+          "prepare_seconds": 144.7074461299926,
+          "return_seconds": 153.4603267130442,
+          "total_neural_calls": 53828,
+          "total_neural_rows": 6445264
+        },
+        "pid": 2275902,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-5": {
+        "completed_requests": 92079,
+        "failed_requests": 0,
+        "graph_residency": [
+          {
+            "charged_graph_bytes": 3338604032,
+            "entries": 15,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "model_step": 185554,
+            "node_counts": [
+              180
+            ]
+          },
+          {
+            "charged_graph_bytes": 5865590784,
+            "entries": 16,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "model_step": 212926,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 5868358144,
+            "entries": 16,
+            "model_identity": "sha256-37fd6c1ae569a1bbc55015815afaab755fb1c7ab40d4149c7ba80cb28961c585",
+            "model_step": 156256,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 5867782144,
+            "entries": 16,
+            "model_identity": "sha256-ea7380fd513d133a96fdcd2cbad135932f260711b08d3a86cfc998abda860817",
+            "model_step": 209996,
+            "node_counts": [
+              275
+            ]
+          }
+        ],
+        "phase": "shared_cohorts",
+        "physical_inference": {
+          "cache_evictions": 5178574,
+          "cache_hits": 205348,
+          "cache_misses": 5249273,
+          "cache_seconds": 6.232218005694449,
+          "deduplicated_rows": 4035,
+          "graph_captures": 63,
+          "graph_entries": 63,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 91565,
+          "graph_retained_bytes": 20940335104,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 63,
+          "graph_warmup_calls": 252,
+          "graph_warmup_rows": 13760,
+          "h2d_enqueue_seconds": 53.306388947647065,
+          "key_seconds": 39.99330033781007,
+          "neural_calls": 91565,
+          "neural_padding_rows": 355539,
+          "neural_round_trip_seconds": 1067.312816647347,
+          "neural_rows": 5600777,
+          "prepare_seconds": 111.71291175717488,
+          "return_seconds": 137.41104345209897,
+          "total_neural_calls": 91817,
+          "total_neural_rows": 5614537
+        },
+        "pid": 2275903,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-6": {
+        "completed_requests": 88915,
+        "failed_requests": 0,
+        "graph_residency": [
+          {
+            "charged_graph_bytes": 5867511808,
+            "entries": 16,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "model_step": 212926,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 5867238400,
+            "entries": 16,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "model_step": 185554,
+            "node_counts": [
+              275
+            ]
+          }
+        ],
+        "phase": "shared_cohorts",
+        "physical_inference": {
+          "cache_evictions": 5342995,
+          "cache_hits": 79378,
+          "cache_misses": 5379281,
+          "cache_seconds": 5.58790688123554,
+          "deduplicated_rows": 2954,
+          "graph_captures": 32,
+          "graph_entries": 32,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 51419,
+          "graph_retained_bytes": 11734750208,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 32,
+          "graph_warmup_calls": 128,
+          "graph_warmup_rows": 7136,
+          "h2d_enqueue_seconds": 43.10024714237079,
+          "key_seconds": 48.46271278709173,
+          "neural_calls": 51419,
+          "neural_padding_rows": 450501,
+          "neural_round_trip_seconds": 1018.5107260625809,
+          "neural_rows": 5826828,
+          "prepare_seconds": 141.09936809772626,
+          "return_seconds": 142.02286429842934,
+          "total_neural_calls": 51547,
+          "total_neural_rows": 5833964
+        },
+        "pid": 2275904,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-7": {
+        "completed_requests": 32954,
+        "failed_requests": 0,
+        "graph_residency": [
+          {
+            "charged_graph_bytes": 5823171584,
+            "entries": 15,
+            "model_identity": "sha256-0d63d2c1557a8120118dcd2a1ba75f1b6c7fb83c6771159a7fbe5d4b64b34c5b",
+            "model_step": 180696,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 5868632576,
+            "entries": 16,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "model_step": 185554,
+            "node_counts": [
+              275
+            ]
+          },
+          {
+            "charged_graph_bytes": 5866852352,
+            "entries": 16,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "model_step": 212926,
+            "node_counts": [
+              275
+            ]
+          }
+        ],
+        "phase": "arena_gpu_pause",
+        "physical_inference": {
+          "cache_evictions": 1866906,
+          "cache_hits": 93768,
+          "cache_misses": 1924715,
+          "cache_seconds": 2.382713173981756,
+          "deduplicated_rows": 7811,
+          "graph_captures": 47,
+          "graph_entries": 47,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 25569,
+          "graph_retained_bytes": 17558656512,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 47,
+          "graph_warmup_calls": 188,
+          "graph_warmup_rows": 10688,
+          "h2d_enqueue_seconds": 20.377479541115463,
+          "key_seconds": 16.753883864730597,
+          "neural_calls": 25569,
+          "neural_padding_rows": 141920,
+          "neural_round_trip_seconds": 418.17938913730904,
+          "neural_rows": 2058824,
+          "prepare_seconds": 45.79520404012874,
+          "return_seconds": 64.4194487570785,
+          "total_neural_calls": 25757,
+          "total_neural_rows": 2069512
+        },
+        "pid": 2275905,
+        "restarts": 0,
+        "state": "paused"
+      },
+      "arena-promotion": {
+        "completed_requests": null,
+        "failed_requests": 0,
+        "graph_residency": [],
+        "phase": "arena_batch",
+        "physical_inference": {},
+        "pid": 2275907,
+        "restarts": 0,
+        "state": "running"
+      },
+      "learner": {
+        "completed_requests": null,
+        "failed_requests": 0,
+        "graph_residency": [],
+        "phase": "update_to_data_wait",
+        "physical_inference": {},
+        "pid": 2275898,
+        "restarts": 0,
+        "state": "running"
+      }
+    }
+  },
+  "fleet_speedup_measured": null,
+  "format": "startrain.controlled-graph-cache-deployment-evidence",
+  "h100_smoke": {
+    "report": {
+      "bytes": 3666,
+      "path": "/tmp/edgeconnect-cache-activation-20260912/h100-smoke.json",
+      "sha256": "dbfa82bdeb4705859af23490fa830df969f77c1a720d9af246d6cee07f215cce"
+    },
+    "status": "passed"
+  },
+  "initial_live_verification": {
+    "observed_ns": 1789199950606048672,
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.yaml",
+    "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a",
+    "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01.pt",
+    "source_commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14",
+    "status": "healthy-live-cache32",
+    "step": 213544,
+    "workers": {
+      "actor-cpu-ring4": {
+        "failed_requests": 0,
+        "graphs": [],
+        "physical": {},
+        "pid": 2275906,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-1": {
+        "failed_requests": 0,
+        "graphs": [
+          {
+            "charged_bytes": 5866596352,
+            "entries": 16,
+            "model_identity": "sha256-0d63d2c1557a8120118dcd2a1ba75f1b6c7fb83c6771159a7fbe5d4b64b34c5b",
+            "nodes": [
+              275
+            ],
+            "step": 180696
+          },
+          {
+            "charged_bytes": 5739145216,
+            "entries": 15,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "nodes": [
+              275
+            ],
+            "step": 185554
+          },
+          {
+            "charged_bytes": 5867693568,
+            "entries": 16,
+            "model_identity": "sha256-ea7380fd513d133a96fdcd2cbad135932f260711b08d3a86cfc998abda860817",
+            "nodes": [
+              275
+            ],
+            "step": 209996
+          },
+          {
+            "charged_bytes": 5866459136,
+            "entries": 16,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "nodes": [
+              275
+            ],
+            "step": 212926
+          }
+        ],
+        "physical": {
+          "cache_evictions": 645090,
+          "cache_hits": 98893,
+          "cache_misses": 729212,
+          "cache_seconds": 0.9445915967226028,
+          "deduplicated_rows": 17458,
+          "graph_captures": 63,
+          "graph_entries": 63,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 12921,
+          "graph_retained_bytes": 23339894272,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 63,
+          "graph_warmup_calls": 252,
+          "graph_warmup_rows": 14208,
+          "h2d_enqueue_seconds": 7.05191494571045,
+          "key_seconds": 7.6420737178996205,
+          "neural_calls": 12921,
+          "neural_padding_rows": 62598,
+          "neural_round_trip_seconds": 194.19213197520003,
+          "neural_rows": 774352,
+          "prepare_seconds": 17.241321210283786,
+          "return_seconds": 23.995007044170052,
+          "total_neural_calls": 13173,
+          "total_neural_rows": 788560
+        },
+        "pid": 2275899,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-2": {
+        "failed_requests": 0,
+        "graphs": [
+          {
+            "charged_bytes": 5868296704,
+            "entries": 16,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "nodes": [
+              275
+            ],
+            "step": 185554
+          },
+          {
+            "charged_bytes": 5866026496,
+            "entries": 16,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "nodes": [
+              275
+            ],
+            "step": 212926
+          },
+          {
+            "charged_bytes": 5976245248,
+            "entries": 32,
+            "model_identity": "sha256-3d7c26000fb667646a7aa13527f7d1d50f4961c82241e401c41d6a8f08f69a93",
+            "nodes": [
+              105,
+              180
+            ],
+            "step": 127956
+          }
+        ],
+        "physical": {
+          "cache_evictions": 712356,
+          "cache_hits": 44469,
+          "cache_misses": 768731,
+          "cache_seconds": 0.9513304326683283,
+          "deduplicated_rows": 6377,
+          "graph_captures": 64,
+          "graph_entries": 64,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 16134,
+          "graph_retained_bytes": 17710568448,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 64,
+          "graph_warmup_calls": 256,
+          "graph_warmup_rows": 14272,
+          "h2d_enqueue_seconds": 7.516956330742687,
+          "key_seconds": 5.427235355135053,
+          "neural_calls": 16134,
+          "neural_padding_rows": 70070,
+          "neural_round_trip_seconds": 191.6608743937686,
+          "neural_rows": 832424,
+          "prepare_seconds": 13.494705582037568,
+          "return_seconds": 21.41887378692627,
+          "total_neural_calls": 16390,
+          "total_neural_rows": 846696
+        },
+        "pid": 2275900,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-3": {
+        "failed_requests": 0,
+        "graphs": [
+          {
+            "charged_bytes": 5867113984,
+            "entries": 16,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "nodes": [
+              275
+            ],
+            "step": 212926
+          },
+          {
+            "charged_bytes": 5869156352,
+            "entries": 16,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "nodes": [
+              275
+            ],
+            "step": 185554
+          },
+          {
+            "charged_bytes": 5865387008,
+            "entries": 16,
+            "model_identity": "sha256-0d63d2c1557a8120118dcd2a1ba75f1b6c7fb83c6771159a7fbe5d4b64b34c5b",
+            "nodes": [
+              275
+            ],
+            "step": 180696
+          }
+        ],
+        "physical": {
+          "cache_evictions": 729504,
+          "cache_hits": 102575,
+          "cache_misses": 792668,
+          "cache_seconds": 1.0298993601463735,
+          "deduplicated_rows": 13166,
+          "graph_captures": 48,
+          "graph_entries": 48,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 11828,
+          "graph_retained_bytes": 17601657344,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 48,
+          "graph_warmup_calls": 192,
+          "graph_warmup_rows": 10704,
+          "h2d_enqueue_seconds": 7.550725801847875,
+          "key_seconds": 5.985924074891955,
+          "neural_calls": 11828,
+          "neural_padding_rows": 62338,
+          "neural_round_trip_seconds": 201.23562409495935,
+          "neural_rows": 841840,
+          "prepare_seconds": 17.356576347257942,
+          "return_seconds": 26.11604260187596,
+          "total_neural_calls": 12020,
+          "total_neural_rows": 852544
+        },
+        "pid": 2275901,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-4": {
+        "failed_requests": 0,
+        "graphs": [
+          {
+            "charged_bytes": 4049794048,
+            "entries": 16,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "nodes": [
+              275
+            ],
+            "step": 212926
+          },
+          {
+            "charged_bytes": 924973568,
+            "entries": 16,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "nodes": [
+              50
+            ],
+            "step": 185554
+          }
+        ],
+        "physical": {
+          "cache_evictions": 1052583,
+          "cache_hits": 89775,
+          "cache_misses": 1092800,
+          "cache_seconds": 1.2186772427521646,
+          "deduplicated_rows": 6885,
+          "graph_captures": 32,
+          "graph_entries": 32,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 9876,
+          "graph_retained_bytes": 4974767616,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 32,
+          "graph_warmup_calls": 128,
+          "graph_warmup_rows": 7136,
+          "h2d_enqueue_seconds": 6.362325984053314,
+          "key_seconds": 7.272455361671746,
+          "neural_calls": 9876,
+          "neural_padding_rows": 52931,
+          "neural_round_trip_seconds": 187.35192610742524,
+          "neural_rows": 1138846,
+          "prepare_seconds": 21.65654718177393,
+          "return_seconds": 28.017477464862168,
+          "total_neural_calls": 10004,
+          "total_neural_rows": 1145982
+        },
+        "pid": 2275902,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-5": {
+        "failed_requests": 0,
+        "graphs": [
+          {
+            "charged_bytes": 3338604032,
+            "entries": 15,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "nodes": [
+              180
+            ],
+            "step": 185554
+          },
+          {
+            "charged_bytes": 5865590784,
+            "entries": 16,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "nodes": [
+              275
+            ],
+            "step": 212926
+          },
+          {
+            "charged_bytes": 5784787968,
+            "entries": 14,
+            "model_identity": "sha256-37fd6c1ae569a1bbc55015815afaab755fb1c7ab40d4149c7ba80cb28961c585",
+            "nodes": [
+              275
+            ],
+            "step": 156256
+          },
+          {
+            "charged_bytes": 5746889216,
+            "entries": 14,
+            "model_identity": "sha256-ea7380fd513d133a96fdcd2cbad135932f260711b08d3a86cfc998abda860817",
+            "nodes": [
+              275
+            ],
+            "step": 209996
+          }
+        ],
+        "physical": {
+          "cache_evictions": 735136,
+          "cache_hits": 52639,
+          "cache_misses": 805800,
+          "cache_seconds": 0.9520678408443928,
+          "deduplicated_rows": 4000,
+          "graph_captures": 59,
+          "graph_entries": 59,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 15023,
+          "graph_retained_bytes": 20735872000,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 59,
+          "graph_warmup_calls": 236,
+          "graph_warmup_rows": 13704,
+          "h2d_enqueue_seconds": 7.236381810158491,
+          "key_seconds": 5.245510540902615,
+          "neural_calls": 15023,
+          "neural_padding_rows": 57232,
+          "neural_round_trip_seconds": 196.48545030970126,
+          "neural_rows": 859032,
+          "prepare_seconds": 14.218125021550804,
+          "return_seconds": 22.203329992480576,
+          "total_neural_calls": 15259,
+          "total_neural_rows": 872736
+        },
+        "pid": 2275903,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-6": {
+        "failed_requests": 0,
+        "graphs": [
+          {
+            "charged_bytes": 5786576896,
+            "entries": 15,
+            "model_identity": "sha256-5388e97672cbdc4d7fcdbf86a5a776cab3e8284f4bd2f0d2b586fa9d82ad55f4",
+            "nodes": [
+              275
+            ],
+            "step": 212926
+          },
+          {
+            "charged_bytes": 5867238400,
+            "entries": 16,
+            "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
+            "nodes": [
+              275
+            ],
+            "step": 185554
+          }
+        ],
+        "physical": {
+          "cache_evictions": 834043,
+          "cache_hits": 36062,
+          "cache_misses": 870302,
+          "cache_seconds": 0.948895494453609,
+          "deduplicated_rows": 2927,
+          "graph_captures": 31,
+          "graph_entries": 31,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 8724,
+          "graph_retained_bytes": 11653815296,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 31,
+          "graph_warmup_calls": 124,
+          "graph_warmup_rows": 7104,
+          "h2d_enqueue_seconds": 6.611301209777594,
+          "key_seconds": 8.719926127232611,
+          "neural_calls": 8724,
+          "neural_padding_rows": 69405,
+          "neural_round_trip_seconds": 197.6611041543074,
+          "neural_rows": 936780,
+          "prepare_seconds": 21.932949882466346,
+          "return_seconds": 25.620573833119124,
+          "total_neural_calls": 8848,
+          "total_neural_rows": 943884
+        },
+        "pid": 2275904,
+        "restarts": 0,
+        "state": "running"
+      },
+      "actor-gpu-7": {
+        "failed_requests": 0,
+        "graphs": [],
+        "physical": {
+          "cache_evictions": 0,
+          "cache_hits": 0,
+          "cache_misses": 0,
+          "cache_seconds": 0.0,
+          "deduplicated_rows": 0,
+          "graph_captures": 0,
+          "graph_entries": 0,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_negative_entries": 0,
+          "graph_replays": 0,
+          "graph_retained_bytes": 0,
+          "graph_validation_failures": 0,
+          "graph_validation_replays": 0,
+          "graph_warmup_calls": 0,
+          "graph_warmup_rows": 0,
+          "h2d_enqueue_seconds": 0.0,
+          "key_seconds": 0.0,
+          "neural_calls": 0,
+          "neural_padding_rows": 0,
+          "neural_round_trip_seconds": 0.0,
+          "neural_rows": 0,
+          "prepare_seconds": 0.0,
+          "return_seconds": 0.0,
+          "total_neural_calls": 0,
+          "total_neural_rows": 0
+        },
+        "pid": 2275905,
+        "restarts": 0,
+        "state": "paused"
+      },
+      "arena-promotion": {
+        "failed_requests": 0,
+        "graphs": [],
+        "physical": {},
+        "pid": 2275907,
+        "restarts": 0,
+        "state": "running"
+      },
+      "learner": {
+        "failed_requests": 0,
+        "graphs": [],
+        "physical": {},
+        "pid": 2275898,
+        "restarts": 0,
+        "state": "running"
+      }
+    }
+  },
+  "limitations": [
+    "Synthetic two-board gains of39\u201341 percent do not establish a fleet gain.",
+    "Live model/ring mixtures change between windows; use counter deltas only within unchanged process lifetimes.",
+    "The original strict and bounded benchmark policies remain failed; the controlled activation has separate evidence and authority.",
+    "Normal periodic backup and restore verification remain unchanged; the scoped snapshot helper reuses only recent successful immutable-object verification."
+  ],
+  "observational_comparison": {
+    "context_caveat": "actors.latest can briefly retain publications from previous process generations. Early apparent mixed metadata onGPUs1/4/5 is not corroborated by current-PID mixed graph residency and is not counted as matched post-load evidence. GPU2history127956rings6+8 is corroborated by current-PID32-entry residency samples.",
+    "corresponding_benchmarked_two_board_context_available": false,
+    "dedicated_gpu1_6_useful_rows_per_second": [
+      16430.318333333333,
+      22655.376859504133
+    ],
+    "learner_updates": [
+      223,
+      248
+    ],
+    "learner_updates_per_hour": [
+      1338.0,
+      1475.702479338843
+    ],
+    "measured_effect": "Larger per-model cache capacity is visibly used (32entries acrossrings6+8), withzeroobserved evictions. No sameboard/model mixture matching the baseline8+10episode was observed, so the aggregate changes cannot isolate a causal cache32speedup.",
+    "mixed_context_comparison": {
+      "post_metadata_only": {
+        "1": [],
+        "2": [
+          {
+            "model_role": "history",
+            "model_step": 127956,
+            "rings": [
+              6,
+              8
+            ]
+          }
+        ],
+        "4": [],
+        "5": []
+      },
+      "post_verified": {
+        "2": {
+          "charged_bytes": 5976245248,
+          "entries": 32,
+          "model_identity": "sha256-3d7c26000fb667646a7aa13527f7d1d50f4961c82241e401c41d6a8f08f69a93",
+          "model_step": 127956,
+          "rings": [
+            6,
+            8
+          ]
+        }
+      },
+      "pre": {
+        "5": [
+          {
+            "model_role": "candidate",
+            "model_step": 209996,
+            "rings": [
+              8,
+              10
+            ]
+          }
+        ]
+      }
+    },
+    "post_config": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3",
+    "post_fleet_delta": {
+      "cache_hits": 434464,
+      "cache_misses": 14576184,
+      "deduplicated_rows": 8814,
+      "graph_captures": 52,
+      "graph_evictions": 0,
+      "graph_fallbacks": 0,
+      "graph_validation_failures": 0,
+      "graph_warmup_calls": 208,
+      "graph_warmup_rows": 10824,
+      "logical_requested_rows": 15010648,
+      "neural_calls": 201281,
+      "neural_padding_rows": 1013835,
+      "neural_rows": 15581205,
+      "total_neural_rows": 15592029,
+      "useful_neural_rows": 14567370
+    },
+    "post_window": [
+      "2026-09-12T07:57:04Z",
+      "2026-09-12T08:07:09Z"
+    ],
+    "pre_config": "2443d35fa7447777beb68f58d47a334bf85d9b3c590daedb5c34718c96aafd6e",
+    "pre_fleet_delta": {
+      "cache_hits": 358757,
+      "cache_misses": 10771145,
+      "deduplicated_rows": 14731,
+      "graph_captures": 280,
+      "graph_evictions": 264,
+      "graph_fallbacks": 0,
+      "graph_validation_failures": 0,
+      "graph_warmup_calls": 1120,
+      "graph_warmup_rows": 45420,
+      "logical_requested_rows": 11129902,
+      "neural_calls": 240432,
+      "neural_padding_rows": 1371449,
+      "neural_rows": 12127863,
+      "total_neural_rows": 12173283,
+      "useful_neural_rows": 10756414
+    },
+    "pre_window": [
+      "2026-09-12T07:17:58Z",
+      "2026-09-12T07:27:58Z"
+    ],
+    "scope": "Observational only. Cohort metadata corroborates model-step/ring contexts; GPU-process counters aggregate models. Workloads, models, game phases and arena occupancy differ from prewindow. No causal fleet-throughput or Elo claim.",
+    "startup_capture_note": "No graph evictions occurred.46of52 new captures and10,672of10,824 warmup rows were onGPU7, whose actor began after its normal arena pause; the other6captures were late initial shape fills.",
+    "useful_row_rate_ratio_observed": 1.343103613564585,
+    "useful_rows_per_second": [
+      17927.356666666667,
+      24078.297520661155
+    ]
+  },
+  "original_policy_results_changed": false,
+  "post_observation": {
+    "cohort_metadata_caveat": "actors.latest can briefly retain publications from previous process generations. Early apparent mixed metadata onGPUs1/4/5 is not corroborated by current-PID mixed graph residency and is not counted as matched post-load evidence. GPU2history127956rings6+8 is corroborated by current-PID32-entry residency samples.",
+    "duration_seconds": 605.0,
+    "errors": [],
+    "fleet_delta": {
+      "cache_hits": 434464,
+      "cache_misses": 14576184,
+      "deduplicated_rows": 8814,
+      "graph_captures": 52,
+      "graph_evictions": 0,
+      "graph_fallbacks": 0,
+      "graph_validation_failures": 0,
+      "graph_warmup_calls": 208,
+      "graph_warmup_rows": 10824,
+      "logical_requested_rows": 15010648,
+      "neural_calls": 201281,
+      "neural_padding_rows": 1013835,
+      "neural_rows": 15581205,
+      "total_neural_rows": 15592029,
+      "useful_neural_rows": 14567370
+    },
+    "fleet_useful_rows_per_second": 24078.297520661155,
+    "gpu_counter_deltas": {
+      "1": {
+        "counter_seconds": 605.035805634,
+        "delta": {
+          "cache_hits": 67722,
+          "cache_misses": 2088522,
+          "deduplicated_rows": 234,
+          "graph_captures": 1,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 4,
+          "graph_warmup_rows": 64,
+          "logical_requested_rows": 2156244,
+          "neural_calls": 34932,
+          "neural_padding_rows": 136629,
+          "neural_rows": 2224917,
+          "total_neural_rows": 2224981,
+          "useful_neural_rows": 2088288
+        },
+        "pid": 2275899,
+        "useful_rows_per_second": 3451.7157024793387
+      },
+      "2": {
+        "counter_seconds": 605.106262577,
+        "delta": {
+          "cache_hits": 44254,
+          "cache_misses": 2371668,
+          "deduplicated_rows": 19,
+          "graph_captures": 0,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 0,
+          "graph_warmup_rows": 0,
+          "logical_requested_rows": 2415922,
+          "neural_calls": 45163,
+          "neural_padding_rows": 201952,
+          "neural_rows": 2573601,
+          "total_neural_rows": 2573601,
+          "useful_neural_rows": 2371649
+        },
+        "pid": 2275900,
+        "useful_rows_per_second": 3920.0809917355373
+      },
+      "3": {
+        "counter_seconds": 605.089843944,
+        "delta": {
+          "cache_hits": 53757,
+          "cache_misses": 2135773,
+          "deduplicated_rows": 28,
+          "graph_captures": 0,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 0,
+          "graph_warmup_rows": 0,
+          "logical_requested_rows": 2189530,
+          "neural_calls": 28292,
+          "neural_padding_rows": 178141,
+          "neural_rows": 2313886,
+          "total_neural_rows": 2313886,
+          "useful_neural_rows": 2135745
+        },
+        "pid": 2275901,
+        "useful_rows_per_second": 3530.1570247933882
+      },
+      "4": {
+        "counter_seconds": 605.297425313,
+        "delta": {
+          "cache_hits": 96296,
+          "cache_misses": 2617007,
+          "deduplicated_rows": 699,
+          "graph_captures": 0,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 0,
+          "graph_warmup_rows": 0,
+          "logical_requested_rows": 2713303,
+          "neural_calls": 22810,
+          "neural_padding_rows": 93773,
+          "neural_rows": 2710081,
+          "total_neural_rows": 2710081,
+          "useful_neural_rows": 2616308
+        },
+        "pid": 2275902,
+        "useful_rows_per_second": 4324.476033057851
+      },
+      "5": {
+        "counter_seconds": 605.261861574,
+        "delta": {
+          "cache_hits": 74215,
+          "cache_misses": 2198908,
+          "deduplicated_rows": 23,
+          "graph_captures": 4,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 16,
+          "graph_warmup_rows": 56,
+          "logical_requested_rows": 2273123,
+          "neural_calls": 37453,
+          "neural_padding_rows": 139084,
+          "neural_rows": 2337969,
+          "total_neural_rows": 2338025,
+          "useful_neural_rows": 2198885
+        },
+        "pid": 2275903,
+        "useful_rows_per_second": 3634.5206611570247
+      },
+      "6": {
+        "counter_seconds": 604.316393093,
+        "delta": {
+          "cache_hits": 24051,
+          "cache_misses": 2295628,
+          "deduplicated_rows": 0,
+          "graph_captures": 1,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 4,
+          "graph_warmup_rows": 32,
+          "logical_requested_rows": 2319679,
+          "neural_calls": 20628,
+          "neural_padding_rows": 190082,
+          "neural_rows": 2485710,
+          "total_neural_rows": 2485742,
+          "useful_neural_rows": 2295628
+        },
+        "pid": 2275904,
+        "useful_rows_per_second": 3794.4264462809915
+      },
+      "7": {
+        "counter_seconds": 604.19688814,
+        "delta": {
+          "cache_hits": 74169,
+          "cache_misses": 868678,
+          "deduplicated_rows": 7811,
+          "graph_captures": 46,
+          "graph_evictions": 0,
+          "graph_fallbacks": 0,
+          "graph_validation_failures": 0,
+          "graph_warmup_calls": 184,
+          "graph_warmup_rows": 10672,
+          "logical_requested_rows": 942847,
+          "neural_calls": 12003,
+          "neural_padding_rows": 74174,
+          "neural_rows": 935041,
+          "total_neural_rows": 945713,
+          "useful_neural_rows": 860867
+        },
+        "pid": 2275905,
+        "useful_rows_per_second": 1422.9206611570248
+      }
+    },
+    "hardware_failure_observations": [],
+    "learner": {
+      "first_step": 213511,
+      "last_step": 213759,
+      "observed_updates_per_hour": 1475.702479338843,
+      "pid": 2275898,
+      "steps_delta": 248
+    },
+    "maximum_actor_process_charged_gib_sampled": 21.85376739501953,
+    "maximum_observation_gap_seconds": 6.0,
+    "maximum_per_model_charged_gib_sampled": 5.565812110900879,
+    "observations": 122,
+    "observed_from": "2026-09-12T07:57:04Z",
+    "observed_until": "2026-09-12T08:07:09Z",
+    "raw_observations": {
+      "path": "/tmp/edgeconnect-cache-assessment-20260912/post-cache32-monitor-raw.jsonl",
+      "sha256": "a82946dc3165be3829f39714c19772c67163cb95a7950eaa35167b90a3bf2c35"
+    },
+    "raw_residency_samples": {
+      "path": "/tmp/edgeconnect-cache-assessment-20260912/post-cache32-residency-samples.jsonl",
+      "sha256": "be5fa8600c2e485c9f9c51a175d61cf640559e5206b320528a6f62f4ff89c480"
+    },
+    "scope": "Observational only. Cohort metadata corroborates model-step/ring contexts; GPU-process counters aggregate models. Workloads, models, game phases and arena occupancy differ from prewindow. No causal fleet-throughput or Elo claim.",
+    "startup_capture_note": "No graph evictions occurred.46of52 new captures and10,672of10,824 warmup rows were onGPU7, whose actor began after its normal arena pause; the other6captures were late initial shape fills.",
+    "verified_mixed_residency_contexts": {
+      "2": {
+        "charged_bytes": 5976245248,
+        "entries": 32,
+        "model_identity": "sha256-3d7c26000fb667646a7aa13527f7d1d50f4961c82241e401c41d6a8f08f69a93",
+        "model_step": 127956,
+        "rings": [
+          6,
+          8
+        ]
+      }
+    },
+    "worker_identity_checks": {
+      "actor-cpu-ring4": {
+        "failure_reasons": [],
+        "maximum_restart_count": 0,
+        "pids": [
+          2275906
+        ]
+      },
+      "actor-gpu-1": {
+        "failure_reasons": [],
+        "maximum_restart_count": 0,
+        "pids": [
+          2275899
+        ]
+      },
+      "actor-gpu-2": {
+        "failure_reasons": [],
+        "maximum_restart_count": 0,
+        "pids": [
+          2275900
+        ]
+      },
+      "actor-gpu-3": {
+        "failure_reasons": [],
+        "maximum_restart_count": 0,
+        "pids": [
+          2275901
+        ]
+      },
+      "actor-gpu-4": {
+        "failure_reasons": [],
+        "maximum_restart_count": 0,
+        "pids": [
+          2275902
+        ]
+      },
+      "actor-gpu-5": {
+        "failure_reasons": [],
+        "maximum_restart_count": 0,
+        "pids": [
+          2275903
+        ]
+      },
+      "actor-gpu-6": {
+        "failure_reasons": [],
+        "maximum_restart_count": 0,
+        "pids": [
+          2275904
+        ]
+      },
+      "actor-gpu-7": {
+        "failure_reasons": [],
+        "maximum_restart_count": 0,
+        "pids": [
+          2275905
+        ]
+      },
+      "arena-promotion": {
+        "failure_reasons": [],
+        "maximum_restart_count": 0,
+        "pids": [
+          2275907
+        ]
+      },
+      "learner": {
+        "failure_reasons": [],
+        "maximum_restart_count": 0,
+        "pids": [
+          2275898
+        ]
+      }
+    }
+  },
+  "post_observation_plan": {
+    "comparison_contract": "Use deltas only within unchanged process counter lifetimes; label changed model/ring composition and startup periods. A row-count or capture reduction is not a measured fleet speedup or Elo gain.",
+    "format": "startrain.graph-cache-post-activation-observation-plan",
+    "mechanism_check": "Look for a live model serving rings6+10 or8+10 retaining more than16 graphs within the original byte cap; compare capture/eviction and warmup-row rates against the same-workload baseline after startup.",
+    "observation_seconds_after_readiness": 600,
+    "required_health": [
+      "Exact stopped checkpoint resumed and optimizer steps advancing",
+      "All active actors complete inference requests, zero restarts or failed requests",
+      "Zero graph validation failures, unchanged 8 GiB per-model charged graph cap and 48 GiB process allowance",
+      "Source/profile authority, monitoring and backup services restored"
+    ],
+    "reversal": "Use the new-reader checkpoint-preserving graph32-to16 rollback if deployment causes errors, exceeds bounds, or demonstrates material regression under comparable workload. Do not relabel the original failed benchmark policies.",
+    "sampling": "Use existing five-second monitor records; retain raw source/profile/PID/model/ring context.",
+    "schema_version": 1,
+    "source_commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14",
+    "target_config_sha256": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3"
+  },
+  "recorded_utc": "2026-09-12T08:21:57.937771+00:00",
+  "release": {
+    "archive": "source-final.tar.gz",
+    "archive_sha256": "bb4c480b81e7a9ef7858f2a1f5ecf17cb3009facce1401009ad105dd42650679",
+    "commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14",
+    "native_sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b",
+    "qualification_note": "User-requested controlled cache16-to32 activation; original failed policy reports retained, full execution and teacher-rate checks, live mixed-board churn, exact checkpoint and rollback required.",
+    "release": "/home/ubuntu/edgeconnect-releases/variant-cache-activation-20260912",
+    "source_files": 559
+  },
+  "retained_server_directory": "/home/ubuntu/edgeconnect-rollouts/cache-activation-20260912",
+  "schema_version": 1,
+  "source_authority": {
+    "config_sha256": "2443d35fa7447777beb68f58d47a334bf85d9b3c590daedb5c34718c96aafd6e",
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-efficiency-v2-20260912.yaml",
+    "profile_sha256": "2cb05ebdc385fc92bb8ce99b109928e22409fac96b829c5a4f44cfb40f44d978",
+    "release": "/home/ubuntu/edgeconnect-releases/variant-efficiency-v2-20260912",
+    "source_commit": "99ef5a43088d68e481492471d0b27226be4dd42e"
+  },
+  "status": "complete_healthy_cache32",
+  "validation": {
+    "controller_server": {
+      "errors": 0,
+      "failures": 0,
+      "junit": {
+        "bytes": 9251,
+        "path": "/tmp/edgeconnect-cache-activation-20260912/controller-tests-server.xml",
+        "sha256": "c92692d010f20396d0702a9f229bff2eb7e945051edde192b85f77f44e84a6d7"
+      },
+      "tests": 70
+    },
+    "core_server": {
+      "errors": 0,
+      "failures": 0,
+      "junit": {
+        "bytes": 30458,
+        "path": "/tmp/edgeconnect-cache-activation-20260912/core-tests-server.xml",
+        "sha256": "aeaad1be0f14781690508493cd8494d1e1111d82fae46b90d440876f9a7133d8"
+      },
+      "tests": 196
+    },
+    "counting": "Separate scopes; stopped-snapshot and readiness cases are included in the70 controller cases.",
+    "pyright": "0 errors, 0 warnings",
+    "ruff": "passed",
+    "runtime_parity": {
+      "native_path": "/home/ubuntu/edgeconnect-releases/variant-cache-activation-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+      "native_sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b",
+      "package_count": 103,
+      "packages": [
+        [
+          "CacheControl",
+          "0.14.4"
+        ],
+        [
+          "Jinja2",
+          "3.1.6"
+        ],
+        [
+          "MarkupSafe",
+          "3.0.3"
+        ],
+        [
+          "PyYAML",
+          "6.0.3"
+        ],
+        [
+          "Pygments",
+          "2.20.0"
+        ],
+        [
+          "annotated-doc",
+          "0.0.4"
+        ],
+        [
+          "annotated-types",
+          "0.7.0"
+        ],
+        [
+          "anyio",
+          "4.14.1"
+        ],
+        [
+          "boolean.py",
+          "5.0"
+        ],
+        [
+          "certifi",
+          "2026.6.17"
+        ],
+        [
+          "charset-normalizer",
+          "3.4.9"
+        ],
+        [
+          "click",
+          "8.4.2"
+        ],
+        [
+          "coverage",
+          "7.15.0"
+        ],
+        [
+          "cuda-bindings",
+          "13.3.1"
+        ],
+        [
+          "cuda-pathfinder",
+          "1.5.6"
+        ],
+        [
+          "cuda-toolkit",
+          "13.0.3.0"
+        ],
+        [
+          "cyclonedx-python-lib",
+          "11.11.0"
+        ],
+        [
+          "defusedxml",
+          "0.7.1"
+        ],
+        [
+          "fastapi",
+          "0.139.0"
+        ],
+        [
+          "filelock",
+          "3.29.7"
+        ],
+        [
+          "flatbuffers",
+          "25.12.19"
+        ],
+        [
+          "fsspec",
+          "2026.6.0"
+        ],
+        [
+          "h11",
+          "0.16.0"
+        ],
+        [
+          "httpcore",
+          "1.0.9"
+        ],
+        [
+          "httptools",
+          "0.8.0"
+        ],
+        [
+          "httpx",
+          "0.28.1"
+        ],
+        [
+          "hypothesis",
+          "6.156.5"
+        ],
+        [
+          "idna",
+          "3.18"
+        ],
+        [
+          "iniconfig",
+          "2.3.0"
+        ],
+        [
+          "libcst",
+          "1.8.6"
+        ],
+        [
+          "license-expression",
+          "30.4.4"
+        ],
+        [
+          "linkify-it-py",
+          "2.1.0"
+        ],
+        [
+          "markdown-it-py",
+          "4.2.0"
+        ],
+        [
+          "maturin",
+          "1.14.1"
+        ],
+        [
+          "mdit-py-plugins",
+          "0.6.1"
+        ],
+        [
+          "mdurl",
+          "0.1.2"
+        ],
+        [
+          "ml_dtypes",
+          "0.5.4"
+        ],
+        [
+          "mpmath",
+          "1.3.0"
+        ],
+        [
+          "msgpack",
+          "1.2.1"
+        ],
+        [
+          "mutmut",
+          "3.6.0"
+        ],
+        [
+          "networkx",
+          "3.6.1"
+        ],
+        [
+          "nodeenv",
+          "1.10.0"
+        ],
+        [
+          "numpy",
+          "2.4.6"
+        ],
+        [
+          "nvidia-cublas",
+          "13.1.1.3"
+        ],
+        [
+          "nvidia-cuda-cupti",
+          "13.0.85"
+        ],
+        [
+          "nvidia-cuda-nvrtc",
+          "13.0.88"
+        ],
+        [
+          "nvidia-cuda-runtime",
+          "13.0.96"
+        ],
+        [
+          "nvidia-cudnn-cu13",
+          "9.20.0.48"
+        ],
+        [
+          "nvidia-cufft",
+          "12.0.0.61"
+        ],
+        [
+          "nvidia-cufile",
+          "1.15.1.6"
+        ],
+        [
+          "nvidia-curand",
+          "10.4.0.35"
+        ],
+        [
+          "nvidia-cusolver",
+          "12.0.4.66"
+        ],
+        [
+          "nvidia-cusparse",
+          "12.6.3.3"
+        ],
+        [
+          "nvidia-cusparselt-cu13",
+          "0.8.1"
+        ],
+        [
+          "nvidia-nccl-cu13",
+          "2.29.7"
+        ],
+        [
+          "nvidia-nvjitlink",
+          "13.3.33"
+        ],
+        [
+          "nvidia-nvshmem-cu13",
+          "3.4.5"
+        ],
+        [
+          "nvidia-nvtx",
+          "13.0.85"
+        ],
+        [
+          "onnx",
+          "1.22.0"
+        ],
+        [
+          "onnx-ir",
+          "0.2.1"
+        ],
+        [
+          "onnxruntime",
+          "1.27.0"
+        ],
+        [
+          "onnxscript",
+          "0.7.1"
+        ],
+        [
+          "packageurl-python",
+          "0.17.6"
+        ],
+        [
+          "packaging",
+          "26.2"
+        ],
+        [
+          "pip",
+          "26.2.1"
+        ],
+        [
+          "pip-api",
+          "0.0.34"
+        ],
+        [
+          "pip-requirements-parser",
+          "32.0.1"
+        ],
+        [
+          "pip_audit",
+          "2.10.1"
+        ],
+        [
+          "platformdirs",
+          "4.10.0"
+        ],
+        [
+          "pluggy",
+          "1.6.0"
+        ],
+        [
+          "protobuf",
+          "7.35.1"
+        ],
+        [
+          "py-serializable",
+          "2.1.0"
+        ],
+        [
+          "pydantic",
+          "2.13.4"
+        ],
+        [
+          "pydantic_core",
+          "2.46.4"
+        ],
+        [
+          "pyparsing",
+          "3.3.2"
+        ],
+        [
+          "pyright",
+          "1.1.411"
+        ],
+        [
+          "pytest",
+          "9.1.1"
+        ],
+        [
+          "pytest-cov",
+          "7.1.0"
+        ],
+        [
+          "pytest-timeout",
+          "2.4.0"
+        ],
+        [
+          "python-dotenv",
+          "1.2.2"
+        ],
+        [
+          "requests",
+          "2.34.2"
+        ],
+        [
+          "rich",
+          "15.0.0"
+        ],
+        [
+          "ruff",
+          "0.15.21"
+        ],
+        [
+          "setproctitle",
+          "1.3.7"
+        ],
+        [
+          "setuptools",
+          "83.0.0"
+        ],
+        [
+          "sortedcontainers",
+          "2.4.0"
+        ],
+        [
+          "star-native",
+          "0.1.0"
+        ],
+        [
+          "starlette",
+          "1.3.1"
+        ],
+        [
+          "startrain",
+          "0.3.0"
+        ],
+        [
+          "sympy",
+          "1.14.0"
+        ],
+        [
+          "textual",
+          "8.2.8"
+        ],
+        [
+          "tomli",
+          "2.4.1"
+        ],
+        [
+          "tomli_w",
+          "1.2.0"
+        ],
+        [
+          "torch",
+          "2.13.0"
+        ],
+        [
+          "triton",
+          "3.7.1"
+        ],
+        [
+          "typing-inspection",
+          "0.4.2"
+        ],
+        [
+          "typing_extensions",
+          "4.16.0"
+        ],
+        [
+          "uc-micro-py",
+          "2.0.0"
+        ],
+        [
+          "urllib3",
+          "2.7.0"
+        ],
+        [
+          "uvicorn",
+          "0.51.0"
+        ],
+        [
+          "uvloop",
+          "0.22.1"
+        ],
+        [
+          "watchfiles",
+          "1.2.0"
+        ],
+        [
+          "websockets",
+          "16.1"
+        ]
+      ],
+      "unchanged_execution_files": {
+        "startrain/actor.py": "f4fd76bdc46def4dba16016085bda047aa4fc1fcf278d598273582c957baf57c",
+        "startrain/arena.py": "873eec5a8ab27dcc7ada590cf045ee782ba4d39b271705315b86b7dbfcee066d",
+        "startrain/inference.py": "990644e48db6cac27f682b5ce602a226289490f91c291aadee6f458ca6357a15",
+        "startrain/inference_batching.py": "0f0e7c42636c07eeafec009b21d41204582a02a4bb4319b0ef3be3ee5eb458f9",
+        "startrain/inference_graphs.py": "02ec378de2e5eacbeea149f2b50f511ff2f2fbfbf39c3b4a7aee7449ddb8ff8d",
+        "startrain/learner.py": "0dea3a85eb8540c28b393845a5e0f248f8f0ea5522129f24eccf2612351bfe92",
+        "startrain/model.py": "7c53f459698b0257a4fb5a266c1dd9956cf5dd5611d5d2d9c497756380f85a29"
+      }
+    }
+  },
+  "verified_post_readiness_backup": {
+    "catalog_bytes": 8679918824,
+    "catalog_files": 28007,
+    "created_ns": 1789200394881943732,
+    "generation_family": "variant-network-a",
+    "objects": 28005,
+    "run_id": "variant-network",
+    "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789200394881943732-c3bd8613ea81623260e061a10c4d402ab207528ab27481189fdb5d4e4c458320.json",
+    "snapshot_bytes": 5422926,
+    "snapshot_sha256": "c3bd8613ea81623260e061a10c4d402ab207528ab27481189fdb5d4e4c458320",
+    "status": "ok"
+  }
+}
