@@ -139,9 +139,8 @@ def test_lone_finished_seat_survives_and_is_never_a_statistical_pair():
     stored = corrupted["game_states"][0]["result"]
     stored["winner"] = 1 - stored["winner"]
     stored["outcome"] = -stored["outcome"]
-    repaired = runner(sequential).run(resume_state=corrupted)
-    assert repaired["games"] == complete["games"]
-    assert repaired["resume_state"] == complete["resume_state"]
+    with pytest.raises(ValueError, match="winner.*proof"):
+        runner(sequential).run(resume_state=corrupted)
 
 
 @pytest.mark.native

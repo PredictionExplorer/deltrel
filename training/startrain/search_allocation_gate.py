@@ -17,6 +17,7 @@ import re
 from typing import Any, NoReturn
 
 from .config import ExperimentConfig, load_config
+from .config_compatibility import without_arena_clinch_default
 from .contracts import SEARCH_ALGORITHM_ID
 
 
@@ -38,8 +39,11 @@ _VERIFIED_GATES: OrderedDict[str, dict[str, tuple[int, ...]]] = OrderedDict()
 
 
 def canonical_config_sha256(config: ExperimentConfig) -> str:
+    # Adding a disabled arena optimization must not orphan existing search
+    # admission artifacts. Enabled treatment values retain distinct authority.
+    payload = without_arena_clinch_default(config.as_dict())
     return hashlib.sha256(
-        json.dumps(config.as_dict(), sort_keys=True, separators=(",", ":")).encode()
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
 
 
@@ -50,6 +54,111 @@ def allocation_gate_path(config: ExperimentConfig) -> Path:
         / "search-allocation-gates"
         / f"{canonical_config_sha256(config)}.json"
     )
+
+
+def _validate_graph_capacity_reports(
+    root: Path,
+    gate: dict[str, Any],
+    baseline: ExperimentConfig,
+    target: ExperimentConfig,
+    verified: dict[str, tuple[int, ...]],
+) -> None:
+    """Extend measured search authority only for a proven cache-entry increase.
+
+    Original search-quality and target-production evidence remains mandatory.
+    These separately pinned H100 comparisons cover the same frozen models and
+    preserve prediction settings, graph byte limits, and producer topology.
+    """
+    from .graph_cache_evidence import validate_graph_cache_report
+
+    before = baseline.orchestration.model_refresh.inference
+    after = target.orchestration.model_refresh.inference
+    references = gate.get("graph_cache_reports")
+    if before == after:
+        if "graph_cache_reports" in gate:
+            _fail("graph cache reports require a cache-capacity treatment")
+        return
+    if (
+        before.cuda_graph_max_entries != 16
+        or after.cuda_graph_max_entries != 32
+        or replace(after, cuda_graph_max_entries=16) != before
+        or baseline.orchestration.gpus != target.orchestration.gpus
+        or baseline.orchestration.model_refresh.inference_compile_dynamic
+        != target.orchestration.model_refresh.inference_compile_dynamic
+        or baseline.orchestration.model_refresh.inference_compile_mode
+        != target.orchestration.model_refresh.inference_compile_mode
+    ):
+        _fail("only measured graph capacity 16-to-32 may extend inference authority")
+    if not isinstance(references, list) or not references:
+        _fail("changed graph capacity requires pinned H100 reports")
+    models: dict[str, tuple[str, str]] = {}
+    for group in gate["groups"]:
+        _, contents = _read_ref(root, group["model_manifest"], verified)
+        model = _json(contents)
+        model_identity = model["model_identity"]
+        expected = (group["model_manifest"]["sha256"], model["checkpoint_sha256"])
+        if model_identity in models and models[model_identity] != expected:
+            _fail("frozen graph benchmark model references disagree")
+        models[model_identity] = expected
+    if len(references) != len(models):
+        _fail("graph cache reports must cover every frozen search model once")
+    seen = set()
+    source_canonical = hashlib.sha256(
+        json.dumps(baseline.as_dict(), sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    for reference in references:
+        _, contents = _read_ref(root, reference, verified)
+        report = _json(contents)
+        plan = report.get("plan")
+        if not isinstance(plan, dict):
+            _fail("graph cache report plan is missing")
+        identity = plan.get("model_identity")
+        if not isinstance(identity, str) or identity not in models or identity in seen:
+            _fail("graph cache report frozen model is unexpected or duplicated")
+        gpu_id = plan.get("actor_gpu_id")
+        actor = next(
+            (
+                gpu
+                for gpu in baseline.orchestration.actor_gpus
+                if type(gpu_id) is int and gpu.gpu_id == gpu_id
+            ),
+            None,
+        )
+        if (
+            actor is None
+            or actor.actor_cohorts < 2
+            or actor.actor_pipeline is None
+            or actor.actor_pipeline.cuda_graphs is not True
+            or plan.get("actor_configuration") != asdict(actor)
+        ):
+            _fail("graph cache report producer topology differs from baseline")
+        refresh = baseline.orchestration.model_refresh
+        for name, expected_value in (
+            ("precision", baseline.train.precision),
+            ("compile", baseline.train.compile),
+            ("compile_dynamic", refresh.inference_compile_dynamic),
+            ("compile_mode", refresh.inference_compile_mode),
+        ):
+            if (
+                type(plan.get(name)) is not type(expected_value)
+                or plan[name] != expected_value
+            ):
+                _fail(f"graph cache report {name} differs from baseline")
+        manifest_sha, checkpoint_sha = models[identity]
+        validate_graph_cache_report(
+            report,
+            source_config_sha256=gate["baseline_profile"]["sha256"],
+            source_config_canonical_sha256=source_canonical,
+            model_identity=identity,
+            manifest_sha256=manifest_sha,
+            checkpoint_sha256=checkpoint_sha,
+            profile_inference=asdict(replace(before, cuda_graphs=True)),
+            graph_cache_bytes=max(
+                1, before.cuda_graph_max_bytes // (actor.actor_cohorts + 2)
+            ),
+            actor_gpu_id=actor.gpu_id,
+        )
+        seen.add(identity)
 
 
 def _fail(message: str) -> NoReturn:
@@ -376,7 +485,7 @@ def validate_production_ring_allocations(config: ExperimentConfig) -> None:
             _fail("gate changed during validation")
         verified = {str(path.relative_to(root)): before}
         if (
-            set(gate)
+            set(gate) - {"graph_cache_reports"}
             != {
                 "format",
                 "schema_version",
@@ -414,7 +523,8 @@ def validate_production_ring_allocations(config: ExperimentConfig) -> None:
                 _fail(f"baseline {name} differs from target")
         if (
             baseline.orchestration.model_refresh.inference
-            != config.orchestration.model_refresh.inference
+            != (config.orchestration.model_refresh.inference)
+            and "graph_cache_reports" not in gate
         ):
             _fail("target inference settings were not measured by the pinned profile")
         groups = gate["groups"]
@@ -478,6 +588,7 @@ def validate_production_ring_allocations(config: ExperimentConfig) -> None:
                 _fail(
                     f"{group['role']} conservative full-target rate falls below baseline"
                 )
+        _validate_graph_capacity_reports(root, gate, baseline, config, verified)
         if not _unchanged(root, verified):
             _fail("evidence changed before validation completed")
         _VERIFIED_GATES[cache_key] = verified

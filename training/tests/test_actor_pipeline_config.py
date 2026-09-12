@@ -17,6 +17,7 @@ from startrain.config import (
     load_config,
 )
 from startrain.config_compatibility import (
+    without_arena_clinch_default,
     compatible_config_epoch_payloads,
     without_search_execution_defaults,
     without_selfplay_pipeline_defaults,
@@ -147,8 +148,12 @@ def test_pipeline_omission_matches_the_exact_previous_production_config_hash():
     config = load_config(PROFILE)
     payload = config.as_dict()
     before = deepcopy(payload)
-    old = without_fresh_data_defaults(
-        without_training_execution_defaults(without_selfplay_pipeline_defaults(payload))
+    old = without_arena_clinch_default(
+        without_fresh_data_defaults(
+            without_training_execution_defaults(
+                without_selfplay_pipeline_defaults(payload)
+            )
+        )
     )
     checksum = hashlib.sha256(migration._canonical_config_bytes(old)).hexdigest()
     assert checksum == LEGACY_PRODUCTION_CONFIG_SHA256
@@ -157,7 +162,12 @@ def test_pipeline_omission_matches_the_exact_previous_production_config_hash():
     assert payload == before
     assert old["model"] == payload["model"]
     assert old["train"] == without_training_execution_defaults(payload)["train"]
-    assert old["arena"] == without_search_execution_defaults(payload)["arena"]
+    assert (
+        old["arena"]
+        == without_arena_clinch_default(without_search_execution_defaults(payload))[
+            "arena"
+        ]
+    )
     assert (
         old["orchestration"]["model_refresh"]["inference"][
             "preserve_broadcast_topology"

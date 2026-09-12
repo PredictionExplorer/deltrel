@@ -22,6 +22,10 @@ documented in [search execution controls](docs/search-execution.md); shipped pro
 keep these experiments disabled.
 The installed native throughput improvements and source-only cutover are recorded
 in the [MCTS throughput rollout report](docs/mcts-throughput-rollout-20260910.md).
+The September 12 learner verification cache, optional exact arena endings and gated
+graph-capacity experiment are documented in the
+[arena/checkpoint/cache efficiency operator notes](docs/arena-checkpoint-cache-efficiency-20260912.md),
+including pending H100 qualification, compatibility and rollback requirements.
 
 ## Architecture
 

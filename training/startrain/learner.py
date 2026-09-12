@@ -45,6 +45,7 @@ from .config import (
     RingMixtureConfig,
     TrainConfig,
 )
+from .checkpoint_manifest_cache import ControlManifestCache
 from .contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
 from .device import (
     device_memory_snapshot,
@@ -1391,6 +1392,7 @@ class LearnerLoop:
             Path(gpu_pause_path) if gpu_pause_path is not None else None
         )
         self._last_plateau_reset: tuple[str, str] | None = None
+        self._control_manifest_cache = ControlManifestCache()
         self.rank = rank
         self.world_size = world_size
         self.store.register_run(run_identity)
@@ -4193,7 +4195,7 @@ class LearnerLoop:
             and self.rank == 0
             and self.publisher.champion_path.is_file()
         ):
-            champion = load_model_manifest(self.publisher.champion_path)
+            champion = self._control_model_manifest(self.publisher.champion_path)
             budget = max(
                 0,
                 champion.model_step
@@ -4682,7 +4684,7 @@ class LearnerLoop:
                 and governor.scaled_champion_identity is not None
                 and self.publisher.champion_path.is_file()
             ):
-                champion = load_model_manifest(self.publisher.champion_path)
+                champion = self._control_model_manifest(self.publisher.champion_path)
                 if champion.model_identity != governor.scaled_champion_identity:
                     action = "restored"
         action = self._broadcast_object(action)
@@ -4760,16 +4762,22 @@ class LearnerLoop:
             <= float(configured.minimum_learning_rate_scale) + 1e-9
         )
 
+    def _control_model_manifest(self, path: Path) -> ModelManifest:
+        cache = getattr(self, "_control_manifest_cache", None)
+        if cache is None:
+            cache = self._control_manifest_cache = ControlManifestCache()
+        return cache.load(path)
+
     def _rank_zero_plateau_action(self, configured) -> dict[str, object]:
         if not self.publisher.champion_path.is_file():
             return {"kind": "proceed"}
-        champion = load_model_manifest(self.publisher.champion_path)
+        champion = self._control_model_manifest(self.publisher.champion_path)
         lag = self.step - champion.model_step
         keep_weights = configured.action == "reduce_lr_keep_weights"
         if not keep_weights and lag < configured.max_learner_champion_lag_steps:
             return {"kind": "proceed"}
         candidate = (
-            load_model_manifest(self.publisher.candidate_path)
+            self._control_model_manifest(self.publisher.candidate_path)
             if self.publisher.candidate_path.is_file()
             else None
         )

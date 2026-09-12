@@ -92,6 +92,9 @@ _ALLOWED_PROFILE_PATHS = {
     ("orchestration", "historical_evaluation", "session_seconds"),
     ("orchestration", "historical_evaluation", "cooldown_seconds"),
     ("arena", "continuation_pairs_per_ring"),
+    # An extremal-completion proof preserves the winner of every continuation.
+    # Its execution flag can change at a stopped, verified resume boundary.
+    ("arena", "exact_clinch_termination"),
     # Promotion-gate budget and the measurement crossplay that keeps the Elo
     # ladder on one search scale. These change arena evidence only; model,
     # optimizer, replay, and self-play remain immutable.

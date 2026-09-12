@@ -3407,8 +3407,8 @@ def _plateau_policy_fixture(tmp_path, monkeypatch):
         path.write_text(json.dumps({"model_identity": identity, "model_step": step}))
 
     monkeypatch.setattr(
-        "startrain.learner.load_model_manifest",
-        lambda path: SimpleNamespace(
+        "startrain.learner.LearnerLoop._control_model_manifest",
+        lambda self, path: SimpleNamespace(
             **json.loads(Path(path).read_text()),
             checkpoint=Path(path).with_suffix(".pt"),
             checkpoint_sha256="a" * 64,
@@ -3699,8 +3699,8 @@ def test_plateau_scale_restores_after_promotion(tmp_path, monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "startrain.learner.load_model_manifest",
-        lambda path: SimpleNamespace(
+        "startrain.learner.LearnerLoop._control_model_manifest",
+        lambda self, path: SimpleNamespace(
             model_identity=json.loads(Path(path).read_text())["model_identity"]
         ),
     )

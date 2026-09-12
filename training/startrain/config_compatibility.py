@@ -128,7 +128,20 @@ def compatible_config_epoch_payloads(
         previous_fresh_data = without_fresh_data_defaults(variant)
         if previous_fresh_data != variant:
             variants.append(previous_fresh_data)
+    for variant in tuple(variants):
+        previous_clinch = without_arena_clinch_default(variant)
+        if previous_clinch != variant:
+            variants.append(previous_clinch)
     return tuple(variants)
+
+
+def without_arena_clinch_default(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Represent the board-full release without erasing an enabled treatment."""
+    result = deepcopy(dict(payload))
+    arena = result.get("arena")
+    if isinstance(arena, dict) and arena.get("exact_clinch_termination") is False:
+        del arena["exact_clinch_termination"]
+    return result
 
 
 def without_fresh_data_defaults(payload: Mapping[str, Any]) -> dict[str, Any]:

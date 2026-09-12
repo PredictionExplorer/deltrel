@@ -1396,6 +1396,12 @@ class ArenaRunner:
             else None
         )
         self.stable_pair_seeds = stable_pair_seeds or config.balanced_cells
+        if config.exact_clinch_termination and (
+            not self.stable_pair_seeds or config.search_execution.subtree_reuse
+        ):
+            raise ValueError(
+                "exact clinch termination requires stable pair seeds and no subtree reuse"
+            )
         self.candidate_search = ArenaSearchBudget.from_config(config)
         self.baseline_search = baseline_search or self.candidate_search
         if config.balanced_cells and self.baseline_search != self.candidate_search:
@@ -1761,7 +1767,28 @@ class ArenaRunner:
             supplied["config"] = without_search_execution_defaults(
                 {"arena": supplied.get("config")}
             )["arena"]
-            if any(supplied.get(key) != value for key, value in contract.items()):
+
+            # Exact winner proofs change execution only. Old snapshots omit
+            # the option, and switching it off must retain proven completed
+            # games. Every stored completion is independently verified below.
+            def execution_neutral_config(value: object) -> object:
+                if not isinstance(value, dict):
+                    return value
+                normalized = dict(value)
+                enabled = normalized.pop("exact_clinch_termination", False)
+                if type(enabled) is not bool:
+                    raise ValueError("arena resume exact clinch option is invalid")
+                return normalized
+
+            if any(
+                (
+                    execution_neutral_config(supplied.get(key))
+                    != execution_neutral_config(value)
+                    if key == "config"
+                    else supplied.get(key) != value
+                )
+                for key, value in contract.items()
+            ):
                 raise ValueError(
                     "arena resume state disagrees with evaluation contract"
                 )
@@ -1825,6 +1852,7 @@ class ArenaRunner:
                             raise ValueError(
                                 "arena resume result disagrees with game state"
                             )
+                        self._verify_resume_winner(entry, parsed, game)
                     key = (ring, variant, pair, seat)
                     if key in self._resume_games:
                         raise ValueError("duplicate arena resume game state")
@@ -1832,6 +1860,87 @@ class ArenaRunner:
                 except (KeyError, TypeError) as error:
                     raise ValueError("malformed arena resume game state") from error
         self._resume_contract = contract
+
+    def _proven_clinch_winners(
+        self, states: Any, rows: Sequence[int] | None = None
+    ) -> dict[int, int]:
+        """Prove winners on copies, retaining only genuinely played states.
+
+        The extremal-completion bound assumes stone ownership cannot change.
+        In particular a still-available pie swap must never be finalized by it.
+        This is not the optimal-play endgame solver: all continuations must win.
+        """
+        data = states.data()
+        eligible = [
+            row
+            for row in (range(len(data.terminal)) if rows is None else rows)
+            if not bool(data.terminal[row]) and not bool(data.swap_available[row])
+        ]
+        if not eligible:
+            return {}
+        # Use the actual state's native type, including when the compatibility
+        # runner's StateBatch factory deliberately hides from_semantic.
+        proof_states = self._semantic_subset(data, eligible, state_type=type(states))
+        proof = proof_states.complete_clinches()
+        if len(proof.clinched) != len(eligible) or len(proof.winner) != len(eligible):
+            raise RuntimeError("arena native clinch proof has invalid dimensions")
+        winners = {}
+        for row, clinched, winner in zip(
+            eligible, proof.clinched, proof.winner, strict=True
+        ):
+            if clinched:
+                if winner not in (0, 1):
+                    raise RuntimeError(
+                        "arena native clinch proof has an invalid winner"
+                    )
+                winners[row] = int(winner)
+        return winners
+
+    def _verify_resume_winner(
+        self, entry: Mapping[str, Any], variant: GameVariant, game: ArenaGame
+    ) -> None:
+        """Never trust a saved winner, including pairs skipped by continuation."""
+        states = self.native.StateBatch(
+            game.ring, 1, mode=variant.mode, handicap=variant.handicap, pie=variant.pie
+        )
+        if game.opening_action is not None:
+            states.apply_many([0], [game.opening_action])
+        for action in entry["actions"]:
+            states.apply_many([0], [action])
+        if bool(states.data().terminal[0]):
+            winner = int(states.score_data().winner[0])
+        else:
+            winner = self._proven_clinch_winners(states).get(0)
+        if winner != game.winner:
+            raise ValueError(
+                "arena resume winner lacks a matching terminal or clinch proof"
+            )
+
+    def _resume_clinch_winners(
+        self,
+        states: Any,
+        ring: int,
+        variant: GameVariant,
+        specifications: Sequence[tuple[int, int, int, int | None]],
+    ) -> dict[int, int]:
+        """Restore proven completions even after disabling new early finishes."""
+        data = states.data()
+        expected = {}
+        with self._resume_lock:
+            for row, (pair, seat, _seed, _opening) in enumerate(specifications):
+                entry = self._resume_games.get((ring, variant.label, pair, seat))
+                if (
+                    entry is not None
+                    and entry.get("result") is not None
+                    and not bool(data.terminal[row])
+                ):
+                    expected[row] = int(entry["result"]["winner"])
+        if not expected:
+            return {}
+        proven = self._proven_clinch_winners(states, list(expected))
+        if proven != expected:
+            raise ValueError("arena resume winner lacks a matching clinch proof")
+        return proven
 
     def _resume_actions(
         self,
@@ -2253,6 +2362,11 @@ class ArenaRunner:
         for row, history in enumerate(histories):
             searched_moves[row] = len(history)
             swapped[row] = node_count in history
+        clinch_winners = self._resume_clinch_winners(
+            states, ring, variant, specifications
+        )
+        if self.config.exact_clinch_termination:
+            clinch_winners.update(self._proven_clinch_winners(states))
         wave = 0
         maximum_moves = node_count + 1
         with ThreadPoolExecutor(
@@ -2264,7 +2378,9 @@ class ArenaRunner:
                     break
                 data = states.data()
                 active = [
-                    row for row, terminal in enumerate(data.terminal) if not terminal
+                    row
+                    for row, terminal in enumerate(data.terminal)
+                    if not terminal and row not in clinch_winners
                 ]
                 if not active:
                     break
@@ -2359,6 +2475,8 @@ class ArenaRunner:
                             raise RuntimeError(
                                 "batched arena game exceeded the move bound"
                             )
+                if self.config.exact_clinch_termination:
+                    clinch_winners.update(self._proven_clinch_winners(states, active))
                 if self._resume_contract is not None:
                     completed_games = self._terminal_batch_games(
                         ring,
@@ -2367,6 +2485,7 @@ class ArenaRunner:
                         states,
                         searched_moves,
                         swapped,
+                        clinch_winners,
                     )
                     self._save_resume_games(
                         ring, variant, specifications, histories, completed_games
@@ -2390,10 +2509,14 @@ class ArenaRunner:
                 states,
                 searched_moves,
                 swapped,
+                clinch_winners,
             )
             self._save_resume_games(ring, variant, specifications, histories, output)
             return output
-        terminal = [bool(value) for value in states.data().terminal]
+        terminal = [
+            bool(value) or row in clinch_winners
+            for row, value in enumerate(states.data().terminal)
+        ]
         winners = [int(value) for value in states.score_data().winner]
         output = []
         for offset in range(0, len(specifications), 2):
@@ -2406,7 +2529,7 @@ class ArenaRunner:
                 pair, candidate_player, opening_seed, opening_action = specifications[
                     row
                 ]
-                winner = winners[row]
+                winner = clinch_winners.get(row, winners[row])
                 if winner not in (0, 1):
                     raise RuntimeError("arena terminal result cannot be tied")
                 outcome = 1 if winner == candidate_player else -1
@@ -2437,13 +2560,15 @@ class ArenaRunner:
         states: Any,
         searched_moves: Sequence[int],
         swapped: Sequence[bool],
+        clinch_winners: Mapping[int, int] | None = None,
     ) -> list[ArenaGame]:
+        clinch_winners = clinch_winners or {}
         terminal = [bool(value) for value in states.data().terminal]
         winners = [int(value) for value in states.score_data().winner]
         output = []
         for row, (pair, seat, seed, opening) in enumerate(specifications):
-            if terminal[row]:
-                winner = winners[row]
+            if terminal[row] or row in clinch_winners:
+                winner = clinch_winners.get(row, winners[row])
                 if winner not in (0, 1):
                     raise RuntimeError("arena terminal result cannot be tied")
                 output.append(
@@ -2618,7 +2743,9 @@ class ArenaRunner:
 
         return _wait_for_future(inference_executor.submit(evaluate))
 
-    def _semantic_subset(self, data: Any, rows: Sequence[int]) -> Any:
+    def _semantic_subset(
+        self, data: Any, rows: Sequence[int], *, state_type: Any | None = None
+    ) -> Any:
         def words(name: str) -> list[int]:
             source = list(getattr(data, name))
             output = []
@@ -2631,7 +2758,8 @@ class ArenaRunner:
             source = getattr(data, name)
             return [convert(source[row]) for row in rows]
 
-        return self.native.StateBatch.from_semantic(
+        factory = self.native.StateBatch if state_type is None else state_type
+        return factory.from_semantic(
             int(data.rings),
             words("zero_bits"),
             words("one_bits"),
@@ -2676,12 +2804,17 @@ class ArenaRunner:
             states.apply_many([0], [action])
         moves = len(history)
         swapped = node_count in history
+        clinch_winners = self._resume_clinch_winners(
+            states, ring, variant, [specification]
+        )
         maximum_moves = node_count + 1
         while True:
             if self._resume_contract is None and stop_requested():
                 return None
+            if self.config.exact_clinch_termination:
+                clinch_winners.update(self._proven_clinch_winners(states))
             state_data = states.data()
-            if bool(state_data.terminal[0]):
+            if bool(state_data.terminal[0]) or 0 in clinch_winners:
                 break
             if stop_requested():
                 self._save_resume_games(ring, variant, [specification], [history], [])
@@ -2741,7 +2874,7 @@ class ArenaRunner:
                 raise RuntimeError("arena game exceeded the move bound")
             if not bool(states.data().terminal[0]):
                 self._save_resume_games(ring, variant, [specification], [history], [])
-        winner = int(states.score_data().winner[0])
+        winner = clinch_winners.get(0, int(states.score_data().winner[0]))
         if winner not in (0, 1):
             raise RuntimeError("arena terminal result cannot be tied")
         outcome = 1 if winner == candidate_player else -1

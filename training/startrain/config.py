@@ -1534,8 +1534,13 @@ class ArenaConfig:
     handicap_severity_cycle: tuple[int, ...] = (2, 4, 6, 9)
     strength_simulations: int = 1_024
     search_execution: SearchExecutionConfig = SearchExecutionConfig()
+    # Skip only continuations whose winner is already proven for every legal
+    # completion. This does not change search budgets or statistical evidence.
+    exact_clinch_termination: bool = False
 
     def __post_init__(self) -> None:
+        if type(self.exact_clinch_termination) is not bool:
+            raise ConfigError("arena.exact_clinch_termination must be boolean")
         if not isinstance(self.search_execution, SearchExecutionConfig):
             raise ConfigError("arena.search_execution requires typed settings")
         if self.search_execution.full_budget.mode != "fixed":

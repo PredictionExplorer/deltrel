@@ -1345,6 +1345,10 @@ def _allocation_gate_references(
             references.extend(
                 (reference, "status-json") for reference in group["excluded_selections"]
             )
+        graph_reports = payload.get("graph_cache_reports", [])
+        if not isinstance(graph_reports, list):
+            raise ValueError("graph cache reports must be a list")
+        references.extend((reference, "status-json") for reference in graph_reports)
         result = []
         for reference, kind in references:
             if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
