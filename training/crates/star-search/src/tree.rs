@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use star_engine::{Action, GameError, GameState, Player, StateKey, terminal_value};
@@ -124,6 +125,21 @@ pub struct ReuseStats {
     pub retained_visits: u32,
 }
 
+/// A node index plus one leaves zero available for an absent child. On 64-bit
+/// hosts this halves optional child storage without restricting tree capacity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ChildIndex(NonZeroUsize);
+
+impl ChildIndex {
+    fn new(index: usize) -> Self {
+        Self(NonZeroUsize::new(index.checked_add(1).expect("node index fits in memory")).unwrap())
+    }
+
+    const fn get(self) -> usize {
+        self.0.get() - 1
+    }
+}
+
 #[derive(Clone, Debug)]
 struct Edge {
     action: Action,
@@ -131,7 +147,7 @@ struct Edge {
     logit: f32,
     visits: u32,
     value_sum: f64,
-    child: Option<usize>,
+    child: Option<ChildIndex>,
 }
 
 #[derive(Clone, Debug)]
@@ -291,7 +307,7 @@ impl SearchTree {
             return Ok(None);
         }
         let mut state = if let Some(child) = root_edge.child {
-            let child = &self.nodes[child];
+            let child = &self.nodes[child.get()];
             if child.expanded || child.terminal_value.is_some() {
                 return Ok(None);
             }
@@ -368,7 +384,7 @@ impl SearchTree {
             retained.push(old_index);
             for edge in self.nodes[old_index].edges.iter().rev() {
                 if let Some(child) = edge.child {
-                    stack.push(child);
+                    stack.push(child.get());
                 }
             }
         }
@@ -377,7 +393,7 @@ impl SearchTree {
             .map(|old_index| {
                 let mut node = self.nodes[old_index].clone();
                 for edge in &mut node.edges {
-                    edge.child = edge.child.map(|child| remap[&child]);
+                    edge.child = edge.child.map(|child| ChildIndex::new(remap[&child.get()]));
                 }
                 node
             })
@@ -658,7 +674,7 @@ impl SearchTree {
 
     fn materialize_child(&mut self, node_id: usize, edge_id: usize) -> Result<usize, SearchError> {
         if let Some(child) = self.nodes[node_id].edges[edge_id].child {
-            return Ok(child);
+            return Ok(child.get());
         }
         let action = self.nodes[node_id].edges[edge_id].action;
         let mut child_state = self.nodes[node_id].state.clone();
@@ -672,7 +688,7 @@ impl SearchTree {
             self.transpositions.insert(key, new_id);
             new_id
         };
-        self.nodes[node_id].edges[edge_id].child = Some(child_id);
+        self.nodes[node_id].edges[edge_id].child = Some(ChildIndex::new(child_id));
         Ok(child_id)
     }
 
@@ -911,6 +927,19 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn compact_child_indices_preserve_zero_and_large_indices() {
+        for index in [0, 1, 4096, usize::MAX - 1] {
+            assert_eq!(ChildIndex::new(index).get(), index);
+        }
+        assert_eq!(
+            std::mem::size_of::<Option<ChildIndex>>(),
+            std::mem::size_of::<usize>()
+        );
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(std::mem::size_of::<Edge>(), 32);
+    }
+
     fn evaluation(request: &EvaluationRequest, value: f32) -> Evaluation {
         Evaluation {
             token: request.token,
@@ -1101,14 +1130,14 @@ mod tests {
             .nodes
             .iter()
             .flat_map(|node| &node.edges)
-            .filter(|edge| edge.child == Some(remapped_shared))
+            .filter(|edge| edge.child == Some(ChildIndex::new(remapped_shared)))
             .count();
         assert_eq!(incoming_shared, 2);
         assert!(
             tree.nodes
                 .iter()
                 .flat_map(|node| &node.edges)
-                .all(|edge| edge.child.is_none_or(|child| child < 4))
+                .all(|edge| edge.child.is_none_or(|child| child.get() < 4))
         );
     }
 

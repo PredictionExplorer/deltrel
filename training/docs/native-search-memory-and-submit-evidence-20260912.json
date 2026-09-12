@@ -1,0 +1,4569 @@
+{
+  "schema_version": 1,
+  "status": "locally_implemented_and_verified_not_deployed",
+  "scope": "CPU native request/submit timing with a synthetic evaluator; no H100, full-actor, total-memory, or Elo/hour claim",
+  "source_commit_base": "c607372303247d1c7e0201b803bc92fbb56e9ec0",
+  "cpu": "Apple M4 Max",
+  "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "source_sha256": {
+    "crates/star-py/src/lib.rs": "eb19053c176e3a8af1727b6ca4ccc6d4c80c83ba082a32bf2f2874abda594fd8",
+    "crates/star-search/src/tree.rs": "8d38ba2f227ca473bf264c5b1205e2669f0e236f5071287be04ed02b263118de",
+    "scripts/benchmark_native_submit.py": "01269e8e7b888ef4198b1a8e64fd5ccbff5382585daf53309c9fd26bc4371914",
+    "baseline/star-py/src/lib.rs": "b60ac027c26fdbb9109e8454f4f8df4ff458f0d620f1e8a0f15cdd3e2b0114c3",
+    "baseline/star-search/src/tree.rs": "831b1398b0195cb96ab75ef845b9f00a096fdb849faae449bd596b5e4e87f6f3"
+  },
+  "layout": {
+    "pointer_width": 64,
+    "baseline_edge_bytes": 40,
+    "candidate_edge_bytes": 32,
+    "edge_record_storage_reduction": 0.2
+  },
+  "validation": {
+    "rust_workspace_tests_passed": 100,
+    "strict_clippy": "passed",
+    "native_tests_passed_four_threads": 36,
+    "ruff": "passed",
+    "benchmark_pyright": "passed"
+  },
+  "reports": {
+    "final": {
+      "scope": "CPU native search with synthetic evaluation; not H100 or Elo throughput",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "python": "3.11.13 (main, Jun  3 2025, 18:38:25) [Clang 17.0.0 (clang-1700.0.13.3)]",
+      "settings": {
+        "threads": 4,
+        "rings": [
+          4,
+          10
+        ],
+        "roots": [
+          1,
+          8,
+          32,
+          128
+        ],
+        "budgets": [
+          27,
+          640
+        ],
+        "width": 8,
+        "repeats": 2,
+        "pairs": 2,
+        "candidates": 8
+      },
+      "binaries": {
+        "baseline": {
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/baseline/star_native.abi3.so",
+          "sha256": "322631bbe71229bc468546b5fc93cf1c5895b33b457bd2bcbc770dd322be0237"
+        },
+        "candidate": {
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/final/star_native.abi3.so",
+          "sha256": "2f2947ab02dbd40f567386308899cae8925b9c2f3cfdd3e3b6de557287564de3"
+        }
+      },
+      "summary": {
+        "r4-roots1-budget27-width8": {
+          "submit_ns_ratio": 0.9804353668368718,
+          "native_ns_ratio": 0.9857657243545546,
+          "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+        },
+        "r4-roots1-budget640-width8": {
+          "submit_ns_ratio": 1.0204701942244263,
+          "native_ns_ratio": 1.0037130412724675,
+          "trace_sha256": "d21b2636081f462daf05f61fa69bc2a318c7fadfa6beeb156d73f36d4d853068"
+        },
+        "r4-roots8-budget27-width8": {
+          "submit_ns_ratio": 1.032926123514908,
+          "native_ns_ratio": 1.0050723019629195,
+          "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+        },
+        "r4-roots8-budget640-width8": {
+          "submit_ns_ratio": 1.0434869799374666,
+          "native_ns_ratio": 1.0262561709075548,
+          "trace_sha256": "ade483b83a293b851d527c44acdfdb0d44d474b77568714d99e1c8370eea83dd"
+        },
+        "r4-roots32-budget27-width8": {
+          "submit_ns_ratio": 1.0536575570825792,
+          "native_ns_ratio": 1.0164885522835787,
+          "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+        },
+        "r4-roots32-budget640-width8": {
+          "submit_ns_ratio": 1.074923655358938,
+          "native_ns_ratio": 1.0464542218270705,
+          "trace_sha256": "2240e237d60336e1f3bc1cef4ab7e4c43e46f4adedb3000e2c8be8ca98a6c727"
+        },
+        "r4-roots128-budget27-width8": {
+          "submit_ns_ratio": 1.0607462758639372,
+          "native_ns_ratio": 1.050799118121106,
+          "trace_sha256": "dac4947d89823c61d0c5faf87c5887a5b1bb4240fa05f7d71c0b6b90d57060e5"
+        },
+        "r4-roots128-budget640-width8": {
+          "submit_ns_ratio": 1.0765467688510824,
+          "native_ns_ratio": 1.0755850117404089,
+          "trace_sha256": "bee855816032a8fc97f5cfa86cab3064831fe00997fd4cf2bbaaa05f54777142"
+        },
+        "r10-roots1-budget27-width8": {
+          "submit_ns_ratio": 0.9983376623376623,
+          "native_ns_ratio": 1.0149804034708962,
+          "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+        },
+        "r10-roots1-budget640-width8": {
+          "submit_ns_ratio": 1.017118993291835,
+          "native_ns_ratio": 1.0084025090655107,
+          "trace_sha256": "7ef5e17bc50d8e6062b43b926462ed1f7c6434a12b4bf164d9d1cf70202b0d31"
+        },
+        "r10-roots8-budget27-width8": {
+          "submit_ns_ratio": 0.9667975039596217,
+          "native_ns_ratio": 0.9860100145609281,
+          "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+        },
+        "r10-roots8-budget640-width8": {
+          "submit_ns_ratio": 1.006963107186805,
+          "native_ns_ratio": 1.0080660327396636,
+          "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+        },
+        "r10-roots32-budget27-width8": {
+          "submit_ns_ratio": 1.1747273381066548,
+          "native_ns_ratio": 1.1289985239446514,
+          "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+        },
+        "r10-roots32-budget640-width8": {
+          "submit_ns_ratio": 1.2443021801238643,
+          "native_ns_ratio": 1.1399632320579676,
+          "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+        },
+        "r10-roots128-budget27-width8": {
+          "submit_ns_ratio": 1.4459109041310823,
+          "native_ns_ratio": 1.2712560700173043,
+          "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+        },
+        "r10-roots128-budget640-width8": {
+          "submit_ns_ratio": 1.7165857349012599,
+          "native_ns_ratio": 1.3039140463875312,
+          "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+        }
+      },
+      "runs": [
+        {
+          "pair": 0,
+          "arm": "baseline",
+          "cases": {
+            "r4-roots1-budget27-width8": [
+              {
+                "submit_ns": 36419,
+                "next_ns": 60000,
+                "native_ns": 96419,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              },
+              {
+                "submit_ns": 34170,
+                "next_ns": 56125,
+                "native_ns": 90295,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              }
+            ],
+            "r4-roots1-budget640-width8": [
+              {
+                "submit_ns": 898016,
+                "next_ns": 2449911,
+                "native_ns": 3347927,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "d21b2636081f462daf05f61fa69bc2a318c7fadfa6beeb156d73f36d4d853068"
+              },
+              {
+                "submit_ns": 931173,
+                "next_ns": 2477880,
+                "native_ns": 3409053,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "d21b2636081f462daf05f61fa69bc2a318c7fadfa6beeb156d73f36d4d853068"
+              }
+            ],
+            "r4-roots8-budget27-width8": [
+              {
+                "submit_ns": 212042,
+                "next_ns": 512125,
+                "native_ns": 724167,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+              },
+              {
+                "submit_ns": 204084,
+                "next_ns": 490082,
+                "native_ns": 694166,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+              }
+            ],
+            "r4-roots8-budget640-width8": [
+              {
+                "submit_ns": 6036692,
+                "next_ns": 17687423,
+                "native_ns": 23724115,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "ade483b83a293b851d527c44acdfdb0d44d474b77568714d99e1c8370eea83dd"
+              },
+              {
+                "submit_ns": 6122540,
+                "next_ns": 18420816,
+                "native_ns": 24543356,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "ade483b83a293b851d527c44acdfdb0d44d474b77568714d99e1c8370eea83dd"
+              }
+            ],
+            "r4-roots32-budget27-width8": [
+              {
+                "submit_ns": 776041,
+                "next_ns": 1139124,
+                "native_ns": 1915165,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              },
+              {
+                "submit_ns": 777585,
+                "next_ns": 1191627,
+                "native_ns": 1969212,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              }
+            ],
+            "r4-roots32-budget640-width8": [
+              {
+                "submit_ns": 21955836,
+                "next_ns": 39944306,
+                "native_ns": 61900142,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "2240e237d60336e1f3bc1cef4ab7e4c43e46f4adedb3000e2c8be8ca98a6c727"
+              },
+              {
+                "submit_ns": 23197806,
+                "next_ns": 40891991,
+                "native_ns": 64089797,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "2240e237d60336e1f3bc1cef4ab7e4c43e46f4adedb3000e2c8be8ca98a6c727"
+              }
+            ],
+            "r4-roots128-budget27-width8": [
+              {
+                "submit_ns": 3054417,
+                "next_ns": 3495917,
+                "native_ns": 6550334,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "dac4947d89823c61d0c5faf87c5887a5b1bb4240fa05f7d71c0b6b90d57060e5"
+              },
+              {
+                "submit_ns": 3075251,
+                "next_ns": 3484711,
+                "native_ns": 6559962,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "dac4947d89823c61d0c5faf87c5887a5b1bb4240fa05f7d71c0b6b90d57060e5"
+              }
+            ],
+            "r4-roots128-budget640-width8": [
+              {
+                "submit_ns": 91638991,
+                "next_ns": 136397374,
+                "native_ns": 228036365,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "bee855816032a8fc97f5cfa86cab3064831fe00997fd4cf2bbaaa05f54777142"
+              },
+              {
+                "submit_ns": 95161460,
+                "next_ns": 132217765,
+                "native_ns": 227379225,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "bee855816032a8fc97f5cfa86cab3064831fe00997fd4cf2bbaaa05f54777142"
+              }
+            ],
+            "r10-roots1-budget27-width8": [
+              {
+                "submit_ns": 91540,
+                "next_ns": 120583,
+                "native_ns": 212123,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              },
+              {
+                "submit_ns": 84750,
+                "next_ns": 116293,
+                "native_ns": 201043,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              }
+            ],
+            "r10-roots1-budget640-width8": [
+              {
+                "submit_ns": 2628916,
+                "next_ns": 6287399,
+                "native_ns": 8916315,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "7ef5e17bc50d8e6062b43b926462ed1f7c6434a12b4bf164d9d1cf70202b0d31"
+              },
+              {
+                "submit_ns": 2529200,
+                "next_ns": 6238001,
+                "native_ns": 8767201,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "7ef5e17bc50d8e6062b43b926462ed1f7c6434a12b4bf164d9d1cf70202b0d31"
+              }
+            ],
+            "r10-roots8-budget27-width8": [
+              {
+                "submit_ns": 575375,
+                "next_ns": 696628,
+                "native_ns": 1272003,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              },
+              {
+                "submit_ns": 590162,
+                "next_ns": 748628,
+                "native_ns": 1338790,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              }
+            ],
+            "r10-roots8-budget640-width8": [
+              {
+                "submit_ns": 16737635,
+                "next_ns": 35553707,
+                "native_ns": 52291342,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              },
+              {
+                "submit_ns": 16673497,
+                "next_ns": 35403508,
+                "native_ns": 52077005,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              }
+            ],
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 2363209,
+                "next_ns": 1786956,
+                "native_ns": 4150165,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              },
+              {
+                "submit_ns": 2335875,
+                "next_ns": 1819415,
+                "native_ns": 4155290,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              }
+            ],
+            "r10-roots32-budget640-width8": [
+              {
+                "submit_ns": 69835621,
+                "next_ns": 89586915,
+                "native_ns": 159422536,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              },
+              {
+                "submit_ns": 68489271,
+                "next_ns": 89598508,
+                "native_ns": 158087779,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              }
+            ],
+            "r10-roots128-budget27-width8": [
+              {
+                "submit_ns": 10100624,
+                "next_ns": 6140832,
+                "native_ns": 16241456,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              },
+              {
+                "submit_ns": 10431166,
+                "next_ns": 6326122,
+                "native_ns": 16757288,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              }
+            ],
+            "r10-roots128-budget640-width8": [
+              {
+                "submit_ns": 363344368,
+                "next_ns": 356238807,
+                "native_ns": 719583175,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              },
+              {
+                "submit_ns": 304904556,
+                "next_ns": 352020753,
+                "native_ns": 656925309,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 0,
+          "arm": "candidate",
+          "cases": {
+            "r4-roots1-budget27-width8": [
+              {
+                "submit_ns": 33792,
+                "next_ns": 58957,
+                "native_ns": 92749,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              },
+              {
+                "submit_ns": 36294,
+                "next_ns": 59916,
+                "native_ns": 96210,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              }
+            ],
+            "r4-roots1-budget640-width8": [
+              {
+                "submit_ns": 912714,
+                "next_ns": 2519559,
+                "native_ns": 3432273,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "d21b2636081f462daf05f61fa69bc2a318c7fadfa6beeb156d73f36d4d853068"
+              },
+              {
+                "submit_ns": 915213,
+                "next_ns": 2534547,
+                "native_ns": 3449760,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "d21b2636081f462daf05f61fa69bc2a318c7fadfa6beeb156d73f36d4d853068"
+              }
+            ],
+            "r4-roots8-budget27-width8": [
+              {
+                "submit_ns": 206418,
+                "next_ns": 490251,
+                "native_ns": 696669,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+              },
+              {
+                "submit_ns": 204836,
+                "next_ns": 518166,
+                "native_ns": 723002,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+              }
+            ],
+            "r4-roots8-budget640-width8": [
+              {
+                "submit_ns": 5708951,
+                "next_ns": 17197469,
+                "native_ns": 22906420,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "ade483b83a293b851d527c44acdfdb0d44d474b77568714d99e1c8370eea83dd"
+              },
+              {
+                "submit_ns": 5714802,
+                "next_ns": 17921537,
+                "native_ns": 23636339,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "ade483b83a293b851d527c44acdfdb0d44d474b77568714d99e1c8370eea83dd"
+              }
+            ],
+            "r4-roots32-budget27-width8": [
+              {
+                "submit_ns": 747747,
+                "next_ns": 1125165,
+                "native_ns": 1872912,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              },
+              {
+                "submit_ns": 732124,
+                "next_ns": 1145085,
+                "native_ns": 1877209,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              }
+            ],
+            "r4-roots32-budget640-width8": [
+              {
+                "submit_ns": 21396717,
+                "next_ns": 39594082,
+                "native_ns": 60990799,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "2240e237d60336e1f3bc1cef4ab7e4c43e46f4adedb3000e2c8be8ca98a6c727"
+              },
+              {
+                "submit_ns": 20702665,
+                "next_ns": 39169100,
+                "native_ns": 59871765,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "2240e237d60336e1f3bc1cef4ab7e4c43e46f4adedb3000e2c8be8ca98a6c727"
+              }
+            ],
+            "r4-roots128-budget27-width8": [
+              {
+                "submit_ns": 2914334,
+                "next_ns": 3367584,
+                "native_ns": 6281918,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "dac4947d89823c61d0c5faf87c5887a5b1bb4240fa05f7d71c0b6b90d57060e5"
+              },
+              {
+                "submit_ns": 2945584,
+                "next_ns": 3347836,
+                "native_ns": 6293420,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "dac4947d89823c61d0c5faf87c5887a5b1bb4240fa05f7d71c0b6b90d57060e5"
+              }
+            ],
+            "r4-roots128-budget640-width8": [
+              {
+                "submit_ns": 89019677,
+                "next_ns": 125594671,
+                "native_ns": 214614348,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "bee855816032a8fc97f5cfa86cab3064831fe00997fd4cf2bbaaa05f54777142"
+              },
+              {
+                "submit_ns": 83060031,
+                "next_ns": 122847130,
+                "native_ns": 205907161,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "bee855816032a8fc97f5cfa86cab3064831fe00997fd4cf2bbaaa05f54777142"
+              }
+            ],
+            "r10-roots1-budget27-width8": [
+              {
+                "submit_ns": 85167,
+                "next_ns": 115792,
+                "native_ns": 200959,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              },
+              {
+                "submit_ns": 84458,
+                "next_ns": 117039,
+                "native_ns": 201497,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              }
+            ],
+            "r10-roots1-budget640-width8": [
+              {
+                "submit_ns": 2524955,
+                "next_ns": 6182887,
+                "native_ns": 8707842,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "7ef5e17bc50d8e6062b43b926462ed1f7c6434a12b4bf164d9d1cf70202b0d31"
+              },
+              {
+                "submit_ns": 2539383,
+                "next_ns": 6189878,
+                "native_ns": 8729261,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "7ef5e17bc50d8e6062b43b926462ed1f7c6434a12b4bf164d9d1cf70202b0d31"
+              }
+            ],
+            "r10-roots8-budget27-width8": [
+              {
+                "submit_ns": 611373,
+                "next_ns": 714418,
+                "native_ns": 1325791,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              },
+              {
+                "submit_ns": 591584,
+                "next_ns": 692705,
+                "native_ns": 1284289,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              }
+            ],
+            "r10-roots8-budget640-width8": [
+              {
+                "submit_ns": 16812847,
+                "next_ns": 35242983,
+                "native_ns": 52055830,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              },
+              {
+                "submit_ns": 16953950,
+                "next_ns": 35693479,
+                "native_ns": 52647429,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              }
+            ],
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 2031833,
+                "next_ns": 1735042,
+                "native_ns": 3766875,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              },
+              {
+                "submit_ns": 2053709,
+                "next_ns": 1666959,
+                "native_ns": 3720668,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              }
+            ],
+            "r10-roots32-budget640-width8": [
+              {
+                "submit_ns": 58362824,
+                "next_ns": 83526501,
+                "native_ns": 141889325,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              },
+              {
+                "submit_ns": 55407470,
+                "next_ns": 83132426,
+                "native_ns": 138539896,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              }
+            ],
+            "r10-roots128-budget27-width8": [
+              {
+                "submit_ns": 7124874,
+                "next_ns": 5927583,
+                "native_ns": 13052457,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              },
+              {
+                "submit_ns": 7099543,
+                "next_ns": 5883708,
+                "native_ns": 12983251,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              }
+            ],
+            "r10-roots128-budget640-width8": [
+              {
+                "submit_ns": 196669963,
+                "next_ns": 334220501,
+                "native_ns": 530890464,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              },
+              {
+                "submit_ns": 200543318,
+                "next_ns": 338382741,
+                "native_ns": 538926059,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 1,
+          "arm": "candidate",
+          "cases": {
+            "r4-roots1-budget27-width8": [
+              {
+                "submit_ns": 39294,
+                "next_ns": 70206,
+                "native_ns": 109500,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              },
+              {
+                "submit_ns": 38126,
+                "next_ns": 61459,
+                "native_ns": 99585,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              }
+            ],
+            "r4-roots1-budget640-width8": [
+              {
+                "submit_ns": 916328,
+                "next_ns": 2528799,
+                "native_ns": 3445127,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "d21b2636081f462daf05f61fa69bc2a318c7fadfa6beeb156d73f36d4d853068"
+              },
+              {
+                "submit_ns": 917147,
+                "next_ns": 2554599,
+                "native_ns": 3471746,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "d21b2636081f462daf05f61fa69bc2a318c7fadfa6beeb156d73f36d4d853068"
+              }
+            ],
+            "r4-roots8-budget27-width8": [
+              {
+                "submit_ns": 209704,
+                "next_ns": 525251,
+                "native_ns": 734955,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+              },
+              {
+                "submit_ns": 203916,
+                "next_ns": 482045,
+                "native_ns": 685961,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+              }
+            ],
+            "r4-roots8-budget640-width8": [
+              {
+                "submit_ns": 5694802,
+                "next_ns": 17080201,
+                "native_ns": 22775003,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "ade483b83a293b851d527c44acdfdb0d44d474b77568714d99e1c8370eea83dd"
+              },
+              {
+                "submit_ns": 5700326,
+                "next_ns": 17280143,
+                "native_ns": 22980469,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "ade483b83a293b851d527c44acdfdb0d44d474b77568714d99e1c8370eea83dd"
+              }
+            ],
+            "r4-roots32-budget27-width8": [
+              {
+                "submit_ns": 736331,
+                "next_ns": 1167083,
+                "native_ns": 1903414,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              },
+              {
+                "submit_ns": 807291,
+                "next_ns": 1348501,
+                "native_ns": 2155792,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              }
+            ],
+            "r4-roots32-budget640-width8": [
+              {
+                "submit_ns": 22010039,
+                "next_ns": 40205601,
+                "native_ns": 62215640,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "2240e237d60336e1f3bc1cef4ab7e4c43e46f4adedb3000e2c8be8ca98a6c727"
+              },
+              {
+                "submit_ns": 20781751,
+                "next_ns": 39240886,
+                "native_ns": 60022637,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "2240e237d60336e1f3bc1cef4ab7e4c43e46f4adedb3000e2c8be8ca98a6c727"
+              }
+            ],
+            "r4-roots128-budget27-width8": [
+              {
+                "submit_ns": 2997875,
+                "next_ns": 3411583,
+                "native_ns": 6409458,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "dac4947d89823c61d0c5faf87c5887a5b1bb4240fa05f7d71c0b6b90d57060e5"
+              },
+              {
+                "submit_ns": 3050836,
+                "next_ns": 3382417,
+                "native_ns": 6433253,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "dac4947d89823c61d0c5faf87c5887a5b1bb4240fa05f7d71c0b6b90d57060e5"
+              }
+            ],
+            "r4-roots128-budget640-width8": [
+              {
+                "submit_ns": 95851754,
+                "next_ns": 131476965,
+                "native_ns": 227328719,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "bee855816032a8fc97f5cfa86cab3064831fe00997fd4cf2bbaaa05f54777142"
+              },
+              {
+                "submit_ns": 84483623,
+                "next_ns": 122715273,
+                "native_ns": 207198896,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "bee855816032a8fc97f5cfa86cab3064831fe00997fd4cf2bbaaa05f54777142"
+              }
+            ],
+            "r10-roots1-budget27-width8": [
+              {
+                "submit_ns": 88833,
+                "next_ns": 119793,
+                "native_ns": 208626,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              },
+              {
+                "submit_ns": 88083,
+                "next_ns": 119421,
+                "native_ns": 207504,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              }
+            ],
+            "r10-roots1-budget640-width8": [
+              {
+                "submit_ns": 2630845,
+                "next_ns": 6374421,
+                "native_ns": 9005266,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "7ef5e17bc50d8e6062b43b926462ed1f7c6434a12b4bf164d9d1cf70202b0d31"
+              },
+              {
+                "submit_ns": 2611504,
+                "next_ns": 6328124,
+                "native_ns": 8939628,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "7ef5e17bc50d8e6062b43b926462ed1f7c6434a12b4bf164d9d1cf70202b0d31"
+              }
+            ],
+            "r10-roots8-budget27-width8": [
+              {
+                "submit_ns": 616669,
+                "next_ns": 737082,
+                "native_ns": 1353751,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              },
+              {
+                "submit_ns": 605915,
+                "next_ns": 713043,
+                "native_ns": 1318958,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              }
+            ],
+            "r10-roots8-budget640-width8": [
+              {
+                "submit_ns": 16971709,
+                "next_ns": 34836231,
+                "native_ns": 51807940,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              },
+              {
+                "submit_ns": 16975064,
+                "next_ns": 35180684,
+                "native_ns": 52155748,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              }
+            ],
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 2022501,
+                "next_ns": 1693544,
+                "native_ns": 3716045,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              },
+              {
+                "submit_ns": 2031166,
+                "next_ns": 1678918,
+                "native_ns": 3710084,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              }
+            ],
+            "r10-roots32-budget640-width8": [
+              {
+                "submit_ns": 57992279,
+                "next_ns": 83893637,
+                "native_ns": 141885916,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              },
+              {
+                "submit_ns": 55578791,
+                "next_ns": 82845580,
+                "native_ns": 138424371,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              }
+            ],
+            "r10-roots128-budget27-width8": [
+              {
+                "submit_ns": 7878625,
+                "next_ns": 6199294,
+                "native_ns": 14077919,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              },
+              {
+                "submit_ns": 7325044,
+                "next_ns": 5940793,
+                "native_ns": 13265837,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              }
+            ],
+            "r10-roots128-budget640-width8": [
+              {
+                "submit_ns": 199039547,
+                "next_ns": 335995321,
+                "native_ns": 535034868,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              },
+              {
+                "submit_ns": 199949237,
+                "next_ns": 335441737,
+                "native_ns": 535390974,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 1,
+          "arm": "baseline",
+          "cases": {
+            "r4-roots1-budget27-width8": [
+              {
+                "submit_ns": 38498,
+                "next_ns": 61586,
+                "native_ns": 100084,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              },
+              {
+                "submit_ns": 36545,
+                "next_ns": 60044,
+                "native_ns": 96589,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              }
+            ],
+            "r4-roots1-budget640-width8": [
+              {
+                "submit_ns": 941693,
+                "next_ns": 2569742,
+                "native_ns": 3511435,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "d21b2636081f462daf05f61fa69bc2a318c7fadfa6beeb156d73f36d4d853068"
+              },
+              {
+                "submit_ns": 937860,
+                "next_ns": 2583662,
+                "native_ns": 3521522,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "d21b2636081f462daf05f61fa69bc2a318c7fadfa6beeb156d73f36d4d853068"
+              }
+            ],
+            "r4-roots8-budget27-width8": [
+              {
+                "submit_ns": 213290,
+                "next_ns": 505331,
+                "native_ns": 718621,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+              },
+              {
+                "submit_ns": 212753,
+                "next_ns": 495498,
+                "native_ns": 708251,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+              }
+            ],
+            "r4-roots8-budget640-width8": [
+              {
+                "submit_ns": 5868740,
+                "next_ns": 17498848,
+                "native_ns": 23367588,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "ade483b83a293b851d527c44acdfdb0d44d474b77568714d99e1c8370eea83dd"
+              },
+              {
+                "submit_ns": 5827492,
+                "next_ns": 17364519,
+                "native_ns": 23192011,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "ade483b83a293b851d527c44acdfdb0d44d474b77568714d99e1c8370eea83dd"
+              }
+            ],
+            "r4-roots32-budget27-width8": [
+              {
+                "submit_ns": 792834,
+                "next_ns": 1122959,
+                "native_ns": 1915793,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              },
+              {
+                "submit_ns": 786125,
+                "next_ns": 1141042,
+                "native_ns": 1927167,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              }
+            ],
+            "r4-roots32-budget640-width8": [
+              {
+                "submit_ns": 22140827,
+                "next_ns": 40404397,
+                "native_ns": 62545224,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "2240e237d60336e1f3bc1cef4ab7e4c43e46f4adedb3000e2c8be8ca98a6c727"
+              },
+              {
+                "submit_ns": 23346590,
+                "next_ns": 41031519,
+                "native_ns": 64378109,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "2240e237d60336e1f3bc1cef4ab7e4c43e46f4adedb3000e2c8be8ca98a6c727"
+              }
+            ],
+            "r4-roots128-budget27-width8": [
+              {
+                "submit_ns": 3263040,
+                "next_ns": 3568751,
+                "native_ns": 6831791,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "dac4947d89823c61d0c5faf87c5887a5b1bb4240fa05f7d71c0b6b90d57060e5"
+              },
+              {
+                "submit_ns": 3229251,
+                "next_ns": 3558960,
+                "native_ns": 6788211,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "dac4947d89823c61d0c5faf87c5887a5b1bb4240fa05f7d71c0b6b90d57060e5"
+              }
+            ],
+            "r4-roots128-budget640-width8": [
+              {
+                "submit_ns": 89960416,
+                "next_ns": 128829289,
+                "native_ns": 218789705,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "bee855816032a8fc97f5cfa86cab3064831fe00997fd4cf2bbaaa05f54777142"
+              },
+              {
+                "submit_ns": 95145426,
+                "next_ns": 131171352,
+                "native_ns": 226316778,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "bee855816032a8fc97f5cfa86cab3064831fe00997fd4cf2bbaaa05f54777142"
+              }
+            ],
+            "r10-roots1-budget27-width8": [
+              {
+                "submit_ns": 87378,
+                "next_ns": 120084,
+                "native_ns": 207462,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              },
+              {
+                "submit_ns": 85584,
+                "next_ns": 122082,
+                "native_ns": 207666,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              }
+            ],
+            "r10-roots1-budget640-width8": [
+              {
+                "submit_ns": 2610149,
+                "next_ns": 6290888,
+                "native_ns": 8901037,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "7ef5e17bc50d8e6062b43b926462ed1f7c6434a12b4bf164d9d1cf70202b0d31"
+              },
+              {
+                "submit_ns": 2796127,
+                "next_ns": 6320260,
+                "native_ns": 9116387,
+                "calls": 633,
+                "neural_rows": 640,
+                "trace_sha256": "7ef5e17bc50d8e6062b43b926462ed1f7c6434a12b4bf164d9d1cf70202b0d31"
+              }
+            ],
+            "r10-roots8-budget27-width8": [
+              {
+                "submit_ns": 590166,
+                "next_ns": 692832,
+                "native_ns": 1282998,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              },
+              {
+                "submit_ns": 586709,
+                "next_ns": 738042,
+                "native_ns": 1324751,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              }
+            ],
+            "r10-roots8-budget640-width8": [
+              {
+                "submit_ns": 17424252,
+                "next_ns": 35336558,
+                "native_ns": 52760810,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              },
+              {
+                "submit_ns": 17447499,
+                "next_ns": 35628205,
+                "native_ns": 53075704,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              }
+            ],
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 2409707,
+                "next_ns": 1831041,
+                "native_ns": 4240748,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              },
+              {
+                "submit_ns": 2458542,
+                "next_ns": 1802876,
+                "native_ns": 4261418,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              }
+            ],
+            "r10-roots32-budget640-width8": [
+              {
+                "submit_ns": 71481109,
+                "next_ns": 88771470,
+                "native_ns": 160252579,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              },
+              {
+                "submit_ns": 78065253,
+                "next_ns": 89548853,
+                "native_ns": 167614106,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              }
+            ],
+            "r10-roots128-budget27-width8": [
+              {
+                "submit_ns": 10540587,
+                "next_ns": 6340083,
+                "native_ns": 16880670,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              },
+              {
+                "submit_ns": 10462128,
+                "next_ns": 6237875,
+                "native_ns": 16700003,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              }
+            ],
+            "r10-roots128-budget640-width8": [
+              {
+                "submit_ns": 365380613,
+                "next_ns": 352043896,
+                "native_ns": 717424509,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              },
+              {
+                "submit_ns": 321554087,
+                "next_ns": 356764695,
+                "native_ns": 678318782,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "compact-vs-final": {
+      "scope": "CPU native search with synthetic evaluation; not H100 or Elo throughput",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "python": "3.11.13 (main, Jun  3 2025, 18:38:25) [Clang 17.0.0 (clang-1700.0.13.3)]",
+      "settings": {
+        "threads": 4,
+        "rings": [
+          10
+        ],
+        "roots": [
+          8,
+          32,
+          128
+        ],
+        "budgets": [
+          27,
+          640
+        ],
+        "width": 8,
+        "repeats": 2,
+        "pairs": 2,
+        "candidates": 8
+      },
+      "binaries": {
+        "baseline": {
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/compact/star_native.abi3.so",
+          "sha256": "6efa5a153632697aa28c77c1e80a5542b39f22a6babc4cb54206feb9f4e4cd45"
+        },
+        "candidate": {
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/final/star_native.abi3.so",
+          "sha256": "2f2947ab02dbd40f567386308899cae8925b9c2f3cfdd3e3b6de557287564de3"
+        }
+      },
+      "summary": {
+        "r10-roots8-budget27-width8": {
+          "submit_ns_ratio": 1.275738433932551,
+          "native_ns_ratio": 1.2307934034883874,
+          "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+        },
+        "r10-roots8-budget640-width8": {
+          "submit_ns_ratio": 1.03151293383397,
+          "native_ns_ratio": 1.0221584348783552,
+          "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+        },
+        "r10-roots32-budget27-width8": {
+          "submit_ns_ratio": 1.1751145886261738,
+          "native_ns_ratio": 1.1357880320031946,
+          "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+        },
+        "r10-roots32-budget640-width8": {
+          "submit_ns_ratio": 1.2894562733653456,
+          "native_ns_ratio": 1.1473770999877742,
+          "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+        },
+        "r10-roots128-budget27-width8": {
+          "submit_ns_ratio": 1.4268239150516233,
+          "native_ns_ratio": 1.2462577813860176,
+          "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+        },
+        "r10-roots128-budget640-width8": {
+          "submit_ns_ratio": 1.5816768447903913,
+          "native_ns_ratio": 1.228165009658142,
+          "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+        }
+      },
+      "runs": [
+        {
+          "pair": 0,
+          "arm": "baseline",
+          "cases": {
+            "r10-roots8-budget27-width8": [
+              {
+                "submit_ns": 1005999,
+                "next_ns": 1034544,
+                "native_ns": 2040543,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              },
+              {
+                "submit_ns": 876253,
+                "next_ns": 991704,
+                "native_ns": 1867957,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              }
+            ],
+            "r10-roots8-budget640-width8": [
+              {
+                "submit_ns": 16757715,
+                "next_ns": 35125898,
+                "native_ns": 51883613,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              },
+              {
+                "submit_ns": 17221501,
+                "next_ns": 36245782,
+                "native_ns": 53467283,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              }
+            ],
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 2458206,
+                "next_ns": 1808252,
+                "native_ns": 4266458,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              },
+              {
+                "submit_ns": 2454332,
+                "next_ns": 1867042,
+                "native_ns": 4321374,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              }
+            ],
+            "r10-roots32-budget640-width8": [
+              {
+                "submit_ns": 76605392,
+                "next_ns": 89651225,
+                "native_ns": 166256617,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              },
+              {
+                "submit_ns": 69759626,
+                "next_ns": 87828156,
+                "native_ns": 157587782,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              }
+            ],
+            "r10-roots128-budget27-width8": [
+              {
+                "submit_ns": 10775329,
+                "next_ns": 6415585,
+                "native_ns": 17190914,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              },
+              {
+                "submit_ns": 10570292,
+                "next_ns": 6367080,
+                "native_ns": 16937372,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              }
+            ],
+            "r10-roots128-budget640-width8": [
+              {
+                "submit_ns": 346158216,
+                "next_ns": 342497968,
+                "native_ns": 688656184,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              },
+              {
+                "submit_ns": 308666348,
+                "next_ns": 341704510,
+                "native_ns": 650370858,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 0,
+          "arm": "candidate",
+          "cases": {
+            "r10-roots8-budget27-width8": [
+              {
+                "submit_ns": 626957,
+                "next_ns": 732502,
+                "native_ns": 1359459,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              },
+              {
+                "submit_ns": 605250,
+                "next_ns": 719834,
+                "native_ns": 1325084,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              }
+            ],
+            "r10-roots8-budget640-width8": [
+              {
+                "submit_ns": 17206739,
+                "next_ns": 35157677,
+                "native_ns": 52364416,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              },
+              {
+                "submit_ns": 17192788,
+                "next_ns": 35132320,
+                "native_ns": 52325108,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              }
+            ],
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 2086874,
+                "next_ns": 1663750,
+                "native_ns": 3750624,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              },
+              {
+                "submit_ns": 2023333,
+                "next_ns": 1702083,
+                "native_ns": 3725416,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              }
+            ],
+            "r10-roots32-budget640-width8": [
+              {
+                "submit_ns": 58819528,
+                "next_ns": 83524068,
+                "native_ns": 142343596,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              },
+              {
+                "submit_ns": 55301256,
+                "next_ns": 83149131,
+                "native_ns": 138450387,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              }
+            ],
+            "r10-roots128-budget27-width8": [
+              {
+                "submit_ns": 7345165,
+                "next_ns": 6002958,
+                "native_ns": 13348123,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              },
+              {
+                "submit_ns": 7351793,
+                "next_ns": 5886790,
+                "native_ns": 13238583,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              }
+            ],
+            "r10-roots128-budget640-width8": [
+              {
+                "submit_ns": 215204622,
+                "next_ns": 334573248,
+                "native_ns": 549777870,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              },
+              {
+                "submit_ns": 201824491,
+                "next_ns": 341880445,
+                "native_ns": 543704936,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 1,
+          "arm": "candidate",
+          "cases": {
+            "r10-roots8-budget27-width8": [
+              {
+                "submit_ns": 584125,
+                "next_ns": 741586,
+                "native_ns": 1325711,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              },
+              {
+                "submit_ns": 587917,
+                "next_ns": 721541,
+                "native_ns": 1309458,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              }
+            ],
+            "r10-roots8-budget640-width8": [
+              {
+                "submit_ns": 16991430,
+                "next_ns": 36218817,
+                "native_ns": 53210247,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              },
+              {
+                "submit_ns": 16800412,
+                "next_ns": 35451347,
+                "native_ns": 52251759,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              }
+            ],
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 2197998,
+                "next_ns": 1707330,
+                "native_ns": 3905328,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              },
+              {
+                "submit_ns": 2091333,
+                "next_ns": 1690916,
+                "native_ns": 3782249,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              }
+            ],
+            "r10-roots32-budget640-width8": [
+              {
+                "submit_ns": 58824332,
+                "next_ns": 85022827,
+                "native_ns": 143847159,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              },
+              {
+                "submit_ns": 55350086,
+                "next_ns": 83335216,
+                "native_ns": 138685302,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              }
+            ],
+            "r10-roots128-budget27-width8": [
+              {
+                "submit_ns": 7244707,
+                "next_ns": 6222916,
+                "native_ns": 13467623,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              },
+              {
+                "submit_ns": 7300624,
+                "next_ns": 6163957,
+                "native_ns": 13464581,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              }
+            ],
+            "r10-roots128-budget640-width8": [
+              {
+                "submit_ns": 212468796,
+                "next_ns": 335421839,
+                "native_ns": 547890635,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              },
+              {
+                "submit_ns": 199709413,
+                "next_ns": 337996534,
+                "native_ns": 537705947,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 1,
+          "arm": "baseline",
+          "cases": {
+            "r10-roots8-budget27-width8": [
+              {
+                "submit_ns": 634251,
+                "next_ns": 751539,
+                "native_ns": 1385790,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              },
+              {
+                "submit_ns": 645916,
+                "next_ns": 748708,
+                "native_ns": 1394624,
+                "calls": 20,
+                "neural_rows": 216,
+                "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+              }
+            ],
+            "r10-roots8-budget640-width8": [
+              {
+                "submit_ns": 18039962,
+                "next_ns": 36162698,
+                "native_ns": 54202660,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              },
+              {
+                "submit_ns": 18145057,
+                "next_ns": 35396940,
+                "native_ns": 53541997,
+                "calls": 633,
+                "neural_rows": 5120,
+                "trace_sha256": "80c395e2c2d0d28a5ac22746051f4c37221db83b6f042781a63d948bcd450605"
+              }
+            ],
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 2455540,
+                "next_ns": 1833749,
+                "native_ns": 4289289,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              },
+              {
+                "submit_ns": 2385208,
+                "next_ns": 1806668,
+                "native_ns": 4191876,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              }
+            ],
+            "r10-roots32-budget640-width8": [
+              {
+                "submit_ns": 76893902,
+                "next_ns": 87887426,
+                "native_ns": 164781328,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              },
+              {
+                "submit_ns": 70611333,
+                "next_ns": 87053461,
+                "native_ns": 157664794,
+                "calls": 633,
+                "neural_rows": 20480,
+                "trace_sha256": "f24f1dc924dac45098a847d073d2ac5fc9cf683145daaa6d5b4ea9fde297b324"
+              }
+            ],
+            "r10-roots128-budget27-width8": [
+              {
+                "submit_ns": 10326670,
+                "next_ns": 6151499,
+                "native_ns": 16478169,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              },
+              {
+                "submit_ns": 10305123,
+                "next_ns": 6157631,
+                "native_ns": 16462754,
+                "calls": 26,
+                "neural_rows": 3456,
+                "trace_sha256": "a46c7070a7dde27a053f271a8a482aecddc246a87f53ba5f2e55d7ea50076f5f"
+              }
+            ],
+            "r10-roots128-budget640-width8": [
+              {
+                "submit_ns": 349172091,
+                "next_ns": 346826565,
+                "native_ns": 695998656,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              },
+              {
+                "submit_ns": 309119883,
+                "next_ns": 342883418,
+                "native_ns": 652003301,
+                "calls": 639,
+                "neural_rows": 81920,
+                "trace_sha256": "c8862b4255c3b5c88925130b845820a836ac5d15dc339916438e39182f69dd12"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "serial-control": {
+      "scope": "CPU native search with synthetic evaluation; not H100 or Elo throughput",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "python": "3.11.13 (main, Jun  3 2025, 18:38:25) [Clang 17.0.0 (clang-1700.0.13.3)]",
+      "settings": {
+        "threads": 1,
+        "rings": [
+          4,
+          10
+        ],
+        "roots": [
+          1,
+          32
+        ],
+        "budgets": [
+          27,
+          64
+        ],
+        "width": 8,
+        "candidates": 8,
+        "repeats": 2,
+        "pairs": 2
+      },
+      "binaries": {
+        "baseline": {
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/baseline/star_native.abi3.so",
+          "sha256": "322631bbe71229bc468546b5fc93cf1c5895b33b457bd2bcbc770dd322be0237"
+        },
+        "candidate": {
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/final/star_native.abi3.so",
+          "sha256": "2f2947ab02dbd40f567386308899cae8925b9c2f3cfdd3e3b6de557287564de3"
+        }
+      },
+      "summary": {
+        "r4-roots1-budget27-width8": {
+          "submit_ns_ratio": 1.1059075785582255,
+          "native_ns_ratio": 1.0821956645003707,
+          "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+        },
+        "r4-roots1-budget64-width8": {
+          "submit_ns_ratio": 1.005222758093783,
+          "native_ns_ratio": 1.0011398566974785,
+          "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+        },
+        "r4-roots32-budget27-width8": {
+          "submit_ns_ratio": 0.9758592940253694,
+          "native_ns_ratio": 0.9704644871580064,
+          "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+        },
+        "r4-roots32-budget64-width8": {
+          "submit_ns_ratio": 1.0042257120439086,
+          "native_ns_ratio": 1.0029550130501352,
+          "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+        },
+        "r10-roots1-budget27-width8": {
+          "submit_ns_ratio": 0.9763196550416983,
+          "native_ns_ratio": 0.9924450093671674,
+          "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+        },
+        "r10-roots1-budget64-width8": {
+          "submit_ns_ratio": 0.9697239516676307,
+          "native_ns_ratio": 0.9716514656220707,
+          "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+        },
+        "r10-roots32-budget27-width8": {
+          "submit_ns_ratio": 0.9734728487707042,
+          "native_ns_ratio": 0.9673830318184988,
+          "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+        },
+        "r10-roots32-budget64-width8": {
+          "submit_ns_ratio": 0.9717447801774758,
+          "native_ns_ratio": 0.9684802462219958,
+          "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+        }
+      },
+      "runs": [
+        {
+          "pair": 0,
+          "arm": "baseline",
+          "cases": {
+            "r4-roots1-budget27-width8": [
+              {
+                "submit_ns": 35918,
+                "next_ns": 57627,
+                "native_ns": 93545,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              },
+              {
+                "submit_ns": 38876,
+                "next_ns": 62625,
+                "native_ns": 101501,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              }
+            ],
+            "r4-roots1-budget64-width8": [
+              {
+                "submit_ns": 86290,
+                "next_ns": 145707,
+                "native_ns": 231997,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+              },
+              {
+                "submit_ns": 83999,
+                "next_ns": 143626,
+                "native_ns": 227625,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+              }
+            ],
+            "r4-roots32-budget27-width8": [
+              {
+                "submit_ns": 771624,
+                "next_ns": 1528876,
+                "native_ns": 2300500,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              },
+              {
+                "submit_ns": 752585,
+                "next_ns": 1507541,
+                "native_ns": 2260126,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              }
+            ],
+            "r4-roots32-budget64-width8": [
+              {
+                "submit_ns": 1969587,
+                "next_ns": 4216627,
+                "native_ns": 6186214,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+              },
+              {
+                "submit_ns": 1933545,
+                "next_ns": 4075377,
+                "native_ns": 6008922,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+              }
+            ],
+            "r10-roots1-budget27-width8": [
+              {
+                "submit_ns": 84834,
+                "next_ns": 120377,
+                "native_ns": 205211,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              },
+              {
+                "submit_ns": 77668,
+                "next_ns": 108292,
+                "native_ns": 185960,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              }
+            ],
+            "r10-roots1-budget64-width8": [
+              {
+                "submit_ns": 211004,
+                "next_ns": 302416,
+                "native_ns": 513420,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+              },
+              {
+                "submit_ns": 212082,
+                "next_ns": 299669,
+                "native_ns": 511751,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+              }
+            ],
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 2345414,
+                "next_ns": 3393006,
+                "native_ns": 5738420,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              },
+              {
+                "submit_ns": 2369755,
+                "next_ns": 3355250,
+                "native_ns": 5725005,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              }
+            ],
+            "r10-roots32-budget64-width8": [
+              {
+                "submit_ns": 6251087,
+                "next_ns": 9414584,
+                "native_ns": 15665671,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+              },
+              {
+                "submit_ns": 6205288,
+                "next_ns": 9398795,
+                "native_ns": 15604083,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 0,
+          "arm": "candidate",
+          "cases": {
+            "r4-roots1-budget27-width8": [
+              {
+                "submit_ns": 34417,
+                "next_ns": 58914,
+                "native_ns": 93331,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              },
+              {
+                "submit_ns": 32456,
+                "next_ns": 56875,
+                "native_ns": 89331,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              }
+            ],
+            "r4-roots1-budget64-width8": [
+              {
+                "submit_ns": 83499,
+                "next_ns": 143251,
+                "native_ns": 226750,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+              },
+              {
+                "submit_ns": 82999,
+                "next_ns": 141966,
+                "native_ns": 224965,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+              }
+            ],
+            "r4-roots32-budget27-width8": [
+              {
+                "submit_ns": 766123,
+                "next_ns": 1525252,
+                "native_ns": 2291375,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              },
+              {
+                "submit_ns": 762795,
+                "next_ns": 1526625,
+                "native_ns": 2289420,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              }
+            ],
+            "r4-roots32-budget64-width8": [
+              {
+                "submit_ns": 1940961,
+                "next_ns": 4083575,
+                "native_ns": 6024536,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+              },
+              {
+                "submit_ns": 1951421,
+                "next_ns": 4073714,
+                "native_ns": 6025135,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+              }
+            ],
+            "r10-roots1-budget27-width8": [
+              {
+                "submit_ns": 87290,
+                "next_ns": 114959,
+                "native_ns": 202249,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              },
+              {
+                "submit_ns": 81542,
+                "next_ns": 108003,
+                "native_ns": 189545,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              }
+            ],
+            "r10-roots1-budget64-width8": [
+              {
+                "submit_ns": 233500,
+                "next_ns": 313251,
+                "native_ns": 546751,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+              },
+              {
+                "submit_ns": 214377,
+                "next_ns": 299874,
+                "native_ns": 514251,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+              }
+            ],
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 2387833,
+                "next_ns": 3330461,
+                "native_ns": 5718294,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              },
+              {
+                "submit_ns": 2393586,
+                "next_ns": 3299125,
+                "native_ns": 5692711,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              }
+            ],
+            "r10-roots32-budget64-width8": [
+              {
+                "submit_ns": 6347588,
+                "next_ns": 9459714,
+                "native_ns": 15807302,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+              },
+              {
+                "submit_ns": 6267667,
+                "next_ns": 9437211,
+                "native_ns": 15704878,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 1,
+          "arm": "candidate",
+          "cases": {
+            "r4-roots1-budget27-width8": [
+              {
+                "submit_ns": 37749,
+                "next_ns": 64502,
+                "native_ns": 102251,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              },
+              {
+                "submit_ns": 33208,
+                "next_ns": 56877,
+                "native_ns": 90085,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              }
+            ],
+            "r4-roots1-budget64-width8": [
+              {
+                "submit_ns": 84037,
+                "next_ns": 146288,
+                "native_ns": 230325,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+              },
+              {
+                "submit_ns": 85376,
+                "next_ns": 149040,
+                "native_ns": 234416,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+              }
+            ],
+            "r4-roots32-budget27-width8": [
+              {
+                "submit_ns": 804585,
+                "next_ns": 1613083,
+                "native_ns": 2417668,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              },
+              {
+                "submit_ns": 815041,
+                "next_ns": 1657460,
+                "native_ns": 2472501,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              }
+            ],
+            "r4-roots32-budget64-width8": [
+              {
+                "submit_ns": 1942124,
+                "next_ns": 4117290,
+                "native_ns": 6059414,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+              },
+              {
+                "submit_ns": 2028710,
+                "next_ns": 4523205,
+                "native_ns": 6551915,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+              }
+            ],
+            "r10-roots1-budget27-width8": [
+              {
+                "submit_ns": 90250,
+                "next_ns": 128250,
+                "native_ns": 218500,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              },
+              {
+                "submit_ns": 80082,
+                "next_ns": 108418,
+                "native_ns": 188500,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              }
+            ],
+            "r10-roots1-budget64-width8": [
+              {
+                "submit_ns": 223084,
+                "next_ns": 312790,
+                "native_ns": 535874,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+              },
+              {
+                "submit_ns": 216042,
+                "next_ns": 303165,
+                "native_ns": 519207,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+              }
+            ],
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 2497629,
+                "next_ns": 3656793,
+                "native_ns": 6154422,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              },
+              {
+                "submit_ns": 2498167,
+                "next_ns": 3679331,
+                "native_ns": 6177498,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              }
+            ],
+            "r10-roots32-budget64-width8": [
+              {
+                "submit_ns": 6549498,
+                "next_ns": 10114710,
+                "native_ns": 16664208,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+              },
+              {
+                "submit_ns": 7183624,
+                "next_ns": 11359415,
+                "native_ns": 18543039,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 1,
+          "arm": "baseline",
+          "cases": {
+            "r4-roots1-budget27-width8": [
+              {
+                "submit_ns": 36830,
+                "next_ns": 64124,
+                "native_ns": 100954,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              },
+              {
+                "submit_ns": 37957,
+                "next_ns": 59581,
+                "native_ns": 97538,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+              }
+            ],
+            "r4-roots1-budget64-width8": [
+              {
+                "submit_ns": 84412,
+                "next_ns": 141957,
+                "native_ns": 226369,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+              },
+              {
+                "submit_ns": 83213,
+                "next_ns": 146758,
+                "native_ns": 229971,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+              }
+            ],
+            "r4-roots32-budget27-width8": [
+              {
+                "submit_ns": 761166,
+                "next_ns": 1508293,
+                "native_ns": 2269459,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              },
+              {
+                "submit_ns": 775747,
+                "next_ns": 1527668,
+                "native_ns": 2303415,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+              }
+            ],
+            "r4-roots32-budget64-width8": [
+              {
+                "submit_ns": 1956748,
+                "next_ns": 4154589,
+                "native_ns": 6111337,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+              },
+              {
+                "submit_ns": 1953250,
+                "next_ns": 4036205,
+                "native_ns": 5989455,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+              }
+            ],
+            "r10-roots1-budget27-width8": [
+              {
+                "submit_ns": 82169,
+                "next_ns": 112458,
+                "native_ns": 194627,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              },
+              {
+                "submit_ns": 82665,
+                "next_ns": 111542,
+                "native_ns": 194207,
+                "calls": 20,
+                "neural_rows": 27,
+                "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+              }
+            ],
+            "r10-roots1-budget64-width8": [
+              {
+                "submit_ns": 222206,
+                "next_ns": 307793,
+                "native_ns": 529999,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+              },
+              {
+                "submit_ns": 213749,
+                "next_ns": 297162,
+                "native_ns": 510911,
+                "calls": 57,
+                "neural_rows": 64,
+                "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+              }
+            ],
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 2391710,
+                "next_ns": 3355334,
+                "native_ns": 5747044,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              },
+              {
+                "submit_ns": 2421290,
+                "next_ns": 3479208,
+                "native_ns": 5900498,
+                "calls": 20,
+                "neural_rows": 864,
+                "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+              }
+            ],
+            "r10-roots32-budget64-width8": [
+              {
+                "submit_ns": 6353712,
+                "next_ns": 9650837,
+                "native_ns": 16004549,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+              },
+              {
+                "submit_ns": 6281589,
+                "next_ns": 9500756,
+                "native_ns": 15782345,
+                "calls": 57,
+                "neural_rows": 2048,
+                "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "legacy-control": {
+      "scope": "CPU native search with synthetic evaluation; not H100 or Elo throughput",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "python": "3.11.13 (main, Jun  3 2025, 18:38:25) [Clang 17.0.0 (clang-1700.0.13.3)]",
+      "settings": {
+        "threads": 4,
+        "rings": [
+          4,
+          10
+        ],
+        "roots": [
+          1,
+          32
+        ],
+        "budgets": [
+          27,
+          64
+        ],
+        "width": 1,
+        "candidates": 8,
+        "repeats": 2,
+        "pairs": 2
+      },
+      "binaries": {
+        "baseline": {
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/baseline/star_native.abi3.so",
+          "sha256": "322631bbe71229bc468546b5fc93cf1c5895b33b457bd2bcbc770dd322be0237"
+        },
+        "candidate": {
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/final/star_native.abi3.so",
+          "sha256": "2f2947ab02dbd40f567386308899cae8925b9c2f3cfdd3e3b6de557287564de3"
+        }
+      },
+      "summary": {
+        "r4-roots1-budget27-width1": {
+          "submit_ns_ratio": 1.0173001018589254,
+          "native_ns_ratio": 0.9969014084507042,
+          "trace_sha256": "dc1ee2db68bbbc3729af93f83b63f142728d467bf375fe0ee59309d332bfaa2f"
+        },
+        "r4-roots1-budget64-width1": {
+          "submit_ns_ratio": 1.0441212121212122,
+          "native_ns_ratio": 1.0300742113637555,
+          "trace_sha256": "04125885626128701cc915428de54d64d7b862c866f5da01d46f61e024fdb1de"
+        },
+        "r4-roots32-budget27-width1": {
+          "submit_ns_ratio": 1.0751465589983968,
+          "native_ns_ratio": 1.0845315262850277,
+          "trace_sha256": "c5b0553a942dfd775873977acd8f5b0f4babe7e049ade53b1477d2c13fda45a2"
+        },
+        "r4-roots32-budget64-width1": {
+          "submit_ns_ratio": 1.0215375826535673,
+          "native_ns_ratio": 1.0258129666797131,
+          "trace_sha256": "18ea59a53976e4391796fb5ce37b9752df451eb365ef3effd370b77e37f27269"
+        },
+        "r10-roots1-budget27-width1": {
+          "submit_ns_ratio": 0.9997900106531181,
+          "native_ns_ratio": 1.0194889106402876,
+          "trace_sha256": "2faf01ed6da57426624d9185a66c9bc2805fec84fd88778c7c51cc6bb82770db"
+        },
+        "r10-roots1-budget64-width1": {
+          "submit_ns_ratio": 0.9809565912298301,
+          "native_ns_ratio": 1.0031164685387308,
+          "trace_sha256": "4274860188d640e670fd256e56a7fb8d1dda6823d6c52cea5e67c5a5670b436d"
+        },
+        "r10-roots32-budget27-width1": {
+          "submit_ns_ratio": 1.0094185364530326,
+          "native_ns_ratio": 1.0102234942770023,
+          "trace_sha256": "a45d2f46c7a4bb8ae3ba7a95f9268759c1187bead3c4d177f02ad6ae8acf325e"
+        },
+        "r10-roots32-budget64-width1": {
+          "submit_ns_ratio": 1.012333335225907,
+          "native_ns_ratio": 1.017997638547188,
+          "trace_sha256": "f6f984f9dde397020e31b9e1f46774f52e784c20c66ba6e61e7fa36d3edeea9b"
+        }
+      },
+      "runs": [
+        {
+          "pair": 0,
+          "arm": "baseline",
+          "cases": {
+            "r4-roots1-budget27-width1": [
+              {
+                "submit_ns": 31874,
+                "next_ns": 48458,
+                "native_ns": 80332,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "dc1ee2db68bbbc3729af93f83b63f142728d467bf375fe0ee59309d332bfaa2f"
+              },
+              {
+                "submit_ns": 31164,
+                "next_ns": 46419,
+                "native_ns": 77583,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "dc1ee2db68bbbc3729af93f83b63f142728d467bf375fe0ee59309d332bfaa2f"
+              }
+            ],
+            "r4-roots1-budget64-width1": [
+              {
+                "submit_ns": 74204,
+                "next_ns": 128799,
+                "native_ns": 203003,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "04125885626128701cc915428de54d64d7b862c866f5da01d46f61e024fdb1de"
+              },
+              {
+                "submit_ns": 77541,
+                "next_ns": 138127,
+                "native_ns": 215668,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "04125885626128701cc915428de54d64d7b862c866f5da01d46f61e024fdb1de"
+              }
+            ],
+            "r4-roots32-budget27-width1": [
+              {
+                "submit_ns": 1302586,
+                "next_ns": 939500,
+                "native_ns": 2242086,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "c5b0553a942dfd775873977acd8f5b0f4babe7e049ade53b1477d2c13fda45a2"
+              },
+              {
+                "submit_ns": 1240624,
+                "next_ns": 925835,
+                "native_ns": 2166459,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "c5b0553a942dfd775873977acd8f5b0f4babe7e049ade53b1477d2c13fda45a2"
+              }
+            ],
+            "r4-roots32-budget64-width1": [
+              {
+                "submit_ns": 2625662,
+                "next_ns": 2190085,
+                "native_ns": 4815747,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "18ea59a53976e4391796fb5ce37b9752df451eb365ef3effd370b77e37f27269"
+              },
+              {
+                "submit_ns": 2747664,
+                "next_ns": 2262872,
+                "native_ns": 5010536,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "18ea59a53976e4391796fb5ce37b9752df451eb365ef3effd370b77e37f27269"
+              }
+            ],
+            "r10-roots1-budget27-width1": [
+              {
+                "submit_ns": 91248,
+                "next_ns": 95873,
+                "native_ns": 187121,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "2faf01ed6da57426624d9185a66c9bc2805fec84fd88778c7c51cc6bb82770db"
+              },
+              {
+                "submit_ns": 95791,
+                "next_ns": 100959,
+                "native_ns": 196750,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "2faf01ed6da57426624d9185a66c9bc2805fec84fd88778c7c51cc6bb82770db"
+              }
+            ],
+            "r10-roots1-budget64-width1": [
+              {
+                "submit_ns": 224709,
+                "next_ns": 293838,
+                "native_ns": 518547,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "4274860188d640e670fd256e56a7fb8d1dda6823d6c52cea5e67c5a5670b436d"
+              },
+              {
+                "submit_ns": 224542,
+                "next_ns": 301917,
+                "native_ns": 526459,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "4274860188d640e670fd256e56a7fb8d1dda6823d6c52cea5e67c5a5670b436d"
+              }
+            ],
+            "r10-roots32-budget27-width1": [
+              {
+                "submit_ns": 2250256,
+                "next_ns": 1392831,
+                "native_ns": 3643087,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "a45d2f46c7a4bb8ae3ba7a95f9268759c1187bead3c4d177f02ad6ae8acf325e"
+              },
+              {
+                "submit_ns": 2225003,
+                "next_ns": 1412124,
+                "native_ns": 3637127,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "a45d2f46c7a4bb8ae3ba7a95f9268759c1187bead3c4d177f02ad6ae8acf325e"
+              }
+            ],
+            "r10-roots32-budget64-width1": [
+              {
+                "submit_ns": 5277123,
+                "next_ns": 4052290,
+                "native_ns": 9329413,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "f6f984f9dde397020e31b9e1f46774f52e784c20c66ba6e61e7fa36d3edeea9b"
+              },
+              {
+                "submit_ns": 5317122,
+                "next_ns": 4080793,
+                "native_ns": 9397915,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "f6f984f9dde397020e31b9e1f46774f52e784c20c66ba6e61e7fa36d3edeea9b"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 0,
+          "arm": "candidate",
+          "cases": {
+            "r4-roots1-budget27-width1": [
+              {
+                "submit_ns": 31500,
+                "next_ns": 51207,
+                "native_ns": 82707,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "dc1ee2db68bbbc3729af93f83b63f142728d467bf375fe0ee59309d332bfaa2f"
+              },
+              {
+                "submit_ns": 30666,
+                "next_ns": 46879,
+                "native_ns": 77545,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "dc1ee2db68bbbc3729af93f83b63f142728d467bf375fe0ee59309d332bfaa2f"
+              }
+            ],
+            "r4-roots1-budget64-width1": [
+              {
+                "submit_ns": 72125,
+                "next_ns": 129007,
+                "native_ns": 201132,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "04125885626128701cc915428de54d64d7b862c866f5da01d46f61e024fdb1de"
+              },
+              {
+                "submit_ns": 71627,
+                "next_ns": 127917,
+                "native_ns": 199544,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "04125885626128701cc915428de54d64d7b862c866f5da01d46f61e024fdb1de"
+              }
+            ],
+            "r4-roots32-budget27-width1": [
+              {
+                "submit_ns": 1109042,
+                "next_ns": 808372,
+                "native_ns": 1917414,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "c5b0553a942dfd775873977acd8f5b0f4babe7e049ade53b1477d2c13fda45a2"
+              },
+              {
+                "submit_ns": 1063792,
+                "next_ns": 789624,
+                "native_ns": 1853416,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "c5b0553a942dfd775873977acd8f5b0f4babe7e049ade53b1477d2c13fda45a2"
+              }
+            ],
+            "r4-roots32-budget64-width1": [
+              {
+                "submit_ns": 2579328,
+                "next_ns": 2112042,
+                "native_ns": 4691370,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "18ea59a53976e4391796fb5ce37b9752df451eb365ef3effd370b77e37f27269"
+              },
+              {
+                "submit_ns": 2537505,
+                "next_ns": 2088124,
+                "native_ns": 4625629,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "18ea59a53976e4391796fb5ce37b9752df451eb365ef3effd370b77e37f27269"
+              }
+            ],
+            "r10-roots1-budget27-width1": [
+              {
+                "submit_ns": 103499,
+                "next_ns": 101501,
+                "native_ns": 205000,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "2faf01ed6da57426624d9185a66c9bc2805fec84fd88778c7c51cc6bb82770db"
+              },
+              {
+                "submit_ns": 97919,
+                "next_ns": 101830,
+                "native_ns": 199749,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "2faf01ed6da57426624d9185a66c9bc2805fec84fd88778c7c51cc6bb82770db"
+              }
+            ],
+            "r10-roots1-budget64-width1": [
+              {
+                "submit_ns": 240585,
+                "next_ns": 309207,
+                "native_ns": 549792,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "4274860188d640e670fd256e56a7fb8d1dda6823d6c52cea5e67c5a5670b436d"
+              },
+              {
+                "submit_ns": 235168,
+                "next_ns": 307628,
+                "native_ns": 542796,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "4274860188d640e670fd256e56a7fb8d1dda6823d6c52cea5e67c5a5670b436d"
+              }
+            ],
+            "r10-roots32-budget27-width1": [
+              {
+                "submit_ns": 2213121,
+                "next_ns": 1393751,
+                "native_ns": 3606872,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "a45d2f46c7a4bb8ae3ba7a95f9268759c1187bead3c4d177f02ad6ae8acf325e"
+              },
+              {
+                "submit_ns": 2460833,
+                "next_ns": 1561750,
+                "native_ns": 4022583,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "a45d2f46c7a4bb8ae3ba7a95f9268759c1187bead3c4d177f02ad6ae8acf325e"
+              }
+            ],
+            "r10-roots32-budget64-width1": [
+              {
+                "submit_ns": 5262958,
+                "next_ns": 3970918,
+                "native_ns": 9233876,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "f6f984f9dde397020e31b9e1f46774f52e784c20c66ba6e61e7fa36d3edeea9b"
+              },
+              {
+                "submit_ns": 5300168,
+                "next_ns": 4015420,
+                "native_ns": 9315588,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "f6f984f9dde397020e31b9e1f46774f52e784c20c66ba6e61e7fa36d3edeea9b"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 1,
+          "arm": "candidate",
+          "cases": {
+            "r4-roots1-budget27-width1": [
+              {
+                "submit_ns": 31707,
+                "next_ns": 48751,
+                "native_ns": 80458,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "dc1ee2db68bbbc3729af93f83b63f142728d467bf375fe0ee59309d332bfaa2f"
+              },
+              {
+                "submit_ns": 31332,
+                "next_ns": 47960,
+                "native_ns": 79292,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "dc1ee2db68bbbc3729af93f83b63f142728d467bf375fe0ee59309d332bfaa2f"
+              }
+            ],
+            "r4-roots1-budget64-width1": [
+              {
+                "submit_ns": 72500,
+                "next_ns": 128299,
+                "native_ns": 200799,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "04125885626128701cc915428de54d64d7b862c866f5da01d46f61e024fdb1de"
+              },
+              {
+                "submit_ns": 72250,
+                "next_ns": 127004,
+                "native_ns": 199254,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "04125885626128701cc915428de54d64d7b862c866f5da01d46f61e024fdb1de"
+              }
+            ],
+            "r4-roots32-budget27-width1": [
+              {
+                "submit_ns": 1094457,
+                "next_ns": 820045,
+                "native_ns": 1914502,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "c5b0553a942dfd775873977acd8f5b0f4babe7e049ade53b1477d2c13fda45a2"
+              },
+              {
+                "submit_ns": 1070712,
+                "next_ns": 799374,
+                "native_ns": 1870086,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "c5b0553a942dfd775873977acd8f5b0f4babe7e049ade53b1477d2c13fda45a2"
+              }
+            ],
+            "r4-roots32-budget64-width1": [
+              {
+                "submit_ns": 2560497,
+                "next_ns": 2135793,
+                "native_ns": 4696290,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "18ea59a53976e4391796fb5ce37b9752df451eb365ef3effd370b77e37f27269"
+              },
+              {
+                "submit_ns": 2554376,
+                "next_ns": 2100332,
+                "native_ns": 4654708,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "18ea59a53976e4391796fb5ce37b9752df451eb365ef3effd370b77e37f27269"
+              }
+            ],
+            "r10-roots1-budget27-width1": [
+              {
+                "submit_ns": 97329,
+                "next_ns": 92169,
+                "native_ns": 189498,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "2faf01ed6da57426624d9185a66c9bc2805fec84fd88778c7c51cc6bb82770db"
+              },
+              {
+                "submit_ns": 93711,
+                "next_ns": 94042,
+                "native_ns": 187753,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "2faf01ed6da57426624d9185a66c9bc2805fec84fd88778c7c51cc6bb82770db"
+              }
+            ],
+            "r10-roots1-budget64-width1": [
+              {
+                "submit_ns": 235336,
+                "next_ns": 290706,
+                "native_ns": 526042,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "4274860188d640e670fd256e56a7fb8d1dda6823d6c52cea5e67c5a5670b436d"
+              },
+              {
+                "submit_ns": 222249,
+                "next_ns": 288416,
+                "native_ns": 510665,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "4274860188d640e670fd256e56a7fb8d1dda6823d6c52cea5e67c5a5670b436d"
+              }
+            ],
+            "r10-roots32-budget27-width1": [
+              {
+                "submit_ns": 2225042,
+                "next_ns": 1353582,
+                "native_ns": 3578624,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "a45d2f46c7a4bb8ae3ba7a95f9268759c1187bead3c4d177f02ad6ae8acf325e"
+              },
+              {
+                "submit_ns": 2208373,
+                "next_ns": 1391293,
+                "native_ns": 3599666,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "a45d2f46c7a4bb8ae3ba7a95f9268759c1187bead3c4d177f02ad6ae8acf325e"
+              }
+            ],
+            "r10-roots32-budget64-width1": [
+              {
+                "submit_ns": 5282084,
+                "next_ns": 4002998,
+                "native_ns": 9285082,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "f6f984f9dde397020e31b9e1f46774f52e784c20c66ba6e61e7fa36d3edeea9b"
+              },
+              {
+                "submit_ns": 5285536,
+                "next_ns": 4003541,
+                "native_ns": 9289077,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "f6f984f9dde397020e31b9e1f46774f52e784c20c66ba6e61e7fa36d3edeea9b"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 1,
+          "arm": "baseline",
+          "cases": {
+            "r4-roots1-budget27-width1": [
+              {
+                "submit_ns": 33666,
+                "next_ns": 48668,
+                "native_ns": 82334,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "dc1ee2db68bbbc3729af93f83b63f142728d467bf375fe0ee59309d332bfaa2f"
+              },
+              {
+                "submit_ns": 32045,
+                "next_ns": 46878,
+                "native_ns": 78923,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "dc1ee2db68bbbc3729af93f83b63f142728d467bf375fe0ee59309d332bfaa2f"
+              }
+            ],
+            "r4-roots1-budget64-width1": [
+              {
+                "submit_ns": 74158,
+                "next_ns": 127620,
+                "native_ns": 201778,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "04125885626128701cc915428de54d64d7b862c866f5da01d46f61e024fdb1de"
+              },
+              {
+                "submit_ns": 76541,
+                "next_ns": 132839,
+                "native_ns": 209380,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "04125885626128701cc915428de54d64d7b862c866f5da01d46f61e024fdb1de"
+              }
+            ],
+            "r4-roots32-budget27-width1": [
+              {
+                "submit_ns": 1087250,
+                "next_ns": 850796,
+                "native_ns": 1938046,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "c5b0553a942dfd775873977acd8f5b0f4babe7e049ade53b1477d2c13fda45a2"
+              },
+              {
+                "submit_ns": 1081463,
+                "next_ns": 824250,
+                "native_ns": 1905713,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "c5b0553a942dfd775873977acd8f5b0f4babe7e049ade53b1477d2c13fda45a2"
+              }
+            ],
+            "r4-roots32-budget64-width1": [
+              {
+                "submit_ns": 2599373,
+                "next_ns": 2172208,
+                "native_ns": 4771581,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "18ea59a53976e4391796fb5ce37b9752df451eb365ef3effd370b77e37f27269"
+              },
+              {
+                "submit_ns": 2550083,
+                "next_ns": 2207753,
+                "native_ns": 4757836,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "18ea59a53976e4391796fb5ce37b9752df451eb365ef3effd370b77e37f27269"
+              }
+            ],
+            "r10-roots1-budget27-width1": [
+              {
+                "submit_ns": 99416,
+                "next_ns": 100667,
+                "native_ns": 200083,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "2faf01ed6da57426624d9185a66c9bc2805fec84fd88778c7c51cc6bb82770db"
+              },
+              {
+                "submit_ns": 99418,
+                "next_ns": 102918,
+                "native_ns": 202336,
+                "calls": 27,
+                "neural_rows": 27,
+                "trace_sha256": "2faf01ed6da57426624d9185a66c9bc2805fec84fd88778c7c51cc6bb82770db"
+              }
+            ],
+            "r10-roots1-budget64-width1": [
+              {
+                "submit_ns": 244501,
+                "next_ns": 311413,
+                "native_ns": 555914,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "4274860188d640e670fd256e56a7fb8d1dda6823d6c52cea5e67c5a5670b436d"
+              },
+              {
+                "submit_ns": 236835,
+                "next_ns": 308875,
+                "native_ns": 545710,
+                "calls": 64,
+                "neural_rows": 64,
+                "trace_sha256": "4274860188d640e670fd256e56a7fb8d1dda6823d6c52cea5e67c5a5670b436d"
+              }
+            ],
+            "r10-roots32-budget27-width1": [
+              {
+                "submit_ns": 2229708,
+                "next_ns": 1389710,
+                "native_ns": 3619418,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "a45d2f46c7a4bb8ae3ba7a95f9268759c1187bead3c4d177f02ad6ae8acf325e"
+              },
+              {
+                "submit_ns": 2268289,
+                "next_ns": 1413789,
+                "native_ns": 3682078,
+                "calls": 27,
+                "neural_rows": 864,
+                "trace_sha256": "a45d2f46c7a4bb8ae3ba7a95f9268759c1187bead3c4d177f02ad6ae8acf325e"
+              }
+            ],
+            "r10-roots32-budget64-width1": [
+              {
+                "submit_ns": 5554161,
+                "next_ns": 4239164,
+                "native_ns": 9793325,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "f6f984f9dde397020e31b9e1f46774f52e784c20c66ba6e61e7fa36d3edeea9b"
+              },
+              {
+                "submit_ns": 5380832,
+                "next_ns": 4129703,
+                "native_ns": 9510535,
+                "calls": 64,
+                "neural_rows": 2048,
+                "trace_sha256": "f6f984f9dde397020e31b9e1f46774f52e784c20c66ba6e61e7fa36d3edeea9b"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "production-candidates": {
+      "scope": "CPU native search with synthetic evaluation; not H100 or Elo throughput",
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "python": "3.11.13 (main, Jun  3 2025, 18:38:25) [Clang 17.0.0 (clang-1700.0.13.3)]",
+      "settings": {
+        "threads": 4,
+        "rings": [
+          10
+        ],
+        "roots": [
+          32,
+          128
+        ],
+        "budgets": [
+          27,
+          640
+        ],
+        "width": 8,
+        "candidates": 53,
+        "repeats": 2,
+        "pairs": 2
+      },
+      "binaries": {
+        "baseline": {
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/baseline/star_native.abi3.so",
+          "sha256": "322631bbe71229bc468546b5fc93cf1c5895b33b457bd2bcbc770dd322be0237"
+        },
+        "candidate": {
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/final/star_native.abi3.so",
+          "sha256": "2f2947ab02dbd40f567386308899cae8925b9c2f3cfdd3e3b6de557287564de3"
+        }
+      },
+      "summary": {
+        "r10-roots32-budget27-width8": {
+          "submit_ns_ratio": 1.0943192287967656,
+          "native_ns_ratio": 1.066672360378972,
+          "trace_sha256": "d9fd0f4729c0dac39100fda12f2c76196656e2a3a79d248eb7f45d6a10d2af64"
+        },
+        "r10-roots32-budget640-width8": {
+          "submit_ns_ratio": 1.3381899621166968,
+          "native_ns_ratio": 1.1984060334124786,
+          "trace_sha256": "7cc029b1bc52414e7ad97fcd8bc86f181632e3b46797b327302dd67ed0635848"
+        },
+        "r10-roots128-budget27-width8": {
+          "submit_ns_ratio": 1.1092818831118885,
+          "native_ns_ratio": 1.1219089499385915,
+          "trace_sha256": "1526e13894dbe86252da87d6c807a96f82695687c3c40011e656b3f2203b0081"
+        },
+        "r10-roots128-budget640-width8": {
+          "submit_ns_ratio": 1.6502096226728404,
+          "native_ns_ratio": 1.3319338958440263,
+          "trace_sha256": "fcc3721a84af93cc056b87ac023b7e27dccaef16a6c7913df248329e6a01ed98"
+        }
+      },
+      "runs": [
+        {
+          "pair": 0,
+          "arm": "baseline",
+          "cases": {
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 1331208,
+                "next_ns": 1827749,
+                "native_ns": 3158957,
+                "calls": 4,
+                "neural_rows": 864,
+                "trace_sha256": "d9fd0f4729c0dac39100fda12f2c76196656e2a3a79d248eb7f45d6a10d2af64"
+              },
+              {
+                "submit_ns": 1309583,
+                "next_ns": 1817375,
+                "native_ns": 3126958,
+                "calls": 4,
+                "neural_rows": 864,
+                "trace_sha256": "d9fd0f4729c0dac39100fda12f2c76196656e2a3a79d248eb7f45d6a10d2af64"
+              }
+            ],
+            "r10-roots32-budget640-width8": [
+              {
+                "submit_ns": 72662204,
+                "next_ns": 65709424,
+                "native_ns": 138371628,
+                "calls": 594,
+                "neural_rows": 20480,
+                "trace_sha256": "7cc029b1bc52414e7ad97fcd8bc86f181632e3b46797b327302dd67ed0635848"
+              },
+              {
+                "submit_ns": 79870995,
+                "next_ns": 66700659,
+                "native_ns": 146571654,
+                "calls": 594,
+                "neural_rows": 20480,
+                "trace_sha256": "7cc029b1bc52414e7ad97fcd8bc86f181632e3b46797b327302dd67ed0635848"
+              }
+            ],
+            "r10-roots128-budget27-width8": [
+              {
+                "submit_ns": 5599294,
+                "next_ns": 8052126,
+                "native_ns": 13651420,
+                "calls": 16,
+                "neural_rows": 3456,
+                "trace_sha256": "1526e13894dbe86252da87d6c807a96f82695687c3c40011e656b3f2203b0081"
+              },
+              {
+                "submit_ns": 5674793,
+                "next_ns": 8079127,
+                "native_ns": 13753920,
+                "calls": 16,
+                "neural_rows": 3456,
+                "trace_sha256": "1526e13894dbe86252da87d6c807a96f82695687c3c40011e656b3f2203b0081"
+              }
+            ],
+            "r10-roots128-budget640-width8": [
+              {
+                "submit_ns": 311320191,
+                "next_ns": 238732169,
+                "native_ns": 550052360,
+                "calls": 618,
+                "neural_rows": 81920,
+                "trace_sha256": "fcc3721a84af93cc056b87ac023b7e27dccaef16a6c7913df248329e6a01ed98"
+              },
+              {
+                "submit_ns": 339251719,
+                "next_ns": 240427459,
+                "native_ns": 579679178,
+                "calls": 618,
+                "neural_rows": 81920,
+                "trace_sha256": "fcc3721a84af93cc056b87ac023b7e27dccaef16a6c7913df248329e6a01ed98"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 0,
+          "arm": "candidate",
+          "cases": {
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 1237375,
+                "next_ns": 1718874,
+                "native_ns": 2956249,
+                "calls": 4,
+                "neural_rows": 864,
+                "trace_sha256": "d9fd0f4729c0dac39100fda12f2c76196656e2a3a79d248eb7f45d6a10d2af64"
+              },
+              {
+                "submit_ns": 1160582,
+                "next_ns": 1693582,
+                "native_ns": 2854164,
+                "calls": 4,
+                "neural_rows": 864,
+                "trace_sha256": "d9fd0f4729c0dac39100fda12f2c76196656e2a3a79d248eb7f45d6a10d2af64"
+              }
+            ],
+            "r10-roots32-budget640-width8": [
+              {
+                "submit_ns": 59303626,
+                "next_ns": 61590717,
+                "native_ns": 120894343,
+                "calls": 594,
+                "neural_rows": 20480,
+                "trace_sha256": "7cc029b1bc52414e7ad97fcd8bc86f181632e3b46797b327302dd67ed0635848"
+              },
+              {
+                "submit_ns": 52939861,
+                "next_ns": 58683739,
+                "native_ns": 111623600,
+                "calls": 594,
+                "neural_rows": 20480,
+                "trace_sha256": "7cc029b1bc52414e7ad97fcd8bc86f181632e3b46797b327302dd67ed0635848"
+              }
+            ],
+            "r10-roots128-budget27-width8": [
+              {
+                "submit_ns": 4839624,
+                "next_ns": 7103295,
+                "native_ns": 11942919,
+                "calls": 16,
+                "neural_rows": 3456,
+                "trace_sha256": "1526e13894dbe86252da87d6c807a96f82695687c3c40011e656b3f2203b0081"
+              },
+              {
+                "submit_ns": 4816754,
+                "next_ns": 7109540,
+                "native_ns": 11926294,
+                "calls": 16,
+                "neural_rows": 3456,
+                "trace_sha256": "1526e13894dbe86252da87d6c807a96f82695687c3c40011e656b3f2203b0081"
+              }
+            ],
+            "r10-roots128-budget640-width8": [
+              {
+                "submit_ns": 205104844,
+                "next_ns": 228148250,
+                "native_ns": 433253094,
+                "calls": 618,
+                "neural_rows": 81920,
+                "trace_sha256": "fcc3721a84af93cc056b87ac023b7e27dccaef16a6c7913df248329e6a01ed98"
+              },
+              {
+                "submit_ns": 188254674,
+                "next_ns": 225523987,
+                "native_ns": 413778661,
+                "calls": 618,
+                "neural_rows": 81920,
+                "trace_sha256": "fcc3721a84af93cc056b87ac023b7e27dccaef16a6c7913df248329e6a01ed98"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 1,
+          "arm": "candidate",
+          "cases": {
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 1244876,
+                "next_ns": 1738001,
+                "native_ns": 2982877,
+                "calls": 4,
+                "neural_rows": 864,
+                "trace_sha256": "d9fd0f4729c0dac39100fda12f2c76196656e2a3a79d248eb7f45d6a10d2af64"
+              },
+              {
+                "submit_ns": 1250249,
+                "next_ns": 1729875,
+                "native_ns": 2980124,
+                "calls": 4,
+                "neural_rows": 864,
+                "trace_sha256": "d9fd0f4729c0dac39100fda12f2c76196656e2a3a79d248eb7f45d6a10d2af64"
+              }
+            ],
+            "r10-roots32-budget640-width8": [
+              {
+                "submit_ns": 57069990,
+                "next_ns": 60689585,
+                "native_ns": 117759575,
+                "calls": 594,
+                "neural_rows": 20480,
+                "trace_sha256": "7cc029b1bc52414e7ad97fcd8bc86f181632e3b46797b327302dd67ed0635848"
+              },
+              {
+                "submit_ns": 57270092,
+                "next_ns": 61255587,
+                "native_ns": 118525679,
+                "calls": 594,
+                "neural_rows": 20480,
+                "trace_sha256": "7cc029b1bc52414e7ad97fcd8bc86f181632e3b46797b327302dd67ed0635848"
+              }
+            ],
+            "r10-roots128-budget27-width8": [
+              {
+                "submit_ns": 5211417,
+                "next_ns": 7484584,
+                "native_ns": 12696001,
+                "calls": 16,
+                "neural_rows": 3456,
+                "trace_sha256": "1526e13894dbe86252da87d6c807a96f82695687c3c40011e656b3f2203b0081"
+              },
+              {
+                "submit_ns": 5106041,
+                "next_ns": 7378459,
+                "native_ns": 12484500,
+                "calls": 16,
+                "neural_rows": 3456,
+                "trace_sha256": "1526e13894dbe86252da87d6c807a96f82695687c3c40011e656b3f2203b0081"
+              }
+            ],
+            "r10-roots128-budget640-width8": [
+              {
+                "submit_ns": 205165759,
+                "next_ns": 228100839,
+                "native_ns": 433266598,
+                "calls": 618,
+                "neural_rows": 81920,
+                "trace_sha256": "fcc3721a84af93cc056b87ac023b7e27dccaef16a6c7913df248329e6a01ed98"
+              },
+              {
+                "submit_ns": 191848400,
+                "next_ns": 227307665,
+                "native_ns": 419156065,
+                "calls": 618,
+                "neural_rows": 81920,
+                "trace_sha256": "fcc3721a84af93cc056b87ac023b7e27dccaef16a6c7913df248329e6a01ed98"
+              }
+            ]
+          }
+        },
+        {
+          "pair": 1,
+          "arm": "baseline",
+          "cases": {
+            "r10-roots32-budget27-width8": [
+              {
+                "submit_ns": 1385167,
+                "next_ns": 1788041,
+                "native_ns": 3173208,
+                "calls": 4,
+                "neural_rows": 864,
+                "trace_sha256": "d9fd0f4729c0dac39100fda12f2c76196656e2a3a79d248eb7f45d6a10d2af64"
+              },
+              {
+                "submit_ns": 1432292,
+                "next_ns": 1985541,
+                "native_ns": 3417833,
+                "calls": 4,
+                "neural_rows": 864,
+                "trace_sha256": "d9fd0f4729c0dac39100fda12f2c76196656e2a3a79d248eb7f45d6a10d2af64"
+              }
+            ],
+            "r10-roots32-budget640-width8": [
+              {
+                "submit_ns": 73532335,
+                "next_ns": 64875343,
+                "native_ns": 138407678,
+                "calls": 594,
+                "neural_rows": 20480,
+                "trace_sha256": "7cc029b1bc52414e7ad97fcd8bc86f181632e3b46797b327302dd67ed0635848"
+              },
+              {
+                "submit_ns": 79476415,
+                "next_ns": 65281581,
+                "native_ns": 144757996,
+                "calls": 594,
+                "neural_rows": 20480,
+                "trace_sha256": "7cc029b1bc52414e7ad97fcd8bc86f181632e3b46797b327302dd67ed0635848"
+              }
+            ],
+            "r10-roots128-budget27-width8": [
+              {
+                "submit_ns": 5302335,
+                "next_ns": 7302999,
+                "native_ns": 12605334,
+                "calls": 16,
+                "neural_rows": 3456,
+                "trace_sha256": "1526e13894dbe86252da87d6c807a96f82695687c3c40011e656b3f2203b0081"
+              },
+              {
+                "submit_ns": 5433252,
+                "next_ns": 8368920,
+                "native_ns": 13802172,
+                "calls": 16,
+                "neural_rows": 3456,
+                "trace_sha256": "1526e13894dbe86252da87d6c807a96f82695687c3c40011e656b3f2203b0081"
+              }
+            ],
+            "r10-roots128-budget640-width8": [
+              {
+                "submit_ns": 315804344,
+                "next_ns": 239869130,
+                "native_ns": 555673474,
+                "calls": 618,
+                "neural_rows": 81920,
+                "trace_sha256": "fcc3721a84af93cc056b87ac023b7e27dccaef16a6c7913df248329e6a01ed98"
+              },
+              {
+                "submit_ns": 342702221,
+                "next_ns": 240277140,
+                "native_ns": 582979361,
+                "calls": 618,
+                "neural_rows": 81920,
+                "trace_sha256": "fcc3721a84af93cc056b87ac023b7e27dccaef16a6c7913df248329e6a01ed98"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "rejected_unconditional_parallel_screen": {
+    "scope": "CPU native search with synthetic evaluation; not H100 or Elo throughput",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "python": "3.11.13 (main, Jun  3 2025, 18:38:25) [Clang 17.0.0 (clang-1700.0.13.3)]",
+    "settings": {
+      "threads": 4,
+      "rings": [
+        4,
+        10
+      ],
+      "roots": [
+        1,
+        8,
+        32
+      ],
+      "budgets": [
+        27,
+        64
+      ],
+      "width": 8,
+      "repeats": 2,
+      "pairs": 2
+    },
+    "binaries": {
+      "baseline": {
+        "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/baseline/star_native.abi3.so",
+        "sha256": "322631bbe71229bc468546b5fc93cf1c5895b33b457bd2bcbc770dd322be0237"
+      },
+      "candidate": {
+        "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/parallel/star_native.abi3.so",
+        "sha256": "f7c9df73125153cc7b65f16284c8e2c670f2444f4e1689f4c1efb84400ba8918"
+      }
+    },
+    "summary": {
+      "r4-roots1-budget27-width8": {
+        "submit_ns_ratio": 1.0278708294251642,
+        "native_ns_ratio": 1.0422065901517956,
+        "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+      },
+      "r4-roots1-budget64-width8": {
+        "submit_ns_ratio": 0.9393608606233191,
+        "native_ns_ratio": 0.9584796970515788,
+        "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+      },
+      "r4-roots8-budget27-width8": {
+        "submit_ns_ratio": 0.40562564396551054,
+        "native_ns_ratio": 0.7645330060888208,
+        "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+      },
+      "r4-roots8-budget64-width8": {
+        "submit_ns_ratio": 0.36894372725814306,
+        "native_ns_ratio": 0.7300550474838218,
+        "trace_sha256": "dd50cd8624a162ebe26c1b70a103d0fb79783c47e530b85f7a3d473ec6f7f757"
+      },
+      "r4-roots32-budget27-width8": {
+        "submit_ns_ratio": 0.7409823735708975,
+        "native_ns_ratio": 0.9503714814699208,
+        "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+      },
+      "r4-roots32-budget64-width8": {
+        "submit_ns_ratio": 0.7150091742987831,
+        "native_ns_ratio": 0.941781383728715,
+        "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+      },
+      "r10-roots1-budget27-width8": {
+        "submit_ns_ratio": 1.036310689769418,
+        "native_ns_ratio": 1.0341698082997337,
+        "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+      },
+      "r10-roots1-budget64-width8": {
+        "submit_ns_ratio": 1.0063575812412109,
+        "native_ns_ratio": 0.9896754533637352,
+        "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+      },
+      "r10-roots8-budget27-width8": {
+        "submit_ns_ratio": 0.7243131956118968,
+        "native_ns_ratio": 0.9109584937080245,
+        "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+      },
+      "r10-roots8-budget64-width8": {
+        "submit_ns_ratio": 0.7272829156870952,
+        "native_ns_ratio": 0.9368184005797552,
+        "trace_sha256": "a4f0291b7576a9538f091f07e76bf3a484c1ec9153698e40d85cf3c65a3948f3"
+      },
+      "r10-roots32-budget27-width8": {
+        "submit_ns_ratio": 1.2027564252668541,
+        "native_ns_ratio": 1.1508003886601141,
+        "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+      },
+      "r10-roots32-budget64-width8": {
+        "submit_ns_ratio": 1.2436151772967874,
+        "native_ns_ratio": 1.1847859983741493,
+        "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+      }
+    },
+    "runs": [
+      {
+        "pair": 0,
+        "arm": "baseline",
+        "cases": {
+          "r4-roots1-budget27-width8": [
+            {
+              "submit_ns": 41958,
+              "next_ns": 66874,
+              "native_ns": 108832,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+            },
+            {
+              "submit_ns": 40293,
+              "next_ns": 68667,
+              "native_ns": 108960,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+            }
+          ],
+          "r4-roots1-budget64-width8": [
+            {
+              "submit_ns": 88964,
+              "next_ns": 159250,
+              "native_ns": 248214,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+            },
+            {
+              "submit_ns": 96871,
+              "next_ns": 163708,
+              "native_ns": 260579,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+            }
+          ],
+          "r4-roots8-budget27-width8": [
+            {
+              "submit_ns": 233245,
+              "next_ns": 537710,
+              "native_ns": 770955,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+            },
+            {
+              "submit_ns": 212416,
+              "next_ns": 504251,
+              "native_ns": 716667,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+            }
+          ],
+          "r4-roots8-budget64-width8": [
+            {
+              "submit_ns": 537248,
+              "next_ns": 1321830,
+              "native_ns": 1859078,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "dd50cd8624a162ebe26c1b70a103d0fb79783c47e530b85f7a3d473ec6f7f757"
+            },
+            {
+              "submit_ns": 523953,
+              "next_ns": 1311336,
+              "native_ns": 1835289,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "dd50cd8624a162ebe26c1b70a103d0fb79783c47e530b85f7a3d473ec6f7f757"
+            }
+          ],
+          "r4-roots32-budget27-width8": [
+            {
+              "submit_ns": 769288,
+              "next_ns": 1170416,
+              "native_ns": 1939704,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+            },
+            {
+              "submit_ns": 781415,
+              "next_ns": 1171584,
+              "native_ns": 1952999,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+            }
+          ],
+          "r4-roots32-budget64-width8": [
+            {
+              "submit_ns": 1997084,
+              "next_ns": 2965417,
+              "native_ns": 4962501,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+            },
+            {
+              "submit_ns": 1999873,
+              "next_ns": 2978463,
+              "native_ns": 4978336,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+            }
+          ],
+          "r10-roots1-budget27-width8": [
+            {
+              "submit_ns": 92627,
+              "next_ns": 126582,
+              "native_ns": 219209,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+            },
+            {
+              "submit_ns": 91999,
+              "next_ns": 130083,
+              "native_ns": 222082,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+            }
+          ],
+          "r10-roots1-budget64-width8": [
+            {
+              "submit_ns": 239047,
+              "next_ns": 338914,
+              "native_ns": 577961,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+            },
+            {
+              "submit_ns": 232420,
+              "next_ns": 328786,
+              "native_ns": 561206,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+            }
+          ],
+          "r10-roots8-budget27-width8": [
+            {
+              "submit_ns": 601666,
+              "next_ns": 713294,
+              "native_ns": 1314960,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+            },
+            {
+              "submit_ns": 609249,
+              "next_ns": 713875,
+              "native_ns": 1323124,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+            }
+          ],
+          "r10-roots8-budget64-width8": [
+            {
+              "submit_ns": 1576545,
+              "next_ns": 2059379,
+              "native_ns": 3635924,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "a4f0291b7576a9538f091f07e76bf3a484c1ec9153698e40d85cf3c65a3948f3"
+            },
+            {
+              "submit_ns": 1640377,
+              "next_ns": 2094089,
+              "native_ns": 3734466,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "a4f0291b7576a9538f091f07e76bf3a484c1ec9153698e40d85cf3c65a3948f3"
+            }
+          ],
+          "r10-roots32-budget27-width8": [
+            {
+              "submit_ns": 2643334,
+              "next_ns": 1917499,
+              "native_ns": 4560833,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+            },
+            {
+              "submit_ns": 2504961,
+              "next_ns": 1844085,
+              "native_ns": 4349046,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+            }
+          ],
+          "r10-roots32-budget64-width8": [
+            {
+              "submit_ns": 7631339,
+              "next_ns": 6158377,
+              "native_ns": 13789716,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+            },
+            {
+              "submit_ns": 6849547,
+              "next_ns": 5085163,
+              "native_ns": 11934710,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+            }
+          ]
+        }
+      },
+      {
+        "pair": 0,
+        "arm": "candidate",
+        "cases": {
+          "r4-roots1-budget27-width8": [
+            {
+              "submit_ns": 43212,
+              "next_ns": 68836,
+              "native_ns": 112048,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+            },
+            {
+              "submit_ns": 38294,
+              "next_ns": 63254,
+              "native_ns": 101548,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+            }
+          ],
+          "r4-roots1-budget64-width8": [
+            {
+              "submit_ns": 95835,
+              "next_ns": 164665,
+              "native_ns": 260500,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+            },
+            {
+              "submit_ns": 98747,
+              "next_ns": 164871,
+              "native_ns": 263618,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+            }
+          ],
+          "r4-roots8-budget27-width8": [
+            {
+              "submit_ns": 538417,
+              "next_ns": 412125,
+              "native_ns": 950542,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+            },
+            {
+              "submit_ns": 541168,
+              "next_ns": 414538,
+              "native_ns": 955706,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+            }
+          ],
+          "r4-roots8-budget64-width8": [
+            {
+              "submit_ns": 1402459,
+              "next_ns": 1093335,
+              "native_ns": 2495794,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "dd50cd8624a162ebe26c1b70a103d0fb79783c47e530b85f7a3d473ec6f7f757"
+            },
+            {
+              "submit_ns": 1409992,
+              "next_ns": 1089958,
+              "native_ns": 2499950,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "dd50cd8624a162ebe26c1b70a103d0fb79783c47e530b85f7a3d473ec6f7f757"
+            }
+          ],
+          "r4-roots32-budget27-width8": [
+            {
+              "submit_ns": 1049459,
+              "next_ns": 987791,
+              "native_ns": 2037250,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+            },
+            {
+              "submit_ns": 1030124,
+              "next_ns": 987124,
+              "native_ns": 2017248,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+            }
+          ],
+          "r4-roots32-budget64-width8": [
+            {
+              "submit_ns": 2783123,
+              "next_ns": 2488874,
+              "native_ns": 5271997,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+            },
+            {
+              "submit_ns": 2818789,
+              "next_ns": 2461496,
+              "native_ns": 5280285,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+            }
+          ],
+          "r10-roots1-budget27-width8": [
+            {
+              "submit_ns": 92250,
+              "next_ns": 130874,
+              "native_ns": 223124,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+            },
+            {
+              "submit_ns": 86585,
+              "next_ns": 123041,
+              "native_ns": 209626,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+            }
+          ],
+          "r10-roots1-budget64-width8": [
+            {
+              "submit_ns": 245666,
+              "next_ns": 344374,
+              "native_ns": 590040,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+            },
+            {
+              "submit_ns": 232419,
+              "next_ns": 344084,
+              "native_ns": 576503,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+            }
+          ],
+          "r10-roots8-budget27-width8": [
+            {
+              "submit_ns": 796039,
+              "next_ns": 634833,
+              "native_ns": 1430872,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+            },
+            {
+              "submit_ns": 833584,
+              "next_ns": 598372,
+              "native_ns": 1431956,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+            }
+          ],
+          "r10-roots8-budget64-width8": [
+            {
+              "submit_ns": 2122710,
+              "next_ns": 1696958,
+              "native_ns": 3819668,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "a4f0291b7576a9538f091f07e76bf3a484c1ec9153698e40d85cf3c65a3948f3"
+            },
+            {
+              "submit_ns": 2179627,
+              "next_ns": 1728329,
+              "native_ns": 3907956,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "a4f0291b7576a9538f091f07e76bf3a484c1ec9153698e40d85cf3c65a3948f3"
+            }
+          ],
+          "r10-roots32-budget27-width8": [
+            {
+              "submit_ns": 2123335,
+              "next_ns": 1712333,
+              "native_ns": 3835668,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+            },
+            {
+              "submit_ns": 2080789,
+              "next_ns": 1723124,
+              "native_ns": 3803913,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+            }
+          ],
+          "r10-roots32-budget64-width8": [
+            {
+              "submit_ns": 5432250,
+              "next_ns": 4528254,
+              "native_ns": 9960504,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+            },
+            {
+              "submit_ns": 5433672,
+              "next_ns": 4512831,
+              "native_ns": 9946503,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+            }
+          ]
+        }
+      },
+      {
+        "pair": 1,
+        "arm": "candidate",
+        "cases": {
+          "r4-roots1-budget27-width8": [
+            {
+              "submit_ns": 35249,
+              "next_ns": 60085,
+              "native_ns": 95334,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+            },
+            {
+              "submit_ns": 36336,
+              "next_ns": 59289,
+              "native_ns": 95625,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+            }
+          ],
+          "r4-roots1-budget64-width8": [
+            {
+              "submit_ns": 90251,
+              "next_ns": 155917,
+              "native_ns": 246168,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+            },
+            {
+              "submit_ns": 93795,
+              "next_ns": 156419,
+              "native_ns": 250214,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+            }
+          ],
+          "r4-roots8-budget27-width8": [
+            {
+              "submit_ns": 485124,
+              "next_ns": 428749,
+              "native_ns": 913873,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+            },
+            {
+              "submit_ns": 494247,
+              "next_ns": 427002,
+              "native_ns": 921249,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+            }
+          ],
+          "r4-roots8-budget64-width8": [
+            {
+              "submit_ns": 1407500,
+              "next_ns": 1100045,
+              "native_ns": 2507545,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "dd50cd8624a162ebe26c1b70a103d0fb79783c47e530b85f7a3d473ec6f7f757"
+            },
+            {
+              "submit_ns": 1420544,
+              "next_ns": 1101044,
+              "native_ns": 2521588,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "dd50cd8624a162ebe26c1b70a103d0fb79783c47e530b85f7a3d473ec6f7f757"
+            }
+          ],
+          "r4-roots32-budget27-width8": [
+            {
+              "submit_ns": 1136372,
+              "next_ns": 1005999,
+              "native_ns": 2142371,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+            },
+            {
+              "submit_ns": 1056583,
+              "next_ns": 974876,
+              "native_ns": 2031459,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+            }
+          ],
+          "r4-roots32-budget64-width8": [
+            {
+              "submit_ns": 2800955,
+              "next_ns": 2460500,
+              "native_ns": 5261455,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+            },
+            {
+              "submit_ns": 2781081,
+              "next_ns": 2445709,
+              "native_ns": 5226790,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+            }
+          ],
+          "r10-roots1-budget27-width8": [
+            {
+              "submit_ns": 84415,
+              "next_ns": 117917,
+              "native_ns": 202332,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+            },
+            {
+              "submit_ns": 85458,
+              "next_ns": 117122,
+              "native_ns": 202580,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+            }
+          ],
+          "r10-roots1-budget64-width8": [
+            {
+              "submit_ns": 219500,
+              "next_ns": 313910,
+              "native_ns": 533410,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+            },
+            {
+              "submit_ns": 226246,
+              "next_ns": 323499,
+              "native_ns": 549745,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+            }
+          ],
+          "r10-roots8-budget27-width8": [
+            {
+              "submit_ns": 857498,
+              "next_ns": 664206,
+              "native_ns": 1521704,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+            },
+            {
+              "submit_ns": 821254,
+              "next_ns": 634039,
+              "native_ns": 1455293,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+            }
+          ],
+          "r10-roots8-budget64-width8": [
+            {
+              "submit_ns": 2171418,
+              "next_ns": 1686291,
+              "native_ns": 3857709,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "a4f0291b7576a9538f091f07e76bf3a484c1ec9153698e40d85cf3c65a3948f3"
+            },
+            {
+              "submit_ns": 2138290,
+              "next_ns": 1735540,
+              "native_ns": 3873830,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "a4f0291b7576a9538f091f07e76bf3a484c1ec9153698e40d85cf3c65a3948f3"
+            }
+          ],
+          "r10-roots32-budget27-width8": [
+            {
+              "submit_ns": 2070167,
+              "next_ns": 1690370,
+              "native_ns": 3760537,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+            },
+            {
+              "submit_ns": 2038126,
+              "next_ns": 1680379,
+              "native_ns": 3718505,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+            }
+          ],
+          "r10-roots32-budget64-width8": [
+            {
+              "submit_ns": 5412745,
+              "next_ns": 4506045,
+              "native_ns": 9918790,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+            },
+            {
+              "submit_ns": 5426548,
+              "next_ns": 4460710,
+              "native_ns": 9887258,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+            }
+          ]
+        }
+      },
+      {
+        "pair": 1,
+        "arm": "baseline",
+        "cases": {
+          "r4-roots1-budget27-width8": [
+            {
+              "submit_ns": 36417,
+              "next_ns": 60246,
+              "native_ns": 96663,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+            },
+            {
+              "submit_ns": 32832,
+              "next_ns": 56877,
+              "native_ns": 89709,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "ec03e908f1a83c6c339ec35e5ac0a97bf88f030994a60e997bd7f95d23ec7739"
+            }
+          ],
+          "r4-roots1-budget64-width8": [
+            {
+              "submit_ns": 85211,
+              "next_ns": 146000,
+              "native_ns": 231211,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+            },
+            {
+              "submit_ns": 89167,
+              "next_ns": 152128,
+              "native_ns": 241295,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "edf219d9de42fb1a7062757105d1da71bd88230944dec2da976ca113807f4aed"
+            }
+          ],
+          "r4-roots8-budget27-width8": [
+            {
+              "submit_ns": 206041,
+              "next_ns": 507207,
+              "native_ns": 713248,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+            },
+            {
+              "submit_ns": 206459,
+              "next_ns": 507920,
+              "native_ns": 714379,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "7feac520adf3bac9f85bb2b962ba0027d518b14368d074828bc3781111ed6756"
+            }
+          ],
+          "r4-roots8-budget64-width8": [
+            {
+              "submit_ns": 515543,
+              "next_ns": 1304915,
+              "native_ns": 1820458,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "dd50cd8624a162ebe26c1b70a103d0fb79783c47e530b85f7a3d473ec6f7f757"
+            },
+            {
+              "submit_ns": 515336,
+              "next_ns": 1288869,
+              "native_ns": 1804205,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "dd50cd8624a162ebe26c1b70a103d0fb79783c47e530b85f7a3d473ec6f7f757"
+            }
+          ],
+          "r4-roots32-budget27-width8": [
+            {
+              "submit_ns": 788457,
+              "next_ns": 1120669,
+              "native_ns": 1909126,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+            },
+            {
+              "submit_ns": 779125,
+              "next_ns": 1147956,
+              "native_ns": 1927081,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "ef6220a5e9d0657551a0b4ef83effcac203774e5aea33219bfa2a4c7a18a4517"
+            }
+          ],
+          "r4-roots32-budget64-width8": [
+            {
+              "submit_ns": 1995583,
+              "next_ns": 2962125,
+              "native_ns": 4957708,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+            },
+            {
+              "submit_ns": 1984538,
+              "next_ns": 2899167,
+              "native_ns": 4883705,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "a0519b14c9b8c7a230ec67fc40fcc39cd16cc95a68182e03637ee31727fd0ded"
+            }
+          ],
+          "r10-roots1-budget27-width8": [
+            {
+              "submit_ns": 86291,
+              "next_ns": 120791,
+              "native_ns": 207082,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+            },
+            {
+              "submit_ns": 85415,
+              "next_ns": 116082,
+              "native_ns": 201497,
+              "calls": 20,
+              "neural_rows": 27,
+              "trace_sha256": "17926edf68504da62a895d24266b12e015f12f4dffc9061a600310e94eb4daab"
+            }
+          ],
+          "r10-roots1-budget64-width8": [
+            {
+              "submit_ns": 222917,
+              "next_ns": 318670,
+              "native_ns": 541587,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+            },
+            {
+              "submit_ns": 229161,
+              "next_ns": 324253,
+              "native_ns": 553414,
+              "calls": 57,
+              "neural_rows": 64,
+              "trace_sha256": "792684f2184202247f80c2f5478e906c981d826eebfb5a674aa746c8abc22420"
+            }
+          ],
+          "r10-roots8-budget27-width8": [
+            {
+              "submit_ns": 592166,
+              "next_ns": 723038,
+              "native_ns": 1315204,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+            },
+            {
+              "submit_ns": 596955,
+              "next_ns": 713165,
+              "native_ns": 1310120,
+              "calls": 20,
+              "neural_rows": 216,
+              "trace_sha256": "8ff0c9da1a0e625b8be0c25679e23686ff3712cdc9986a3aa267b2ad695f162b"
+            }
+          ],
+          "r10-roots8-budget64-width8": [
+            {
+              "submit_ns": 1548706,
+              "next_ns": 2058418,
+              "native_ns": 3607124,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "a4f0291b7576a9538f091f07e76bf3a484c1ec9153698e40d85cf3c65a3948f3"
+            },
+            {
+              "submit_ns": 1557832,
+              "next_ns": 2037748,
+              "native_ns": 3595580,
+              "calls": 57,
+              "neural_rows": 512,
+              "trace_sha256": "a4f0291b7576a9538f091f07e76bf3a484c1ec9153698e40d85cf3c65a3948f3"
+            }
+          ],
+          "r10-roots32-budget27-width8": [
+            {
+              "submit_ns": 2440414,
+              "next_ns": 1822251,
+              "native_ns": 4262665,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+            },
+            {
+              "submit_ns": 2487628,
+              "next_ns": 1868498,
+              "native_ns": 4356126,
+              "calls": 20,
+              "neural_rows": 864,
+              "trace_sha256": "659fb7d3ecc0f30908d655f51e6ad46c8db4a1b07727b5f966cbab63476c9e20"
+            }
+          ],
+          "r10-roots32-budget64-width8": [
+            {
+              "submit_ns": 6654619,
+              "next_ns": 4946792,
+              "native_ns": 11601411,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+            },
+            {
+              "submit_ns": 6525041,
+              "next_ns": 4904043,
+              "native_ns": 11429084,
+              "calls": 57,
+              "neural_rows": 2048,
+              "trace_sha256": "455d3e94b6cd76b492a610156135b0502febb81e4767fd94241f47301658d8e1"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "limitations": [
+    "Timings exclude synthetic inference, root initialization, tracing, and result export.",
+    "The main and compact-isolation sweeps use eight root candidates; a separate focused check uses min(53, simulation budget).",
+    "Small single-thread controls include approximately 3.3% regressions; this is not a universal speedup.",
+    "Two AB/BA pairs with two measured repeats per arm and case, plus one warmup per worker case; no statistical confidence interval or fleet-weighted result is claimed.",
+    "Original serial/unconditional parallel screening used the earlier uncached Python fixture; it motivated rejection and is not pooled into final results.",
+    "The incomplete large sweep was terminated to fix repeated Python CSR export work outside the timed regions; it did not produce a final qualified report."
+  ]
+}

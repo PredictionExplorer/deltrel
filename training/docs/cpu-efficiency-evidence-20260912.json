@@ -1,0 +1,451 @@
+{
+  "schema_version": 1,
+  "baseline_commit": "c607372303247d1c7e0201b803bc92fbb56e9ec0",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "python": "3.11.13 (main, Jun  3 2025, 18:38:25) [Clang 17.0.0 (clang-1700.0.13.3)]",
+  "candidate_sha256": {
+    "startrain/arena.py": "3f888aad834418920553c5ea6df80d88ae10dde1659376cbb78833db4c9e1161",
+    "startrain/inference.py": "77a17f695542a109dfcf56f3f8645f02566d04e134dbebac5d4da28a9ff35ebd",
+    "startrain/losses.py": "8344853a9d9694ebd477dc4fd6566494e6b0ec5ccbb3bcc78dea068b27396850",
+    "startrain/replay_store.py": "12a382e64d60e11987dc0e1e199df11871c591124f55f27f23f6885115f7100a",
+    "crates/star-py/src/lib.rs": "eb19053c176e3a8af1727b6ca4ccc6d4c80c83ba082a32bf2f2874abda594fd8",
+    "crates/star-search/src/tree.rs": "8d38ba2f227ca473bf264c5b1205e2669f0e236f5071287be04ed02b263118de",
+    "scripts/prepare_arena_occupancy_benchmark.py": "e390e38bdfcb16d3488c5bc90d9687bda8154c0e2ce0ac1df7a8d83da264b21a",
+    "startrain/orchestration.py": "e9c1e643d73d72100b43edd2c12d60a331a58632c940ccc1afaa7dc963596983"
+  },
+  "cpu_hotpaths": {
+    "schema_version": 1,
+    "benchmark": "cpu-hotpaths",
+    "baseline_commit": "c607372303247d1c7e0201b803bc92fbb56e9ec0",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "torch": "2.13.0",
+    "cpu_threads": 1,
+    "repeats": 8,
+    "iterations": 50,
+    "baseline_sha256": {
+      "losses.py": "fe97d040d1bc188614d20141900645f88c6041bfc29c7dbe56e03949d774d307",
+      "inference.py": "990644e48db6cac27f682b5ce602a226289490f91c291aadee6f458ca6357a15"
+    },
+    "candidate_sha256": {
+      "losses.py": "8344853a9d9694ebd477dc4fd6566494e6b0ec5ccbb3bcc78dea068b27396850",
+      "inference.py": "77a17f695542a109dfcf56f3f8645f02566d04e134dbebac5d4da28a9ff35ebd"
+    },
+    "losses": {
+      "batch": 512,
+      "nodes": 275,
+      "scope": "trusted loss forward only",
+      "losses_and_gradients_exactly_equal": true,
+      "boolean_index_calls": {
+        "baseline": 3,
+        "candidate": 0
+      },
+      "seconds_per_call": {
+        "baseline": [
+          0.002905059177428484,
+          0.0029250958375632765,
+          0.0029306783201172946,
+          0.002924879998899996,
+          0.0028976524993777277,
+          0.0030413941619917752,
+          0.002916476656682789,
+          0.00295840916223824
+        ],
+        "candidate": [
+          0.002172376657836139,
+          0.0021764441765844823,
+          0.002172291656024754,
+          0.0021727991802617907,
+          0.00217741166241467,
+          0.0021808058209717273,
+          0.0021890700003132225,
+          0.0022003283398225903
+        ]
+      },
+      "median_seconds": {
+        "baseline": 0.002924987918231636,
+        "candidate": 0.0021769279194995762
+      },
+      "median_latency_ratio": 1.3436310371286988
+    },
+    "returns": [
+      {
+        "rows": 1,
+        "scope": "warm cached native evaluate_prepared",
+        "responses_exactly_equal": true,
+        "timed_neural_calls": 0,
+        "seconds_per_call": {
+          "baseline": [
+            4.619000013917685e-05,
+            4.5679998584091665e-05,
+            4.587499890476465e-05,
+            4.568582400679588e-05,
+            4.475834313780069e-05,
+            4.5458339154720303e-05,
+            4.520831629633903e-05,
+            4.5502502471208575e-05
+          ],
+          "candidate": [
+            3.3634183928370476e-05,
+            3.3521656878292564e-05,
+            3.3635818399488924e-05,
+            3.353165928274393e-05,
+            3.386750351637602e-05,
+            3.3339159563183786e-05,
+            3.360250033438206e-05,
+            3.350416198372841e-05
+          ]
+        },
+        "median_seconds": {
+          "baseline": 4.5591250527650116e-05,
+          "candidate": 3.3567079808562996e-05
+        },
+        "median_latency_ratio": 1.3582131894601013
+      },
+      {
+        "rows": 8,
+        "scope": "warm cached native evaluate_prepared",
+        "responses_exactly_equal": true,
+        "timed_neural_calls": 0,
+        "seconds_per_call": {
+          "baseline": [
+            0.00011256915982812643,
+            0.00011823916342109442,
+            0.00011667999904602767,
+            0.00011730584315955639,
+            0.00011728249955922365,
+            0.00011738832108676434,
+            0.0001171533390879631,
+            0.00011774917598813772
+          ],
+          "candidate": [
+            8.372168056666851e-05,
+            8.477000053972006e-05,
+            8.527915924787522e-05,
+            8.481582161039114e-05,
+            8.641415741294622e-05,
+            8.51916614919901e-05,
+            8.585416246205568e-05,
+            8.540334179997444e-05
+          ]
+        },
+        "median_seconds": {
+          "baseline": 0.00011729417135939002,
+          "candidate": 8.523541036993266e-05
+        },
+        "median_latency_ratio": 1.37612021635513
+      },
+      {
+        "rows": 32,
+        "scope": "warm cached native evaluate_prepared",
+        "responses_exactly_equal": true,
+        "timed_neural_calls": 0,
+        "seconds_per_call": {
+          "baseline": [
+            0.00034627167973667384,
+            0.00035657165572047236,
+            0.0003563416795805097,
+            0.0003552108397707343,
+            0.00035677583888173105,
+            0.00035749665927141904,
+            0.00036125916056334973,
+            0.0003580058226361871
+          ],
+          "candidate": [
+            0.0002529558213427663,
+            0.000250874999910593,
+            0.00025154082104563715,
+            0.00024312250316143035,
+            0.00025131332222372293,
+            0.00025170749984681606,
+            0.0002536741644144058,
+            0.0002518574986606836
+          ]
+        },
+        "median_seconds": {
+          "baseline": 0.0003566737473011017,
+          "candidate": 0.0002516241604462266
+        },
+        "median_latency_ratio": 1.4174860898436052
+      },
+      {
+        "rows": 128,
+        "scope": "warm cached native evaluate_prepared",
+        "responses_exactly_equal": true,
+        "timed_neural_calls": 0,
+        "seconds_per_call": {
+          "baseline": [
+            0.001300073340535164,
+            0.0013095375010743738,
+            0.001287467498332262,
+            0.001297607501037419,
+            0.0012926616612821816,
+            0.0013053541583940387,
+            0.0012921374989673495,
+            0.0013079133396968244
+          ],
+          "candidate": [
+            0.0009218233171850443,
+            0.0009057483403012156,
+            0.0009185933414846658,
+            0.0009247275022789836,
+            0.0009150724997743964,
+            0.0009255158388987183,
+            0.0009247291786596179,
+            0.0009113308368250728
+          ]
+        },
+        "median_seconds": {
+          "baseline": 0.0012988404207862916,
+          "candidate": 0.000920208329334855
+        },
+        "median_latency_ratio": 1.4114634473316705
+      }
+    ],
+    "limitations": "CPU synthetic component timings; no H100, end-to-end training, or Elo/hour measurement."
+  },
+  "arena_snapshots": {
+    "benchmark": "arena-resume-snapshot-v1",
+    "scope": "synthetic CPU snapshot construction; excludes search/inference/disk",
+    "python": "3.11.13",
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "arena_source_sha256": "3f888aad834418920553c5ea6df80d88ae10dde1659376cbb78833db4c9e1161",
+    "snapshot_sha256": "da0ba980f91713f8c0428031b728c8f46abc1a130dc6770d5113c516c6f17820",
+    "snapshot_bytes": 456174,
+    "game_states": 240,
+    "completed_games": 192,
+    "byte_identical": true,
+    "iterations_per_arm": 100,
+    "orders": [
+      [
+        "legacy",
+        "optimized"
+      ],
+      [
+        "optimized",
+        "legacy"
+      ],
+      [
+        "legacy",
+        "optimized"
+      ],
+      [
+        "optimized",
+        "legacy"
+      ],
+      [
+        "legacy",
+        "optimized"
+      ],
+      [
+        "optimized",
+        "legacy"
+      ],
+      [
+        "legacy",
+        "optimized"
+      ],
+      [
+        "optimized",
+        "legacy"
+      ]
+    ],
+    "seconds_per_snapshot": {
+      "legacy": [
+        0.005617171251215041,
+        0.0055258316593244676,
+        0.005513010418508202,
+        0.005718281248118728,
+        0.005558457078877837,
+        0.005543640421237796,
+        0.005574318331200629,
+        0.0055762591608799995
+      ],
+      "optimized": [
+        0.00044261583825573326,
+        0.00044194750022143127,
+        0.00044470249908044933,
+        0.00044719959143549206,
+        0.00044432499911636116,
+        0.000448597501963377,
+        0.0004490375006571412,
+        0.0004511400009505451
+      ]
+    },
+    "median_speedup": 12.482060002391579
+  },
+  "replay_eligibility": {
+    "benchmark": "replay-eligibility-cache",
+    "checks_per_step": 2,
+    "metadata_shards": 30000,
+    "repeats": 7,
+    "scenarios": [
+      {
+        "aggregate_scans": {
+          "cached": 7,
+          "uncached": 14
+        },
+        "grouping": "ring",
+        "identical_counts": true,
+        "seconds_per_step_median": {
+          "cached": 0.005911374930292368,
+          "uncached": 0.011815999867394567
+        },
+        "speedup": 1.9988581348214645
+      },
+      {
+        "aggregate_scans": {
+          "cached": 7,
+          "uncached": 14
+        },
+        "grouping": "ring_segment",
+        "identical_counts": true,
+        "seconds_per_step_median": {
+          "cached": 0.009614542126655579,
+          "uncached": 0.019069750094786286
+        },
+        "speedup": 1.9834277954762787
+      }
+    ],
+    "schema_version": 1,
+    "scope": "isolated CPU/SQLite readiness queries; no training or Elo estimate"
+  },
+  "native_evidence": "native-search-memory-and-submit-evidence-20260912.json",
+  "qualification": {
+    "scope": "local CPU components only",
+    "h100_validation": "pending",
+    "elo_per_wall_hour": "not measured",
+    "server_deployment": false
+  },
+  "validation": {
+    "rust_workspace_tests_passed": 100,
+    "strict_clippy": "passed",
+    "wasm32_star_wasm_check": "passed",
+    "ruff_all_python": "passed",
+    "pyright_all_python": "passed",
+    "affected_benchmark_regressions_after_binary_layout_fix": 23,
+    "cpu_full_regression": "passed",
+    "installed_candidate_binary_matches_benchmarked_binary": true,
+    "installed_candidate_regression_passed": 77,
+    "current_provenance_fast_path_tests_passed": 6,
+    "current_provenance_coverage_report": "/tmp/edgeconnect-efficiency-yp6wY3/provenance-coverage.json",
+    "cpu_test_groups": [
+      {
+        "tests_passed": 467,
+        "log_sha256": "b17acaa8ce406689865e0851d0567f9dadca022048ea0fd08b12143ec1f3193f",
+        "log_path": "/tmp/edgeconnect-efficiency-yp6wY3/shard-0.log"
+      },
+      {
+        "tests_passed": 732,
+        "log_sha256": "9a458b7115e5e40bdd6c6c4ad22bc840342a76d5d329768bf310475080d131e7",
+        "log_path": "/tmp/edgeconnect-efficiency-yp6wY3/shard-1-final.log"
+      },
+      {
+        "tests_passed": 949,
+        "log_sha256": "110954e26d155e2bb1186a6242df20787b4db763f1d93fae757842c31848af91",
+        "log_path": "/tmp/edgeconnect-efficiency-yp6wY3/shard-2-final.log"
+      },
+      {
+        "tests_passed": 949,
+        "log_sha256": "b39aafdab3983f0144a75c0c5e6210d2087ef7bb2a2f5cab1baee95ea7e3a44f",
+        "log_path": "/tmp/edgeconnect-efficiency-yp6wY3/shard-3.log"
+      },
+      {
+        "tests_passed": 6,
+        "log_sha256": "1345cd26ca238dcb7cced5e91b81499d97d254b8818fe51b8050c24a3c6507ab",
+        "log_path": "/tmp/edgeconnect-efficiency-yp6wY3/provenance-tests.log"
+      }
+    ],
+    "cpu_unique_tests_passed": 3103,
+    "coverage": {
+      "percent_covered": 83.33136896693972,
+      "minimum_overall": 74.0,
+      "file_floors": 28,
+      "gate_passed": true,
+      "report_sha256": "3660285b8a1b4c45ebed88a83535f9706e309672e02502a1905fe88cc736f4b3",
+      "files": {
+        "startrain/arena.py": {
+          "covered_lines": 1113,
+          "num_statements": 1205,
+          "percent_covered": 89.87924094307073,
+          "percent_covered_display": "90",
+          "missing_lines": 92,
+          "excluded_lines": 4,
+          "percent_statements_covered": 92.36514522821577,
+          "percent_statements_covered_display": "92",
+          "num_branches": 534,
+          "num_partial_branches": 84,
+          "covered_branches": 450,
+          "missing_branches": 84,
+          "percent_branches_covered": 84.26966292134831,
+          "percent_branches_covered_display": "84"
+        },
+        "startrain/inference.py": {
+          "covered_lines": 621,
+          "num_statements": 686,
+          "percent_covered": 88.1004366812227,
+          "percent_covered_display": "88",
+          "missing_lines": 65,
+          "excluded_lines": 10,
+          "percent_statements_covered": 90.52478134110787,
+          "percent_statements_covered_display": "91",
+          "num_branches": 230,
+          "num_partial_branches": 38,
+          "covered_branches": 186,
+          "missing_branches": 44,
+          "percent_branches_covered": 80.8695652173913,
+          "percent_branches_covered_display": "81"
+        },
+        "startrain/losses.py": {
+          "covered_lines": 190,
+          "num_statements": 203,
+          "percent_covered": 90.6367041198502,
+          "percent_covered_display": "91",
+          "missing_lines": 13,
+          "excluded_lines": 0,
+          "percent_statements_covered": 93.5960591133005,
+          "percent_statements_covered_display": "94",
+          "num_branches": 64,
+          "num_partial_branches": 0,
+          "covered_branches": 52,
+          "missing_branches": 12,
+          "percent_branches_covered": 81.25,
+          "percent_branches_covered_display": "81"
+        },
+        "startrain/orchestration.py": {
+          "covered_lines": 1082,
+          "num_statements": 1317,
+          "percent_covered": 79.42693409742121,
+          "percent_covered_display": "79",
+          "missing_lines": 235,
+          "excluded_lines": 8,
+          "percent_statements_covered": 82.15641609719059,
+          "percent_statements_covered_display": "82",
+          "num_branches": 428,
+          "num_partial_branches": 92,
+          "covered_branches": 304,
+          "missing_branches": 124,
+          "percent_branches_covered": 71.02803738317758,
+          "percent_branches_covered_display": "71"
+        },
+        "startrain/replay_store.py": {
+          "covered_lines": 795,
+          "num_statements": 871,
+          "percent_covered": 88.38599487617421,
+          "percent_covered_display": "88",
+          "missing_lines": 76,
+          "excluded_lines": 0,
+          "percent_statements_covered": 91.27439724454649,
+          "percent_statements_covered_display": "91",
+          "num_branches": 300,
+          "num_partial_branches": 56,
+          "covered_branches": 240,
+          "missing_branches": 60,
+          "percent_branches_covered": 80.0,
+          "percent_branches_covered_display": "80"
+        }
+      }
+    },
+    "superseded_test_runs": "Interrupted serial coverage attempt and unguarded multiprocessing launcher runs excluded; affected groups rerun in full.",
+    "installed_native_sha256": "2f2947ab02dbd40f567386308899cae8925b9c2f3cfdd3e3b6de557287564de3"
+  }
+}

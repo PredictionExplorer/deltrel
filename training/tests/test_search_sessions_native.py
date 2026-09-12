@@ -210,6 +210,70 @@ def test_experimental_responses_are_atomic_and_cancellation_rejects_stale_tokens
     assert fingerprint(search.results()) == fingerprint(baseline)
 
 
+def reversed_response(value):
+    """Reorder whole CSR rows while preserving each token's prediction."""
+    order = list(reversed(range(len(value.tokens))))
+    offsets, logits = [0], []
+    for row in order:
+        logits.extend(
+            value.policy_logits[
+                value.policy_offsets[row] : value.policy_offsets[row + 1]
+            ]
+        )
+        offsets.append(len(logits))
+    return InferenceResponse(
+        [value.tokens[row] for row in order],
+        [value.values[row] for row in order],
+        offsets,
+        logits,
+    )
+
+
+@pytest.mark.native
+@pytest.mark.parametrize("cap", [3, 32, 256])
+@pytest.mark.parametrize("invalid", ["last-policy", "first-value", "last-value"])
+def test_parallel_session_submit_is_atomic_with_sparse_and_reordered_rows(cap, invalid):
+    native = pytest.importorskip("star_native")
+    states = native.StateBatch(10, 40, mode="double", pie=True)
+    states.apply_many(list(range(40)), list(range(40)))
+    options = dict(
+        simulations=64,
+        max_considered=8,
+        simulations_per_root=[9, 17, 27, 64] * 10,
+        seeds_per_root=list(range(17, 57)),
+        first_visit_batch_size=8,
+    )
+    baseline, _ = complete(native.SearchBatch(states, **options), max_rows=cap)
+    search = native.SearchBatch(states, **options)
+    roots = search.root_requests()
+    search.initialize_roots(*response(roots).submit_args())
+    cancelled = False
+    while not search.is_done():
+        request = search.next_requests(max_rows=cap)
+        if not len(request):
+            continue
+        valid = response(request)
+        bad = response(request)
+        if invalid == "last-policy":
+            bad.policy_offsets[-1] -= 1
+            bad.policy_logits.pop()
+        else:
+            bad.values[0 if invalid == "first-value" else -1] = math.nan
+        with pytest.raises(ValueError):
+            search.submit(*reversed_response(bad).submit_args())
+        if not cancelled and len(request) > 1:
+            # Cancellation after a rejected transaction must leave every root
+            # retryable, including roots omitted by the current global cap.
+            search.cancel_pending()
+            with pytest.raises(RuntimeError, match="pending"):
+                search.submit(*valid.submit_args())
+            cancelled = True
+            continue
+        search.submit(*reversed_response(valid).submit_args())
+    assert cancelled
+    assert fingerprint(search.results()) == fingerprint(baseline)
+
+
 @pytest.mark.native
 def test_budget_overrides_only_before_initialization_and_advance_is_atomic():
     native = pytest.importorskip("star_native")

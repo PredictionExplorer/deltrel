@@ -26,6 +26,10 @@ The September 12 learner verification cache, optional exact arena endings and ga
 graph-capacity experiment are documented in the
 [arena/checkpoint/cache efficiency operator notes](docs/arena-checkpoint-cache-efficiency-20260912.md),
 including pending H100 qualification, compatibility and rollback requirements.
+The subsequent local replay, arena, inference-return, loss, and native-memory
+improvements are described in the
+[CPU efficiency implementation report](docs/cpu-efficiency-implementation-20260912.md),
+with reproducible component benchmarks and the remaining H100/strength checks.
 
 ## Architecture
 

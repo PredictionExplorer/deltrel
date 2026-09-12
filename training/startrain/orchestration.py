@@ -236,12 +236,12 @@ def ensure_autonomous_provenance(
         recorded_hash = (
             payload.get("config_sha256") if isinstance(payload, dict) else None
         )
-        if isinstance(recorded_hash, str) and recorded_hash in (
-            _compatible_autonomous_config_sha256s(experiment)
-        ):
-            # Compare every provenance field while retaining its original hash
-            # and bytes, including provenance authored before these defaults.
-            expected["config_sha256"] = recorded_hash
+        if payload != expected and isinstance(recorded_hash, str):
+            if recorded_hash in _compatible_autonomous_config_sha256s(experiment):
+                # A legacy hash changes only the expected hash, never any other
+                # provenance field. Keep the original hash and bytes, including
+                # provenance authored before these defaults.
+                expected["config_sha256"] = recorded_hash
         if payload != expected:
             raise ValueError(
                 "autonomous provenance disagrees with the frozen run profile"

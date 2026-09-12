@@ -139,6 +139,40 @@ def test_native_identity_resolves_compiled_extension_not_package_wrapper(
     assert resolved.name != "__init__.py"
 
 
+def test_native_identity_accepts_direct_extension_without_package_lookup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    suffix = benchmark_plan_module.importlib.machinery.EXTENSION_SUFFIXES[0]
+    extension = tmp_path / f"star_native{suffix}"
+    extension.write_bytes(b"compiled-extension")
+
+    def unexpected_lookup(_name):
+        raise AssertionError("a directly loaded extension has no submodule")
+
+    monkeypatch.setattr(
+        benchmark_plan_module.importlib.util, "find_spec", unexpected_lookup
+    )
+    assert (
+        benchmark_plan_module._native_extension_path(
+            SimpleNamespace(__name__="star_native", __file__=str(extension))
+        )
+        == extension.resolve()
+    )
+
+
+def test_native_identity_rejects_unavailable_extension(monkeypatch):
+    def missing_package(_name):
+        raise ModuleNotFoundError("not a package")
+
+    monkeypatch.setattr(
+        benchmark_plan_module.importlib.util, "find_spec", missing_package
+    )
+    with pytest.raises(ValueError, match="compiled native extension artifact"):
+        benchmark_plan_module._native_extension_path(
+            SimpleNamespace(__name__="star_native", __file__="wrapper.py")
+        )
+
+
 def test_prepare_freezes_registered_arena_occupancy_arms(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

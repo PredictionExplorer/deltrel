@@ -9,6 +9,7 @@ import random
 import time
 import threading
 from contextlib import contextmanager
+from copy import deepcopy
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
@@ -1984,9 +1985,27 @@ class ArenaRunner:
                 self._checkpoint(self._resume_snapshot())
 
     def _resume_snapshot(self) -> dict[str, object]:
-        entries = [self._resume_games[key] for key in sorted(self._resume_games)]
+        # Histories contain validated integer actions and results contain only
+        # scalar fields. Copy those containers directly: a JSON round trip
+        # traverses every historical move twice while holding the producer
+        # lock, before the durable writer serializes the same snapshot again.
+        entries = []
+        for key in sorted(self._resume_games):
+            entry = self._resume_games[key]
+            copied = {
+                name: deepcopy(value)
+                if isinstance(value, (dict, list)) and name not in ("actions", "result")
+                else value
+                for name, value in entry.items()
+            }
+            copied["actions"] = list(entry["actions"])
+            if entry.get("result") is not None:
+                copied["result"] = dict(entry["result"])
+            entries.append(copied)
         games = [
-            entry["result"] for entry in entries if entry.get("result") is not None
+            dict(entry["result"])
+            for entry in entries
+            if entry.get("result") is not None
         ]
         grouped: dict[tuple[int, str, int], dict[int, dict[str, Any]]] = {}
         for game in games:
@@ -1999,36 +2018,28 @@ class ArenaRunner:
                 continue
             first, second = seats[0], seats[1]
             pairs.append(
-                asdict(
-                    ArenaPair(
-                        ring=first["ring"],
-                        pair=first["pair"],
-                        opening_seed=first["opening_seed"],
-                        opening_action=first["opening_action"],
-                        forced_opening=first["forced_opening"],
-                        outcomes=(first["outcome"], second["outcome"]),
-                        variant=first["variant"],
-                        segment=first["segment"],
-                    )
-                )
-            )
-        return json.loads(
-            json.dumps(
                 {
-                    **cast(dict[str, object], self._resume_contract),
-                    "game_states": entries,
-                    "games": games,
-                    "pairs": pairs,
-                    "progress": {
-                        "completed_games": len(games),
-                        "completed_pairs": len(pairs),
-                        "completed_moves": sum(
-                            len(entry["actions"]) for entry in entries
-                        ),
-                    },
+                    "ring": first["ring"],
+                    "pair": first["pair"],
+                    "opening_seed": first["opening_seed"],
+                    "opening_action": first["opening_action"],
+                    "forced_opening": first["forced_opening"],
+                    "outcomes": [first["outcome"], second["outcome"]],
+                    "variant": first["variant"],
+                    "segment": first["segment"],
                 }
             )
-        )
+        return {
+            **deepcopy(cast(dict[str, object], self._resume_contract)),
+            "game_states": entries,
+            "games": games,
+            "pairs": pairs,
+            "progress": {
+                "completed_games": len(games),
+                "completed_pairs": len(pairs),
+                "completed_moves": sum(len(entry["actions"]) for entry in entries),
+            },
+        }
 
     @contextmanager
     def _inference_owner(self) -> Iterator[Executor]:
@@ -2517,7 +2528,13 @@ class ArenaRunner:
             bool(value) or row in clinch_winners
             for row, value in enumerate(states.data().terminal)
         ]
-        winners = [int(value) for value in states.score_data().winner]
+        winners = (
+            [int(value) for value in states.score_data().winner]
+            if any(
+                done and row not in clinch_winners for row, done in enumerate(terminal)
+            )
+            else []
+        )
         output = []
         for offset in range(0, len(specifications), 2):
             if offset + 1 >= len(specifications):
@@ -2529,7 +2546,7 @@ class ArenaRunner:
                 pair, candidate_player, opening_seed, opening_action = specifications[
                     row
                 ]
-                winner = clinch_winners.get(row, winners[row])
+                winner = clinch_winners[row] if row in clinch_winners else winners[row]
                 if winner not in (0, 1):
                     raise RuntimeError("arena terminal result cannot be tied")
                 outcome = 1 if winner == candidate_player else -1
@@ -2564,11 +2581,20 @@ class ArenaRunner:
     ) -> list[ArenaGame]:
         clinch_winners = clinch_winners or {}
         terminal = [bool(value) for value in states.data().terminal]
-        winners = [int(value) for value in states.score_data().winner]
+        # Most move checkpoints have no new terminal boards. Exact clinches
+        # already carry a proven winner, so neither case needs static scoring
+        # and all of its per-node ownership/alive-star annotations.
+        winners = (
+            [int(value) for value in states.score_data().winner]
+            if any(
+                done and row not in clinch_winners for row, done in enumerate(terminal)
+            )
+            else []
+        )
         output = []
         for row, (pair, seat, seed, opening) in enumerate(specifications):
             if terminal[row] or row in clinch_winners:
-                winner = clinch_winners.get(row, winners[row])
+                winner = clinch_winners[row] if row in clinch_winners else winners[row]
                 if winner not in (0, 1):
                     raise RuntimeError("arena terminal result cannot be tied")
                 output.append(
@@ -2874,7 +2900,11 @@ class ArenaRunner:
                 raise RuntimeError("arena game exceeded the move bound")
             if not bool(states.data().terminal[0]):
                 self._save_resume_games(ring, variant, [specification], [history], [])
-        winner = clinch_winners.get(0, int(states.score_data().winner[0]))
+        winner = (
+            clinch_winners[0]
+            if 0 in clinch_winners
+            else int(states.score_data().winner[0])
+        )
         if winner not in (0, 1):
             raise RuntimeError("arena terminal result cannot be tied")
         outcome = 1 if winner == candidate_player else -1

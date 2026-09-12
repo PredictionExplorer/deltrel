@@ -409,8 +409,8 @@ def compute_losses(
     outcome_loss = _weighted_mean(outcome_values, outcome_mask, sample_weight)
 
     margin_mask = targets.score_margin_mask.bool()
-    available_margin = targets.score_margin[margin_mask]
     if validate_targets:
+        available_margin = targets.score_margin[margin_mask]
         _require_tensor(
             (available_margin >= score_margin_min)
             & (available_margin <= score_margin_max),
@@ -432,8 +432,8 @@ def compute_losses(
     ownership_valid = (
         node_mask & ownership_sample_mask.unsqueeze(1) & (targets.ownership != -100)
     )
-    available_ownership = targets.ownership[ownership_valid]
     if validate_targets:
+        available_ownership = targets.ownership[ownership_valid]
         _require_tensor(
             (available_ownership >= 0) & (available_ownership <= 2),
             "available ownership labels must be in 0..2",
@@ -460,8 +460,8 @@ def compute_losses(
 
     alive_sample_mask = targets.alive_mask.bool()
     alive_valid = node_mask & alive_sample_mask.unsqueeze(1) & (targets.alive >= 0)
-    available_alive = targets.alive[alive_valid]
     if validate_targets:
+        available_alive = targets.alive[alive_valid]
         _require_tensor(
             (available_alive >= 0) & (available_alive <= 1),
             "available alive labels must be in [0, 1]",

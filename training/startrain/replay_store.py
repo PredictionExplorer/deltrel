@@ -442,6 +442,10 @@ class ReplayStore:
         self.connection = sqlite3.connect(
             self.manifest_path, timeout=30.0, isolation_level=None
         )
+        self._eligible_counts_version: tuple[int, int] | None = None
+        self._eligible_counts_cache: dict[
+            tuple[object, ...], tuple[sqlite3.Row, ...]
+        ] = {}
         try:
             self._manifest_inode = _file_identity(self.manifest_path)
             self.connection.row_factory = sqlite3.Row
@@ -1714,6 +1718,43 @@ class ReplayStore:
             raise
         return proof
 
+    def _eligible_count_rows(
+        self, statement: str, parameters: tuple[object, ...]
+    ) -> tuple[sqlite3.Row, ...]:
+        """Reuse exact count queries only while the manifest is unchanged.
+
+        ``data_version`` detects commits by other connections, including actor
+        publications and GC; ``total_changes`` detects our own writes. Never
+        share results across an explicit transaction: a WAL reader may hold an
+        older snapshot, or the caller may later roll back its uncommitted work.
+        """
+
+        if self.connection.in_transaction:
+            return tuple(self.connection.execute(statement, parameters))
+
+        def version() -> tuple[int, int]:
+            return (
+                int(self.connection.execute("PRAGMA data_version").fetchone()[0]),
+                self.connection.total_changes,
+            )
+
+        observed = version()
+        if observed != self._eligible_counts_version:
+            self._eligible_counts_cache.clear()
+            self._eligible_counts_version = observed
+        key = (statement, *parameters)
+        cached = self._eligible_counts_cache.get(key)
+        if cached is not None:
+            return cached
+        rows = tuple(self.connection.execute(statement, parameters))
+        # A publication can land between the version read and query snapshot.
+        # Return the query's valid snapshot, but don't cache an ambiguous one.
+        if version() == observed:
+            if len(self._eligible_counts_cache) >= 8:
+                self._eligible_counts_cache.pop(next(iter(self._eligible_counts_cache)))
+            self._eligible_counts_cache[key] = rows
+        return rows
+
     def eligible_sample_counts(
         self,
         rings: Sequence[int],
@@ -1737,7 +1778,7 @@ class ReplayStore:
             if minimum_shard_id_exclusive is not None
             else ()
         )
-        rows = self.connection.execute(
+        rows = self._eligible_count_rows(
             f"""
             SELECT ring, COALESCE(SUM(sample_count), 0) AS samples
             FROM shards
@@ -1792,7 +1833,7 @@ class ReplayStore:
             if minimum_shard_id_exclusive is not None
             else ()
         )
-        rows = self.connection.execute(
+        rows = self._eligible_count_rows(
             f"""
             SELECT ring, segment, COALESCE(SUM(sample_count), 0) AS samples
             FROM shards

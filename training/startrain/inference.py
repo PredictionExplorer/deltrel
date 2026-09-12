@@ -1114,15 +1114,14 @@ class GraphInferenceAdapter:
             # Cache records own compact bytes. Stacking creates writable CPU
             # storage and never exposes a mutable view of cache contents.
             return_started = time.perf_counter()
-            raw = torch.from_numpy(
-                np.stack(
-                    [
-                        np.frombuffer(prediction.packed, dtype=np.float32)
-                        for prediction in predictions
-                        if prediction is not None
-                    ]
-                )
+            raw_array = np.stack(
+                [
+                    np.frombuffer(prediction.packed, dtype=np.float32)
+                    for prediction in predictions
+                    if prediction is not None
+                ]
             )
+            raw = torch.from_numpy(raw_array)
             nodes = first.max_nodes
             outcome = torch.softmax(raw[:, nodes : nodes + 2], dim=-1)
             outcome_values = outcome[:, 1] - outcome[:, 0]
@@ -1145,21 +1144,23 @@ class GraphInferenceAdapter:
                         + request.score_utility_weight * expectations[start:end] / scale
                     ).clamp(-1, 1)
                 if request.native_lazy:
-                    # CSR is immutable and already validated in native code.
-                    row_indices = torch.repeat_interleave(
-                        torch.arange(request.rows),
-                        torch.tensor(np.diff(request.legal_offsets), dtype=torch.long),
+                    # CSR is immutable and validated in native code. Gather from
+                    # the owned CPU array directly; tensor construction/dispatch
+                    # would add work without doing any numerical computation.
+                    row_indices = np.repeat(
+                        np.arange(request.rows, dtype=np.intp),
+                        np.diff(request.legal_offsets),
                     )
-                    logits = raw[start:end, :nodes][
-                        row_indices, torch.tensor(request.legal_actions, dtype=torch.long)
-                    ]
+                    logits = raw_array[start:end, :nodes][
+                        row_indices, np.asarray(request.legal_actions, dtype=np.intp)
+                    ].tolist()
                 else:
-                    logits = raw[start:end, :nodes].masked_select(request.encoded.legal_action_mask)
+                    logits = raw[start:end, :nodes].masked_select(request.encoded.legal_action_mask).tolist()
                 response = InferenceResponse(
                     list(request.tokens),
                     values.tolist(),
                     list(request.legal_offsets),
-                    logits.tolist(),
+                    logits,
                 )
                 detail = (
                     DetailedInferenceResponse(

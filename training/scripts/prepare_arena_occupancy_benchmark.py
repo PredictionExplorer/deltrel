@@ -212,8 +212,20 @@ def _native_extension_path(native_module: object) -> Path:
     module_name = getattr(native_module, "__name__", None)
     if not isinstance(module_name, str) or not module_name:
         raise ValueError("native extension module name is unavailable")
-    spec = importlib.util.find_spec(f"{module_name}.star_native")
-    origin = spec.origin if spec is not None else None
+    # A release wheel normally exposes a package wrapper, while an isolated
+    # baseline/candidate comparison can import the extension directly. Always
+    # fingerprint the binary actually in use, never the wrapper's Python file.
+    origin = getattr(native_module, "__file__", None)
+    if not isinstance(origin, str) or not any(
+        origin.endswith(suffix) for suffix in importlib.machinery.EXTENSION_SUFFIXES
+    ):
+        try:
+            spec = importlib.util.find_spec(f"{module_name}.star_native")
+        except (ModuleNotFoundError, ValueError) as error:
+            raise ValueError(
+                "compiled native extension artifact is unavailable"
+            ) from error
+        origin = spec.origin if spec is not None else None
     if not isinstance(origin, str) or not any(
         origin.endswith(suffix) for suffix in importlib.machinery.EXTENSION_SUFFIXES
     ):

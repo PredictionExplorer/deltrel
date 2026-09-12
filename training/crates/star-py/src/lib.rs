@@ -2107,6 +2107,11 @@ impl PySearchBatch {
                 if execution.pending.is_empty() {
                     return Err(PyRuntimeError::new_err("no leaf batch is pending"));
                 }
+                // Scheduling costs dominate tiny responses; large policy batches
+                // amortize one parallel backup pass over independent session trees.
+                let parallel_submit = execution.pending.len() > 1
+                    && policy_logits.len() >= 8192
+                    && rayon::current_num_threads() > 1;
                 let responses = unpack_evaluations(tokens, values, policy_offsets, policy_logits)?;
                 let expected: Vec<_> = execution
                     .pending
@@ -2114,21 +2119,43 @@ impl PySearchBatch {
                     .flat_map(|(_, tokens)| tokens.iter().copied())
                     .collect();
                 let mut matched = match_token_set(&expected, responses)?;
-                let mut jobs = Vec::new();
+                let mut jobs = Vec::with_capacity(execution.pending.len());
                 for (index, tokens) in &execution.pending {
                     let responses = tokens
                         .iter()
                         .map(|token| matched.remove(token).expect("matched session token"))
                         .collect::<Vec<_>>();
+                    // Validate every session before any mutation, preserving the
+                    // original pending order and deterministic error selection.
                     execution.sessions[*index]
                         .validate_responses(&responses)
                         .map_err(value_error)?;
                     jobs.push((*index, responses));
                 }
-                for (index, responses) in jobs {
-                    execution.sessions[index]
-                        .submit(responses)
-                        .expect("validated session response");
+                // Sessions own independent trees. Keep each session's response
+                // order unchanged while allowing unrelated roots to back up together.
+                if parallel_submit {
+                    let mut slots = vec![None; execution.sessions.len()];
+                    for (index, responses) in jobs {
+                        slots[index] = Some(responses);
+                    }
+                    execution
+                        .sessions
+                        .par_iter_mut()
+                        .zip(slots.into_par_iter())
+                        .for_each(|(session, responses)| {
+                            if let Some(responses) = responses {
+                                session
+                                    .submit(responses)
+                                    .expect("validated session response");
+                            }
+                        });
+                } else {
+                    for (index, responses) in jobs {
+                        execution.sessions[index]
+                            .submit(responses)
+                            .expect("validated session response");
+                    }
                 }
                 execution.pending.clear();
                 return Ok(());
