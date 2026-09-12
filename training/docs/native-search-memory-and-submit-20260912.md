@@ -29,6 +29,13 @@ for the training fleet.
 
 ## Local measurements
 
+The measurements below describe the initial `e5be004` implementation. Subsequent
+Linux server qualification found a regression for repeated single-row leaf
+submissions. The current implementation additionally requires at least two
+response rows per pending session before using parallel submission, retaining
+serial processing for ordinary leaf updates. Do not attribute the original
+Mac timing ratios to this refined guard; target-host qualification is separate.
+
 On an Apple M4 Max, release builds made with Rust 1.93.1 were compared in two
 alternating AB/BA pairs, with two measured repeats per arm and case after warmup.
 The table shows baseline time divided by final time for `next_requests` plus

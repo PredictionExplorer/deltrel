@@ -42,9 +42,12 @@ binary SHA-256 matches the isolated candidate used for the native comparisons.
   remapping, and transposition reuse remain supported.
 - **Native response submission:** validate every pending session before changing
   any tree, then submit independent sessions in parallel only with multiple
-  threads, multiple sessions, and at least 8,192 policy logits. Small batches
-  retain serial submission. This replaces a rejected unconditional parallel
-  version that made small requests slower.
+  threads, multiple sessions, at least 8,192 policy logits, and at least two
+  response rows per pending session. Small batches and ordinary single-row
+  leaf updates retain serial submission. The row-count condition was added
+  during Linux qualification after the initial logit-only guard regressed in
+  long searches. Target-host measurements for this refinement are separate
+  from the original Mac measurements below.
 - **Benchmark binary identity:** recognize both the normal package wrapper and
   a directly loaded native extension. The full regression exposed an existing
   package-only assumption when testing the isolated candidate binary. Both

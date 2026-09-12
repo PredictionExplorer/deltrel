@@ -2107,9 +2107,11 @@ impl PySearchBatch {
                 if execution.pending.is_empty() {
                     return Err(PyRuntimeError::new_err("no leaf batch is pending"));
                 }
-                // Scheduling costs dominate tiny responses; large policy batches
-                // amortize one parallel backup pass over independent session trees.
+                // Single-row leaf submissions stay serial: even large boards
+                // don't amortize dispatch across many tiny session jobs. Require
+                // multirow first-visit work as well as enough total policy data.
                 let parallel_submit = execution.pending.len() > 1
+                    && tokens.len() / execution.pending.len() >= 2
                     && policy_logits.len() >= 8192
                     && rayon::current_num_threads() > 1;
                 let responses = unpack_evaluations(tokens, values, policy_offsets, policy_logits)?;
