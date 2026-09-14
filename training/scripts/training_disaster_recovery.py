@@ -22,9 +22,12 @@ import time
 import uuid
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path, PurePosixPath
-from typing import Any
+from types import MappingProxyType
+from typing import Any, ParamSpec, TypeVar
 
 import yaml
 
@@ -148,8 +151,8 @@ class VerifiedSnapshot:
     backup_root: Path
     sha256: str
     bytes: int
-    payload: dict[str, Any]
-    catalog: dict[str, CatalogEntry]
+    payload: Mapping[str, Any]
+    catalog: Mapping[str, CatalogEntry]
 
     @property
     def run_id(self) -> str:
@@ -162,6 +165,55 @@ class VerifiedSnapshot:
     @property
     def created_ns(self) -> int:
         return int(self.payload["created_ns"])
+
+
+@dataclass(frozen=True, slots=True)
+class _CachedSnapshotHeader:
+    signature: tuple[int, int, int, int, int]
+    snapshot: VerifiedSnapshot
+
+
+_SNAPSHOT_HEADER_CACHE: ContextVar[
+    dict[tuple[Path, Path], _CachedSnapshotHeader] | None
+] = ContextVar("snapshot_header_operation_cache", default=None)
+_OperationParameters = ParamSpec("_OperationParameters")
+_OperationResult = TypeVar("_OperationResult")
+
+
+@contextmanager
+def _snapshot_header_operation() -> Iterator[None]:
+    """Share immutable header proofs only within this synchronous operation."""
+    if _SNAPSHOT_HEADER_CACHE.get() is not None:
+        yield
+        return
+    token = _SNAPSHOT_HEADER_CACHE.set({})
+    try:
+        yield
+    finally:
+        _SNAPSHOT_HEADER_CACHE.reset(token)
+
+
+def _reuse_snapshot_headers(
+    operation: Callable[_OperationParameters, _OperationResult],
+) -> Callable[_OperationParameters, _OperationResult]:
+    @wraps(operation)
+    def wrapped(
+        *args: _OperationParameters.args, **kwargs: _OperationParameters.kwargs
+    ) -> _OperationResult:
+        with _snapshot_header_operation():
+            return operation(*args, **kwargs)
+
+    return wrapped
+
+
+def _immutable_json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return MappingProxyType(
+            {key: _immutable_json(item) for key, item in value.items()}
+        )
+    if isinstance(value, list):
+        return tuple(_immutable_json(item) for item in value)
+    return value
 
 
 def _duplicate_rejecting_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -2848,9 +2900,60 @@ def _snapshot_is_committed(snapshot: VerifiedSnapshot) -> bool:
     )
 
 
+def _snapshot_header_signature(path: Path) -> tuple[int, int, int, int, int]:
+    metadata = _require_regular_file(path, name="snapshot document")
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _snapshot_header(path: Path, backup_root: Path) -> VerifiedSnapshot:
+    cache = _SNAPSHOT_HEADER_CACHE.get()
+    key = (path, backup_root)
+    prior = cache.pop(key, None) if cache is not None else None
+    signature = _snapshot_header_signature(path)
+    if path.parent.parent.parent.resolve() != backup_root:
+        raise DisasterRecoveryError("snapshot path does not match its backup root")
+    if cache is not None:
+        if prior is not None and prior.signature == signature:
+            cache[key] = prior
+            return prior.snapshot
+    payload, catalog, data, digest = _snapshot_envelope(path, backup_root)
+    if _snapshot_header_signature(path) != signature:
+        raise DisasterRecoveryError(
+            "snapshot document changed during header validation"
+        )
+    snapshot = VerifiedSnapshot(
+        path,
+        backup_root,
+        digest,
+        len(data),
+        _immutable_json(payload) if cache is not None else payload,
+        MappingProxyType(catalog) if cache is not None else catalog,
+    )
+    if cache is not None:
+        cache[key] = _CachedSnapshotHeader(signature, snapshot)
+    return snapshot
+
+
 def _snapshot_headers(run_directory: Path, backup_root: Path) -> list[VerifiedSnapshot]:
     snapshots: list[VerifiedSnapshot] = []
-    for path in sorted(run_directory.iterdir()):
+    paths = sorted(run_directory.iterdir())
+    cache = _SNAPSHOT_HEADER_CACHE.get()
+    if cache is not None:
+        present = set(paths)
+        for key in tuple(cache):
+            if (
+                key[1] == backup_root
+                and key[0].parent == run_directory
+                and key[0] not in present
+            ):
+                del cache[key]
+    for path in paths:
         if path.name == "latest.json":
             continue
         if path.name.endswith(".json.commit"):
@@ -2858,18 +2961,10 @@ def _snapshot_headers(run_directory: Path, backup_root: Path) -> list[VerifiedSn
         if path.name.startswith(".") and path.name.endswith(".tmp"):
             continue
         if path.is_symlink() or not path.is_file() or path.suffix != ".json":
+            if cache is not None:
+                cache.pop((path, backup_root), None)
             raise DisasterRecoveryError(f"unexpected snapshot-directory entry: {path}")
-        payload, catalog, data, digest = _snapshot_envelope(path, backup_root)
-        snapshots.append(
-            VerifiedSnapshot(
-                path,
-                backup_root,
-                digest,
-                len(data),
-                payload,
-                catalog,
-            )
-        )
+        snapshots.append(_snapshot_header(path, backup_root))
     snapshots.sort(key=lambda item: (item.created_ns, item.path.name))
     return snapshots
 
@@ -2984,6 +3079,7 @@ def _verified_snapshot_report(verified: VerifiedSnapshot) -> dict[str, object]:
     }
 
 
+@_reuse_snapshot_headers
 def verify_snapshot(
     snapshot: str | Path,
     *,
@@ -3012,6 +3108,7 @@ def verify_snapshot(
 verify = verify_snapshot
 
 
+@_reuse_snapshot_headers
 def create_snapshot(
     run_root: str | Path,
     profile: str | Path,
@@ -3727,6 +3824,7 @@ def _all_objects(backup_root: Path) -> Iterator[Path]:
             yield path
 
 
+@_reuse_snapshot_headers
 def garbage_collect(
     backup_root: str | Path,
     *,

@@ -1,0 +1,81 @@
+{
+  "report": "disaster-recovery-operation-header-cache-component-benchmark",
+  "schema_version": 1,
+  "created_ns": 1789347346671278000,
+  "runtime": {
+    "python": "3.11.13",
+    "platform": "macOS-26.6.2-arm64-arm-64bit"
+  },
+  "workload": {
+    "catalogs": 64,
+    "entries_per_catalog": 1500,
+    "catalog_entries_total": 96000,
+    "catalog_bytes_total": 13669175,
+    "header_passes_per_operation": 8,
+    "repeats": 3,
+    "objects_verified": false,
+    "scope": "local synthetic canonical snapshot catalog selection; setup excluded; same validated outputs; existing input documents never modified"
+  },
+  "output_sha256": "25f72c9c37c61701b110b610c3dac988e8a72ef90667aed1314b3209d5f02495",
+  "results": [
+    {
+      "repeat": 0,
+      "cache": false,
+      "wall_seconds": 3.310381625080481,
+      "cpu_seconds": 3.227121,
+      "envelope_validations": 512,
+      "document_bytes_parsed": 109353400
+    },
+    {
+      "repeat": 0,
+      "cache": true,
+      "wall_seconds": 0.5123942079953849,
+      "cpu_seconds": 0.5003860000000002,
+      "envelope_validations": 64,
+      "document_bytes_parsed": 13669175
+    },
+    {
+      "repeat": 1,
+      "cache": false,
+      "wall_seconds": 3.3330679167993367,
+      "cpu_seconds": 3.2481940000000007,
+      "envelope_validations": 512,
+      "document_bytes_parsed": 109353400
+    },
+    {
+      "repeat": 1,
+      "cache": true,
+      "wall_seconds": 0.5137340419460088,
+      "cpu_seconds": 0.5023779999999993,
+      "envelope_validations": 64,
+      "document_bytes_parsed": 13669175
+    },
+    {
+      "repeat": 2,
+      "cache": false,
+      "wall_seconds": 3.334182667080313,
+      "cpu_seconds": 3.2503849999999996,
+      "envelope_validations": 512,
+      "document_bytes_parsed": 109353400
+    },
+    {
+      "repeat": 2,
+      "cache": true,
+      "wall_seconds": 0.5112199578434229,
+      "cpu_seconds": 0.49963400000000036,
+      "envelope_validations": 64,
+      "document_bytes_parsed": 13669175
+    }
+  ],
+  "summary": {
+    "median_baseline_cpu_seconds": 3.2481940000000007,
+    "median_cached_cpu_seconds": 0.5003860000000002,
+    "cpu_speedup": 6.491376657220624,
+    "median_baseline_wall_seconds": 3.3330679167993367,
+    "median_cached_wall_seconds": 0.5123942079953849
+  },
+  "limitations": [
+    "This measures header selection only, not full backup wall time, object copying, NFS latency, restore integrity verification, or Elo.",
+    "The first pass still fully validates each historical catalog; no long-lived or cross-operation trust cache is used."
+  ]
+}
