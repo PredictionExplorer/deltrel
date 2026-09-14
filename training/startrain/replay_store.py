@@ -12,6 +12,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from fractions import Fraction
 from pathlib import Path
 from typing import Callable, Iterator, Mapping, Sequence
 
@@ -31,6 +32,72 @@ from .topology import SUPPORTED_RINGS, get_topology
 MANIFEST_SCHEMA_VERSION = 5
 REPLAY_PUBLICATION_MANIFEST_SCHEMA_VERSION = 6
 SUPPORTED_MANIFEST_SCHEMA_VERSIONS = (5, 6)
+
+
+def training_replay_clause(training_objective: str | None, *, prefix: str = "") -> str:
+    """Trusted SQL eligibility shared by selection and read-only cutover plans."""
+    if prefix not in ("", "new."):
+        raise ValueError("unsupported replay column prefix")
+    if training_objective != "ring10_pie":
+        return "1"
+    handicap_labels = ",".join(
+        f"'handicap-{handicap}-{mode}'"
+        for handicap in range(2, 10)
+        for mode in ("classic", "double")
+    )
+    return (
+        f"(({prefix}ring IN (4,6,8,10) AND {prefix}segment='pie' "
+        f"AND {prefix}variant IN ('pie-classic','pie-double')) OR "
+        f"({prefix}ring=10 AND {prefix}segment='handicap' "
+        f"AND {prefix}variant IN ({handicap_labels})))"
+    )
+
+
+def training_committed_sample_count(
+    connection: sqlite3.Connection,
+    *,
+    run_id: str,
+    generation_family: str,
+    training_objective: str | None = None,
+) -> int:
+    """Read scoped credit, or its initial retained-row cutover value.
+
+    Earlier GC can erase legacy variant metadata. A new objective starts from
+    retained eligible logical positions. Its durable counter then stays
+    monotonic across GC and credits live revisions only for new positions.
+    """
+    parameters = (
+        validate_identifier("run_id", run_id),
+        validate_identifier("generation_family", generation_family),
+    )
+    if training_objective == "ring10_pie":
+        exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='training_objective_counters'"
+        ).fetchone()
+        row = (
+            None
+            if not exists
+            else connection.execute(
+                "SELECT committed_samples FROM training_objective_counters "
+                "WHERE run_id=? AND generation_family=? AND training_objective=?",
+                (*parameters, training_objective),
+            ).fetchone()
+        )
+        if row is None:
+            row = connection.execute(
+                "SELECT COALESCE(SUM(sample_count),0) FROM shards "
+                "WHERE run_id=? AND generation_family=? AND state='ready' "
+                f"AND {training_replay_clause(training_objective)}",
+                parameters,
+            ).fetchone()
+    else:
+        row = connection.execute(
+            "SELECT committed_samples FROM run_counters "
+            "WHERE run_id=? AND generation_family=?",
+            parameters,
+        ).fetchone()
+    return int(row[0]) if row is not None else 0
 
 
 def validate_game_publications(
@@ -163,6 +230,46 @@ def _within_segment_mode_targets(
             {mode: capacities.get(mode, 0) - count for mode, count in targets.items()},
         )
         targets = {mode: count + fallback[mode] for mode, count in targets.items()}
+    return targets
+
+
+def _strict_variant_targets(
+    total: int,
+    fractions: Mapping[str, float],
+    classic_shares: Mapping[str, float],
+    capacities: Mapping[str, Mapping[str, int]],
+) -> dict[tuple[str, str], int]:
+    """Largest proportional window with no capacity borrowing across variants.
+
+    Integer rounding is bounded to one row per cell. Exact rational arithmetic
+    avoids rounding a scarce cell above its available rows at large capacities.
+    A missing required cell yields no window, so readiness waits for that data.
+    """
+    weights: dict[tuple[str, str], Fraction] = {}
+    for segment, fraction in fractions.items():
+        share = Fraction(str(classic_shares.get(segment, 0.5)))
+        for mode, mode_share in (("classic", share), ("double", 1 - share)):
+            weight = Fraction(str(fraction)) * mode_share
+            if weight > 0:
+                weights[(segment, mode)] = weight
+    if not weights:
+        return {}
+    weight_sum = sum(weights.values())
+    weights = {key: weight / weight_sum for key, weight in weights.items()}
+    limit = min(
+        total,
+        *(
+            int(Fraction(capacities.get(segment, {}).get(mode, 0)) / weight)
+            for (segment, mode), weight in weights.items()
+        ),
+    )
+    exact = {key: limit * weight for key, weight in weights.items()}
+    targets = {key: int(value) for key, value in exact.items()}
+    remaining = limit - sum(targets.values())
+    for key in sorted(weights, key=lambda key: (-(exact[key] - targets[key]), key))[
+        :remaining
+    ]:
+        targets[key] += 1
     return targets
 
 
@@ -656,6 +763,50 @@ class ReplayStore:
         self.reconciliation_metrics["legacy_history_reconciled"] = (
             legacy_history_reconciled
         )
+        self._initialize_training_objective_counter()
+
+    def _initialize_training_objective_counter(self) -> None:
+        # Serialize bootstrap and trigger creation with concurrent publishers.
+        # The trigger also covers older actor processes sharing this manifest.
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            self.connection.execute("""CREATE TABLE IF NOT EXISTS training_objective_counters (
+                run_id TEXT NOT NULL, generation_family TEXT NOT NULL,
+                training_objective TEXT NOT NULL,
+                committed_samples INTEGER NOT NULL CHECK(committed_samples >= 0),
+                PRIMARY KEY(run_id, generation_family, training_objective)
+            )""")
+            self.connection.execute(f"""INSERT INTO training_objective_counters
+                (run_id, generation_family, training_objective, committed_samples)
+                SELECT runs.run_id, runs.generation_family, 'ring10_pie',
+                    COALESCE((SELECT SUM(sample_count) FROM shards
+                        WHERE shards.run_id=runs.run_id
+                          AND shards.generation_family=runs.generation_family
+                          AND state='ready' AND {training_replay_clause("ring10_pie")}),0)
+                FROM runs WHERE NOT EXISTS (
+                    SELECT 1 FROM training_objective_counters AS counters
+                    WHERE counters.run_id=runs.run_id
+                      AND counters.generation_family=runs.generation_family
+                      AND counters.training_objective='ring10_pie'
+                )
+                ON CONFLICT(run_id, generation_family, training_objective) DO NOTHING
+            """)
+            self.connection.execute(f"""CREATE TRIGGER IF NOT EXISTS ring10_pie_fresh_credit
+                AFTER INSERT ON shards
+                WHEN {training_replay_clause("ring10_pie", prefix="new.")}
+                BEGIN
+                    INSERT INTO training_objective_counters
+                        (run_id, generation_family, training_objective, committed_samples)
+                    VALUES (new.run_id, new.generation_family, 'ring10_pie',
+                        COALESCE(new.fresh_sample_count,new.sample_count))
+                    ON CONFLICT(run_id, generation_family, training_objective)
+                    DO UPDATE SET committed_samples=committed_samples+excluded.committed_samples;
+                END
+            """)
+            self.connection.execute("COMMIT")
+        except BaseException:
+            self.connection.execute("ROLLBACK")
+            raise
 
     def close(self) -> None:
         self.connection.close()
@@ -1041,6 +1192,8 @@ class ReplayStore:
         minimum_shard_id_exclusive: int | None = None,
         segment_quotas: Mapping[str, float] | None = None,
         within_segment_classic_shares: Mapping[str, float] | None = None,
+        training_objective: str | None = None,
+        ring_segment_quotas: Mapping[int, Mapping[str, float]] | None = None,
     ) -> dict[str, int]:
         if retain_shards_per_ring <= 0:
             raise ValueError("retain_shards_per_ring must be positive")
@@ -1070,6 +1223,8 @@ class ReplayStore:
                 max_model_lag_steps=max_model_lag_steps,
                 minimum_shard_id_exclusive=minimum_shard_id_exclusive,
                 segment_quotas=segment_quotas,
+                ring_segment_quotas=ring_segment_quotas,
+                training_objective=training_objective,
                 within_segment_classic_shares=classic_shares or None,
             )
             sample_floor_ids = {span.record.shard_id for span in selection.spans}
@@ -1081,10 +1236,14 @@ class ReplayStore:
             )
         ]
         candidates: list[ShardRecord] = []
+        preserved_excluded_shards = 0
+        preserved_excluded_payload_rows = 0
+        preserved_excluded_ready_samples = 0
         for ring in SUPPORTED_RINGS:
             rows = self.connection.execute(
-                """
-                SELECT * FROM shards
+                f"""
+                SELECT *, {training_replay_clause(training_objective)} AS training_allowed
+                FROM shards
                 WHERE state = 'ready'
                   AND run_id = ?
                   AND generation_family = ?
@@ -1096,6 +1255,13 @@ class ReplayStore:
             retained = 0
             for row in rows:
                 record = self._record(row)
+                if not row["training_allowed"]:
+                    # Retired game types remain as a zero-copy historical
+                    # archive. They neither train nor consume active retention.
+                    preserved_excluded_shards += 1
+                    preserved_excluded_payload_rows += record.sample_count
+                    preserved_excluded_ready_samples += record.sample_count
+                    continue
                 is_protected = any(
                     lower <= record.shard_id <= upper
                     for lower, upper in protected_ranges
@@ -1111,10 +1277,15 @@ class ReplayStore:
         # Old immutable versions are no longer selectable, but existing loader
         # windows still own their files until their watermark is released.
         for row in self.connection.execute(
-            "SELECT * FROM shards WHERE state='superseded' AND run_id=? AND generation_family=?",
+            f"SELECT *, {training_replay_clause(training_objective)} AS training_allowed "
+            "FROM shards WHERE state='superseded' AND run_id=? AND generation_family=?",
             (run_id, generation_family),
         ):
             record = self._record(row)
+            if not row["training_allowed"]:
+                preserved_excluded_shards += 1
+                preserved_excluded_payload_rows += record.sample_count
+                continue
             if not any(
                 lower <= record.shard_id <= upper for lower, upper in protected_ranges
             ):
@@ -1133,6 +1304,12 @@ class ReplayStore:
             "sample_floor_rows": sample_floor_rows,
             "minimum_samples_per_ring": minimum_samples_per_ring,
         }
+        if training_objective == "ring10_pie":
+            metrics.update(
+                preserved_excluded_shards=preserved_excluded_shards,
+                preserved_excluded_payload_rows=preserved_excluded_payload_rows,
+                preserved_excluded_ready_samples=preserved_excluded_ready_samples,
+            )
         if dry_run or not candidates:
             return metrics
         self.connection.execute("BEGIN IMMEDIATE")
@@ -1425,6 +1602,7 @@ class ReplayStore:
         max_model_lag_steps: int | None = None,
         minimum_shard_id_exclusive: int | None = None,
         maximum_shard_id: int | None = None,
+        training_objective: str | None = None,
     ) -> list[ShardRecord]:
         if sample_window <= 0:
             raise ValueError("sample_window must be positive")
@@ -1435,6 +1613,7 @@ class ReplayStore:
             "run_id = ?",
             "generation_family = ?",
         ]
+        clauses.append(training_replay_clause(training_objective))
         parameters: list[object] = [
             f"{RULES_HASH:016x}",
             f"{FEATURE_SCHEMA_HASH:016x}",
@@ -1607,18 +1786,14 @@ class ReplayStore:
         *,
         run_id: str,
         generation_family: str,
+        training_objective: str | None = None,
     ) -> int:
-        row = self.connection.execute(
-            """
-            SELECT committed_samples FROM run_counters
-            WHERE run_id = ? AND generation_family = ?
-            """,
-            (
-                validate_identifier("run_id", run_id),
-                validate_identifier("generation_family", generation_family),
-            ),
-        ).fetchone()
-        return int(row["committed_samples"]) if row is not None else 0
+        return training_committed_sample_count(
+            self.connection,
+            run_id=run_id,
+            generation_family=generation_family,
+            training_objective=training_objective,
+        )
 
     def committed_sample_history_is_complete(
         self,
@@ -1764,6 +1939,8 @@ class ReplayStore:
         current_model_step: int,
         max_model_lag_steps: int,
         minimum_shard_id_exclusive: int | None = None,
+        training_objective: str | None = None,
+        ring_segment_quotas: Mapping[int, Mapping[str, float]] | None = None,
     ) -> dict[int, int]:
         requested = _validated_rings(rings)
         minimum_shard_id_exclusive = _validated_optional_shard_id(
@@ -1778,9 +1955,20 @@ class ReplayStore:
             if minimum_shard_id_exclusive is not None
             else ()
         )
+        strict_fractions = None
+        if training_objective == "ring10_pie" and ring_segment_quotas is not None:
+            if set(ring_segment_quotas) != set(requested):
+                raise ValueError(
+                    "ring segment quotas must cover exactly the requested rings"
+                )
+            strict_fractions = {
+                ring: _segment_fractions(quotas)
+                for ring, quotas in ring_segment_quotas.items()
+            }
+        grouping = "ring, segment, variant" if strict_fractions is not None else "ring"
         rows = self._eligible_count_rows(
             f"""
-            SELECT ring, COALESCE(SUM(sample_count), 0) AS samples
+            SELECT {grouping}, COALESCE(SUM(sample_count), 0) AS samples
             FROM shards
             WHERE rules_hash = ?
               AND feature_schema_hash = ?
@@ -1790,7 +1978,8 @@ class ReplayStore:
               AND model_step BETWEEN ? AND ?
               {cutoff_clause}
               AND ring IN ({placeholders})
-            GROUP BY ring
+              AND {training_replay_clause(training_objective)}
+            GROUP BY {grouping}
             """,
             (
                 f"{RULES_HASH:016x}",
@@ -1804,8 +1993,33 @@ class ReplayStore:
             ),
         )
         counts = {ring: 0 for ring in requested}
+        if strict_fractions is None:
+            for row in rows:
+                counts[int(row["ring"])] = int(row["samples"])
+            return counts
+        capacities: dict[int, dict[str, dict[str, int]]] = {
+            ring: {} for ring in requested
+        }
         for row in rows:
-            counts[int(row["ring"])] = int(row["samples"])
+            ring, segment, mode = (
+                int(row["ring"]),
+                str(row["segment"]),
+                str(row["variant"]).rsplit("-", 1)[-1],
+            )
+            modes = capacities[ring].setdefault(segment, {})
+            modes[mode] = modes.get(mode, 0) + int(row["samples"])
+        for ring in requested:
+            total = sum(
+                count for modes in capacities[ring].values() for count in modes.values()
+            )
+            counts[ring] = sum(
+                _strict_variant_targets(
+                    total,
+                    strict_fractions[ring],
+                    {"pie": 0.5, "handicap": 0.5},
+                    capacities[ring],
+                ).values()
+            )
         return counts
 
     def eligible_sample_counts_by_segment(
@@ -1817,6 +2031,7 @@ class ReplayStore:
         current_model_step: int,
         max_model_lag_steps: int,
         minimum_shard_id_exclusive: int | None = None,
+        training_objective: str | None = None,
     ) -> dict[tuple[int, str], int]:
         """Eligible samples per (ring, segment); absent pairs report zero."""
 
@@ -1845,6 +2060,7 @@ class ReplayStore:
               AND model_step BETWEEN ? AND ?
               {cutoff_clause}
               AND ring IN ({placeholders})
+              AND {training_replay_clause(training_objective)}
             GROUP BY ring, segment
             """,
             (
@@ -1876,6 +2092,8 @@ class ReplayStore:
         segment_quotas: Mapping[str, float] | None = None,
         within_segment_classic_shares: Mapping[str, float] | None = None,
         gc_watermark_name: str | None = None,
+        training_objective: str | None = None,
+        ring_segment_quotas: Mapping[int, Mapping[str, float]] | None = None,
     ) -> ReplaySelection:
         """Pin counters and selected immutable revisions to one read snapshot."""
 
@@ -1891,7 +2109,9 @@ class ReplayStore:
                 run_id=run_id, generation_family=generation_family
             )
             committed = self.total_committed_sample_count(
-                run_id=run_id, generation_family=generation_family
+                run_id=run_id,
+                generation_family=generation_family,
+                training_objective=training_objective,
             )
             selection = self._select_recent_spans_snapshot(
                 rings=rings,
@@ -1902,6 +2122,8 @@ class ReplayStore:
                 max_model_lag_steps=max_model_lag_steps,
                 minimum_shard_id_exclusive=minimum_shard_id_exclusive,
                 segment_quotas=segment_quotas,
+                ring_segment_quotas=ring_segment_quotas,
+                training_objective=training_objective,
                 within_segment_classic_shares=within_segment_classic_shares,
             )
             selected = replace(
@@ -1931,6 +2153,8 @@ class ReplayStore:
         minimum_shard_id_exclusive: int | None = None,
         segment_quotas: Mapping[str, float] | None = None,
         within_segment_classic_shares: Mapping[str, float] | None = None,
+        training_objective: str | None = None,
+        ring_segment_quotas: Mapping[int, Mapping[str, float]] | None = None,
     ) -> ReplaySelection:
         """Select the most recent samples per ring, optionally stratified by segment.
 
@@ -1943,6 +2167,10 @@ class ReplayStore:
         ``within_segment_classic_shares`` optionally splits handicap/pie targets
         between classic and double, with capacity spill inside each segment.
         Recency and eligibility are enforced independently for both modes.
+        ``ring_segment_quotas`` overrides the common fractions per board, while
+        ``training_objective`` applies hard eligibility before allocation. The
+        pie objective reduces the window when a variant is scarce, preserving
+        declared shares; historical objectives retain proportional borrowing.
         """
 
         if per_ring_quota <= 0:
@@ -1967,6 +2195,14 @@ class ReplayStore:
         classic_shares = _validated_classic_shares(
             within_segment_classic_shares, segment_quotas
         )
+        ring_fractions = {
+            ring: _segment_fractions(quotas)
+            for ring, quotas in (ring_segment_quotas or {}).items()
+        }
+        if ring_segment_quotas is not None and set(ring_fractions) != set(requested):
+            raise ValueError(
+                "ring segment quotas must cover exactly the requested rings"
+            )
         cutoff_clause = "AND id > ?" if minimum_shard_id_exclusive is not None else ""
         cutoff_parameters = (
             (minimum_shard_id_exclusive,)
@@ -1981,6 +2217,7 @@ class ReplayStore:
               AND generation_family = ?
               AND model_step BETWEEN ? AND ?
               {cutoff_clause}
+              AND {training_replay_clause(training_objective)}
             """,
             (
                 run_id,
@@ -2009,6 +2246,7 @@ class ReplayStore:
                 generation_family=generation_family,
                 rings=(ring,),
                 segments=segments,
+                training_objective=training_objective,
                 **({"variant_mode": variant_mode} if variant_mode is not None else {}),
                 current_model_step=current_model_step,
                 max_model_lag_steps=max_model_lag_steps,
@@ -2033,7 +2271,8 @@ class ReplayStore:
             return selected
 
         for ring in requested:
-            if fractions is None:
+            active_fractions = ring_fractions.get(ring, fractions)
+            if active_fractions is None:
                 selected = take_recent(ring, per_ring_quota, None)
             else:
                 rows = self.connection.execute(
@@ -2042,6 +2281,7 @@ class ReplayStore:
                       AND rules_hash = ? AND feature_schema_hash = ?
                       AND ring = ? AND model_step BETWEEN ? AND ? AND id <= ?
                       {cutoff_clause}
+                      AND {training_replay_clause(training_objective)}
                     GROUP BY segment, variant""",
                     (
                         run_id,
@@ -2063,23 +2303,36 @@ class ReplayStore:
                     mode = str(row["variant"]).rsplit("-", 1)[-1]
                     modes = mode_capacities.setdefault(segment, {})
                     modes[mode] = modes.get(mode, 0) + count
-                targets = _bounded_segment_targets(
-                    per_ring_quota, fractions, capacities
-                )
-                selected = []
-                for segment, target in targets.items():
-                    if segment not in classic_shares:
-                        selected.extend(take_recent(ring, target, (segment,)))
-                        continue
-                    modes = _within_segment_mode_targets(
-                        target,
-                        classic_shares[segment],
-                        mode_capacities.get(segment, {}),
+                if training_objective == "ring10_pie":
+                    mode_targets = _strict_variant_targets(
+                        per_ring_quota,
+                        active_fractions,
+                        classic_shares,
+                        mode_capacities,
                     )
-                    for mode, mode_target in modes.items():
-                        selected.extend(
-                            take_recent(ring, mode_target, (segment,), mode)
+                    selected = [
+                        span
+                        for (segment, mode), target in mode_targets.items()
+                        for span in take_recent(ring, target, (segment,), mode)
+                    ]
+                else:
+                    targets = _bounded_segment_targets(
+                        per_ring_quota, active_fractions, capacities
+                    )
+                    selected = []
+                    for segment, target in targets.items():
+                        if segment not in classic_shares:
+                            selected.extend(take_recent(ring, target, (segment,)))
+                            continue
+                        modes = _within_segment_mode_targets(
+                            target,
+                            classic_shares[segment],
+                            mode_capacities.get(segment, {}),
                         )
+                        for mode, mode_target in modes.items():
+                            selected.extend(
+                                take_recent(ring, mode_target, (segment,), mode)
+                            )
             spans.extend(selected)
             counts[int(ring)] = sum(span.sample_count for span in selected)
             for span in selected:

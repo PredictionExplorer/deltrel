@@ -43,8 +43,15 @@ from .inference_batching import CohortInferenceAdapter
 from .model import GraphResTNet
 from .replay_store import ReplayStore, ReplayStoreCancelled
 from .runtime import HeartbeatReporter, RunIdentity, append_jsonl
-from .selfplay import GameVariant, SelfPlayActor, SelfPlayIdentity, SelfPlayMetrics
+from .selfplay import (
+    GameVariant,
+    SelfPlayActor,
+    SelfPlayIdentity,
+    SelfPlayMetrics,
+    VariantMixtureConfig,
+)
 from .training import maybe_compile_model
+from .variant_training import training_variant_allowed
 
 
 def _inference_metrics(evaluator) -> dict:
@@ -842,11 +849,15 @@ class ActorSupervisor:
                     generation = store.lease_generation(
                         self.run_identity, self.actor_id
                     )
+                    variants = self._variants_for_ring(ring, scheduling_step)
                     variant = (
                         work_lease.metadata["variant"]
                         if work_lease is not None
-                        else self.experiment.selfplay.variants.draw(
-                            self._variant_seed(batches, generation)
+                        else (
+                            variants.draw(self._variant_seed(batches, generation))
+                            if variants.enabled
+                            or not self.experiment.selfplay.pie_even_training
+                            else self.experiment.selfplay.variant
                         )
                     )
                     requested_games = (
@@ -854,16 +865,16 @@ class ActorSupervisor:
                         if work_lease is not None
                         else self.games_per_batch
                     )
-                    batch_config = (
-                        replace(
-                            self.experiment.selfplay,
-                            rings=ring,
-                            batch_size=self.gpu.actor_batch_size,
-                            games=requested_games,
-                        )
-                        .with_variant(variant)
-                        .resolved_search_allocation()
-                    )
+                    batch_config = replace(
+                        self.experiment.selfplay,
+                        rings=ring,
+                        batch_size=self.gpu.actor_batch_size,
+                        games=requested_games,
+                        variants=variants,
+                        mode=variant.mode,
+                        handicap=variant.handicap,
+                        pie=variant.pie,
+                    ).resolved_search_allocation()
                     if work_lease is None and batch_config.rolling_game_slots:
                         champion = self._read_champion()
                         category = f"{variant.mode}-{'pie' if variant.pie else 'handicap' if variant.handicap > 1 else 'standard'}"
@@ -1681,6 +1692,19 @@ class ActorSupervisor:
             for ring in eligible
         }
 
+    def _variants_for_ring(self, ring: int, step: int) -> VariantMixtureConfig:
+        """Resolve against global board shares, including for restricted actors."""
+        config = self.experiment.selfplay
+        if not config.pie_even_training or not config.variants.enabled:
+            return config.variants
+        mixture = self.experiment.orchestration.ring_mixture
+        weights = mixture.weights_for_step(step)
+        if weights is None:
+            raise ValueError("pie even training requires explicit global ring weights")
+        return config.variant_mixture_for_ring(
+            ring, dict(zip(mixture.rings, weights, strict=True))
+        )
+
     def _new_work_bundle(
         self,
         coordinator: CompatibleWorkCoordinator | None,
@@ -1743,7 +1767,7 @@ class ActorSupervisor:
             )
         else:
             requested, ring, _ = selection
-        variants = self.experiment.selfplay.variants
+        variants = self._variants_for_ring(ring, step)
         modes = (
             {
                 "classic-standard": variants.classic,
@@ -1795,6 +1819,15 @@ class ActorSupervisor:
                     )
                 )
                 variant = GameVariant(mode=mode, handicap=severity)
+            if self.experiment.selfplay.pie_even_training and (
+                modes.get(category, 0.0) <= 0
+                or not training_variant_allowed(
+                    ring, variant.mode, variant.handicap, variant.pie
+                )
+            ):
+                raise ValueError(
+                    "work lease variant is excluded from pie even training"
+                )
             lease_modes.append(
                 {
                     "mode_category": category,

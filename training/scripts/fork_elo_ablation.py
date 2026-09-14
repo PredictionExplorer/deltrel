@@ -16,6 +16,7 @@ from typing import Any
 
 from startrain.checkpoint import load_model_manifest, write_model_pointer
 from startrain.config import ExperimentConfig, load_config
+from startrain.learner import LearnerLoop, UTDSegmentState
 from startrain.manifest_selection import (
     VerifiedSelection,
     selected_manifest_in_copy,
@@ -152,8 +153,27 @@ def _prepare_utd_segment(
     if target is None:
         return None
     segment_path = destination / "learner" / "utd-segment.json"
+    scoped = experiment.orchestration.training_objective == "ring10_pie"
+    objective = {"training_objective": "ring10_pie"} if scoped else {}
     if segment_path.is_file():
-        return _read_json(segment_path)
+        existing = _read_json(segment_path)
+        if scoped or existing.get("training_objective") is not None:
+            state = LearnerLoop._parse_utd_segment_state(existing)
+            if (
+                state.run_id != run_id
+                or state.generation_family != generation_family
+                or state.target_updates_per_new_sample != float(target)
+            ):
+                raise ValueError("existing UTD segment does not match the fork profile")
+            if state.training_objective == objective.get("training_objective"):
+                return existing
+            if state.training_objective is not None:
+                raise ValueError(
+                    "existing UTD segment has an incompatible training objective"
+                )
+            # Rebase an old aggregate ledger at the copied recovery boundary.
+        else:
+            return existing
     recovery = _read_json(destination / "learner" / "recovery.json")
     examples = recovery.get("examples_consumed")
     if isinstance(examples, bool) or not isinstance(examples, int) or examples < 0:
@@ -167,14 +187,17 @@ def _prepare_utd_segment(
         committed = store.total_committed_sample_count(
             run_id=run_id,
             generation_family=generation_family,
+            training_objective="ring10_pie" if scoped else None,
         )
     payload: dict[str, object] = {
-        "schema_version": 1,
-        "run_id": run_id,
-        "generation_family": generation_family,
-        "target_updates_per_new_sample": float(target),
-        "baseline_examples_consumed": examples,
-        "baseline_committed_replay_samples": committed,
+        **UTDSegmentState(
+            run_id=run_id,
+            generation_family=generation_family,
+            target_updates_per_new_sample=float(target),
+            baseline_examples_consumed=examples,
+            baseline_committed_replay_samples=committed,
+            training_objective="ring10_pie" if scoped else None,
+        ).as_dict(),
         "created_ns": time.time_ns(),
     }
     atomic_json(segment_path, payload)

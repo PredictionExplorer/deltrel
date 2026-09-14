@@ -431,12 +431,47 @@ describe('history navigation AI pause', () => {
 });
 
 describe('gameplay store actions', () => {
+  it.each(['classic', 'double'] as const)(
+    'enforces new-game openings on direct %s starts and rematches, preserving old active games',
+    (mode) => {
+      for (const rings of [4, 6, 8, 10]) {
+        for (const handicap of [1, 2, 9]) {
+          const config: GameConfig = { ...double, mode, rings, handicap };
+          const legacy = sanitizePersistedState({
+            phase: 'playing',
+            config,
+            controllers: ['server', 'local'],
+            log: [{ type: 'place', node: 0 }],
+            redoStack: [],
+          });
+          expect(legacy.phase).toBe('playing');
+          expect(legacy.config).toEqual(config);
+          expect(legacy.log).toEqual([{ type: 'place', node: 0 }]);
+          const expectedHandicap = rings === 10 ? handicap : 1;
+          const expected = {
+            ...config,
+            handicap: expectedHandicap,
+            pieRule: expectedHandicap === 1,
+          };
+          useAppStore.setState(legacy);
+          useAppStore.getState().rematch();
+          expect(useAppStore.getState().config).toEqual(expected);
+          expect(useAppStore.getState().log).toEqual([]);
+          useAppStore.getState().startGame(config, ['server', 'local']);
+          expect(useAppStore.getState().config).toEqual(expected);
+          expect(config.pieRule).toBe(false);
+          expect(legacy.config).toEqual(config);
+        }
+      }
+    },
+  );
+
   it('starts, acts, redoes, reviews, rematches, and leaves without stale state', () => {
     const store = useAppStore.getState();
     store.startGame(double, ['server', 'local']);
     expect(useAppStore.getState()).toMatchObject({
       phase: 'playing',
-      config: double,
+      config: { ...double, pieRule: true, handicap: 1 },
       controllers: ['server', 'local'],
       log: [],
       reviewing: false,

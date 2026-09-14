@@ -1,8 +1,8 @@
 # ✳Star
 
 A browser implementation of [*Star](https://en.wikipedia.org/wiki/*Star), Ea Ea's connection
-game of peries, quarks and stars. Human play supports both variants; the AI stack targets
-Double *Star only.
+game of peries, quarks and stars. Human and AI play support classic and Double *Star.
+Even games always use the pie rule; handicap games use the Full board without pie.
 
 ## Features
 
@@ -15,15 +15,16 @@ Double *Star only.
   after every stone with a union-find + flood-fill engine over a CSR adjacency (microseconds
   per evaluation, so the score panel is always current).
 - **Complete games**: placement is mandatory until the board is full, with undo/redo,
-  the optional pie rule, handicap openings of up to nine stones, influence overlays, and a
+  pie even games, Full-board handicap openings of up to nine stones, influence overlays, and a
   final score reveal.
 - Games persist in `localStorage`, so a refresh resumes play.
 
-## Double *Star AI
+## *Star AI
 
-The repository includes a self-play training and inference stack for every rule variant
-(classic *Star, Double *Star, handicap openings, and the pie rule with the swap) on 4-,
-6-, 8-, and 10-ring boards, played by one variant-capable network:
+The repository includes a self-play training and inference stack for classic and Double
+*Star on 4-, 6-, 8-, and 10-ring boards, played by one variant-capable network. The new
+training policy targets 90% pie even games and 10% handicap games, with handicap confined
+to the 10-ring board in both modes. Existing game histories retain their original rules.
 
 - Rust rules, scoring, symmetry and Gumbel tree search, exposed to Python as
   `star_native`;
@@ -39,6 +40,23 @@ training infrastructure, not a claim of superhuman playing strength. See the
 [production H100 training runbook](training/docs/production-h100-training-runbook.md), then the
 [target-host benchmark results](training/docs/h100-target-host-benchmark-results.md) and
 [serving/distillation details](training/docs/serving-and-distillation.md).
+
+### Playing the full champion locally
+
+The full champion can run on your Mac's GPU through `starserve`. Use a verified
+champion snapshot exported with the [local serving instructions](training/docs/serving-and-distillation.md#mac-local-champion-service),
+then start its service:
+
+```bash
+training/.venv/bin/starserve --config /absolute/path/to/snapshot/starserve-mac.yaml
+```
+
+Set `STAR_AI_SERVER_URL=http://127.0.0.1:8080` in `.env.local` and run
+`npm run dev -- --hostname 127.0.0.1 --port 3001`. Open
+`http://127.0.0.1:3001`, choose the champion opponent, and select one of the two
+variants and three openings. Thinking-time choices use the same full model;
+larger search budgets take longer. The separate browser AI option requires a
+published lightweight model.
 
 ## Development
 

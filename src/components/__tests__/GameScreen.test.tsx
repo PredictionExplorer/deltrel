@@ -174,7 +174,7 @@ describe('GameScreen AI lifecycle', () => {
     expect(requestServerAiDecision).toHaveBeenCalledOnce();
     const [request, options] = vi.mocked(requestServerAiDecision).mock.calls[0];
     expect(options?.signal?.aborted).toBe(false);
-    expect(options?.search).toBeUndefined();
+    expect(options?.search).toEqual({ simulations: 512, maxConsidered: 16 });
 
     flight.resolve(makeDecision(request));
     await waitFor(() =>
@@ -270,8 +270,8 @@ describe('GameScreen AI lifecycle', () => {
     expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]);
   });
 
-  it('passes the selected server and local budgets only in developer mode', async () => {
-    vi.stubEnv('NEXT_PUBLIC_STAR_AI_DEVTOOLS', '1');
+  it.each(['0', '1'])('passes saved server and local budgets with devtools=%s', async (devtools) => {
+    vi.stubEnv('NEXT_PUBLIC_STAR_AI_DEVTOOLS', devtools);
     resetPlayingStore({
       aiSearchSettings: {
         server: { simulations: 777, maxConsidered: 21 },
@@ -282,7 +282,7 @@ describe('GameScreen AI lifecycle', () => {
     vi.mocked(requestServerAiDecision).mockReturnValue(serverFlight.promise);
     const first = render(<GameScreen />);
 
-    await screen.findByText('Mac engine — current champion is thinking…');
+    await screen.findByText(devtools === '1' ? 'Mac engine — current champion is thinking…' : 'Server AI is thinking…');
     expect(requestServerAiDecision).toHaveBeenCalledOnce();
     expect(vi.mocked(requestServerAiDecision).mock.calls[0][1]?.search).toEqual({
       simulations: 777,
@@ -301,7 +301,7 @@ describe('GameScreen AI lifecycle', () => {
     vi.mocked(requestLocalAiDecision).mockReturnValue(localFlight.promise);
     render(<GameScreen />);
 
-    await screen.findByText('Browser AI — lightweight is thinking…');
+    await screen.findByText(devtools === '1' ? 'Browser AI — lightweight is thinking…' : 'Local AI is thinking…');
     expect(requestLocalAiDecision).toHaveBeenCalledOnce();
     expect(vi.mocked(requestLocalAiDecision).mock.calls[0][1]?.search).toEqual({
       simulations: 123,
@@ -434,8 +434,8 @@ describe('GameScreen AI lifecycle', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('retries a timeout with an explicitly reduced search budget', async () => {
-    vi.stubEnv('NEXT_PUBLIC_STAR_AI_DEVTOOLS', '1');
+  it.each(['0', '1'])('retries a timeout with less effort with devtools=%s', async (devtools) => {
+    vi.stubEnv('NEXT_PUBLIC_STAR_AI_DEVTOOLS', devtools);
     const retryFlight = deferred<StarAiDecision>();
     vi.mocked(requestServerAiDecision)
       .mockRejectedValueOnce(new StarAiError('timeout', 'Engine timed out.', true))

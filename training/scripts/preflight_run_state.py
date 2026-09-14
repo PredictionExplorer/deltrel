@@ -31,6 +31,8 @@ from startrain.replay_store import (
     REPLAY_PUBLICATION_MANIFEST_SCHEMA_VERSION,
     SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
     prove_legacy_committed_sample_history,
+    training_committed_sample_count,
+    training_replay_clause,
     validate_game_publications,
 )
 from startrain.runtime import atomic_json, load_run_identity
@@ -215,6 +217,7 @@ def _validate_replay(
     run_id: str,
     generation_family: str,
     created_ns: int,
+    training_objective: str | None = None,
 ) -> tuple[dict[str, object], bool]:
     path = run_root / "replay" / "manifest.sqlite3"
     try:
@@ -308,6 +311,28 @@ def _validate_replay(
                     (run_id, generation_family),
                 )
             }
+            training_report = {}
+            if training_objective is not None:
+                training_report = {
+                    "training_objective": training_objective,
+                    "training_committed_samples": training_committed_sample_count(
+                        connection,
+                        run_id=run_id,
+                        generation_family=generation_family,
+                        training_objective=training_objective,
+                    ),
+                    "training_ready_samples_by_ring": {
+                        str(int(row["ring"])): int(row["samples"])
+                        for row in connection.execute(
+                            "SELECT ring, COALESCE(SUM(sample_count),0) AS samples "
+                            "FROM shards WHERE run_id=? AND generation_family=? "
+                            "AND state='ready' AND "
+                            f"{training_replay_clause(training_objective)} "
+                            "GROUP BY ring ORDER BY ring",
+                            (run_id, generation_family),
+                        )
+                    },
+                }
     except (sqlite3.Error, ValueError) as exc:
         raise StatePreflightError(f"cannot validate replay manifest: {exc}") from exc
     committed = _nonnegative_int(
@@ -342,6 +367,7 @@ def _validate_replay(
             "manifest": str(path),
             "committed_samples": committed,
             "ready_samples_by_ring": ready_samples_by_ring,
+            **training_report,
             "history_complete": history_complete,
             "history_reconciliable": reconciliable,
             "counter_schema_current": counter_has_history,
@@ -494,6 +520,7 @@ def _parse_utd_segment(
     target: float,
     maximum_examples: int,
     maximum_samples: int,
+    training_objective: str | None = None,
 ) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise StatePreflightError("UTD segment must be a JSON object")
@@ -505,7 +532,9 @@ def _parse_utd_segment(
         "baseline_examples_consumed",
         "baseline_committed_replay_samples",
     }
-    if not required <= set(payload) or set(payload) - (required | {"created_ns"}):
+    if not required <= set(payload) or set(payload) - (
+        required | {"created_ns", "training_objective"}
+    ):
         raise StatePreflightError("UTD segment fields are incompatible")
     raw_target = payload.get("target_updates_per_new_sample")
     if (
@@ -516,6 +545,7 @@ def _parse_utd_segment(
         or not isinstance(raw_target, int | float)
         or not math.isfinite(float(raw_target))
         or float(raw_target) != target
+        or payload.get("training_objective") != training_objective
     ):
         raise StatePreflightError("UTD segment identity or target is incompatible")
     examples = _nonnegative_int(
@@ -803,11 +833,17 @@ def run_state_preflight(
     experiment, profile_report = _validate_profile(
         root, profile_path, run_id=identity.run_id
     )
+    training_objective = (
+        "ring10_pie"
+        if experiment.orchestration.training_objective == "ring10_pie"
+        else None
+    )
     replay_report, reconcile_history = _validate_replay(
         root,
         run_id=identity.run_id,
         generation_family=identity.generation_family,
         created_ns=identity.created_ns,
+        training_objective=training_objective,
     )
     if not (root / "learner" / "recovery.json").exists():
         # A run root seeded by scripts/prepare_lineage_transfer.py carries an
@@ -850,6 +886,14 @@ def run_state_preflight(
     )
     committed = _nonnegative_int(
         "committed replay samples", replay_report.get("committed_samples")
+    )
+    training_committed = (
+        _nonnegative_int(
+            "training committed replay samples",
+            replay_report.get("training_committed_samples"),
+        )
+        if training_objective is not None
+        else committed
     )
     effective_history_complete = bool(
         replay_report["history_complete"] or reconcile_history
@@ -895,10 +939,22 @@ def run_state_preflight(
             if isinstance(checkpoint_learner, Mapping)
             else None
         )
+        checkpoint_orchestration = (
+            checkpoint_config.get("orchestration")
+            if isinstance(checkpoint_config, Mapping)
+            else None
+        )
+        checkpoint_scope = (
+            "ring10_pie"
+            if isinstance(checkpoint_orchestration, Mapping)
+            and checkpoint_orchestration.get("training_objective") == "ring10_pie"
+            else None
+        )
         checkpoint_uses_active_target = (
             isinstance(checkpoint_target, int | float)
             and not isinstance(checkpoint_target, bool)
             and float(checkpoint_target) == target
+            and checkpoint_scope == training_objective
         )
         if utd_path.is_file():
             utd_segment = _parse_utd_segment(
@@ -907,7 +963,8 @@ def run_state_preflight(
                 generation_family=identity.generation_family,
                 target=target,
                 maximum_examples=examples,
-                maximum_samples=committed,
+                maximum_samples=training_committed,
+                training_objective=training_objective,
             )
         elif checkpoint_segment is not None and checkpoint_uses_active_target:
             utd_segment = _parse_utd_segment(
@@ -916,17 +973,27 @@ def run_state_preflight(
                 generation_family=identity.generation_family,
                 target=target,
                 maximum_examples=examples,
-                maximum_samples=committed,
+                maximum_samples=training_committed,
+                training_objective=training_objective,
             )
             migrations.append("restore_utd_segment_from_checkpoint")
         else:
+            if checkpoint_scope != training_objective:
+                raise StatePreflightError(
+                    "training objective changed without a prepared scoped UTD segment"
+                )
             utd_segment = {
                 "schema_version": UTD_SEGMENT_SCHEMA_VERSION,
                 "run_id": identity.run_id,
                 "generation_family": identity.generation_family,
                 "target_updates_per_new_sample": target,
                 "baseline_examples_consumed": examples,
-                "baseline_committed_replay_samples": committed,
+                "baseline_committed_replay_samples": training_committed,
+                **(
+                    {"training_objective": training_objective}
+                    if training_objective is not None
+                    else {}
+                ),
             }
             migrations.append("initialize_prospective_utd_segment")
         if checkpoint_segment is not None and checkpoint_uses_active_target:
@@ -936,7 +1003,8 @@ def run_state_preflight(
                 generation_family=identity.generation_family,
                 target=target,
                 maximum_examples=examples,
-                maximum_samples=committed,
+                maximum_samples=training_committed,
+                training_objective=training_objective,
             )
             if {
                 key: parsed_checkpoint_segment[key]

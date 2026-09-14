@@ -19,9 +19,15 @@ from startrain.cohort_work import (
     WeightedFairChoice,
     WorkBundle,
 )
-from startrain.config import ActorPipelineConfig, GPUWorkerConfig, load_config
+from startrain.config import (
+    ActorPipelineConfig,
+    GPUWorkerConfig,
+    RingWeightStage,
+    load_config,
+)
 from startrain.runtime import RunIdentity
 from startrain.selfplay import SelfPlayMetrics, VariantMixtureConfig
+from startrain.variant_training import training_variant_allowed
 
 
 def metadata(role="candidate", ring=10, mode="double-standard", games=128):
@@ -674,4 +680,162 @@ def test_noncoordinated_rolling_actor_receives_max_pin_refill_gate(
 
     monkeypatch.setattr(actors, "SelfPlayActor", SelfPlay)
     assert actor.run(stop_requested=lambda: stopped["value"]) == 1
+    actor.registry.close()
+
+
+def enable_pie_training(actor):
+    actor.experiment = replace(
+        actor.experiment,
+        game=replace(actor.experiment.game, pie_rule=True),
+        data=replace(actor.experiment.data, ring_stratified=True),
+        learner=replace(
+            actor.experiment.learner,
+            use_ring_mixture_curriculum=True,
+            segment_quotas={"standard": 0, "classic": 0, "handicap": 0.1, "pie": 0.9},
+        ),
+        arena=replace(
+            actor.experiment.arena,
+            variant_policy="pie_even",
+            balanced_cells=True,
+            rings=(10,),
+            required_regression_rings=(),
+        ),
+        selfplay=replace(
+            actor.experiment.selfplay,
+            rings=10,
+            pie=True,
+            pie_even_training=True,
+            variants=VariantMixtureConfig(
+                enabled=True,
+                standard=0,
+                classic=0,
+                pie=0.9,
+                handicap=0.1,
+                pie_classic_share=0.5,
+                handicap_classic_share=0.5,
+            ),
+        ),
+        orchestration=replace(
+            actor.experiment.orchestration,
+            training_objective="ring10_pie",
+            ring_mixture=replace(
+                actor.experiment.orchestration.ring_mixture,
+                step_weights=(RingWeightStage(0, (0.05, 0.05, 0.05, 0.85)),),
+            ),
+        ),
+    )
+
+
+def test_actor_coordinated_pie_schedule_preserves_global_game_allocation(
+    tmp_path, monkeypatch
+):
+    actor, store, _, _ = fake_actor(tmp_path, monkeypatch)
+    enable_pie_training(actor)
+    board_counts, variant_counts = Counter(), Counter()
+    for _ in range(680):
+        lease = actor._acquire_cohort_work(store)
+        ring, variant = lease.metadata["ring"], lease.metadata["variant"]
+        assert training_variant_allowed(
+            ring, variant.mode, variant.handicap, variant.pie
+        )
+        board_counts[ring] += 1
+        variant_counts[lease.metadata["mode_category"]] += 1
+        lease.resource[0].release()
+        games = lease.metadata["games"]
+        actor.work_coordinator.record_outcome(
+            lease,
+            requested=games,
+            started=games,
+            completed=games,
+            dropped=0,
+            cancelling=False,
+        )
+    assert board_counts == {4: 34, 6: 34, 8: 34, 10: 578}
+    assert variant_counts == {
+        "classic-pie": 306,
+        "double-pie": 306,
+        "classic-handicap": 34,
+        "double-handicap": 34,
+    }
+    actor.work_coordinator.close()
+    actor.registry.close()
+
+
+@pytest.mark.parametrize(
+    ("ring", "seed", "expected", "restricted"),
+    [
+        (4, 0, "pie-classic", True),
+        (6, 1 << 63, "pie-double", False),
+        (8, 0, "pie-classic", False),
+        (10, 0, "handicap-2-classic", False),
+        (10, 1 << 60, "handicap-2-double", False),
+        (10, 0xFFFFFFFF, "pie-classic", False),
+        (10, (1 << 63) | 0xFFFFFFFF, "pie-double", False),
+    ],
+)
+def test_noncoordinated_and_restricted_cpu_actors_obey_pie_training_rules(
+    tmp_path, monkeypatch, ring, seed, expected, restricted
+):
+    actor, _, _, _ = fake_actor(tmp_path, monkeypatch)
+    actor.work_coordinator.close()
+    actor.work_coordinator = None
+    actor.games_per_batch = 1
+    enable_pie_training(actor)
+    actor.allowed_rings = (4,) if restricted else None
+    monkeypatch.setattr(actor.scheduler, "choose", lambda *_args, **_kwargs: ring)
+    monkeypatch.setattr(actor, "_variant_seed", lambda *_args: seed)
+    stopped = False
+
+    class SelfPlay:
+        def __init__(
+            self, _native, evaluator, _store, config, _identity, *, source_role
+        ):
+            self.evaluator = evaluator
+            assert config.rings == ring
+            assert config.variant.label == expected
+            assert config.pie_even_training
+            assert config.variants.handicap == pytest.approx(
+                2 / 17 if ring == 10 else 0
+            )
+            assert config.variants.standard == config.variants.classic == 0
+
+        def run(self, **_kwargs):
+            nonlocal stopped
+            stopped = True
+            return [
+                SimpleNamespace(
+                    winner=0,
+                    samples=1,
+                    policy_samples=1,
+                    search_simulations=1,
+                    model_version=self.evaluator.model_version,
+                    model_identity=self.evaluator.model_identity,
+                )
+            ]
+
+        def metrics_snapshot(self):
+            return SelfPlayMetrics(
+                started_games=1,
+                completed_games=1,
+                completed_decisions=1,
+                full_decisions=1,
+            )
+
+    monkeypatch.setattr(actors, "SelfPlayActor", SelfPlay)
+    assert actor.run(stop_requested=lambda: stopped) == 1
+    actor.registry.close()
+
+
+@pytest.mark.parametrize(
+    ("ring", "category"),
+    [(4, "classic-handicap"), (8, "double-handicap"), (10, "classic-standard")],
+)
+def test_pie_actor_rejects_excluded_continuation_variants(
+    tmp_path, monkeypatch, ring, category
+):
+    actor, store, _, _ = fake_actor(tmp_path, monkeypatch)
+    enable_pie_training(actor)
+    with pytest.raises(ValueError, match="excluded"):
+        actor._new_work_bundle(None, store, selection=("candidate", ring, category))
+    actor.work_coordinator.close()
     actor.registry.close()

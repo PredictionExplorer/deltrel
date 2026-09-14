@@ -2039,9 +2039,9 @@ def _validate_checkpoint_payload(
             raise ValueError("checkpoint model/feature configuration is incompatible")
     if expected_game_config is not None:
         actual_game = config.get("game")
-        if not isinstance(actual_game, Mapping) or _normalize_game_config(
-            actual_game
-        ) != _normalize_game_config(expected_game_config):
+        if not isinstance(actual_game, Mapping) or not game_configs_compatible(
+            actual_game, expected_game_config
+        ):
             raise ValueError("checkpoint game/rules configuration is incompatible")
     extra = payload["extra"]
     if expected_run_id is not None and extra.get("run_id") != expected_run_id:
@@ -2093,6 +2093,29 @@ def _normalize_variants(config: object) -> dict[str, object]:
         "handicap_min": handicap_min,
         "handicap_max": handicap_max,
         "pie_allowed": pie_allowed,
+    }
+
+
+def game_configs_compatible(
+    actual: Mapping[str, Any], expected: Mapping[str, Any]
+) -> bool:
+    """Allow a pie-default change inside the identical admitted rules family.
+
+    Rules-v3 checkpoints already encode pie and handicap explicitly. Selecting
+    pie as the default even game changes the training distribution, not tensor
+    meaning. All other game fields, including the admitted family, stay strict.
+    """
+    before = _normalize_game_config(actual)
+    after = _normalize_game_config(expected)
+    if before == after:
+        return True
+    if before["handicap"] != 1 or after["handicap"] != 1:
+        return False
+    family = before["variants"]
+    if not isinstance(family, dict) or family.get("pie_allowed") is not True:
+        return False
+    return {key: value for key, value in before.items() if key != "pie_rule"} == {
+        key: value for key, value in after.items() if key != "pie_rule"
     }
 
 

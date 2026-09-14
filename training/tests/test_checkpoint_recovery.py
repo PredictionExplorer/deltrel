@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
@@ -40,6 +40,48 @@ def test_ema_state_can_require_configured_decay() -> None:
 
     target.load_state_dict(source.state_dict())
     assert target.decay == 0.99
+
+
+def test_checkpoint_restores_weights_and_optimizer_when_only_pie_default_changes(
+    tmp_path,
+):
+    from startrain.config import GameConfig
+
+    model, optimizer, scheduler, ema = _state()
+    loss = model(torch.ones(1, 3)).sum()
+    loss.backward()
+    optimizer.step()
+    original_weights = {key: value.clone() for key, value in model.state_dict().items()}
+    original_optimizer = optimizer.state_dict()
+    game = GameConfig()
+    path = save_checkpoint(
+        tmp_path / "before-pie.pt",
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        ema=ema,
+        step=42,
+        config={"game": asdict(game), "model": {}},
+    )
+    target_model, target_optimizer, target_scheduler, target_ema = _state()
+    metadata = load_checkpoint(
+        path,
+        model=target_model,
+        optimizer=target_optimizer,
+        scheduler=target_scheduler,
+        ema=target_ema,
+        expected_game_config=asdict(replace(game, pie_rule=True)),
+    )
+    assert metadata["step"] == 42
+    for key, value in target_model.state_dict().items():
+        torch.testing.assert_close(value, original_weights[key], rtol=0, atol=0)
+    restored = target_optimizer.state_dict()
+    assert restored["param_groups"] == original_optimizer["param_groups"]
+    for param, values in original_optimizer["state"].items():
+        for key, value in values.items():
+            torch.testing.assert_close(
+                restored["state"][param][key], value, rtol=0, atol=0
+            )
 
 
 def test_checkpoint_binds_optimizer_routing_and_hyperparameters(

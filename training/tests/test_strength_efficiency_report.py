@@ -27,6 +27,24 @@ def _write_jsonl(path, records) -> None:
     )
 
 
+def test_learner_summary_keeps_scoped_credit_distinct_from_lifetime_and_rollback():
+    legacy = {"updates_per_new_sample": 1.3, "lifetime_updates_per_new_sample": 1.3}
+    scoped = {
+        "updates_per_new_sample": None,
+        "lifetime_updates_per_new_sample": None,
+        "segment_updates_per_new_sample": 1.5,
+        "utd_segment_training_objective": "ring10_pie",
+    }
+    summary = _learner_summary([legacy, scoped])
+    assert summary["lifetime_updates_per_new_sample"] is None
+    assert summary["segment_updates_per_new_sample"] == 1.5
+    assert summary["utd_segment_training_objective"] == "ring10_pie"
+    assert (
+        _learner_summary([legacy, scoped, legacy])["utd_segment_training_objective"]
+        is None
+    )
+
+
 def _arena_result(*, completed_ns: int, elo: float, lower: float) -> dict:
     return {
         "schema_version": 2,

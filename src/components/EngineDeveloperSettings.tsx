@@ -61,6 +61,14 @@ function EngineBudgetControls({
     simulations: String(budget.simulations),
     maxConsidered: String(budget.maxConsidered),
   });
+  const [observedBudget, setObservedBudget] = useState(budget);
+  if (observedBudget !== budget) {
+    setObservedBudget(budget);
+    setDraft({
+      simulations: String(budget.simulations),
+      maxConsidered: String(budget.maxConsidered),
+    });
+  }
   const inputId = useId();
   const simulationsError = budgetError(
     draft.simulations,

@@ -48,6 +48,13 @@ export function RulesDialog({ open, onClose }: RulesDialogProps) {
             played, but it connects all five innermost nodes for <em>both</em> players.
           </p>
           <p>
+            Even games use the <strong className="text-gold">pie rule</strong> in both
+            variants: after the opening stone, the second player may swap sides instead of
+            placing a stone. This choice is available only once and ends when they place
+            their first stone. Handicap games are available only on the Full (10-ring)
+            board: the first player places two to nine opening stones, and there is no swap.
+          </p>
+          <p>
             Every node on the perimeter holds a <strong className="text-gold">peri</strong>,
             worth one point. The five corners each hold a{' '}
             <strong className="text-gold">quark</strong> as well.

@@ -30,12 +30,13 @@ from .search_options import (
 )
 from .search_sessions import CompletedSearchCache
 from .balanced_evaluation import (
-    BALANCED_CATEGORIES,
+    balanced_categories,
     balanced_opening_seed,
     balanced_search_seed,
+    category,
     cell_variant,
 )
-from .topology import get_topology
+from .topology import SUPPORTED_RINGS, get_topology
 
 
 _FutureResult = TypeVar("_FutureResult")
@@ -1480,7 +1481,7 @@ class ArenaRunner:
                     int((pair_starts or {}).get(ring, 0))
                     + int((pair_counts or {}).get(ring, self.config.pairs_per_ring)),
                 )
-                for name in BALANCED_CATEGORIES
+                for name in balanced_categories(self.config, ring)
             )
         # Dynamo/Inductor compiled models are not thread-safe. Keep the two
         # GIL-releasing native search groups parallel, but route both models
@@ -1495,7 +1496,7 @@ class ArenaRunner:
                 if self.config.balanced_cells:
                     by_variant: dict[GameVariant, list[int]] = {}
                     for index in range(first_pair, final_pair):
-                        for name in BALANCED_CATEGORIES:
+                        for name in balanced_categories(self.config, ring):
                             if (ring, name, index) in finished:
                                 continue
                             variant = cell_variant(name, index, self.config)
@@ -1666,6 +1667,15 @@ class ArenaRunner:
                 "pie_rule": self.config.balanced_cells
                 or "pie" in self.config.segment_pairs_per_ring,
                 "segments": {
+                    "pie": 2 * self.config.pairs_per_ring,
+                    **(
+                        {"handicap": 2 * self.config.pairs_per_ring}
+                        if max(SUPPORTED_RINGS) in self.config.rings
+                        else {}
+                    ),
+                }
+                if self.config.variant_policy == "pie_even"
+                else {
                     "standard": self.config.pairs_per_ring,
                     "classic": self.config.pairs_per_ring,
                     "pie": 2 * self.config.pairs_per_ring,
@@ -1828,7 +1838,7 @@ class ArenaRunner:
                         raise ValueError("invalid arena resume game state")
                     if self.config.balanced_cells and not any(
                         cell_variant(name, pair, self.config) == parsed
-                        for name in BALANCED_CATEGORIES
+                        for name in balanced_categories(self.config, ring)
                     ):
                         raise ValueError(
                             "arena resume variant disagrees with balanced cell schedule"
@@ -2160,6 +2170,7 @@ class ArenaRunner:
         pair_indices: Sequence[int],
         variant: GameVariant,
     ) -> list[tuple[int, int, int, int | None]]:
+        self._validate_variant(ring, variant)
         node_count = get_topology(ring).n
         specifications: list[tuple[int, int, int, int | None]] = []
         for pair in pair_indices:
@@ -2177,6 +2188,14 @@ class ArenaRunner:
                     (pair, candidate_player, opening_seed, opening_action)
                 )
         return specifications
+
+    def _validate_variant(self, ring: int, variant: GameVariant) -> None:
+        # Diagnostic callers also use the batch/game helpers directly. Keep
+        # their played rules inside the active objective at those boundaries.
+        if self.config.variant_policy == "pie_even" and category(
+            variant
+        ) not in balanced_categories(self.config, ring):
+            raise ValueError("arena variant is excluded by the pie-even policy")
 
     def _play_specifications(
         self,
@@ -2287,6 +2306,7 @@ class ArenaRunner:
         inference_executor: Executor,
         stop_requested: Callable[[], bool],
     ) -> list[ArenaGame]:
+        self._validate_variant(ring, variant)
         importer = getattr(self.native.StateBatch, "from_semantic", None)
         if not callable(importer):
             output: list[ArenaGame] = []
@@ -2815,6 +2835,7 @@ class ArenaRunner:
         inference_executor: Executor,
         stop_requested: Callable[[], bool],
     ) -> ArenaGame | None:
+        self._validate_variant(ring, variant)
         specification = (pair, candidate_player, opening_seed, opening_action)
         history = self._resume_actions(ring, variant, specification)
         states = self.native.StateBatch(

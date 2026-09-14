@@ -3,6 +3,13 @@
 This directory contains the implemented training, arena, serving and browser-export
 pipeline for the Double *Star variant family on rings 4, 6, 8, and 10.
 
+The next training policy is **90% even games with pie and 10% handicap games**,
+split equally between classic and Double *Star. Handicap games run only on ring 10
+and never use pie. The 85/5/5/5 board allocation is retained. The implementation is
+local and has **not been deployed**. See [pie-even training](docs/pie-even-training.md)
+for replay exclusions, evaluation, and preparing a future migration from the active
+profile without losing its measured execution settings.
+
 **No trained model is checked into this repository.** The code and tests establish the
 pipeline contracts; they do not establish strong or superhuman play. `starserve` needs a
 valid `champion.json`, and local browser AI needs a separately distilled and published
@@ -68,8 +75,9 @@ lineage transfer: `scripts/prepare_lineage_transfer.py` re-labels the old replay
 the legacy champion's soft targets so a fresh rules-v3 run distils it (see
 `docs/variant-capable-network-plan.md`).
 
-The self-play mixture is configured under `selfplay.variants` (default off, i.e.
-standard Double *Star only). The Stage B profiles target all six rule categories
+The self-play mixture is configured under `selfplay.variants`. The new
+`ring10_pie` objective uses the pie-even policy described above. The earlier Stage B
+profiles are retained to read and reproduce historical runs; they target six categories
 equally: standard double and classic each get 1/6 of batches; handicap and pie each
 get 1/3, split equally between classic and double. Both handicap modes draw sizes
 2..9 independently. Handicap games give the second player a playout-doubling
@@ -84,7 +92,7 @@ expected sampling share; replay quotas are enforced at the four aggregate segmen
 The legacy arena promotes on standard double with variant regression guards.
 `arena.balanced_cells` instead gives all six modes equal weight on the configured
 arena boards and enables a separate strength ladder. The largest-board efficiency
-profile uses six ring-10 cells for promotion and strength, with 85% of training on
+historical profile uses six ring-10 cells for promotion and strength, with 85% of training on
 ring 10 and 5% on each smaller board; smaller-board regressions cannot veto its
 promotions. The original all-board objective retains its 24-cell contract. See
 [balanced evaluation](docs/balanced-strength-evaluation.md).

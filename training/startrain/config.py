@@ -1265,9 +1265,9 @@ class RetentionConfig:
 @dataclass(frozen=True, slots=True)
 class OrchestrationConfig:
     enabled: bool = False
-    training_objective: Literal["generalist", "ring10_only", "ring10_priority"] = (
-        "generalist"
-    )
+    training_objective: Literal[
+        "generalist", "ring10_only", "ring10_priority", "ring10_pie"
+    ] = "generalist"
     run_id: str | None = None
     gpus: tuple[GPUWorkerConfig, ...] = ()
     cpu_actors: tuple[CPUActorConfig, ...] = ()
@@ -1294,10 +1294,11 @@ class OrchestrationConfig:
             "generalist",
             "ring10_only",
             "ring10_priority",
+            "ring10_pie",
         ):
             raise ConfigError(
                 "orchestration.training_objective must be generalist, ring10_only, "
-                "or ring10_priority"
+                "ring10_priority, or ring10_pie"
             )
         if type(self.allow_colocated_workers) is not bool:
             raise ConfigError("allow_colocated_workers must be boolean")
@@ -1530,6 +1531,9 @@ class ArenaConfig:
     segment_handicap_pda: tuple[int, ...] = (1, 1, 2, 2, 2, 3, 3, 3)
     swap_dead_zone: float = 0.02
     balanced_cells: bool = False
+    # Legacy contracts remain readable with exactly their original identities.
+    # New training uses pie for even games and ring-10-only handicap cells.
+    variant_policy: Literal["legacy_six", "pie_even"] = "legacy_six"
     cell_regression_floor_elo: float = -100.0
     handicap_severity_cycle: tuple[int, ...] = (2, 4, 6, 9)
     strength_simulations: int = 1_024
@@ -1539,6 +1543,10 @@ class ArenaConfig:
     exact_clinch_termination: bool = False
 
     def __post_init__(self) -> None:
+        if self.variant_policy not in ("legacy_six", "pie_even"):
+            raise ConfigError("arena.variant_policy must be legacy_six or pie_even")
+        if self.variant_policy == "pie_even" and not self.balanced_cells:
+            raise ConfigError("pie_even evaluation requires balanced_cells")
         if type(self.exact_clinch_termination) is not bool:
             raise ConfigError("arena.exact_clinch_termination must be boolean")
         if not isinstance(self.search_execution, SearchExecutionConfig):
@@ -1819,6 +1827,10 @@ class ExperimentConfig:
                 )
         if self.orchestration.training_objective == "ring10_priority":
             self._validate_ring10_priority()
+        if self.orchestration.training_objective == "ring10_pie":
+            self._validate_ring10_pie()
+        elif self.selfplay.pie_even_training:
+            raise ConfigError("pie_even_training requires the ring10_pie objective")
         if (
             self.orchestration.plateau.enabled
             and self.orchestration.plateau.max_learner_champion_lag_steps
@@ -1915,6 +1927,69 @@ class ExperimentConfig:
                 "without legacy ring or segment guards"
             )
 
+    def _validate_ring10_pie(self) -> None:
+        """Freeze the supported games and the global 90/10 learning objective."""
+        from .variant_training import training_segment_quotas
+
+        mixture = self.orchestration.ring_mixture
+        if not mixture.step_weights or mixture.step_weights[0].from_step != 0:
+            raise ConfigError("ring10_pie requires explicit board weights from step 0")
+        for stage in mixture.step_weights:
+            weights = dict(zip(mixture.rings, stage.weights, strict=True))
+            if (
+                any(weight <= 0 for weight in stage.weights)
+                or abs(sum(stage.weights) - 1.0) > 1e-9
+                or weights.get(10, 0.0) <= 0.5
+            ):
+                raise ConfigError(
+                    "ring10_pie requires positive normalized board weights "
+                    "with a ring-10 majority"
+                )
+            for ring in mixture.rings:
+                training_segment_quotas(ring, weights)
+        variants = self.selfplay.variants
+        expected = {"standard": 0.0, "classic": 0.0, "handicap": 0.1, "pie": 0.9}
+        if (
+            not variants.enabled
+            or any(
+                abs(variants.segment_fractions[name] - value) > 1e-9
+                for name, value in expected.items()
+            )
+            or variants.pie_classic_share != 0.5
+            or variants.handicap_classic_share != 0.5
+            or self.learner.segment_quotas is None
+            or any(
+                abs(self.learner.segment_quotas.get(name, 0.0) - value) > 1e-9
+                for name, value in expected.items()
+            )
+        ):
+            raise ConfigError(
+                "ring10_pie requires 90% pie even games and 10% handicap, "
+                "equally split between classic and double in self-play and replay"
+            )
+        if (
+            not self.selfplay.pie_even_training
+            or not self.selfplay.pie
+            or self.selfplay.handicap != 1
+            or self.selfplay.rings != 10
+            or not self.data.ring_stratified
+            or not self.learner.use_ring_mixture_curriculum
+        ):
+            raise ConfigError(
+                "ring10_pie requires pie even-game defaults, pie_even_training, "
+                "and ring-stratified curriculum replay"
+            )
+        if (
+            self.arena.variant_policy != "pie_even"
+            or not self.arena.balanced_cells
+            or self.arena.rings != (10,)
+            or self.arena.required_regression_rings != ()
+            or self.arena.per_ring_regression_floor_elo
+        ):
+            raise ConfigError(
+                "ring10_pie requires four-cell pie_even ring-10 promotion"
+            )
+
     def _validate_variant_family(self) -> None:
         """Self-play may only draw variants the game family admits."""
 
@@ -1986,6 +2061,10 @@ class ExperimentConfig:
         # without multiplying the historical compatibility representations.
         if self.selfplay.ring_search_allocations == ():
             del result["selfplay"]["ring_search_allocations"]
+        if self.selfplay.pie_even_training is False:
+            del result["selfplay"]["pie_even_training"]
+        if self.arena.variant_policy == "legacy_six":
+            del result["arena"]["variant_policy"]
         return result
 
 

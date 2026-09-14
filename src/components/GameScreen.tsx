@@ -32,7 +32,7 @@ import {
 } from '@/lib/star/ai/protocol';
 import { requestServerAiDecision } from '@/lib/star/ai/server-client';
 import { scoreCompletionBounds } from '@/lib/star/completion-bounds';
-import { replay } from '@/lib/star/game';
+import { configHandicap, replay } from '@/lib/star/game';
 import {
   EMPTY,
   scorePosition,
@@ -249,11 +249,7 @@ export function GameScreen() {
     if (controller === 'human' || !aiPositionKey) return;
 
     const selectedSearch = aiSearchSettings[controller];
-    const key = `${aiPositionKey}:${retryNonce}${
-      devtools
-        ? `:${selectedSearch.simulations}:${selectedSearch.maxConsidered}`
-        : ''
-    }`;
+    const key = `${aiPositionKey}:${retryNonce}:${selectedSearch.simulations}:${selectedSearch.maxConsidered}`;
     const scheduleCancellation = (flight: AiFlight) => {
       if (flight.settled) return;
       flight.cancelScheduled = true;
@@ -316,7 +312,7 @@ export function GameScreen() {
 
     const options = {
       signal: flight.abortController.signal,
-      ...(devtools ? { search: selectedSearch } : {}),
+      search: selectedSearch,
     };
     const response =
       controller === 'server'
@@ -494,7 +490,6 @@ export function GameScreen() {
       ? null
       : reducedSearchBudget(aiSearchSettings[currentController]);
   const canUseLessEffort =
-    devtools &&
     activeAiError?.retryable === true &&
     activeAiError.code === 'timeout' &&
     lowerBudget !== null;
@@ -693,8 +688,9 @@ export function GameScreen() {
             ✳Star
           </span>
           <span className="hidden truncate text-xs text-muted sm:block">
-            {config.mode === 'double' ? 'Double *Star' : 'Classic'} · {config.rings} rings ·{' '}
-            {board.periCount + 1} points in the sky
+            {config.mode === 'double' ? 'Double *Star' : 'Classic'} ·{' '}
+            {config.pieRule ? 'Pie' : configHandicap(config) > 1 ? `${configHandicap(config)}-stone handicap` : 'Standard'} ·{' '}
+            {config.rings} rings
           </span>
         </button>
         <nav className="flex shrink-0 items-center gap-1.5 sm:gap-2" aria-label="Game">

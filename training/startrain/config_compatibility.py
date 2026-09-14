@@ -215,6 +215,12 @@ def without_search_execution_defaults(payload: Mapping[str, Any]) -> dict[str, A
             section.get("search_execution"), defaults
         ):
             del section["search_execution"]
+    arena = result.get("arena")
+    if isinstance(arena, dict) and arena.get("variant_policy") == "legacy_six":
+        del arena["variant_policy"]
+    selfplay = result.get("selfplay")
+    if isinstance(selfplay, dict) and selfplay.get("pie_even_training") is False:
+        del selfplay["pie_even_training"]
     return result
 
 

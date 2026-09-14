@@ -22,7 +22,7 @@ import hashlib
 import math
 import random
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal, Protocol, Sequence
@@ -59,6 +59,7 @@ from .search_options import (
     search_model_context,
 )
 from .topology import SUPPORTED_RINGS
+from .variant_training import training_segment_quotas, training_variant_allowed
 
 
 class EvaluatorProtocol(Protocol):
@@ -361,6 +362,8 @@ class SelfPlayConfig:
     mode: str = "double"
     handicap: int = 1
     pie: bool = False
+    # Opt in per training objective; old replay/game contracts remain readable.
+    pie_even_training: bool = False
     variants: VariantMixtureConfig = VariantMixtureConfig()
     fast_probability: float = 0.75
     full_probability: float = 0.25
@@ -423,6 +426,7 @@ class SelfPlayConfig:
             "rolling_game_slots",
             "cohort_search_budgets",
             "preserve_interrupted_policy",
+            "pie_even_training",
         ):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f"{name} must be boolean")
@@ -488,10 +492,38 @@ class SelfPlayConfig:
         GameVariant(mode=self.mode, handicap=self.handicap, pie=self.pie)
         if not isinstance(self.variants, VariantMixtureConfig):
             raise ValueError("variants must be a VariantMixtureConfig")
+        if self.pie_even_training:
+            if not training_variant_allowed(
+                self.rings, self.mode, self.handicap, self.pie
+            ):
+                raise ValueError(
+                    "pie even training requires pie for even games and "
+                    "restricts handicap games to ring 10 without pie"
+                )
+            if self.variants.enabled and (
+                self.variants.standard > 0 or self.variants.classic > 0
+            ):
+                raise ValueError("pie even training cannot draw even games without pie")
 
     @property
     def variant(self) -> GameVariant:
         return GameVariant(mode=self.mode, handicap=self.handicap, pie=self.pie)
+
+    def variant_mixture_for_ring(
+        self, ring: int, ring_weights: Mapping[int, float]
+    ) -> VariantMixtureConfig:
+        """Condition the global mixture once, after selecting the batch board.
+
+        Call this on the master profile, whose handicap fraction is global;
+        the returned mixture belongs only to the chosen batch. Restricted CPU
+        actors use the same global weights even though they only draw ring 4.
+        """
+        if not self.pie_even_training or not self.variants.enabled:
+            return self.variants
+        quotas = training_segment_quotas(
+            ring, ring_weights, handicap_fraction=self.variants.handicap
+        )
+        return replace(self.variants, **quotas)
 
     def resolved_search_allocation(self) -> "SelfPlayConfig":
         """Resolve after selecting the actual batch ring, from the master profile.

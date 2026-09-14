@@ -27,6 +27,7 @@ from startrain.checkpoint import (
     write_resume_cutover,
 )
 from startrain.config import load_config
+from startrain.learner import UTDSegmentState
 from startrain.lr_governor import (
     LEARNING_RATE_GOVERNOR_KEY,
     LearningRateGovernorState,
@@ -1006,7 +1007,13 @@ def prepare_champion_warm_start(
     replay = preflight["replay"]
     if not isinstance(recovery, dict) or not isinstance(replay, dict):
         raise WarmStartError("preflight returned invalid durable boundaries")
-    committed_value = replay.get("committed_samples")
+    scoped = experiment.orchestration.training_objective == "ring10_pie"
+    objective = {"training_objective": "ring10_pie"} if scoped else {}
+    if scoped and replay.get("training_objective") != "ring10_pie":
+        raise WarmStartError("preflight omitted the active replay credit scope")
+    committed_value = replay.get(
+        "training_committed_samples" if scoped else "committed_samples"
+    )
     if (
         isinstance(committed_value, bool)
         or not isinstance(committed_value, int)
@@ -1031,7 +1038,9 @@ def prepare_champion_warm_start(
             if active_weights is not None
             else mixture.rings
         )
-        ready_samples = replay.get("ready_samples_by_ring")
+        ready_samples = replay.get(
+            "training_ready_samples_by_ring" if scoped else "ready_samples_by_ring"
+        )
         if not isinstance(ready_samples, dict):
             raise WarmStartError("preflight omitted ready replay samples by ring")
         active_ready_samples = sum(
@@ -1070,12 +1079,14 @@ def prepare_champion_warm_start(
                 "warm start requires complete committed-sample history"
             )
         utd_segment = {
-            "schema_version": 1,
-            "run_id": identity.run_id,
-            "generation_family": identity.generation_family,
-            "target_updates_per_new_sample": float(target),
-            "baseline_examples_consumed": examples_consumed,
-            "baseline_committed_replay_samples": replay_baseline,
+            **UTDSegmentState(
+                run_id=identity.run_id,
+                generation_family=identity.generation_family,
+                target_updates_per_new_sample=float(target),
+                baseline_examples_consumed=examples_consumed,
+                baseline_committed_replay_samples=replay_baseline,
+                training_objective="ring10_pie" if scoped else None,
+            ).as_dict(),
             "created_ns": time.time_ns(),
         }
     selfplay_enabled = (
@@ -1092,6 +1103,7 @@ def prepare_champion_warm_start(
     training_segment: dict[str, object] = {
         "schema_version": 1,
         "kind": "weights-only-champion-warm-start",
+        **objective,
         "run_id": identity.run_id,
         "generation_family": identity.generation_family,
         "source_model_identity": warm_source.model_identity,
@@ -1148,6 +1160,7 @@ def prepare_champion_warm_start(
         "source_selection": source_details,
         "examples_consumed": examples_consumed,
         "committed_replay_samples": committed_samples,
+        **objective,
         "initial_replay_credit": replay_credit,
         "utd_segment": utd_segment,
         "cadence": cadence,
@@ -1240,6 +1253,7 @@ def prepare_champion_warm_start(
             "absolute_model_step": prepared.step,
             "examples_consumed": examples_consumed,
             "committed_replay_samples": committed_samples,
+            **objective,
             "checkpoint": str(prepared.checkpoint.relative_to(learner_root)),
             "checkpoint_sha256": prepared.checkpoint_sha256,
             "checkpoint_bytes": prepared.checkpoint_bytes,

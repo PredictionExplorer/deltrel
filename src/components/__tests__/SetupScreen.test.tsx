@@ -62,6 +62,20 @@ const developerCapabilities: AiCapabilities = {
   },
 };
 
+const championCapabilities: AiCapabilities = {
+  ...developerCapabilities,
+  server: {
+    ...developerCapabilities.server,
+    status: 'available',
+    champion: {
+      role: 'champion',
+      modelVersion: 'model-step-185554',
+      modelStep: 185554,
+      modelIdentity: `sha256-${'a'.repeat(64)}`,
+    },
+  },
+};
+
 function resetStore(overrides: Partial<AppState> = {}) {
   const config = overrides.config ?? DEFAULT_CONFIG;
   useAppStore.setState({
@@ -97,6 +111,160 @@ afterEach(() => {
 });
 
 describe('SetupScreen', () => {
+  it.each(['classic', 'double'] as const)(
+    'offers only pie even games on smaller boards in %s mode',
+    async (mode) => {
+      resetStore({ config: { ...DEFAULT_CONFIG, mode, pieRule: false } });
+      const user = userEvent.setup();
+      render(<SetupScreen />);
+      expect(screen.queryByRole('button', { name: 'Standard opening' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Even (pie) opening' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: 'Handicap opening' })).toBeDisabled();
+      await user.click(screen.getByRole('button', { name: /begin the game/i }));
+      expect(useAppStore.getState().config).toMatchObject({ mode, pieRule: true, handicap: 1 });
+    },
+  );
+
+  it.each(['preset', 'slider'] as const)(
+    'resets handicap to an even game when a %s selects a smaller board',
+    async (control) => {
+      resetStore({ config: { ...DEFAULT_CONFIG, rings: 10, pieRule: false, handicap: 9 } });
+      const user = userEvent.setup();
+      render(<SetupScreen />);
+      expect(screen.getByRole('radio', { name: '9 handicap stones' })).toHaveAttribute('aria-checked', 'true');
+      if (control === 'preset') {
+        await user.click(screen.getByRole('button', { name: 'Mini, 4 rings' }));
+      } else {
+        fireEvent.change(screen.getByRole('slider', { name: 'Custom' }), { target: { value: '4' } });
+      }
+      expect(screen.getByRole('button', { name: 'Handicap opening' })).toBeDisabled();
+      expect(screen.queryByRole('radiogroup', { name: 'Handicap stones' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Even (pie) opening' })).toHaveAttribute('aria-pressed', 'true');
+      await user.click(screen.getByRole('button', { name: /begin the game/i }));
+      expect(useAppStore.getState().config).toMatchObject({ rings: 4, pieRule: true, handicap: 1 });
+    },
+  );
+
+  it('repairs old small-board handicap preferences without mutating the saved game', async () => {
+    const saved = { ...DEFAULT_CONFIG, rings: 4, pieRule: false, handicap: 9 };
+    resetStore({ config: saved });
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    expect(screen.getByRole('button', { name: 'Even (pie) opening' })).toHaveAttribute('aria-pressed', 'true');
+    expect(useAppStore.getState().config).toEqual(saved);
+    await user.click(screen.getByRole('button', { name: /begin the game/i }));
+    expect(useAppStore.getState().config).toMatchObject({ rings: 4, pieRule: true, handicap: 1 });
+    expect(saved).toMatchObject({ pieRule: false, handicap: 9 });
+  });
+
+  it.each([
+    ['classic', 'Even (pie)', true, 1],
+    ['classic', 'Handicap', false, 9],
+    ['double', 'Even (pie)', true, 1],
+    ['double', 'Handicap', false, 9],
+  ] as const)('starts %s with %s opening against the champion', async (mode, opening, pieRule, handicap) => {
+    vi.mocked(checkAiCapabilities).mockResolvedValue(championCapabilities);
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    await user.click(await screen.findByRole('button', { name: 'Play against the champion' }));
+    await user.click(screen.getByRole('button', {
+      name: mode === 'classic' ? 'Classic *Star, 1 stone per turn' : /Double \*Star, 2 stones per turn/,
+    }));
+    if (handicap > 1) {
+      await user.click(screen.getByRole('button', { name: 'Full, 10 rings' }));
+    }
+    await user.click(screen.getByRole('button', { name: `${opening} opening` }));
+    if (handicap > 1) {
+      await user.click(screen.getByRole('radio', { name: `${handicap} handicap stones` }));
+    }
+    const rings = handicap > 1 ? 10 : 6;
+    const summary = `${mode === 'classic' ? 'Classic' : 'Double'} · ${handicap > 1 ? '9-stone handicap' : opening} · ${rings} rings`;
+    expect(screen.getByText(summary)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /begin the game/i }));
+    expect(useAppStore.getState()).toMatchObject({
+      phase: 'playing',
+      controllers: ['human', 'server'],
+      config: { mode, rings, pieRule, handicap, playerNames: ['You', 'Champion'] },
+    });
+  });
+
+  it('shows the full champion identity and ordinary thinking-time choices', async () => {
+    vi.mocked(checkAiCapabilities).mockResolvedValue(championCapabilities);
+    const user = userEvent.setup();
+    const { container } = render(<SetupScreen />);
+    expect(await screen.findByText('Ready to play')).toBeInTheDocument();
+    expect(screen.getByText(/step 185,554/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Play against the champion' }));
+    expect(screen.getByRole('combobox', { name: 'Player 2 controller' })).toHaveValue('server');
+    expect(screen.getByRole('button', { name: 'Strong champion search' })).toHaveAttribute('aria-pressed', 'true');
+    for (const [label, simulations, maxConsidered] of [
+      ['Quick', 128, 8], ['Maximum', 4096, 64], ['Strong', 512, 16],
+    ] as const) {
+      await user.click(screen.getByRole('button', { name: `${label} champion search` }));
+      expect(useAppStore.getState().aiSearchSettings.server).toEqual({ simulations, maxConsidered });
+    }
+    await user.click(screen.getByText('Champion details'));
+    expect(screen.getByText(`sha256-${'a'.repeat(64)}`)).toBeVisible();
+    expect(screen.getByText('model-step-185554')).toBeVisible();
+    expect((await axe(container)).violations).toEqual([]);
+  });
+
+  it('keeps pie and handicap openings mutually exclusive without dropping the champion', async () => {
+    vi.mocked(checkAiCapabilities).mockResolvedValue(championCapabilities);
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    await user.click(await screen.findByRole('button', { name: 'Play against the champion' }));
+    await user.click(screen.getByRole('button', { name: 'Full, 10 rings' }));
+    await user.click(screen.getByRole('button', { name: 'Handicap opening' }));
+    await user.click(screen.getByRole('radio', { name: '9 handicap stones' }));
+    await user.click(screen.getByRole('button', { name: 'Even (pie) opening' }));
+    expect(screen.queryByRole('radiogroup', { name: 'Handicap stones' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /begin the game/i }));
+    expect(useAppStore.getState()).toMatchObject({
+      controllers: ['human', 'server'],
+      config: { pieRule: true, handicap: 1 },
+    });
+  });
+
+  it('does not describe an unverified generic AI server as a ready champion', async () => {
+    render(<SetupScreen />);
+    expect(await screen.findByText('Not connected')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Play against the champion' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /begin the game/i })).toBeEnabled();
+  });
+
+  it('lets an ordinary player repair a saved budget above the server limit', async () => {
+    resetStore({ controllers: ['human', 'server'], aiSearchSettings: {
+      server: { simulations: 8192, maxConsidered: 64 },
+      local: DEFAULT_AI_SEARCH_SETTINGS.local,
+    } });
+    vi.mocked(checkAiCapabilities).mockResolvedValue(championCapabilities);
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('saved thinking-time setting');
+    expect(screen.getByRole('button', { name: /begin the game/i })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Use recommended thinking time' }));
+    expect(screen.getByRole('button', { name: /begin the game/i })).toBeEnabled();
+    expect(useAppStore.getState().aiSearchSettings.server).toEqual({ simulations: 512, maxConsidered: 16 });
+  });
+
+  it('synchronizes advanced budget drafts after choosing ordinary champion effort', async () => {
+    vi.stubEnv('NEXT_PUBLIC_STAR_AI_DEVTOOLS', '1');
+    vi.mocked(checkAiCapabilities).mockResolvedValue(championCapabilities);
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    await user.click(await screen.findByRole('button', { name: 'Play against the champion' }));
+    await user.click(screen.getByText('Engine developer settings'));
+    await user.click(screen.getByText('Advanced search budget'));
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Simulations' }), { target: { value: '4097' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: /begin the game/i })).toBeDisabled());
+    await user.click(screen.getByRole('button', { name: 'Play against the champion' }));
+    expect(screen.getByRole('button', { name: /begin the game/i })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Quick champion search' }));
+    expect(screen.getByRole('spinbutton', { name: 'Simulations' })).toHaveValue(128);
+    await waitFor(() => expect(screen.getByRole('button', { name: /begin the game/i })).toBeEnabled());
+  });
+
   it('stores trimmed fallback player names when fields are blank', async () => {
     const user = userEvent.setup();
     render(<SetupScreen />);
@@ -137,7 +305,7 @@ describe('SetupScreen', () => {
     const user = userEvent.setup();
     render(<SetupScreen />);
 
-    const classic = screen.getByRole('button', { name: '*Star, 1 stone per turn' });
+    const classic = screen.getByRole('button', { name: 'Classic *Star, 1 stone per turn' });
     const double = screen.getByRole('button', { name: /Double \*Star, 2 stones per turn/i });
     expect(classic).toHaveAttribute('aria-pressed', 'true');
     expect(
@@ -161,13 +329,14 @@ describe('SetupScreen', () => {
       screen.queryByText('Engine developer settings'),
     ).not.toBeInTheDocument();
 
-    const pieRule = screen.getByRole('checkbox', { name: /pie rule/i });
+    const pieRule = screen.getByRole('button', { name: 'Even (pie) opening' });
     await user.click(pieRule);
     expect(
       screen.getByRole('combobox', { name: 'Player 1 controller' }),
     ).toHaveValue('server');
 
-    await user.click(pieRule);
+    await user.click(screen.getByRole('button', { name: 'Full, 10 rings' }));
+    await user.click(screen.getByRole('button', { name: 'Handicap opening' }));
     expect(
       screen.getByRole('combobox', { name: 'Player 1 controller' }),
     ).toHaveValue('server');

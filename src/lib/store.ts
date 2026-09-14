@@ -22,6 +22,7 @@ import {
 } from './star/ai/server-client';
 import { scoreCompletionBounds } from './star/completion-bounds';
 import { replay, type GameAction, type GameConfig } from './star/game';
+import { normalizeNewGameConfig } from './star/new-game-policy';
 import { STAR_MAX_HANDICAP } from './star/rules';
 
 export type Phase = 'setup' | 'playing';
@@ -92,7 +93,7 @@ export interface PersistedAppState {
 export const DEFAULT_CONFIG: GameConfig = {
   rings: 6,
   mode: 'classic',
-  pieRule: false,
+  pieRule: true,
   handicap: 1,
   playerNames: ['Player 1', 'Player 2'],
 };
@@ -432,10 +433,11 @@ export const useAppStore = create<AppState>()(
       clinchAcknowledgement: null,
 
       startGame: (config, controllers) => {
-        const validConfig = parseGameConfig(config);
-        if (!validConfig) {
+        const parsedConfig = parseGameConfig(config);
+        if (!parsedConfig) {
           throw new Error('cannot start a game with an unsupported configuration');
         }
+        const validConfig = normalizeNewGameConfig(parsedConfig);
         set({
           phase: 'playing',
           config: validConfig,
@@ -504,14 +506,15 @@ export const useAppStore = create<AppState>()(
           };
         }),
       rematch: () =>
-        set({
+        set((state) => ({
+          config: normalizeNewGameConfig(state.config),
           log: [],
           redoStack: [],
           aiPaused: false,
           reviewing: false,
           earlyOutcome: null,
           clinchAcknowledgement: null,
-        }),
+        })),
       toSetup: () =>
         set({
           phase: 'setup',

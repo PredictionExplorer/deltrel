@@ -74,6 +74,54 @@ def test_preflight_reports_detection_and_config_resolution(
     assert report["orchestration"] == {"enabled": False}
 
 
+@pytest.mark.native
+def test_pie_objective_cpu_smoke_generates_pie_replay(tmp_path, capsys):
+    pytest.importorskip("star_native")
+    from startrain.replay_store import ReplayStore
+
+    identity = tmp_path / "run.json"
+    identity.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "run_id": "pie-cli-test",
+                "generation_family": "pie-cli-family",
+                "created_ns": 1,
+            }
+        )
+    )
+    config = Path(__file__).parents[1] / "configs/h100-8gpu-pie-even.yaml"
+    replay = tmp_path / "replay"
+    selfplay_main(
+        [
+            "--config",
+            str(config),
+            "--run-identity",
+            str(identity),
+            "--replay-store",
+            str(replay),
+            "--cpu-smoke",
+            "--rings",
+            "4",
+            "--games",
+            "1",
+        ]
+    )
+    summaries = json.loads(capsys.readouterr().out)
+    assert len(summaries) == 1
+    assert summaries[0]["variant"] == "pie-double"
+    with ReplayStore(replay) as store:
+        samples = store.load_recent_samples(
+            sample_window=128,
+            run_id="pie-cli-test",
+            generation_family="pie-cli-family",
+            current_model_step=0,
+            max_model_lag_steps=0,
+        )
+        assert samples
+        assert {sample.variant_label for sample in samples} == {"pie-double"}
+
+
 def test_preflight_exercise_proves_the_host_device(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

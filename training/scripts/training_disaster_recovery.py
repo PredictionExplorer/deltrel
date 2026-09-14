@@ -20,7 +20,7 @@ import sys
 import tempfile
 import time
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -50,6 +50,7 @@ from startrain.replay_store import (
     MANIFEST_SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
     SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
     validate_game_publications,
+    training_committed_sample_count,
 )
 from startrain.runtime import load_run_identity, validate_identifier
 
@@ -1353,6 +1354,8 @@ def _allocation_gate_references(
             references.append(
                 (payload["graph_cache_controlled_activation"], "status-json")
             )
+        if "training_policy_transition" in payload:
+            references.append((payload["training_policy_transition"], "status-json"))
         result = []
         for reference, kind in references:
             if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
@@ -1399,6 +1402,93 @@ def _controlled_graph_activation_references(
         ) from exc
 
 
+def _allocation_gate_dependency_closure(
+    payload: Mapping[str, Any],
+    load_json: Callable[[str, str], Mapping[str, Any]],
+    *,
+    allow_policy_transition: bool = True,
+) -> list[tuple[str, str, str]]:
+    """Resolve the complete evidence graph, allowing one policy transition only.
+
+    The supplied reader must verify the expected digest before returning JSON.
+    Snapshot capture reads copied immutable objects; offline verification reads
+    only its catalog, so neither depends on the continued existence of a run.
+    """
+    if "training_policy_transition" in payload and not allow_policy_transition:
+        raise DisasterRecoveryError("allocation policy transitions cannot be chained")
+    references = _allocation_gate_references(payload)
+    activation = payload.get("graph_cache_controlled_activation")
+    if activation is not None:
+        receipt = load_json(activation["path"], activation["sha256"])
+        references.extend(_controlled_graph_activation_references(receipt))
+    transition = payload.get("training_policy_transition")
+    if transition is None:
+        return references
+
+    from startrain.search_allocation_gate import (
+        POLICY_TRANSITION_CLASS,
+        POLICY_TRANSITION_FORMAT,
+        POLICY_TRANSITION_SCOPE,
+    )
+
+    receipt = load_json(transition["path"], transition["sha256"])
+    if (
+        set(receipt)
+        != {
+            "format",
+            "schema_version",
+            "classification",
+            "run_id",
+            "source_profile",
+            "source_gate",
+            "source_config_sha256",
+            "target_config_sha256",
+            "measurement_scope",
+            "new_objective_performance_qualified",
+        }
+        or receipt.get("format") != POLICY_TRANSITION_FORMAT
+        or type(receipt.get("schema_version")) is not int
+        or receipt["schema_version"] != 1
+        or receipt.get("classification") != POLICY_TRANSITION_CLASS
+        or receipt.get("measurement_scope") != POLICY_TRANSITION_SCOPE
+        or receipt.get("new_objective_performance_qualified") is not False
+        or receipt.get("run_id") != payload.get("run_id")
+        or receipt.get("target_config_sha256") != payload.get("target_config_sha256")
+    ):
+        raise DisasterRecoveryError("invalid allocation policy transition receipt")
+    for name, kind in (("source_profile", "profile"), ("source_gate", "status-json")):
+        reference = receipt[name]
+        if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
+            raise DisasterRecoveryError("invalid allocation policy source reference")
+        references.append(
+            (
+                _logical_path(reference["path"]),
+                _sha256_text("allocation policy source hash", reference["sha256"]),
+                kind,
+            )
+        )
+    source_reference = receipt["source_gate"]
+    source = load_json(source_reference["path"], source_reference["sha256"])
+    if "training_policy_transition" in source:
+        raise DisasterRecoveryError("allocation policy transitions cannot be chained")
+    expected = dict(source)
+    expected["target_config_sha256"] = receipt["target_config_sha256"]
+    expected["training_policy_transition"] = transition
+    if (
+        payload != expected
+        or source.get("target_config_sha256") != receipt["source_config_sha256"]
+    ):
+        raise DisasterRecoveryError(
+            "allocation policy transition changed its source evidence"
+        )
+    references.extend(
+        _allocation_gate_dependency_closure(
+            source, load_json, allow_policy_transition=False
+        )
+    )
+    return list(dict.fromkeys(references))
+
+
 def _capture_allocation_gate_dependencies(
     builder: _SnapshotBuilder, profile_path: Path
 ) -> None:
@@ -1416,21 +1506,17 @@ def _capture_allocation_gate_dependencies(
         ) from exc
     _, entry = builder.add_run_file(builder.run_root / logical, "status-json")
     payload = _read_catalog_json(builder, entry, name="active allocation gate")
-    activation = payload.get("graph_cache_controlled_activation")
-    for reference, digest, kind in _allocation_gate_references(payload):
+
+    def load_json(reference: str, digest: str) -> Mapping[str, Any]:
         _, dependency = builder.add_run_file(
-            builder.run_root / reference, kind, expected_sha256=digest
+            builder.run_root / reference, "status-json", expected_sha256=digest
         )
-        if activation is not None and reference == activation["path"]:
-            receipt = _read_catalog_json(
-                builder, dependency, name="controlled graph activation"
-            )
-            for child, checksum, child_kind in _controlled_graph_activation_references(
-                receipt
-            ):
-                builder.add_run_file(
-                    builder.run_root / child, child_kind, expected_sha256=checksum
-                )
+        return _read_catalog_json(builder, dependency, name="allocation gate evidence")
+
+    for reference, digest, kind in _allocation_gate_dependency_closure(
+        payload, load_json
+    ):
+        builder.add_run_file(builder.run_root / reference, kind, expected_sha256=digest)
 
 
 def _collect_payloads(
@@ -2330,6 +2416,19 @@ def _verify_snapshot_document(
     profile_entry = catalog.get(profile_logical)
     if profile_entry is None or profile_entry.kind != "profile":
         raise DisasterRecoveryError("snapshot source profile is missing")
+    try:
+        raw_profile = yaml.safe_load(reader.data(profile_logical))
+    except yaml.YAMLError as exc:
+        raise DisasterRecoveryError("snapshot profile YAML is invalid") from exc
+    orchestration = (
+        raw_profile.get("orchestration", {}) if isinstance(raw_profile, dict) else {}
+    )
+    training_objective = (
+        "ring10_pie"
+        if isinstance(orchestration, dict)
+        and orchestration.get("training_objective") == "ring10_pie"
+        else None
+    )
     gate_logical = _active_allocation_gate(
         _object_path(backup_root, profile_entry.sha256)
     )
@@ -2342,20 +2441,17 @@ def _verify_snapshot_document(
             raise DisasterRecoveryError(
                 "snapshot allocation gate does not match the active profile"
             )
-        dependencies = _allocation_gate_references(gate_payload)
-        activation = gate_payload.get("graph_cache_controlled_activation")
-        if activation is not None:
-            # Resolve the receipt through the snapshot catalog, never the live
-            # run. Verification must still work after the original run is lost.
-            receipt_logical = _logical_path(activation["path"])
-            receipt_entry = catalog.get(receipt_logical)
-            if receipt_entry is None or receipt_entry.sha256 != activation["sha256"]:
+
+        def load_gate_json(logical: str, checksum: str) -> Mapping[str, Any]:
+            entry = catalog.get(_logical_path(logical))
+            if entry is None or entry.sha256 != checksum:
                 raise DisasterRecoveryError(
                     "snapshot allocation evidence dependency is missing or mismatched: "
-                    + receipt_logical
+                    + logical
                 )
-            receipt = reader.json(receipt_logical, name="controlled graph activation")
-            dependencies.extend(_controlled_graph_activation_references(receipt))
+            return reader.json(logical, name="allocation gate evidence")
+
+        dependencies = _allocation_gate_dependency_closure(gate_payload, load_gate_json)
         for logical, checksum, kind in dependencies:
             entry = catalog.get(logical)
             if entry is None or entry.sha256 != checksum:
@@ -2653,12 +2749,32 @@ def _verify_snapshot_document(
             > durable_examples
         ):
             raise DisasterRecoveryError("UTD baseline is ahead of durable examples")
+        if utd.get("training_objective") != training_objective:
+            raise DisasterRecoveryError(
+                "UTD segment training objective disagrees with the active profile"
+            )
+        utd_committed_samples = committed_samples
+        if training_objective is not None:
+            ledger_path = _object_path(backup_root, ledger_entry.sha256)
+            with sqlite3.connect(
+                f"{ledger_path.resolve().as_uri()}?mode=ro&immutable=1", uri=True
+            ) as connection:
+                utd_committed_samples = training_committed_sample_count(
+                    connection,
+                    run_id=run_id,
+                    generation_family=family,
+                    training_objective=training_objective,
+                )
+            if not 0 <= utd_committed_samples <= committed_samples:
+                raise DisasterRecoveryError(
+                    "scoped replay credit is outside the aggregate replay boundary"
+                )
         if (
             _nonnegative_int(
                 "UTD baseline replay samples",
                 utd.get("baseline_committed_replay_samples"),
             )
-            > committed_samples
+            > utd_committed_samples
         ):
             raise DisasterRecoveryError("UTD baseline is ahead of replay cutoff")
 

@@ -1703,6 +1703,156 @@ def test_same_scope_guard_change_still_requires_terminal_evidence(tmp_path):
     assert _snapshot(fixture.root) == before
 
 
+def _pie_cutover_fixture(tmp_path):
+    from scripts.prepare_pie_training_profile import pie_training_config
+
+    fixture = _fixture(tmp_path, "h100-8gpu-largest-board-priority.yaml")
+    source = load_config(fixture.old_profile)
+    target = pie_training_config(
+        replace(
+            source,
+            orchestration=replace(
+                source.orchestration,
+                promotion=replace(
+                    source.orchestration.promotion,
+                    finish_inflight_candidate=True,
+                ),
+            ),
+            arena=replace(source.arena, continuation_pairs_per_ring=4),
+        )
+    )
+    fixture.candidate_profile.write_text(
+        yaml.safe_dump(
+            json.loads(json.dumps(target.as_dict())),
+            sort_keys=False,
+        )
+    )
+    with sqlite3.connect(fixture.root / "replay/manifest.sqlite3") as db:
+        db.execute("""CREATE TABLE shards (
+            run_id TEXT, generation_family TEXT, ring INTEGER, segment TEXT,
+            variant TEXT, state TEXT, sample_count INTEGER
+        )""")
+        db.executemany(
+            "INSERT INTO shards VALUES (?,?,?,?,?,?,?)",
+            [
+                ("continuous-test-run", "family-continuous-test", *values)
+                for values in [
+                    (4, "pie", "pie-classic", "ready", 100),
+                    (6, "pie", "pie-double", "ready", 200),
+                    (10, "handicap", "handicap-4-classic", "ready", 300),
+                    (10, "handicap", "handicap-9-double", "ready", 400),
+                    (10, "standard", "double", "ready", 500),
+                    (4, "handicap", "handicap-4-classic", "ready", 600),
+                    (10, "pie", "pie-double", "superseded", 700),
+                ]
+            ],
+        )
+    _write_json(
+        fixture.root / "learner/utd-segment.json",
+        {
+            "schema_version": 1,
+            "run_id": "continuous-test-run",
+            "generation_family": "family-continuous-test",
+            "target_updates_per_new_sample": 1.5,
+            "baseline_examples_consumed": 20_000,
+            "baseline_committed_replay_samples": 10_000,
+            "created_ns": 12,
+        },
+    )
+    _write_json(
+        fixture.root / "strength-epoch.json",
+        {
+            "schema_version": 1,
+            "started_ns": 12,
+            "anchor_identity": "old-anchor",
+            "evaluation_contract_identity": "old-contract",
+            "minimum_candidate_step": 1,
+        },
+    )
+    _write_json(
+        fixture.root / "arena/pending.resume.json",
+        {
+            "arena_state": {"game_states": [{"actions": [1, 2]}]},
+        },
+    )
+    _write_json(fixture.root / "arena/promotion-status.json", {"terminal": False})
+    return fixture
+
+
+def test_pie_cutover_preserves_weights_and_evidence_and_resets_scoped_accounting(
+    tmp_path,
+):
+    from startrain.balanced_evaluation import evaluation_contract
+
+    fixture = _pie_cutover_fixture(tmp_path)
+    old_epoch = (fixture.root / "strength-epoch.json").read_bytes()
+    checkpoint = fixture.checkpoint.read_bytes()
+    pending = (fixture.root / "arena/pending.resume.json").read_bytes()
+    before = _snapshot(fixture.root)
+    plan = migration.plan_migration(fixture.request)
+    assert _snapshot(fixture.root) == before
+    assert plan.utd_segment_payload["training_objective"] == "ring10_pie"
+    assert plan.utd_segment_payload["baseline_committed_replay_samples"] == 1_000
+    assert plan.utd_segment_payload["baseline_examples_consumed"] == 51_200
+    assert plan.migration_record["committed_replay_samples"] == 60_000
+    transition = plan.migration_record["evaluation_contract_transition"]
+    assert len(transition["from"]["cells"]) == 6
+    assert len(transition["to"]["cells"]) == 4
+    migration.apply_migration(plan)
+    assert fixture.checkpoint.read_bytes() == checkpoint
+    assert (fixture.root / "arena/pending.resume.json").read_bytes() == pending
+    assert (plan.backup_directory / "strength-epoch.json").read_bytes() == old_epoch
+    target = load_config(plan.target_profile)
+    epoch = json.loads((fixture.root / "strength-epoch.json").read_text())
+    assert epoch["anchor_identity"] == plan.champion_model_identity
+    assert epoch["minimum_candidate_step"] == plan.learner_step
+    assert (
+        epoch["evaluation_contract_identity"]
+        == evaluation_contract(
+            replace(
+                target.arena,
+                simulations=target.arena.strength_simulations,
+            )
+        )["identity"]
+    )
+    assert json.loads((fixture.root / "learner/utd-segment.json").read_text()) == (
+        plan.utd_segment_payload
+    )
+
+
+def test_pie_cutover_detects_changed_eligible_rows_even_with_fixed_lifetime_counter(
+    tmp_path,
+):
+    fixture = _pie_cutover_fixture(tmp_path)
+    plan = migration.plan_migration(fixture.request)
+    with sqlite3.connect(fixture.root / "replay/manifest.sqlite3") as db:
+        db.execute(
+            "UPDATE shards SET state='gc_deleted' WHERE ring=4 AND segment='pie'"
+        )
+    with pytest.raises(migration.MigrationError, match="eligible replay boundary"):
+        migration.apply_migration(plan)
+    assert not plan.target_profile.exists()
+
+
+def test_pie_cutover_rolls_back_new_accounting_and_strength_epoch(
+    tmp_path, monkeypatch
+):
+    fixture = _pie_cutover_fixture(tmp_path)
+    plan = migration.plan_migration(fixture.request)
+    before = _snapshot(fixture.root)
+    original = migration._atomic_write_bytes
+
+    def fail_profile(path, data, *, mode, overwrite):
+        if path == plan.target_profile:
+            raise OSError("injected profile write failure")
+        return original(path, data, mode=mode, overwrite=overwrite)
+
+    monkeypatch.setattr(migration, "_atomic_write_bytes", fail_profile)
+    with pytest.raises(migration.MigrationError, match="rolled back"):
+        migration.apply_migration(plan)
+    assert _snapshot(fixture.root) == before
+
+
 @pytest.mark.parametrize(
     "field,values",
     [

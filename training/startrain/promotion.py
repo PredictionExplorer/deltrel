@@ -78,8 +78,8 @@ def _balanced_round_plan(
 ) -> tuple[dict[int, int], dict[int, int]]:
     """Finish one fixed round across every cell before extending its budget.
 
-    A prefix counts indices completed in all six modes on one board. Choosing
-    the next boundary from the slowest prefix keeps partial sessions from
+    A prefix counts indices completed in every configured cell on one board.
+    Choosing the next boundary from the slowest prefix keeps partial sessions from
     extending faster boards on each restart. The runner skips already complete
     cell/index pairs inside these ranges, including sparse or frontloaded work.
     """
@@ -1499,7 +1499,7 @@ class PromotionSupervisor:
             peak_reserved if collect_cuda_metrics else None
         )
         if arena_config.balanced_cells:
-            from .balanced_evaluation import BALANCED_CATEGORIES
+            from .balanced_evaluation import balanced_categories
 
             finished = {_persisted_pair_key(pair) for pair in accumulated}
             evaluation_metrics["requested_pairs"] = sum(
@@ -1509,7 +1509,7 @@ class PromotionSupervisor:
                     int(pair_starts.get(ring, 0)),
                     int(pair_starts.get(ring, 0)) + int(pair_counts.get(ring, 0)),
                 )
-                for name in BALANCED_CATEGORIES
+                for name in balanced_categories(arena_config, ring)
             )
         else:
             evaluation_metrics["requested_pairs"] = sum(pair_counts.values())

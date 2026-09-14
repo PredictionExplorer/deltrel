@@ -24,6 +24,7 @@ import {
 } from '@/lib/star/ai/controllers';
 import { EMPTY } from '@/lib/star/scoring';
 import { configHandicap, type GameConfig, type Mode } from '@/lib/star/game';
+import { normalizeNewGameConfig } from '@/lib/star/new-game-policy';
 import { STAR_MAX_HANDICAP } from '@/lib/star/rules';
 import { useAppStore, type AiRuntime } from '@/lib/store';
 import {
@@ -31,6 +32,7 @@ import {
   budgetFitsCapability,
 } from './EngineDeveloperSettings';
 import { StarBoard } from './StarBoard';
+import { ChampionPanel } from './ChampionPanel';
 import {
   engineControllerLabel,
   starAiDevtoolsEnabled,
@@ -42,12 +44,15 @@ export function SetupScreen() {
   const lastConfig = useAppStore((s) => s.config);
   const lastControllers = useAppStore((s) => s.controllers);
   const aiSearchSettings = useAppStore((s) => s.aiSearchSettings);
+  const setAiSearchBudget = useAppStore((s) => s.setAiSearchBudget);
   const devtools = starAiDevtoolsEnabled();
 
   const [mode, setMode] = useState<Mode>(lastConfig.mode);
   const [rings, setRings] = useState(lastConfig.rings);
-  const [pieRule, setPieRule] = useState(lastConfig.pieRule);
-  const [handicap, setHandicap] = useState(configHandicap(lastConfig));
+  const [handicap, setHandicap] = useState(() =>
+    configHandicap(normalizeNewGameConfig(lastConfig)),
+  );
+  const pieRule = handicap === 1;
   const [names, setNames] = useState<[string, string]>([...lastConfig.playerNames]);
   const [controllers, setControllers] = useState<PlayerControllers>(() =>
     normalizeControllers(lastConfig, lastControllers),
@@ -81,11 +86,10 @@ export function SetupScreen() {
     (capability) => capability.status === 'available',
   );
   const engineSettingsReady =
-    !devtools ||
     selectedAiRuntimes.every((runtime) => {
       const capability = capabilities[runtime];
       return (
-        engineDraftValidity[runtime] !== false &&
+        (!devtools || engineDraftValidity[runtime] !== false) &&
         (capability.status !== 'available' ||
           budgetFitsCapability(aiSearchSettings[runtime], capability.search))
       );
@@ -103,13 +107,17 @@ export function SetupScreen() {
     setMode(nextMode);
   };
 
+  const chooseRings = (nextRings: number) => {
+    setRings(nextRings);
+    if (nextRings !== MAX_RINGS) setHandicap(1);
+  };
+
   const chooseController = (player: number, controller: ControllerType) => {
     setControllers((previous) => {
       const next: PlayerControllers = [...previous];
       next[player] = controller;
       return next;
     });
-    setEngineDraftValidity({});
   };
 
   const handleEngineValidityChange = useCallback(
@@ -145,6 +153,10 @@ export function SetupScreen() {
   };
 
   const preset = BOARD_PRESETS.find((p) => p.rings === rings);
+  const opening = pieRule ? 'pie' : 'handicap';
+  const modeSummary = `${mode === 'classic' ? 'Classic' : 'Double'} · ${
+    pieRule ? 'Even (pie)' : `${handicap}-stone handicap`
+  } · ${rings} rings`;
 
   return (
     <main className="screen-safe relative z-10 mx-auto flex w-full max-w-7xl flex-1 flex-col">
@@ -190,6 +202,18 @@ export function SetupScreen() {
           className="fade-up panel-surface flex min-w-0 flex-col gap-5 rounded-3xl p-4 sm:p-5"
           style={{ animationDelay: '0.2s' }}
         >
+          <ChampionPanel
+            capability={capabilities.server}
+            selected={controllers.includes('server')}
+            onChoose={() => {
+              setControllers(['human', 'server']);
+              setNames((previous) => [
+                previous[0] === 'Player 1' ? 'You' : previous[0],
+                'Champion',
+              ]);
+            }}
+          />
+
           {/* Mode */}
           <section>
             <h2 className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-muted">
@@ -198,7 +222,7 @@ export function SetupScreen() {
             <div className="grid grid-cols-1 gap-2.5 min-[420px]:grid-cols-2">
               {(
                 [
-                  { id: 'classic', title: '*Star', sub: '1 stone per turn' },
+                  { id: 'classic', title: 'Classic *Star', sub: '1 stone per turn' },
                   { id: 'double', title: 'Double *Star', sub: '2 stones per turn · first turn 1' },
                 ] as const
               ).map((m) => (
@@ -221,6 +245,76 @@ export function SetupScreen() {
             </div>
           </section>
 
+          <section>
+            <div>
+              <h2 className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-muted">Opening</h2>
+              <div role="group" aria-label="Opening rule" className="grid grid-cols-2 gap-2">
+                {([
+                  ['pie', 'Even (pie)', 'Second player may swap'],
+                  ['handicap', 'Handicap', 'Extra stones · 10 rings only'],
+                ] as const).map(([id, label, description]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-label={`${label} opening`}
+                    aria-pressed={opening === id}
+                    disabled={id === 'handicap' && rings !== MAX_RINGS}
+                    onClick={() => {
+                      setHandicap(id === 'handicap' ? Math.max(2, handicap) : 1);
+                    }}
+                    className={`min-h-16 rounded-xl border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                      opening === id ? 'border-gold/70 bg-gold-faint' : 'border-white/10 bg-white/[0.03] hover:border-gold/35'
+                    }`}
+                  >
+                    <span className="block text-sm text-ink">{label}</span>
+                    <span className="mt-1 block text-[10px] leading-relaxed text-muted">{description}</span>
+                  </button>
+                ))}
+              </div>
+              {opening === 'pie' && <p className="mt-2 text-xs leading-relaxed text-muted">
+                After the opening stone, {names[1].trim() || 'Player 2'} may swap sides.
+              </p>}
+            </div>
+            {opening === 'handicap' && <div className="control-surface mt-3 rounded-xl px-4 py-2.5">
+              <div className="flex items-center justify-between gap-4">
+                <span>
+                  <span className="block text-sm text-ink">Handicap</span>
+                  <span className="block text-xs text-muted">
+                    {names[0].trim() || 'Player 1'} opens with {handicap} stones
+                  </span>
+                </span>
+                <span className="text-xs uppercase tracking-[0.12em] text-muted">
+                  {handicap} stones
+                </span>
+              </div>
+              <div
+                role="radiogroup"
+                aria-label="Handicap stones"
+                className="mt-2 grid grid-cols-8 gap-1"
+              >
+                {Array.from({ length: STAR_MAX_HANDICAP - 1 }, (_, index) => index + 2).map(
+                  (stones) => (
+                    <button
+                      key={stones}
+                      type="button"
+                      role="radio"
+                      aria-checked={handicap === stones}
+                      aria-label={`${stones} handicap stones`}
+                      onClick={() => setHandicap(stones)}
+                      className={`min-h-10 rounded-lg border text-xs transition-[border-color,background-color] duration-200 disabled:cursor-not-allowed disabled:opacity-40 ${
+                        handicap === stones
+                          ? 'border-gold/70 bg-gold-faint text-ink'
+                          : 'border-white/10 bg-white/[0.03] text-muted hover:border-gold/35'
+                      }`}
+                    >
+                      {stones}
+                    </button>
+                  ),
+                )}
+              </div>
+            </div>}
+          </section>
+
           {/* Board size */}
           <section>
             <h2 className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-muted">
@@ -231,7 +325,7 @@ export function SetupScreen() {
                 <button
                   key={p.rings}
                   type="button"
-                  onClick={() => setRings(p.rings)}
+                  onClick={() => chooseRings(p.rings)}
                   aria-pressed={rings === p.rings}
                   aria-label={`${p.label}, ${p.rings} rings`}
                   className={`min-h-12 rounded-xl border px-2 py-2 text-center transition-[border-color,background-color,transform] duration-200 active:scale-[0.98] ${
@@ -258,7 +352,7 @@ export function SetupScreen() {
                 value={rings}
                 onChange={(event) => {
                   const nextRings = Number(event.target.value);
-                  if (isSupportedRings(nextRings)) setRings(nextRings);
+                  if (isSupportedRings(nextRings)) chooseRings(nextRings);
                 }}
                 className="w-full accent-[#e8c48b]"
               />
@@ -329,9 +423,11 @@ export function SetupScreen() {
                               disabled={capability.status !== 'available'}
                               className="bg-[#17130f]"
                             >
-                              {devtools
-                                ? engineControllerLabel(controller)
-                                : controllerLabel(controller)}
+                              {controller === 'server' && capabilities.server.status === 'available' && capabilities.server.champion
+                                ? 'Current champion'
+                                : devtools
+                                  ? engineControllerLabel(controller)
+                                  : controllerLabel(controller)}
                               {suffix}
                             </option>
                           );
@@ -344,65 +440,6 @@ export function SetupScreen() {
                   </span>
                 </div>
               ))}
-            </div>
-            <label className="control-surface mt-3 flex cursor-pointer items-center justify-between gap-4 rounded-xl px-4 py-2.5">
-              <span>
-                <span className="block text-sm text-ink">Pie rule</span>
-                <span className="block text-xs text-muted">
-                  After the opening stone, {names[1].trim() || 'Player 2'} may steal it
-                </span>
-              </span>
-              <input
-                type="checkbox"
-                checked={pieRule}
-                aria-label="Pie rule"
-                onChange={(e) => {
-                  setPieRule(e.target.checked);
-                  if (e.target.checked) setHandicap(1);
-                }}
-                className="h-4 w-4 accent-[#e8c48b]"
-              />
-            </label>
-            <div className="control-surface mt-3 rounded-xl px-4 py-2.5">
-              <div className="flex items-center justify-between gap-4">
-                <span>
-                  <span className="block text-sm text-ink">Handicap</span>
-                  <span className="block text-xs text-muted">
-                    {handicap === 1
-                      ? 'Standard opening: one stone'
-                      : `${names[0].trim() || 'Player 1'} opens with ${handicap} stones`}
-                  </span>
-                </span>
-                <span className="text-xs uppercase tracking-[0.12em] text-muted">
-                  {pieRule ? 'off with pie' : `${handicap} stone${handicap === 1 ? '' : 's'}`}
-                </span>
-              </div>
-              <div
-                role="radiogroup"
-                aria-label="Handicap stones"
-                className="mt-2 grid grid-cols-9 gap-1"
-              >
-                {Array.from({ length: STAR_MAX_HANDICAP }, (_, index) => index + 1).map(
-                  (stones) => (
-                    <button
-                      key={stones}
-                      type="button"
-                      role="radio"
-                      aria-checked={handicap === stones}
-                      aria-label={`${stones} handicap stone${stones === 1 ? '' : 's'}`}
-                      disabled={pieRule}
-                      onClick={() => setHandicap(stones)}
-                      className={`min-h-8 rounded-lg border text-xs transition-[border-color,background-color] duration-200 disabled:cursor-not-allowed disabled:opacity-40 ${
-                        handicap === stones
-                          ? 'border-gold/70 bg-gold-faint text-ink'
-                          : 'border-white/10 bg-white/[0.03] text-muted hover:border-gold/35'
-                      }`}
-                    >
-                      {stones}
-                    </button>
-                  ),
-                )}
-              </div>
             </div>
             <div className="mt-2 min-h-6 px-1 text-xs" aria-live="polite">
               {!aiAllowed && (
@@ -428,9 +465,18 @@ export function SetupScreen() {
                       </p>
                     ),
                 )}
-              {aiAllowed &&
-                (capabilities.server.status !== 'available' ||
-                  capabilities.local.status !== 'available') && (
+              {aiAllowed && selectedAiRuntimes.map((runtime) => {
+                const capability = capabilities[runtime];
+                if (capability.status !== 'available' || !capability.search ||
+                  budgetFitsCapability(aiSearchSettings[runtime], capability.search)) return null;
+                return <p key={runtime} role="alert" className="mb-2 text-danger">
+                  The saved thinking-time setting is not available.{' '}
+                  <button type="button" className="underline" onClick={() =>
+                    setAiSearchBudget(runtime, { ...capability.search!.default })
+                  }>Use recommended thinking time</button>
+                </p>;
+              })}
+              {aiAllowed && (
                   <button
                     type="button"
                     onClick={() => {
@@ -454,6 +500,9 @@ export function SetupScreen() {
             />
           )}
 
+          <p className="text-center text-sm text-gold-strong" aria-live="polite" data-selected-game-mode>
+            {modeSummary}
+          </p>
           <button
             type="button"
             onClick={start}

@@ -51,6 +51,7 @@ def _validated_measurement(
     cfg = ArenaConfig(
         rings=rings,
         balanced_cells=True,
+        variant_policy=contract.get("variant_policy", "legacy_six"),
         pairs_per_ring=4,
         minimum_pairs_per_ring=4,
         simulations=simulations,
@@ -78,7 +79,7 @@ def _validated_measurement(
     summary = summarize_balanced_pairs(pairs, cfg)
     aggregate = summary["balanced_aggregate"]
     if not isinstance(aggregate, dict) or not aggregate["complete_cycles"]:
-        raise ValueError("measurement has no complete equal-cell severity cycle")
+        raise ValueError("measurement has no complete configured-cell severity cycle")
     return {
         "result": result,
         "summary": summary,
@@ -138,7 +139,10 @@ def _balanced_strength_summary(
         "contract_selection": "active_profile"
         if evaluation_config is not None
         else "latest_champion_measurement",
-        "method": "sum-of-paired-equal-cell-elo-contrasts-on-connected-champion-path",
+        "method": "sum-of-paired-weighted-cell-elo-contrasts-on-connected-champion-path"
+        if evaluation_config is not None
+        and evaluation_config.variant_policy == "pie_even"
+        else "sum-of-paired-equal-cell-elo-contrasts-on-connected-champion-path",
         "statistical_role": "descriptive_only",
         "absolute_elo": False,
         "wall_seconds": wall_seconds,
@@ -208,6 +212,10 @@ def _balanced_strength_summary(
     output["evaluation_contract"] = contract
     output["expected_cells"] = len(contract["cells"])
     output["objective"] = contract["objective"]
+    if contract.get("variant_policy") == "pie_even":
+        output["method"] = (
+            "sum-of-paired-weighted-cell-elo-contrasts-on-connected-champion-path"
+        )
     anchor = anchor_identity or measurements[0]["result"]["baseline"]
     output["anchor_identity"] = anchor
     if not isinstance(frontier, str):
@@ -251,7 +259,9 @@ def _balanced_strength_summary(
         error = item["error_probability_per_side"]
         bounds = cycle_confidence_sequence(
             aggregate["cycle_scores"],
-            pairs_per_cycle=aggregate["pairs_per_cycle"],
+            pairs_per_cycle=aggregate.get(
+                "effective_pairs_per_cycle", aggregate["pairs_per_cycle"]
+            ),
             error_probability=error,
         )
         elo_bounds = [_elo(bound) for bound in bounds]

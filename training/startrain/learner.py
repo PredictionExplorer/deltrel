@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from pathlib import Path
+from typing import Literal, TypedDict
 
 import torch
 from torch.nn.parallel import DistributedDataParallel
@@ -81,6 +82,7 @@ from .replay import (
 from .replay_store import ReplaySelection, ReplaySpan, ReplayStore
 from .runtime import RunIdentity, append_jsonl, atomic_json
 from .symmetry import deterministic_transform
+from .variant_training import training_segment_quotas, training_variant_allowed
 from .training import (
     DeviceBatchPrefetcher,
     NonFiniteTrainingError,
@@ -942,6 +944,14 @@ class JSONLMetrics:
             os.fsync(stream.fileno())
 
 
+class TrainingObjectiveOptions(TypedDict, total=False):
+    training_objective: Literal["ring10_pie"]
+
+
+class RingSegmentQuotaOptions(TypedDict, total=False):
+    ring_segment_quotas: dict[int, dict[str, float]]
+
+
 @dataclass(frozen=True, slots=True)
 class UTDSegmentState:
     run_id: str
@@ -949,9 +959,10 @@ class UTDSegmentState:
     target_updates_per_new_sample: float
     baseline_examples_consumed: int
     baseline_committed_replay_samples: int
+    training_objective: str | None = None
 
     def as_dict(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "schema_version": UTD_SEGMENT_SCHEMA_VERSION,
             "run_id": self.run_id,
             "generation_family": self.generation_family,
@@ -961,6 +972,9 @@ class UTDSegmentState:
                 self.baseline_committed_replay_samples
             ),
         }
+        if self.training_objective is not None:
+            result["training_objective"] = self.training_objective
+        return result
 
 
 @dataclass(slots=True)
@@ -2474,6 +2488,10 @@ class LearnerLoop:
         batches: int,
         refresh_reason: str,
     ) -> ReplayWindowSession:
+        if not self._selection_matches_training_objective(selection):
+            raise ValueError(
+                "replay window contains variants excluded by the training objective"
+            )
         if batches <= 0:
             raise ValueError("replay window batches must be positive")
         watermark_name = self._watermark_name()
@@ -2518,6 +2536,7 @@ class LearnerLoop:
                     else self.store.total_committed_sample_count(
                         run_id=self.run_identity.run_id,
                         generation_family=self.run_identity.generation_family,
+                        **self._training_objective_kwargs(),
                     )
                 ),
             )
@@ -2750,6 +2769,8 @@ class LearnerLoop:
     ) -> str | None:
         if target is not None and self.step >= target:
             return "target"
+        if not self._selection_matches_training_objective(window.selection):
+            return "training_objective_change"
         if self._ring_weight_fingerprint() != window.ring_weights:
             return "ring_weight_change"
         if (
@@ -2837,6 +2858,7 @@ class LearnerLoop:
         committed = self.store.total_committed_sample_count(
             run_id=self.run_identity.run_id,
             generation_family=self.run_identity.generation_family,
+            **self._training_objective_kwargs(),
         )
         window.freshness_new_committed_rows = max(
             0, committed - window.opened_committed_samples
@@ -3471,12 +3493,55 @@ class LearnerLoop:
             raise RuntimeError("rank 0 broadcast invalid replay selection metadata")
         return selection
 
-    def _within_segment_classic_shares(self) -> dict[str, float] | None:
-        orchestration = self.serialized_config.get("orchestration")
+    def _training_objective_kwargs(self) -> TrainingObjectiveOptions:
+        orchestration = getattr(self, "serialized_config", {}).get("orchestration")
         if (
             isinstance(orchestration, Mapping)
-            and orchestration.get("training_objective") == "ring10_priority"
+            and orchestration.get("training_objective") == "ring10_pie"
         ):
+            return {"training_objective": "ring10_pie"}
+        return {}
+
+    def _ring_segment_quota_kwargs(
+        self, rings: Sequence[int]
+    ) -> RingSegmentQuotaOptions:
+        if not self._training_objective_kwargs():
+            return {}
+        weights = self._active_ring_weights()
+        if weights is None:
+            raise ValueError("pie training requires explicit board weights")
+        return {
+            "ring_segment_quotas": {
+                ring: training_segment_quotas(ring, weights) for ring in rings
+            }
+        }
+
+    def _selection_matches_training_objective(self, selection: ReplaySelection) -> bool:
+        if not self._training_objective_kwargs():
+            return True
+        for span in selection.spans:
+            record = span.record
+            parts = record.variant.split("-")
+            if parts[0] == "pie" and len(parts) == 2 and record.segment == "pie":
+                mode, handicap, pie = parts[1], 1, True
+            elif (
+                parts[0] == "handicap"
+                and len(parts) == 3
+                and parts[1].isdigit()
+                and record.segment == "handicap"
+            ):
+                mode, handicap, pie = parts[2], int(parts[1]), False
+            else:
+                return False
+            if not training_variant_allowed(record.ring, mode, handicap, pie):
+                return False
+        return True
+
+    def _within_segment_classic_shares(self) -> dict[str, float] | None:
+        orchestration = self.serialized_config.get("orchestration")
+        if isinstance(orchestration, Mapping) and orchestration.get(
+            "training_objective"
+        ) in {"ring10_priority", "ring10_pie"}:
             return {"handicap": 0.5, "pie": 0.5}
         return None
 
@@ -3498,6 +3563,8 @@ class LearnerLoop:
             ),
             segment_quotas=self.learner_config.segment_quotas,
             within_segment_classic_shares=self._within_segment_classic_shares(),
+            **self._training_objective_kwargs(),
+            **self._ring_segment_quota_kwargs(rings),
             **(
                 {"gc_watermark_name": gc_watermark_name}
                 if gc_watermark_name is not None
@@ -3510,6 +3577,8 @@ class LearnerLoop:
             self.ring_mixture_config.rings,
             run_id=self.run_identity.run_id,
             generation_family=self.run_identity.generation_family,
+            **self._training_objective_kwargs(),
+            **self._ring_segment_quota_kwargs(self.ring_mixture_config.rings),
             current_model_step=self.step,
             max_model_lag_steps=self.learner_config.max_replay_lag_steps,
             minimum_shard_id_exclusive=(
@@ -3644,6 +3713,7 @@ class LearnerLoop:
                     committed_samples = self.store.total_committed_sample_count(
                         run_id=self.run_identity.run_id,
                         generation_family=self.run_identity.generation_family,
+                        **self._training_objective_kwargs(),
                     )
                     state = UTDSegmentState(
                         run_id=self.run_identity.run_id,
@@ -3651,6 +3721,7 @@ class LearnerLoop:
                         target_updates_per_new_sample=float(target),
                         baseline_examples_consumed=self.examples_consumed,
                         baseline_committed_replay_samples=committed_samples,
+                        **self._training_objective_kwargs(),
                     )
                 candidate_examples = self.examples_consumed
                 selfplay_examples = (
@@ -3860,6 +3931,8 @@ class LearnerLoop:
         if (
             self._resume_utd_segment_state is not None
             and state != self._resume_utd_segment_state
+            and state.training_objective
+            == self._resume_utd_segment_state.training_objective
             and self._resume_utd_target == float(configured_target)
             and not self._state_rebase_authorizes(state)
         ):
@@ -3886,6 +3959,7 @@ class LearnerLoop:
                 raise ValueError(
                     "checkpoint UTD segment target does not match the active profile"
                 )
+            self._validate_utd_segment_boundary(state)
             atomic_json(self.utd_segment_path, state.as_dict())
             return state
         if not self._can_initialize_utd_origin(configured_target):
@@ -3899,16 +3973,25 @@ class LearnerLoop:
             target_updates_per_new_sample=configured_target,
             baseline_examples_consumed=0,
             baseline_committed_replay_samples=0,
+            **self._training_objective_kwargs(),
         )
         atomic_json(self.utd_segment_path, state.as_dict())
         return state
 
     def _validate_utd_segment_boundary(self, state: UTDSegmentState) -> None:
+        if state.training_objective != self._training_objective_kwargs().get(
+            "training_objective"
+        ):
+            raise ValueError(
+                "training objective changed without a prepared scoped UTD segment"
+            )
         if state.baseline_examples_consumed > self.examples_consumed:
             raise ValueError("learner examples precede the UTD segment baseline")
 
     def _can_initialize_utd_origin(self, configured_target: float) -> bool:
         if self._resume_utd_target is not _UNSET:
+            if self._training_objective_kwargs():
+                return False
             return (
                 isinstance(self._resume_utd_target, float)
                 and self._resume_utd_target == configured_target
@@ -3949,7 +4032,7 @@ class LearnerLoop:
             "baseline_examples_consumed",
             "baseline_committed_replay_samples",
         }
-        allowed = required | {"created_ns"}
+        allowed = required | {"created_ns", "training_objective"}
         if set(payload) - allowed or not required <= set(payload):
             raise ValueError("UTD segment state fields are invalid")
         if payload.get("schema_version") != UTD_SEGMENT_SCHEMA_VERSION:
@@ -3983,6 +4066,9 @@ class LearnerLoop:
             or created_ns <= 0
         ):
             raise ValueError("UTD segment created_ns is invalid")
+        objective = payload.get("training_objective")
+        if objective not in (None, "ring10_pie"):
+            raise ValueError("UTD segment training objective is invalid")
         assert isinstance(baseline_examples, int)
         assert isinstance(baseline_samples, int)
         return UTDSegmentState(
@@ -3991,12 +4077,14 @@ class LearnerLoop:
             target_updates_per_new_sample=float(target),
             baseline_examples_consumed=baseline_examples,
             baseline_committed_replay_samples=baseline_samples,
+            training_objective=objective,
         )
 
     def _utd_step_budget(self) -> int:
         self._latest_total_replay_samples = self.store.total_committed_sample_count(
             run_id=self.run_identity.run_id,
             generation_family=self.run_identity.generation_family,
+            **self._training_objective_kwargs(),
         )
         target = self.learner_config.target_updates_per_new_sample
         if target is None:
@@ -4150,6 +4238,7 @@ class LearnerLoop:
         lifetime = (
             self.examples_consumed / self._latest_total_replay_samples
             if self._latest_total_replay_samples
+            and not self._training_objective_kwargs()
             else None
         )
         state = self._utd_segment_state
@@ -4166,6 +4255,11 @@ class LearnerLoop:
             "updates_per_new_sample": lifetime,
             "lifetime_updates_per_new_sample": lifetime,
             "segment_updates_per_new_sample": segment,
+            **(
+                {"utd_segment_training_objective": "ring10_pie"}
+                if self._training_objective_kwargs()
+                else {}
+            ),
             "utd_segment_target_updates_per_new_sample": (
                 state.target_updates_per_new_sample if state is not None else None
             ),
@@ -4638,6 +4732,8 @@ class LearnerLoop:
             minimum_shard_id_exclusive=self.learner_config.minimum_replay_shard_id_exclusive,
             segment_quotas=self.learner_config.segment_quotas,
             within_segment_classic_shares=self._within_segment_classic_shares(),
+            **self._training_objective_kwargs(),
+            **self._ring_segment_quota_kwargs(self.ring_mixture_config.rings),
         )
         self.metrics.append(
             {

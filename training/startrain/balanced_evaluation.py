@@ -1,8 +1,9 @@
-"""A fixed equal-cell objective on the configured boards for paired evaluation.
+"""Fixed board/rule objectives for paired evaluation.
 
 One observation is a complete handicap-severity cycle across every cell. Its
-score gives each mode/rule/board cell exactly the same weight, irrespective of
-which cells finished first. Seat-reversed games remain one paired observation.
+score uses immutable cell weights, irrespective of which cells finished first.
+Seat-reversed games remain one paired observation. Legacy contracts give every
+cell equal weight; pie-even contracts give even games 90% and handicap games 10%.
 """
 
 from __future__ import annotations
@@ -29,6 +30,8 @@ BALANCED_CATEGORIES = (
     "classic-handicap",
     "double-handicap",
 )
+PIE_EVEN_CATEGORIES = ("classic-pie", "double-pie")
+HANDICAP_CATEGORIES = ("classic-handicap", "double-handicap")
 HOEFFDING_LAMBDAS = (0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0)
 
 
@@ -50,7 +53,7 @@ def balanced_search_seed(opening_seed: int, candidate_player: int, move: int) ->
 def cycle_log_e_value(
     scores: Sequence[float],
     *,
-    pairs_per_cycle: int,
+    pairs_per_cycle: float,
     null_mean: float,
     direction: str,
 ) -> float:
@@ -58,11 +61,16 @@ def cycle_log_e_value(
 
     Pair scores are independent across hashed seed streams, bounded in [0,1],
     and may have different means by cell/severity. A full cycle averages those
-    means with fixed weights. Hoeffding's lemma gives exp(lambda*S-lambda²*N/8)
-    as an e-process at cycle boundaries; the two games of a pair stay together.
+    means with fixed weights. For pair weights a_i summing to one per cycle,
+    the effective pair count is 1/sum(a_i²). Scaling a cycle's weighted score
+    by that count makes its squared coefficient sum equal the count, so
+    Hoeffding's lemma gives exp(lambda*S-lambda²*N/8) at cycle boundaries.
+    Equal allocation reduces to the actual pair count. The two games of each
+    pair stay together and are never treated as independent observations.
     """
     if (
-        pairs_per_cycle <= 0
+        not math.isfinite(pairs_per_cycle)
+        or pairs_per_cycle <= 0
         or not 0 <= null_mean <= 1
         or direction not in ("greater", "less")
     ):
@@ -85,7 +93,7 @@ def cycle_log_e_value(
 def cycle_confidence_sequence(
     scores: Sequence[float],
     *,
-    pairs_per_cycle: int,
+    pairs_per_cycle: float,
     error_probability: float,
 ) -> tuple[float, float]:
     if not 0 < error_probability < 1:
@@ -136,12 +144,51 @@ def cell_key(ring: int, variant: GameVariant) -> str:
 
 def balanced_cells(config: ArenaConfig) -> tuple[str, ...]:
     return tuple(
-        f"r{ring}/{name}" for ring in config.rings for name in BALANCED_CATEGORIES
+        f"r{ring}/{name}"
+        for ring in config.rings
+        for name in balanced_categories(config, ring)
     )
+
+
+def balanced_categories(config: ArenaConfig, ring: int) -> tuple[str, ...]:
+    """The playable categories on one configured board under this contract."""
+    if ring not in config.rings:
+        raise ValueError("balanced arena ring is not configured")
+    if config.variant_policy == "pie_even":
+        return PIE_EVEN_CATEGORIES + (
+            HANDICAP_CATEGORIES if ring == max(SUPPORTED_RINGS) else ()
+        )
+    return BALANCED_CATEGORIES
+
+
+def balanced_cell_weights(config: ArenaConfig) -> dict[str, float]:
+    cells = balanced_cells(config)
+    if config.variant_policy == "legacy_six":
+        return {key: 1 / len(cells) for key in cells}
+    handicap = [key for key in cells if key.endswith("-handicap")]
+    even_count = len(cells) - len(handicap)
+    return {
+        key: 0.1 / len(handicap)
+        if key in handicap
+        else (0.9 if handicap else 1.0) / even_count
+        for key in cells
+    }
+
+
+def effective_pairs_per_cycle(config: ArenaConfig) -> float:
+    """Hoeffding information per cycle, accounting for unequal cell weights."""
+    length = len(config.handicap_severity_cycle)
+    if config.variant_policy == "legacy_six":
+        return length * len(balanced_cells(config))
+    return length / math.fsum(w * w for w in balanced_cell_weights(config).values())
 
 
 def balanced_observation_model(config: ArenaConfig) -> str:
     """Keep the original all-board contract while naming subsets truthfully."""
+    if config.variant_policy == "pie_even":
+        rings = "-".join(str(ring) for ring in config.rings)
+        mix = "90-even-10-handicap" if max(SUPPORTED_RINGS) in config.rings else "even"
+        return f"pie-{mix}-rings-{rings}-complete-severity-cycle-v2"
     if config.rings == SUPPORTED_RINGS:
         return BALANCED_OBSERVATION_MODEL
     rings = "-".join(str(ring) for ring in config.rings)
@@ -191,6 +238,16 @@ def evaluation_contract(config: ArenaConfig) -> dict[str, object]:
         "hoeffding_lambdas": list(HOEFFDING_LAMBDAS),
         "pair_independence": "independent seed streams across pairs; arbitrary dependence within each seat reversal",
     }
+    if config.variant_policy == "pie_even":
+        contract.pop("cell_weight")
+        contract.update(
+            schema_version=2,
+            variant_policy=config.variant_policy,
+            cell_weights=balanced_cell_weights(config),
+            statistical_test="complete-cycle-weighted-paired-hoeffding-mixture-v2",
+            evaluation_allocation="equal-pairs-per-cell-per-severity-cycle",
+            effective_pairs_per_cycle=effective_pairs_per_cycle(config),
+        )
     execution = config.search_execution.contract()
     if execution is not None:
         contract["search_execution"] = execution
@@ -234,7 +291,7 @@ def completed_counts_by_ring(
     return {
         ring: min(
             _contiguous_prefix(grouped[f"r{ring}/{name}"])
-            for name in BALANCED_CATEGORIES
+            for name in balanced_categories(config, ring)
         )
         for ring in config.rings
     }
@@ -270,8 +327,13 @@ def summarize_balanced_pairs(
         )
         for key, values in grouped.items()
     }
+    weights = balanced_cell_weights(config)
     cycle_scores = tuple(
         math.fsum(scores[index] for scores in per_cell_scores.values()) / len(grouped)
+        if config.variant_policy == "legacy_six"
+        else math.fsum(
+            weights[key] * scores[index] for key, scores in per_cell_scores.items()
+        )
         for index in range(complete_cycles)
     )
     cell_error = (1 - config.confidence) / (2 * len(grouped))
@@ -322,7 +384,7 @@ def summarize_balanced_pairs(
         }
     if cycle_scores:
         mean = math.fsum(cycle_scores) / complete_cycles
-        pairs_per_cycle = cycle_length * len(grouped)
+        pairs_per_cycle = effective_pairs_per_cycle(config)
         promotion_e = cycle_log_e_value(
             cycle_scores,
             pairs_per_cycle=pairs_per_cycle,
@@ -383,9 +445,11 @@ def summarize_balanced_pairs(
         "anytime_confidence_sequence": [lower, upper],
         "anytime_elo_interval": [_elo(lower), _elo(upper)],
         "cycle_scores": list(cycle_scores),
-        "cell_weights": {key: 1 / len(grouped) for key in grouped},
+        "cell_weights": weights,
         "missing_cells": [key for key, values in grouped.items() if not values],
     }
+    if config.variant_policy == "pie_even":
+        aggregate["effective_pairs_per_cycle"] = effective_pairs_per_cycle(config)
     return {
         "evaluation_contract": evaluation_contract(config),
         "balanced_aggregate": aggregate,
@@ -411,7 +475,9 @@ def summarize_balanced_pairs(
             "regression_source": "cell" if vetoes else None,
             "confidence_sequence": [lower, upper],
             "statistical_test": {
-                "name": "complete-cycle-paired-hoeffding-mixture-e-process",
+                "name": "complete-cycle-weighted-paired-hoeffding-mixture-e-process-v2"
+                if config.variant_policy == "pie_even"
+                else "complete-cycle-paired-hoeffding-mixture-e-process",
                 "observation_unit": balanced_observation_model(config),
                 "promotion": {
                     "log_e_value": promotion_e,

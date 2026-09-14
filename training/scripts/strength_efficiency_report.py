@@ -226,6 +226,10 @@ def _learner_summary(records: list[dict[str, object]]) -> dict[str, object]:
             "utd_wait_spins",
         )
     }
+    latest_utd_record = next(
+        (record for record in reversed(records) if "updates_per_new_sample" in record),
+        {},
+    )
     allocation_records = [
         record for record in records if record.get("event") == "replay_window_allocated"
     ]
@@ -326,6 +330,9 @@ def _learner_summary(records: list[dict[str, object]]) -> dict[str, object]:
         "segment_updates_per_new_sample": latest_fields[
             "segment_updates_per_new_sample"
         ],
+        "utd_segment_training_objective": latest_utd_record.get(
+            "utd_segment_training_objective"
+        ),
         "utd_segment_target_updates_per_new_sample": latest_fields[
             "utd_segment_target_updates_per_new_sample"
         ],

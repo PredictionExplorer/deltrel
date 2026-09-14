@@ -22,6 +22,9 @@ from .contracts import SEARCH_ALGORITHM_ID
 
 
 GATE_FORMAT = "startrain.ring-search-allocation-gate"
+POLICY_TRANSITION_FORMAT = "startrain.search-allocation-policy-transition"
+POLICY_TRANSITION_CLASS = "unchanged-execution-policy-transition"
+POLICY_TRANSITION_SCOPE = "original-frozen-six-variant-workload"
 FULL_PROBABILITY_FLOOR = 0.35
 MAX_INCREMENTAL_REGRET_UPPER95 = 0.02
 TIMING_SETUP_COUNTERS = (
@@ -530,6 +533,86 @@ def _analysis(
     return _ANALYSES[key]
 
 
+def _validate_policy_transition_gate(
+    root: Path,
+    gate: dict[str, Any],
+    target: ExperimentConfig,
+    verified: dict[str, tuple[int, ...]],
+) -> None:
+    """Continue an admitted execution plan through one explicit policy change.
+
+    This is not a new optimization qualification: the original reports remain
+    evidence about their original frozen workload. No new objective throughput
+    or playing-strength assertion is admitted by this receipt.
+    """
+    from .pie_policy import validate_pie_policy_transition
+
+    _, contents = _read_ref(root, gate["training_policy_transition"], verified)
+    receipt = _json(contents)
+    if (
+        set(receipt)
+        != {
+            "format",
+            "schema_version",
+            "classification",
+            "run_id",
+            "source_profile",
+            "source_gate",
+            "source_config_sha256",
+            "target_config_sha256",
+            "measurement_scope",
+            "new_objective_performance_qualified",
+        }
+        or receipt.get("format") != POLICY_TRANSITION_FORMAT
+        or type(receipt.get("schema_version")) is not int
+        or receipt["schema_version"] != 1
+        or receipt.get("classification") != POLICY_TRANSITION_CLASS
+        or receipt.get("run_id") != target.orchestration.run_id
+        or receipt.get("target_config_sha256") != canonical_config_sha256(target)
+        or receipt.get("measurement_scope") != POLICY_TRANSITION_SCOPE
+        or receipt.get("new_objective_performance_qualified") is not False
+    ):
+        _fail("policy transition receipt identity or evidence scope is invalid")
+    source_path, _ = _read_ref(root, receipt["source_profile"], verified)
+    source = load_config(source_path)
+    if receipt["source_config_sha256"] != canonical_config_sha256(source):
+        _fail("policy transition source configuration hash differs")
+    validate_pie_policy_transition(source, target)
+    source_gate_path, source_contents = _read_ref(
+        root, receipt["source_gate"], verified
+    )
+    if source_gate_path != allocation_gate_path(source):
+        _fail("policy transition must pin the source configuration's original gate")
+    source_gate = _json(source_contents)
+    if "training_policy_transition" in source_gate:
+        _fail("policy transition receipts cannot be chained")
+    expected = dict(source_gate)
+    expected["target_config_sha256"] = canonical_config_sha256(target)
+    expected["training_policy_transition"] = gate["training_policy_transition"]
+    if gate != expected:
+        _fail("policy transition must preserve the complete original gate and reports")
+    # Original quality, rate and separately controlled cache-capacity admission
+    # are all revalidated under their exact source configuration and identities.
+    validate_production_ring_allocations(source)
+    inherited = _VERIFIED_GATES.get(str(source_gate_path))
+    if inherited is None:
+        _fail("policy transition source has no verified allocation evidence")
+    for path, signature in inherited.items():
+        if path in verified and verified[path] != signature:
+            _fail("source evidence changed while inheriting its admission")
+        verified[path] = signature
+
+
+def _cache_verified_gate(
+    root: Path, key: str, verified: dict[str, tuple[int, ...]]
+) -> None:
+    if not _unchanged(root, verified):
+        _fail("evidence changed before validation completed")
+    _VERIFIED_GATES[key] = verified
+    while len(_VERIFIED_GATES) > 4:
+        _VERIFIED_GATES.popitem(last=False)
+
+
 def validate_production_ring_allocations(config: ExperimentConfig) -> None:
     allocations = config.selfplay.ring_search_allocations
     for allocation in allocations:
@@ -558,7 +641,12 @@ def validate_production_ring_allocations(config: ExperimentConfig) -> None:
             _fail("gate changed during validation")
         verified = {str(path.relative_to(root)): before}
         if (
-            set(gate) - {"graph_cache_reports", "graph_cache_controlled_activation"}
+            set(gate)
+            - {
+                "graph_cache_reports",
+                "graph_cache_controlled_activation",
+                "training_policy_transition",
+            }
             != {
                 "format",
                 "schema_version",
@@ -574,6 +662,10 @@ def validate_production_ring_allocations(config: ExperimentConfig) -> None:
             or gate.get("target_config_sha256") != canonical_config_sha256(config)
         ):
             _fail("gate identity/configuration fields are invalid")
+        if "training_policy_transition" in gate:
+            _validate_policy_transition_gate(root, gate, config, verified)
+            _cache_verified_gate(root, cache_key, verified)
+            return
         baseline_path, _ = _read_ref(root, gate["baseline_profile"], verified)
         baseline = load_config(baseline_path)
         if baseline.orchestration.run_id != config.orchestration.run_id:
@@ -670,11 +762,7 @@ def validate_production_ring_allocations(config: ExperimentConfig) -> None:
         _validate_graph_capacity_reports(
             root, gate, baseline, config, verified, full_target_rate_ratios
         )
-        if not _unchanged(root, verified):
-            _fail("evidence changed before validation completed")
-        _VERIFIED_GATES[cache_key] = verified
-        while len(_VERIFIED_GATES) > 4:
-            _VERIFIED_GATES.popitem(last=False)
+        _cache_verified_gate(root, cache_key, verified)
     except (OSError, KeyError, TypeError) as exc:
         raise ValueError(
             f"search allocation gate is missing or malformed: {exc}"

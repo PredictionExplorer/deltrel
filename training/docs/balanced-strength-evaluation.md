@@ -1,5 +1,12 @@
 # Balanced variant strength
 
+The new `arena.variant_policy: pie_even` contract replaces the six-category
+training objective with pie-enabled even games and largest-board-only handicap.
+On ring 10 its four categories have weights 0.45/0.45/0.05/0.05. Its versioned
+weighted confidence sequence and migration are documented in
+[pie-even training](pie-even-training.md). The six-category contract below is
+retained unchanged for historical runs and results.
+
 When `arena.balanced_cells` is enabled, promotion measures six equally weighted
 cells on each configured board: classic and double, each with standard, pie, and
 handicap rules. The largest-board profile sets `arena.rings: [10]`, producing six

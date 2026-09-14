@@ -2052,6 +2052,9 @@ def collect_snapshot(
         "target_updates_per_new_sample": configured_target_updates,
         "lifetime_updates_per_new_sample": lifetime_updates,
         "segment_updates_per_new_sample": segment_updates,
+        "utd_segment_training_objective": learner_metric.get(
+            "utd_segment_training_objective"
+        ),
         "utd_segment_target_updates_per_new_sample": segment_target_updates,
         "utd_segment_baseline_examples_consumed": learner_metric.get(
             "utd_segment_baseline_examples_consumed"

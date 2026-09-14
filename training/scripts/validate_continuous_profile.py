@@ -360,7 +360,7 @@ def validate_continuous_config(config: ExperimentConfig) -> None:
         raise ValueError("generalist balanced promotion requires all four rings")
     if objective == "ring10_only":
         _validate_ring10_only_config(config)
-    elif objective == "ring10_priority":
+    elif objective in ("ring10_priority", "ring10_pie"):
         _validate_autonomous_config(
             config, require_scratch=config.orchestration.autonomous.enabled
         )

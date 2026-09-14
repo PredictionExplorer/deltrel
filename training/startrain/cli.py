@@ -74,6 +74,8 @@ def selfplay_main(argv: list[str] | None = None) -> None:
     model_config = experiment.model
     if arguments.cpu_smoke:
         selfplay_config = SelfPlayConfig.cpu_smoke(seed=selfplay_config.seed)
+        if experiment.orchestration.training_objective == "ring10_pie":
+            selfplay_config = replace(selfplay_config, pie=True, pie_even_training=True)
         if experiment.orchestration.training_objective == "ring10_only":
             selfplay_config = replace(selfplay_config, rings=10)
         model_config = replace(model_config, width=16, attention_heads=4, kv_heads=1)

@@ -1,0 +1,1867 @@
+{
+  "schema_version": 1,
+  "scope": "Read-only code and server telemetry audit; local CPU proofs, no new H100 benchmark or production mutation",
+  "audited_repository_head": "ee3813d",
+  "server_runtime": {
+    "torch": "2.13.0+cu130",
+    "cudnn": 92000,
+    "cudnn_frontend_installed": false,
+    "nsys_installed": false,
+    "ncu_installed": false
+  },
+  "telemetry": {
+    "source": "e8e877cd7292dd44558e280c8117e6242820c2ce",
+    "profile": "1db1a8b29a177e9b92a455d1468247e88e5fcfc5e74ce0aef1d9867a09265d62  /home/ubuntu/edgeconnect-runs/variant-network/profile-training-optimized-20260910.yaml",
+    "start_utc": "2026-09-10T17:00:01+00:00",
+    "end_utc": "2026-09-10T17:59:56+00:00",
+    "wall_seconds": 3595.0,
+    "monitor_count": 720,
+    "pid_mismatches": 0,
+    "gapseconds": 0,
+    "step_start": 171934,
+    "step_end": 173083,
+    "steps_per_hour": 1150.5980528511823,
+    "phase_seconds": {
+      "update_to_data_wait": 2928.0,
+      "training": 648.0,
+      "replay_wait": 19.0
+    },
+    "gpu_weighted": {
+      "0": {
+        "utilization.gpu": 9.971905424200278,
+        "memory.used": 67195.75827538248,
+        "power.draw": 158.7364005563282
+      },
+      "1": {
+        "utilization.gpu": 51.73157162726008,
+        "memory.used": 9431.247009735744,
+        "power.draw": 346.2560862308761
+      },
+      "2": {
+        "utilization.gpu": 48.97941585535466,
+        "memory.used": 7029.575799721836,
+        "power.draw": 339.93945757997227
+      },
+      "3": {
+        "utilization.gpu": 54.275104311543814,
+        "memory.used": 9761.305980528512,
+        "power.draw": 373.7391515994434
+      },
+      "4": {
+        "utilization.gpu": 53.074547983310154,
+        "memory.used": 9683.987482614742,
+        "power.draw": 361.4729624478445
+      },
+      "5": {
+        "utilization.gpu": 50.70764951321279,
+        "memory.used": 7174.411961057023,
+        "power.draw": 349.4823254520169
+      },
+      "6": {
+        "utilization.gpu": 52.86258692628651,
+        "memory.used": 9547.183031988874,
+        "power.draw": 358.020086230876
+      },
+      "7": {
+        "utilization.gpu": 42.292906815020864,
+        "memory.used": 7981.717663421418,
+        "power.draw": 277.7566731571627
+      }
+    },
+    "physical": {
+      "1": {
+        "pid": 1839899,
+        "seconds": 3594.80538239,
+        "deltas": {
+          "neural_rows": 12567293,
+          "neural_padding_rows": 2038415,
+          "neural_calls": 238181,
+          "cache_hits": 207662,
+          "cache_misses": 10531779,
+          "cache_seconds": 13.299676266498864,
+          "key_seconds": 77.96842061867937,
+          "prepare_seconds": 321.12192037841305,
+          "return_seconds": 324.64206276321784,
+          "h2d_enqueue_seconds": 112.24816622771323,
+          "neural_round_trip_seconds": 2434.3653566404246,
+          "graph_captures": 15,
+          "graph_fallbacks": 0,
+          "graph_warmup_rows": 2544
+        },
+        "counter_decreases": {},
+        "useful_rows_s": 2928.914608723517,
+        "padding_percent": 16.220000599970096,
+        "mean_physical_batch": 52.76362514222377,
+        "cache_hit_percent": 1.9336388178863313,
+        "logical_rows_s": 2987.4888506091816,
+        "timer_seconds_per_wall_second": {
+          "cache_seconds": 0.0036996929880127745,
+          "key_seconds": 0.021689191020083043,
+          "prepare_seconds": 0.08932943128201164,
+          "return_seconds": 0.0903086615908481,
+          "h2d_enqueue_seconds": 0.031225102415164747,
+          "neural_round_trip_seconds": 0.6771897495663426
+        }
+      },
+      "2": {
+        "pid": 1839900,
+        "seconds": 3595.102510898,
+        "deltas": {
+          "neural_rows": 13398377,
+          "neural_padding_rows": 1892269,
+          "neural_calls": 260773,
+          "cache_hits": 348786,
+          "cache_misses": 11514732,
+          "cache_seconds": 15.059681616257876,
+          "key_seconds": 88.30664735194296,
+          "prepare_seconds": 363.2593641751446,
+          "return_seconds": 350.0822292584926,
+          "h2d_enqueue_seconds": 123.31267921999097,
+          "neural_round_trip_seconds": 2379.263825739268,
+          "graph_captures": 28,
+          "graph_fallbacks": 0,
+          "graph_warmup_rows": 3552
+        },
+        "counter_decreases": {},
+        "useful_rows_s": 3200.49510830943,
+        "padding_percent": 14.123121031748845,
+        "mean_physical_batch": 51.379464131639395,
+        "cache_hit_percent": 2.939987952983255,
+        "logical_rows_s": 3299.9109104782324,
+        "timer_seconds_per_wall_second": {
+          "cache_seconds": 0.004188943589398847,
+          "key_seconds": 0.024563040159287515,
+          "prepare_seconds": 0.10104283899387562,
+          "return_seconds": 0.09737753741298674,
+          "h2d_enqueue_seconds": 0.03430018444430654,
+          "neural_round_trip_seconds": 0.6618069494616345
+        }
+      },
+      "3": {
+        "pid": 1839901,
+        "seconds": 3595.680909917,
+        "deltas": {
+          "neural_rows": 13287167,
+          "neural_padding_rows": 2040901,
+          "neural_calls": 220962,
+          "cache_hits": 189796,
+          "cache_misses": 11256983,
+          "cache_seconds": 13.51726201036945,
+          "key_seconds": 75.50324102444574,
+          "prepare_seconds": 333.1206716923043,
+          "return_seconds": 327.8858658345416,
+          "h2d_enqueue_seconds": 111.65581938251853,
+          "neural_round_trip_seconds": 2479.787712399848,
+          "graph_captures": 15,
+          "graph_fallbacks": 0,
+          "graph_warmup_rows": 2544
+        },
+        "counter_decreases": {},
+        "useful_rows_s": 3127.7152455276128,
+        "padding_percent": 15.359940911407225,
+        "mean_physical_batch": 60.133267258623654,
+        "cache_hit_percent": 1.6580734196056375,
+        "logical_rows_s": 3183.4802049396058,
+        "timer_seconds_per_wall_second": {
+          "cache_seconds": 0.0037593052189610096,
+          "key_seconds": 0.02099831517758026,
+          "prepare_seconds": 0.09264467010227384,
+          "return_seconds": 0.09118881070069988,
+          "h2d_enqueue_seconds": 0.031052760848318966,
+          "neural_round_trip_seconds": 0.6896573345984389
+        }
+      },
+      "4": {
+        "pid": 1839902,
+        "seconds": 3594.904800359,
+        "deltas": {
+          "neural_rows": 12493952,
+          "neural_padding_rows": 1825043,
+          "neural_calls": 256789,
+          "cache_hits": 290125,
+          "cache_misses": 10681420,
+          "cache_seconds": 13.106901937630028,
+          "key_seconds": 89.66584997950122,
+          "prepare_seconds": 345.3416840462014,
+          "return_seconds": 314.7950651408173,
+          "h2d_enqueue_seconds": 115.43604896171018,
+          "neural_round_trip_seconds": 2481.309624215588,
+          "graph_captures": 27,
+          "graph_fallbacks": 0,
+          "graph_warmup_rows": 3424
+        },
+        "counter_decreases": {},
+        "useful_rows_s": 2967.7862398288166,
+        "padding_percent": 14.60741165005276,
+        "mean_physical_batch": 48.654545171327435,
+        "cache_hit_percent": 2.644340427897803,
+        "logical_rows_s": 3051.9709447950727,
+        "timer_seconds_per_wall_second": {
+          "cache_seconds": 0.003645966351131503,
+          "key_seconds": 0.024942482474235996,
+          "prepare_seconds": 0.09606420843514808,
+          "return_seconds": 0.08756701014986008,
+          "h2d_enqueue_seconds": 0.03211101694547859,
+          "neural_round_trip_seconds": 0.6902295782541433
+        }
+      },
+      "5": {
+        "pid": 1839903,
+        "seconds": 3595.78464277,
+        "deltas": {
+          "neural_rows": 13832065,
+          "neural_padding_rows": 2073104,
+          "neural_calls": 259982,
+          "cache_hits": 338131,
+          "cache_misses": 11763598,
+          "cache_seconds": 14.585668294224888,
+          "key_seconds": 91.33282712195069,
+          "prepare_seconds": 361.5929639064707,
+          "return_seconds": 343.03926616115496,
+          "h2d_enqueue_seconds": 125.27881361637264,
+          "neural_round_trip_seconds": 2417.6238740324043,
+          "graph_captures": 28,
+          "graph_fallbacks": 0,
+          "graph_warmup_rows": 3552
+        },
+        "counter_decreases": {},
+        "useful_rows_s": 3270.2072477125676,
+        "padding_percent": 14.987668146440896,
+        "mean_physical_batch": 53.20393334923187,
+        "cache_hit_percent": 2.794071822299111,
+        "logical_rows_s": 3365.5322001368454,
+        "timer_seconds_per_wall_second": {
+          "cache_seconds": 0.004056324208278744,
+          "key_seconds": 0.025399971409742927,
+          "prepare_seconds": 0.10056023923276974,
+          "return_seconds": 0.09540039247091724,
+          "h2d_enqueue_seconds": 0.034840466285507174,
+          "neural_round_trip_seconds": 0.6723494631118944
+        }
+      },
+      "6": {
+        "pid": 1839904,
+        "seconds": 3595.708071621,
+        "deltas": {
+          "neural_rows": 12481734,
+          "neural_padding_rows": 1779912,
+          "neural_calls": 251956,
+          "cache_hits": 262854,
+          "cache_misses": 10708801,
+          "cache_seconds": 13.192176929209381,
+          "key_seconds": 79.39274287037551,
+          "prepare_seconds": 344.34669788973406,
+          "return_seconds": 316.86876039765775,
+          "h2d_enqueue_seconds": 114.96131521556526,
+          "neural_round_trip_seconds": 2467.8853396335617,
+          "graph_captures": 27,
+          "graph_fallbacks": 0,
+          "graph_warmup_rows": 3424
+        },
+        "counter_decreases": {},
+        "useful_rows_s": 2976.27665729144,
+        "padding_percent": 14.260134048682659,
+        "mean_physical_batch": 49.539340202257534,
+        "cache_hit_percent": 2.395755243853366,
+        "logical_rows_s": 3051.31973493438,
+        "timer_seconds_per_wall_second": {
+          "cache_seconds": 0.003668867623967634,
+          "key_seconds": 0.022079863350693,
+          "prepare_seconds": 0.09576603301237893,
+          "return_seconds": 0.08812416194143606,
+          "h2d_enqueue_seconds": 0.031971815543896186,
+          "neural_round_trip_seconds": 0.6863419639406381
+        }
+      },
+      "7": {
+        "pid": 1839905,
+        "seconds": 3596.223029991,
+        "deltas": {
+          "neural_rows": 7767782,
+          "neural_padding_rows": 922629,
+          "neural_calls": 79500,
+          "cache_hits": 28906,
+          "cache_misses": 6845153,
+          "cache_seconds": 7.134265520144254,
+          "key_seconds": 37.31171322893351,
+          "prepare_seconds": 176.233743801713,
+          "return_seconds": 149.3369145989418,
+          "h2d_enqueue_seconds": 50.56316408328712,
+          "neural_round_trip_seconds": 1276.176534684375,
+          "graph_captures": 0,
+          "graph_fallbacks": 0,
+          "graph_warmup_rows": 0
+        },
+        "counter_decreases": {},
+        "useful_rows_s": 1903.4283866474018,
+        "padding_percent": 11.877637657699456,
+        "mean_physical_batch": 97.70794968553459,
+        "cache_hit_percent": 0.4205084652313866,
+        "logical_rows_s": 1911.466264097976,
+        "timer_seconds_per_wall_second": {
+          "cache_seconds": 0.001983821765404274,
+          "key_seconds": 0.010375250065907867,
+          "prepare_seconds": 0.049005231970319155,
+          "return_seconds": 0.04152604367235686,
+          "h2d_enqueue_seconds": 0.014060074600938657,
+          "neural_round_trip_seconds": 0.3548657922608233
+        }
+      }
+    },
+    "learner_medians": {
+      "device_step_seconds": 0.40735509338378906,
+      "step_seconds": 2.5577759410720318,
+      "data_wait_seconds": 0.0035553466528654098
+    },
+    "learner_diagnostic_batches": 115,
+    "sampled_modes": {
+      "classic": 9710,
+      "double": 8600,
+      "handicap-classic": 11069,
+      "handicap-double": 10529,
+      "pie-classic": 9074,
+      "pie-double": 9898
+    },
+    "sampled_rings": {
+      "8": 1536,
+      "10": 53248,
+      "6": 3072,
+      "4": 1024
+    },
+    "window_refresh_reasons": {
+      "fresh_replay": 11,
+      "recovery_boundary": 1
+    },
+    "fresh_refreshes": [
+      {
+        "timestamp_ns": 1789059775936458230,
+        "step": 172027,
+        "window_age_seconds": 301.3420657971874,
+        "window_batches_consumed": 156,
+        "window_batches_remaining": 646,
+        "freshness_additional_selected_rows": 52508
+      },
+      {
+        "timestamp_ns": 1789060080318543700,
+        "step": 172194,
+        "window_age_seconds": 301.2722534900531,
+        "window_batches_consumed": 167,
+        "window_batches_remaining": 479,
+        "freshness_additional_selected_rows": 58538
+      },
+      {
+        "timestamp_ns": 1789060385461256969,
+        "step": 172370,
+        "window_age_seconds": 302.28780655376613,
+        "window_batches_consumed": 176,
+        "window_batches_remaining": 303,
+        "freshness_additional_selected_rows": 58792
+      },
+      {
+        "timestamp_ns": 1789060688732892301,
+        "step": 172476,
+        "window_age_seconds": 300.96284307399765,
+        "window_batches_consumed": 106,
+        "window_batches_remaining": 197,
+        "freshness_additional_selected_rows": 35711
+      },
+      {
+        "timestamp_ns": 1789060993041073785,
+        "step": 172542,
+        "window_age_seconds": 302.0432220129296,
+        "window_batches_consumed": 66,
+        "window_batches_remaining": 131,
+        "freshness_additional_selected_rows": 22458
+      },
+      {
+        "timestamp_ns": 1789061296276605073,
+        "step": 172638,
+        "window_age_seconds": 301.18426844710484,
+        "window_batches_consumed": 96,
+        "window_batches_remaining": 35,
+        "freshness_additional_selected_rows": 33465
+      },
+      {
+        "timestamp_ns": 1789061734582886958,
+        "step": 172723,
+        "window_age_seconds": 301.12450469937176,
+        "window_batches_consumed": 50,
+        "window_batches_remaining": 950,
+        "freshness_additional_selected_rows": 17371
+      },
+      {
+        "timestamp_ns": 1789062038193333141,
+        "step": 172745,
+        "window_age_seconds": 300.5250667799264,
+        "window_batches_consumed": 22,
+        "window_batches_remaining": 928,
+        "freshness_additional_selected_rows": 7377
+      },
+      {
+        "timestamp_ns": 1789062349229889605,
+        "step": 172798,
+        "window_age_seconds": 300.79644798720255,
+        "window_batches_consumed": 53,
+        "window_batches_remaining": 875,
+        "freshness_additional_selected_rows": 18068
+      },
+      {
+        "timestamp_ns": 1789062652843956367,
+        "step": 172872,
+        "window_age_seconds": 301.1111416197382,
+        "window_batches_consumed": 74,
+        "window_batches_remaining": 801,
+        "freshness_additional_selected_rows": 24705
+      },
+      {
+        "timestamp_ns": 1789062956472774003,
+        "step": 173005,
+        "window_age_seconds": 301.0946811940521,
+        "window_batches_consumed": 133,
+        "window_batches_remaining": 668,
+        "freshness_additional_selected_rows": 45775
+      }
+    ],
+    "completed_task_count_postactivation": 75,
+    "completed_task_totals_postactivation": {
+      "games": 3244,
+      "samples": 542948,
+      "eligible_samples_at_commit": 542948,
+      "ineligible_samples_at_commit": 0,
+      "evaluator_rows": 132002090,
+      "completed_decisions": 542948,
+      "dropped_decisions": 0,
+      "dropped_games": 0,
+      "policy_only_samples": 0
+    },
+    "false_eligibility": {
+      "tasks": 0,
+      "games": 0,
+      "samples": 0,
+      "eligible_samples_at_commit": 0,
+      "ineligible_samples_at_commit": 0,
+      "evaluator_rows": 0,
+      "completed_decisions": 0,
+      "dropped_decisions": 0,
+      "dropped_games": 0,
+      "policy_only_samples": 0
+    },
+    "near_cutoff": {
+      "tasks": 0,
+      "games": 0,
+      "samples": 0,
+      "eligible_samples_at_commit": 0,
+      "ineligible_samples_at_commit": 0,
+      "evaluator_rows": 0,
+      "completed_decisions": 0,
+      "dropped_decisions": 0,
+      "dropped_games": 0,
+      "policy_only_samples": 0,
+      "details": []
+    },
+    "role_totals_postactivation": {
+      "('cuda', 'candidate')": {
+        "tasks": 45,
+        "games": 3004,
+        "samples": 533710,
+        "eligible_samples_at_commit": 533710,
+        "ineligible_samples_at_commit": 0,
+        "evaluator_rows": 131162495,
+        "completed_decisions": 533710,
+        "dropped_decisions": 0,
+        "dropped_games": 0,
+        "policy_only_samples": 0
+      },
+      "('cpu', 'candidate')": {
+        "tasks": 17,
+        "games": 136,
+        "samples": 5274,
+        "eligible_samples_at_commit": 5274,
+        "ineligible_samples_at_commit": 0,
+        "evaluator_rows": 466606,
+        "completed_decisions": 5274,
+        "dropped_decisions": 0,
+        "dropped_games": 0,
+        "policy_only_samples": 0
+      },
+      "('cpu', 'champion')": {
+        "tasks": 4,
+        "games": 32,
+        "samples": 1227,
+        "eligible_samples_at_commit": 1227,
+        "ineligible_samples_at_commit": 0,
+        "evaluator_rows": 118280,
+        "completed_decisions": 1227,
+        "dropped_decisions": 0,
+        "dropped_games": 0,
+        "policy_only_samples": 0
+      },
+      "('cpu', 'history')": {
+        "tasks": 9,
+        "games": 72,
+        "samples": 2737,
+        "eligible_samples_at_commit": 2737,
+        "ineligible_samples_at_commit": 0,
+        "evaluator_rows": 254709,
+        "completed_decisions": 2737,
+        "dropped_decisions": 0,
+        "dropped_games": 0,
+        "policy_only_samples": 0
+      }
+    },
+    "publications_count_in_window": 1699,
+    "publications_summary_in_window": {
+      "('cuda', 'candidate', 10, 'double')": {
+        "published_games": 386,
+        "published_samples": 62529,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'classic')": {
+        "published_games": 288,
+        "published_samples": 55136,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'handicap-9-double')": {
+        "published_games": 60,
+        "published_samples": 10459,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'pie-classic')": {
+        "published_games": 422,
+        "published_samples": 82423,
+        "published_policy_only_samples": 0
+      },
+      "('cpu', 'candidate', 4, 'pie-double')": {
+        "published_games": 16,
+        "published_samples": 642,
+        "published_policy_only_samples": 0
+      },
+      "('cpu', 'history', 4, 'classic')": {
+        "published_games": 12,
+        "published_samples": 455,
+        "published_policy_only_samples": 0
+      },
+      "('cpu', 'history', 4, 'pie-double')": {
+        "published_games": 16,
+        "published_samples": 635,
+        "published_policy_only_samples": 0
+      },
+      "('cpu', 'champion', 4, 'double')": {
+        "published_games": 8,
+        "published_samples": 307,
+        "published_policy_only_samples": 0
+      },
+      "('cpu', 'history', 4, 'handicap-8-classic')": {
+        "published_games": 8,
+        "published_samples": 260,
+        "published_policy_only_samples": 0
+      },
+      "('cpu', 'history', 4, 'double')": {
+        "published_games": 24,
+        "published_samples": 964,
+        "published_policy_only_samples": 0
+      },
+      "('cpu', 'candidate', 4, 'handicap-3-classic')": {
+        "published_games": 8,
+        "published_samples": 346,
+        "published_policy_only_samples": 0
+      },
+      "('cpu', 'candidate', 4, 'handicap-3-double')": {
+        "published_games": 8,
+        "published_samples": 296,
+        "published_policy_only_samples": 0
+      },
+      "('cpu', 'candidate', 4, 'double')": {
+        "published_games": 16,
+        "published_samples": 619,
+        "published_policy_only_samples": 0
+      },
+      "('cpu', 'candidate', 4, 'classic')": {
+        "published_games": 8,
+        "published_samples": 319,
+        "published_policy_only_samples": 0
+      },
+      "('cpu', 'champion', 4, 'handicap-5-classic')": {
+        "published_games": 8,
+        "published_samples": 298,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'handicap-8-classic')": {
+        "published_games": 119,
+        "published_samples": 23515,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'handicap-5-classic')": {
+        "published_games": 73,
+        "published_samples": 14646,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'handicap-6-classic')": {
+        "published_games": 71,
+        "published_samples": 14003,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'handicap-4-double')": {
+        "published_games": 70,
+        "published_samples": 12023,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'pie-double')": {
+        "published_games": 260,
+        "published_samples": 42125,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'handicap-4-classic')": {
+        "published_games": 79,
+        "published_samples": 15436,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'handicap-9-classic')": {
+        "published_games": 61,
+        "published_samples": 12566,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'handicap-8-double')": {
+        "published_games": 70,
+        "published_samples": 11802,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'handicap-6-double')": {
+        "published_games": 73,
+        "published_samples": 12156,
+        "published_policy_only_samples": 0
+      },
+      "('cuda', 'candidate', 10, 'handicap-3-classic')": {
+        "published_games": 94,
+        "published_samples": 18584,
+        "published_policy_only_samples": 0
+      }
+    },
+    "process_sample": {
+      "actor-cpu-ring4": {
+        "pid": 1839906,
+        "seconds": 20.000157947,
+        "cpu_cores_used": 16.01037356047636,
+        "runnable_wait_core_seconds_per_wall_second": 0.0002864906874827692,
+        "thread_runtime_core_seconds_per_wall_second": 16.010398478729574,
+        "stable_threads": 52,
+        "Threads": "52",
+        "Cpus_allowed_list": "0-31",
+        "Mems_allowed_list": "0-1",
+        "VmRSS": "1652680 kB"
+      },
+      "actor-gpu-1": {
+        "pid": 1839899,
+        "seconds": 20.000157947,
+        "cpu_cores_used": 1.2529901046985965,
+        "runnable_wait_core_seconds_per_wall_second": 0.00018783531659876244,
+        "thread_runtime_core_seconds_per_wall_second": 1.252590817301909,
+        "stable_threads": 18,
+        "Threads": "18",
+        "Cpus_allowed_list": "32-103",
+        "Mems_allowed_list": "0-1",
+        "VmRSS": "3261344 kB"
+      },
+      "actor-gpu-2": {
+        "pid": 1839900,
+        "seconds": 20.000157947,
+        "cpu_cores_used": 1.3264895242479555,
+        "runnable_wait_core_seconds_per_wall_second": 0.0001928105773073873,
+        "thread_runtime_core_seconds_per_wall_second": 1.3264180266625971,
+        "stable_threads": 18,
+        "Threads": "18",
+        "Cpus_allowed_list": "32-103",
+        "Mems_allowed_list": "0-1",
+        "VmRSS": "3341012 kB"
+      },
+      "actor-gpu-3": {
+        "pid": 1839901,
+        "seconds": 20.000157947,
+        "cpu_cores_used": 1.2934897848584475,
+        "runnable_wait_core_seconds_per_wall_second": 0.00019787128734118892,
+        "thread_runtime_core_seconds_per_wall_second": 1.2931529805183093,
+        "stable_threads": 18,
+        "Threads": "18",
+        "Cpus_allowed_list": "32-103",
+        "Mems_allowed_list": "0-1",
+        "VmRSS": "3354552 kB"
+      },
+      "actor-gpu-4": {
+        "pid": 1839902,
+        "seconds": 20.000157947,
+        "cpu_cores_used": 1.3124896348099824,
+        "runnable_wait_core_seconds_per_wall_second": 0.0002458182086875696,
+        "thread_runtime_core_seconds_per_wall_second": 1.3129093830450838,
+        "stable_threads": 18,
+        "Threads": "18",
+        "Cpus_allowed_list": "104-207",
+        "Mems_allowed_list": "0-1",
+        "VmRSS": "3560576 kB"
+      },
+      "actor-gpu-5": {
+        "pid": 1839903,
+        "seconds": 20.000157947,
+        "cpu_cores_used": 1.327489516350668,
+        "runnable_wait_core_seconds_per_wall_second": 0.00015753615588183934,
+        "thread_runtime_core_seconds_per_wall_second": 1.326841156070996,
+        "stable_threads": 18,
+        "Threads": "18",
+        "Cpus_allowed_list": "104-207",
+        "Mems_allowed_list": "0-1",
+        "VmRSS": "3576980 kB"
+      },
+      "actor-gpu-6": {
+        "pid": 1839904,
+        "seconds": 20.000157947,
+        "cpu_cores_used": 1.2739899388555562,
+        "runnable_wait_core_seconds_per_wall_second": 0.0002874377300036429,
+        "thread_runtime_core_seconds_per_wall_second": 1.2740039442949505,
+        "stable_threads": 18,
+        "Threads": "18",
+        "Cpus_allowed_list": "104-207",
+        "Mems_allowed_list": "0-1",
+        "VmRSS": "3287336 kB"
+      },
+      "actor-gpu-7": {
+        "pid": 1839905,
+        "seconds": 20.000157947,
+        "cpu_cores_used": 1.2684899822906384,
+        "runnable_wait_core_seconds_per_wall_second": 0.00014398261291891185,
+        "thread_runtime_core_seconds_per_wall_second": 1.2686553444847153,
+        "stable_threads": 18,
+        "Threads": "18",
+        "Cpus_allowed_list": "104-207",
+        "Mems_allowed_list": "0-1",
+        "VmRSS": "3382816 kB"
+      },
+      "arena-promotion": {
+        "pid": 1839907,
+        "seconds": 20.000157947,
+        "cpu_cores_used": 0.0004999960513561838,
+        "runnable_wait_core_seconds_per_wall_second": 0.0,
+        "thread_runtime_core_seconds_per_wall_second": 0.0003740106463070223,
+        "stable_threads": 27,
+        "Threads": "27",
+        "Cpus_allowed_list": "104-207",
+        "Mems_allowed_list": "0-1",
+        "VmRSS": "2918424 kB"
+      },
+      "learner": {
+        "pid": 1839898,
+        "seconds": 20.000157947,
+        "cpu_cores_used": 0.2189982704940085,
+        "runnable_wait_core_seconds_per_wall_second": 5.0831598565075065e-06,
+        "thread_runtime_core_seconds_per_wall_second": 0.21902713536605248,
+        "stable_threads": 53,
+        "Threads": "53",
+        "Cpus_allowed_list": "32-103",
+        "Mems_allowed_list": "0-1",
+        "VmRSS": "3839736 kB"
+      }
+    },
+    "broker_current_interval": {
+      "actor-gpu-1": {
+        "seconds": 131.218698509,
+        "deltas": {
+          "queue_wait_seconds": 127.7670452571474,
+          "worker_seconds": 128.8012350620702,
+          "submitted_requests": 10999,
+          "neural_batches": 5683,
+          "requested_rows": 454507
+        },
+        "mean_queue_wait_ms": 11.616241954463806,
+        "worker_busy_fraction": 0.9815768371855631,
+        "pending_requests": 2,
+        "active_requests": 2,
+        "graph_models": [
+          {
+            "model_step": 168976,
+            "charged_bytes": 5866219008,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192,
+              256
+            ]
+          },
+          {
+            "model_step": 170905,
+            "charged_bytes": 4232473088,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192
+            ]
+          },
+          {
+            "model_step": 171906,
+            "charged_bytes": 4235454976,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192
+            ]
+          }
+        ]
+      },
+      "actor-gpu-2": {
+        "seconds": 130.755763897,
+        "deltas": {
+          "queue_wait_seconds": 195.1032092301175,
+          "worker_seconds": 129.98811324127018,
+          "submitted_requests": 10500,
+          "neural_batches": 5249,
+          "requested_rows": 532384
+        },
+        "mean_queue_wait_ms": 18.581258021915954,
+        "worker_busy_fraction": 0.9941291256855451,
+        "pending_requests": 1,
+        "active_requests": 3,
+        "graph_models": [
+          {
+            "model_step": 171906,
+            "charged_bytes": 2204680192,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128
+            ]
+          },
+          {
+            "model_step": 112309,
+            "charged_bytes": 4051351040,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192,
+              256
+            ]
+          },
+          {
+            "model_step": 168976,
+            "charged_bytes": 4050085376,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192,
+              256
+            ]
+          }
+        ]
+      },
+      "actor-gpu-3": {
+        "seconds": 131.809765796,
+        "deltas": {
+          "queue_wait_seconds": 126.6528925942257,
+          "worker_seconds": 130.64845785684884,
+          "submitted_requests": 10962,
+          "neural_batches": 5556,
+          "requested_rows": 454011
+        },
+        "mean_queue_wait_ms": 11.553812497192638,
+        "worker_busy_fraction": 0.9911895151915489,
+        "pending_requests": 0,
+        "active_requests": 1,
+        "graph_models": [
+          {
+            "model_step": 171906,
+            "charged_bytes": 4235454976,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192
+            ]
+          },
+          {
+            "model_step": 112309,
+            "charged_bytes": 4235379712,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192
+            ]
+          },
+          {
+            "model_step": 168976,
+            "charged_bytes": 5866219008,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192,
+              256
+            ]
+          }
+        ]
+      },
+      "actor-gpu-4": {
+        "seconds": 130.725679208,
+        "deltas": {
+          "queue_wait_seconds": 227.78764046775177,
+          "worker_seconds": 130.27417330490425,
+          "submitted_requests": 14107,
+          "neural_batches": 7155,
+          "requested_rows": 458860
+        },
+        "mean_queue_wait_ms": 16.147135497820358,
+        "worker_busy_fraction": 0.9965461575274943,
+        "pending_requests": 2,
+        "active_requests": 2,
+        "graph_models": [
+          {
+            "model_step": 171906,
+            "charged_bytes": 4235397120,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192
+            ]
+          },
+          {
+            "model_step": 168976,
+            "charged_bytes": 5865869824,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192,
+              256
+            ]
+          },
+          {
+            "model_step": 112309,
+            "charged_bytes": 3019978752,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128
+            ]
+          }
+        ]
+      },
+      "actor-gpu-5": {
+        "seconds": 130.712631526,
+        "deltas": {
+          "queue_wait_seconds": 196.31506217084825,
+          "worker_seconds": 129.74428335018456,
+          "submitted_requests": 10415,
+          "neural_batches": 5145,
+          "requested_rows": 566904
+        },
+        "mean_queue_wait_ms": 18.84926185029748,
+        "worker_busy_fraction": 0.9925917781280165,
+        "pending_requests": 3,
+        "active_requests": 1,
+        "graph_models": [
+          {
+            "model_step": 171906,
+            "charged_bytes": 2203826688,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128
+            ]
+          },
+          {
+            "model_step": 116236,
+            "charged_bytes": 4050520576,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192,
+              256
+            ]
+          },
+          {
+            "model_step": 168976,
+            "charged_bytes": 4049699328,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192,
+              256
+            ]
+          }
+        ]
+      },
+      "actor-gpu-6": {
+        "seconds": 130.815275642,
+        "deltas": {
+          "queue_wait_seconds": 208.74930504942313,
+          "worker_seconds": 130.18461027462035,
+          "submitted_requests": 15602,
+          "neural_batches": 7920,
+          "requested_rows": 435236
+        },
+        "mean_queue_wait_ms": 13.379650368505521,
+        "worker_busy_fraction": 0.9951789623628852,
+        "pending_requests": 3,
+        "active_requests": 1,
+        "graph_models": [
+          {
+            "model_step": 171906,
+            "charged_bytes": 4235019776,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192
+            ]
+          },
+          {
+            "model_step": 112309,
+            "charged_bytes": 1637578240,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64
+            ]
+          },
+          {
+            "model_step": 168976,
+            "charged_bytes": 5865832960,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192,
+              256
+            ]
+          }
+        ]
+      },
+      "actor-gpu-7": {
+        "seconds": 132.037021136,
+        "deltas": {
+          "queue_wait_seconds": 135.02916017593816,
+          "worker_seconds": 133.7435900582932,
+          "submitted_requests": 10667,
+          "neural_batches": 5375,
+          "requested_rows": 463350
+        },
+        "mean_queue_wait_ms": 12.658588185613402,
+        "worker_busy_fraction": 1.0129249274757222,
+        "pending_requests": 1,
+        "active_requests": 3,
+        "graph_models": [
+          {
+            "model_step": 171906,
+            "charged_bytes": 4235454976,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192
+            ]
+          },
+          {
+            "model_step": 168976,
+            "charged_bytes": 5864196608,
+            "rows": [
+              1,
+              2,
+              3,
+              4,
+              6,
+              8,
+              12,
+              16,
+              24,
+              32,
+              48,
+              64,
+              96,
+              128,
+              192,
+              256
+            ]
+          }
+        ]
+      }
+    },
+    "work_bundle_current": {
+      "actor-gpu-1": {
+        "actual_model_roles": {
+          "candidate": 4,
+          "history": 4
+        },
+        "bundles_created": 2,
+        "cancelled_unstarted_games": 0,
+        "closed": false,
+        "completed_games_by_actual_role": {
+          "candidate": 512
+        },
+        "completed_games_by_mode": {
+          "classic-handicap": 128,
+          "classic-standard": 128,
+          "double-pie": 128,
+          "double-standard": 128
+        },
+        "completed_games_by_requested_role": {
+          "candidate": 512
+        },
+        "completed_games_by_ring": {
+          "10": 512
+        },
+        "dropped_games": 0,
+        "game_accounting_scope": "completed_task_outcomes; active durable publications appear in actor metrics",
+        "leases_issued": 8,
+        "mode_categories": {
+          "classic-handicap": 2,
+          "classic-pie": 1,
+          "classic-standard": 2,
+          "double-pie": 1,
+          "double-standard": 2
+        },
+        "outstanding_promised_games": 512,
+        "pending_leases": 0,
+        "pending_model_identity": null,
+        "planned_games_by_mode": {
+          "classic-handicap": 256,
+          "classic-pie": 128,
+          "classic-standard": 256,
+          "double-pie": 128,
+          "double-standard": 256
+        },
+        "planned_games_by_requested_role": {
+          "candidate": 512,
+          "history": 512
+        },
+        "planned_games_by_ring": {
+          "10": 1024
+        },
+        "requested_model_roles": {
+          "candidate": 4,
+          "history": 4
+        },
+        "rings": {
+          "10": 8
+        },
+        "started_games": 512
+      },
+      "actor-gpu-2": {
+        "actual_model_roles": {
+          "candidate": 4,
+          "champion": 4
+        },
+        "bundles_created": 2,
+        "cancelled_unstarted_games": 0,
+        "closed": false,
+        "completed_games_by_actual_role": {
+          "candidate": 512
+        },
+        "completed_games_by_mode": {
+          "classic-handicap": 128,
+          "classic-standard": 128,
+          "double-handicap": 128,
+          "double-pie": 128
+        },
+        "completed_games_by_requested_role": {
+          "candidate": 512
+        },
+        "completed_games_by_ring": {
+          "10": 512
+        },
+        "dropped_games": 0,
+        "game_accounting_scope": "completed_task_outcomes; active durable publications appear in actor metrics",
+        "leases_issued": 8,
+        "mode_categories": {
+          "classic-handicap": 2,
+          "classic-pie": 1,
+          "classic-standard": 1,
+          "double-handicap": 2,
+          "double-pie": 1,
+          "double-standard": 1
+        },
+        "outstanding_promised_games": 512,
+        "pending_leases": 0,
+        "pending_model_identity": null,
+        "planned_games_by_mode": {
+          "classic-handicap": 256,
+          "classic-pie": 128,
+          "classic-standard": 128,
+          "double-handicap": 256,
+          "double-pie": 128,
+          "double-standard": 128
+        },
+        "planned_games_by_requested_role": {
+          "candidate": 512,
+          "champion": 512
+        },
+        "planned_games_by_ring": {
+          "10": 1024
+        },
+        "requested_model_roles": {
+          "candidate": 4,
+          "champion": 4
+        },
+        "rings": {
+          "10": 8
+        },
+        "started_games": 512
+      },
+      "actor-gpu-3": {
+        "actual_model_roles": {
+          "candidate": 4,
+          "champion": 3
+        },
+        "bundles_created": 2,
+        "cancelled_unstarted_games": 0,
+        "closed": false,
+        "completed_games_by_actual_role": {
+          "candidate": 466
+        },
+        "completed_games_by_mode": {
+          "classic-handicap": 128,
+          "classic-standard": 128,
+          "double-pie": 128,
+          "double-standard": 82
+        },
+        "completed_games_by_requested_role": {
+          "candidate": 466
+        },
+        "completed_games_by_ring": {
+          "10": 466
+        },
+        "dropped_games": 0,
+        "game_accounting_scope": "completed_task_outcomes; active durable publications appear in actor metrics",
+        "leases_issued": 7,
+        "mode_categories": {
+          "classic-handicap": 1,
+          "classic-pie": 1,
+          "classic-standard": 2,
+          "double-handicap": 1,
+          "double-pie": 1,
+          "double-standard": 1
+        },
+        "outstanding_promised_games": 430,
+        "pending_leases": 1,
+        "pending_model_identity": "sha256-a8ea68f6b30c716492b6a2904311fd8f9c4855f35107daa98f81414172fd7541",
+        "planned_games_by_mode": {
+          "classic-handicap": 128,
+          "classic-pie": 128,
+          "classic-standard": 256,
+          "double-handicap": 128,
+          "double-pie": 128,
+          "double-standard": 128
+        },
+        "planned_games_by_requested_role": {
+          "candidate": 512,
+          "champion": 384
+        },
+        "planned_games_by_ring": {
+          "10": 896
+        },
+        "requested_model_roles": {
+          "candidate": 4,
+          "champion": 3
+        },
+        "rings": {
+          "10": 7
+        },
+        "started_games": 466
+      },
+      "actor-gpu-4": {
+        "actual_model_roles": {
+          "candidate": 4,
+          "champion": 2
+        },
+        "bundles_created": 2,
+        "cancelled_unstarted_games": 0,
+        "closed": false,
+        "completed_games_by_actual_role": {
+          "candidate": 432
+        },
+        "completed_games_by_mode": {
+          "classic-handicap": 78,
+          "classic-pie": 128,
+          "double-handicap": 98,
+          "double-standard": 128
+        },
+        "completed_games_by_requested_role": {
+          "candidate": 432
+        },
+        "completed_games_by_ring": {
+          "10": 432
+        },
+        "dropped_games": 0,
+        "game_accounting_scope": "completed_task_outcomes; active durable publications appear in actor metrics",
+        "leases_issued": 6,
+        "mode_categories": {
+          "classic-handicap": 1,
+          "classic-pie": 1,
+          "classic-standard": 1,
+          "double-handicap": 1,
+          "double-standard": 2
+        },
+        "outstanding_promised_games": 336,
+        "pending_leases": 2,
+        "pending_model_identity": "sha256-a8ea68f6b30c716492b6a2904311fd8f9c4855f35107daa98f81414172fd7541",
+        "planned_games_by_mode": {
+          "classic-handicap": 128,
+          "classic-pie": 128,
+          "classic-standard": 128,
+          "double-handicap": 128,
+          "double-standard": 256
+        },
+        "planned_games_by_requested_role": {
+          "candidate": 512,
+          "champion": 256
+        },
+        "planned_games_by_ring": {
+          "10": 768
+        },
+        "requested_model_roles": {
+          "candidate": 4,
+          "champion": 2
+        },
+        "rings": {
+          "10": 6
+        },
+        "started_games": 432
+      },
+      "actor-gpu-5": {
+        "actual_model_roles": {
+          "candidate": 4,
+          "history": 4
+        },
+        "bundles_created": 2,
+        "cancelled_unstarted_games": 0,
+        "closed": false,
+        "completed_games_by_actual_role": {
+          "candidate": 512
+        },
+        "completed_games_by_mode": {
+          "classic-handicap": 128,
+          "classic-pie": 128,
+          "double-handicap": 128,
+          "double-standard": 128
+        },
+        "completed_games_by_requested_role": {
+          "candidate": 512
+        },
+        "completed_games_by_ring": {
+          "10": 512
+        },
+        "dropped_games": 0,
+        "game_accounting_scope": "completed_task_outcomes; active durable publications appear in actor metrics",
+        "leases_issued": 8,
+        "mode_categories": {
+          "classic-handicap": 2,
+          "classic-pie": 2,
+          "classic-standard": 1,
+          "double-handicap": 2,
+          "double-standard": 1
+        },
+        "outstanding_promised_games": 512,
+        "pending_leases": 0,
+        "pending_model_identity": null,
+        "planned_games_by_mode": {
+          "classic-handicap": 256,
+          "classic-pie": 256,
+          "classic-standard": 128,
+          "double-handicap": 256,
+          "double-standard": 128
+        },
+        "planned_games_by_requested_role": {
+          "candidate": 512,
+          "history": 512
+        },
+        "planned_games_by_ring": {
+          "10": 1024
+        },
+        "requested_model_roles": {
+          "candidate": 4,
+          "history": 4
+        },
+        "rings": {
+          "10": 8
+        },
+        "started_games": 512
+      },
+      "actor-gpu-6": {
+        "actual_model_roles": {
+          "candidate": 4,
+          "champion": 1
+        },
+        "bundles_created": 2,
+        "cancelled_unstarted_games": 0,
+        "closed": false,
+        "completed_games_by_actual_role": {
+          "candidate": 378
+        },
+        "completed_games_by_mode": {
+          "classic-handicap": 78,
+          "classic-pie": 128,
+          "double-handicap": 94,
+          "double-standard": 78
+        },
+        "completed_games_by_requested_role": {
+          "candidate": 378
+        },
+        "completed_games_by_ring": {
+          "10": 378
+        },
+        "dropped_games": 0,
+        "game_accounting_scope": "completed_task_outcomes; active durable publications appear in actor metrics",
+        "leases_issued": 5,
+        "mode_categories": {
+          "classic-handicap": 1,
+          "classic-pie": 1,
+          "classic-standard": 1,
+          "double-handicap": 1,
+          "double-standard": 1
+        },
+        "outstanding_promised_games": 262,
+        "pending_leases": 3,
+        "pending_model_identity": "sha256-a8ea68f6b30c716492b6a2904311fd8f9c4855f35107daa98f81414172fd7541",
+        "planned_games_by_mode": {
+          "classic-handicap": 128,
+          "classic-pie": 128,
+          "classic-standard": 128,
+          "double-handicap": 128,
+          "double-standard": 128
+        },
+        "planned_games_by_requested_role": {
+          "candidate": 512,
+          "champion": 128
+        },
+        "planned_games_by_ring": {
+          "10": 640
+        },
+        "requested_model_roles": {
+          "candidate": 4,
+          "champion": 1
+        },
+        "rings": {
+          "10": 5
+        },
+        "started_games": 378
+      },
+      "actor-gpu-7": {
+        "actual_model_roles": {
+          "candidate": 4
+        },
+        "bundles_created": 1,
+        "cancelled_unstarted_games": 0,
+        "closed": false,
+        "completed_games_by_actual_role": {
+          "candidate": 192
+        },
+        "completed_games_by_mode": {
+          "classic-handicap": 64,
+          "classic-pie": 64,
+          "double-pie": 64
+        },
+        "completed_games_by_requested_role": {
+          "candidate": 192
+        },
+        "completed_games_by_ring": {
+          "10": 192
+        },
+        "dropped_games": 0,
+        "game_accounting_scope": "completed_task_outcomes; active durable publications appear in actor metrics",
+        "leases_issued": 4,
+        "mode_categories": {
+          "classic-handicap": 1,
+          "classic-pie": 1,
+          "classic-standard": 1,
+          "double-pie": 1
+        },
+        "outstanding_promised_games": 320,
+        "pending_leases": 0,
+        "pending_model_identity": null,
+        "planned_games_by_mode": {
+          "classic-handicap": 128,
+          "classic-pie": 128,
+          "classic-standard": 128,
+          "double-pie": 128
+        },
+        "planned_games_by_requested_role": {
+          "candidate": 512
+        },
+        "planned_games_by_ring": {
+          "10": 512
+        },
+        "requested_model_roles": {
+          "candidate": 4
+        },
+        "rings": {
+          "10": 4
+        },
+        "started_games": 192
+      }
+    },
+    "publication_rows_by_role": {
+      "('cuda', 'candidate')": 387403,
+      "('cpu', 'candidate')": 2222,
+      "('cpu', 'history')": 2314,
+      "('cpu', 'champion')": 605
+    },
+    "publication_rows_by_ring": {
+      "10": 387403,
+      "4": 5141
+    },
+    "publication_rows_by_six_mode": {
+      "double": 64419,
+      "classic": 55910,
+      "handicap-double": 46736,
+      "pie-classic": 82423,
+      "pie-double": 43402,
+      "handicap-classic": 99654
+    },
+    "gpu_publication_task_age_seconds_median": 3188.0875303652138,
+    "gpu_publication_task_age_seconds_p90": 4552.958208166063,
+    "all_gpu_planned_ring10_games": 5888,
+    "all_gpu_planned_other_ring_games": 0,
+    "max_completed_model_lag": 85961,
+    "longest_no_step_progress_intervals": [
+      {
+        "seconds": 74.0,
+        "step": 172745,
+        "start_utc": "2026-09-10T17:39:32+00:00",
+        "end_utc": "2026-09-10T17:40:46+00:00",
+        "phase": "update_to_data_wait"
+      },
+      {
+        "seconds": 25.0,
+        "step": 172737,
+        "start_utc": "2026-09-10T17:37:16+00:00",
+        "end_utc": "2026-09-10T17:37:41+00:00",
+        "phase": "update_to_data_wait"
+      },
+      {
+        "seconds": 24.0,
+        "step": 172740,
+        "start_utc": "2026-09-10T17:38:17+00:00",
+        "end_utc": "2026-09-10T17:38:41+00:00",
+        "phase": "update_to_data_wait"
+      },
+      {
+        "seconds": 20.0,
+        "step": 172721,
+        "start_utc": "2026-09-10T17:34:56+00:00",
+        "end_utc": "2026-09-10T17:35:16+00:00",
+        "phase": "training"
+      },
+      {
+        "seconds": 20.0,
+        "step": 172743,
+        "start_utc": "2026-09-10T17:39:01+00:00",
+        "end_utc": "2026-09-10T17:39:21+00:00",
+        "phase": "training"
+      }
+    ]
+  },
+  "local_cpu_proofs": {
+    "message_factorization": {
+      "rings": [
+        4,
+        6,
+        8,
+        10
+      ],
+      "operator": "mean",
+      "dtype": "float64",
+      "nonzero_rule_conditioning": true,
+      "outputs_equal": true,
+      "max_gradient_absolute_difference": 4.44e-16,
+      "ring10_padded_slots": 1925,
+      "ring10_unique_source_class_pairs": 550,
+      "whole_forward_mac_fraction_removed_by_projecting_once": 0.2793
+    },
+    "native_edge_allocation": {
+      "fixture": "ring10 after three placements; synthetic evaluator; actual release-mode tree implementation",
+      "edge_bytes": 40,
+      "budget53": {
+        "edges": 14635,
+        "edge_bytes": 585400,
+        "unused_leaf_edge_bytes": 574520
+      },
+      "budget640": {
+        "edges": 171384,
+        "edge_bytes": 6855360,
+        "unused_leaf_edges": 94747,
+        "unused_leaf_edge_bytes": 3789880
+      }
+    },
+    "first_visit_batching": {
+      "fixture": "64 roots, synthetic evaluator, maximum256request rows; logical counts, no GPU timings",
+      "budget53": {
+        "width1_calls": 54,
+        "width8_calls": 15,
+        "logical_rows_both": 3456
+      },
+      "budget640": {
+        "width1_calls": 641,
+        "width8_calls": 603,
+        "logical_rows_both": 41024
+      }
+    },
+    "weighted_fair_choice": {
+      "fixture": "actual role/ring weights; seed17+gpu_id*1000003; uninterrupted choices without unavailable-role fallback",
+      "first_non_ring10_bundle_all_gpus": 9,
+      "first_ring6_by_gpu": [
+        9,
+        14,
+        9,
+        19,
+        19,
+        9,
+        19
+      ],
+      "first_ring8_by_gpu": [
+        14,
+        19,
+        14,
+        9,
+        9,
+        19,
+        9
+      ]
+    },
+    "student_parameters": {
+      "384x8_h12_kv3": 17402775,
+      "256x4_h8_kv2": 4013463,
+      "192x4_h8_kv2": 2348183,
+      "browser96x3_h6_kv2": 485895
+    }
+  },
+  "website_budget": {
+    "source_fallback_simulations": 4096,
+    "source_fallback_candidates": 32,
+    "advertised_server_simulations": 512,
+    "local_numeric_overrides_present": false,
+    "deployed_browser_environment_verified": false,
+    "work_reduction_to512": 8.0,
+    "work_reduction_to384": 10.666666666666666,
+    "equal_strength_established": false
+  },
+  "sources": [
+    "https://docs.nvidia.com/deeplearning/cudnn/latest/operations/Attention.html",
+    "https://docs.nvidia.com/deeplearning/cudnn/v1.15.0/operations/Attention.html",
+    "https://raw.githubusercontent.com/pytorch/pytorch/v2.13.0/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp",
+    "https://pytorch.org/blog/flexattention-flashattention-4-fast-and-flexible/",
+    "https://papers.nips.cc/paper_files/paper/2025/file/1dc3d70df51a218497529df998a8a8ce-Paper-Conference.pdf",
+    "https://arxiv.org/html/2601.01301v1",
+    "https://arxiv.org/html/2602.10894v2",
+    "https://arxiv.org/abs/2602.20809"
+  ]
+}

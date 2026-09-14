@@ -676,6 +676,41 @@ class NativeAnalysisService:
                 "model_output_error",
                 "root model beliefs contain invalid probabilities or values",
             )
+        raw_outcome_value = float(outcome[1]) - float(outcome[0])
+        raw_score_expectation = math.fsum(
+            float(probability) * (index + SCORE_MARGIN_MIN)
+            for index, probability in enumerate(scores)
+        )
+        if not math.isclose(
+            detailed.outcome_values[0],
+            raw_outcome_value,
+            rel_tol=1e-5,
+            abs_tol=1e-5,
+        ) or not math.isclose(
+            detailed.score_expectations[0],
+            raw_score_expectation,
+            rel_tol=1e-5,
+            abs_tol=1e-3,
+        ):
+            raise AnalysisError(
+                "model_output_error",
+                "root belief values disagree with their probabilities",
+            )
+        # FP32 reductions can satisfy the model checks above yet miss the
+        # stricter wire-schema tolerance. Normalize only already-valid beliefs,
+        # using CPU double precision, and derive the displayed values from the
+        # serialized distributions. Search decisions and backed-up values stay
+        # exactly as computed by the evaluator and native search.
+        policy_mass = math.fsum(policy)
+        outcome_mass = math.fsum(outcome)
+        score_mass = math.fsum(scores)
+        policy = [probability / policy_mass for probability in policy]
+        outcome = [probability / outcome_mass for probability in outcome]
+        scores = [probability / score_mass for probability in scores]
+        score_expectation = math.fsum(
+            probability * (index + SCORE_MARGIN_MIN)
+            for index, probability in enumerate(scores)
+        )
         swap_available = bool(request.swap_available) if request is not None else False
         return {
             "schema_version": API_SCHEMA_VERSION,
@@ -685,7 +720,7 @@ class NativeAnalysisService:
             "root_q": q_values,
             "root_visits": visits,
             "outcome": {"loss": outcome[0], "win": outcome[1]},
-            "value": detailed.outcome_values[0],
+            "value": outcome[1] - outcome[0],
             "search_value": detailed.response.values[0],
             "root_value": root_value,
             "variant": {
@@ -701,7 +736,7 @@ class NativeAnalysisService:
             "score_belief": {
                 "support_min": SCORE_MARGIN_MIN,
                 "support_max": SCORE_MARGIN_MAX,
-                "expected_margin": detailed.score_expectations[0],
+                "expected_margin": score_expectation,
                 "probabilities": scores,
             },
             "model_version": evaluator.model_version,

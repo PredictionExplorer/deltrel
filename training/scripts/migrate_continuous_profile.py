@@ -127,6 +127,10 @@ _ALLOWED_PROFILE_PATHS = {
     # Explicit board-size allocation, validated as a complete typed schedule.
     ("orchestration", "ring_mixture", "step_weights"),
     ("orchestration", "training_objective"),
+    ("game", "pie_rule"),
+    ("selfplay", "pie"),
+    ("selfplay", "pie_even_training"),
+    ("arena", "variant_policy"),
     ("selfplay", "rings"),
     ("arena", "rings"),
     ("arena", "required_regression_rings"),
@@ -287,10 +291,15 @@ class MigrationPlan:
     champion_model_identity: str
     coordinator_lock_status: str
     utd_segment_payload: Mapping[str, object] | None = None
+    strength_epoch_payload: Mapping[str, object] | None = None
 
     @property
     def utd_segment_path(self) -> Path:
         return self.run_root / "learner" / UTD_SEGMENT_FILENAME
+
+    @property
+    def strength_epoch_path(self) -> Path:
+        return self.run_root / "strength-epoch.json"
 
     def output(self, *, mode: str, backup: Path | None = None) -> dict[str, object]:
         return {
@@ -333,6 +342,11 @@ class MigrationPlan:
                 if self.utd_segment_payload is not None
                 else None
             ),
+            "strength_epoch": (
+                dict(self.strength_epoch_payload)
+                if self.strength_epoch_payload is not None
+                else None
+            ),
             "writes": [
                 str(self.target_profile),
                 str(self.target_profile_checksum),
@@ -342,6 +356,11 @@ class MigrationPlan:
                 *(
                     [str(self.utd_segment_path)]
                     if self.utd_segment_payload is not None
+                    else []
+                ),
+                *(
+                    [str(self.strength_epoch_path)]
+                    if self.strength_epoch_payload is not None
                     else []
                 ),
             ],
@@ -636,9 +655,17 @@ def _validate_profile_pair(
         raise MigrationError("replay data schema_version is immutable")
     if old.train.seed != new.train.seed:
         raise MigrationError("training seed is immutable")
-    for section in ("game", "model", "loss", "optimizer"):
+    for section in ("model", "loss", "optimizer"):
         if getattr(old, section) != getattr(new, section):
             raise MigrationError(f"{section} configuration is immutable")
+    if old.game != new.game:
+        from startrain.checkpoint import game_configs_compatible
+
+        if "ring10_pie" not in (
+            old.orchestration.training_objective,
+            new.orchestration.training_objective,
+        ) or not game_configs_compatible(old.as_dict()["game"], new.as_dict()["game"]):
+            raise MigrationError("game configuration is immutable")
 
     differences = tuple(_profile_diffs(old.as_dict(), new.as_dict()))
     disallowed = [
@@ -664,6 +691,7 @@ def _read_previous_utd_segment(
     expected_target: float,
     examples_consumed: int,
     committed_replay_samples: int,
+    training_objective: str | None = None,
 ) -> dict[str, Any]:
     payload, _ = _read_json(path, "previous UTD segment")
     required = {
@@ -674,7 +702,9 @@ def _read_previous_utd_segment(
         "baseline_examples_consumed",
         "baseline_committed_replay_samples",
     }
-    if not required <= set(payload) or set(payload) - (required | {"created_ns"}):
+    if not required <= set(payload) or set(payload) - (
+        required | {"created_ns", "training_objective"}
+    ):
         raise MigrationError("previous UTD segment fields are invalid")
     target = payload.get("target_updates_per_new_sample")
     if (
@@ -684,6 +714,7 @@ def _read_previous_utd_segment(
         or isinstance(target, bool)
         or not isinstance(target, int | float)
         or float(target) != expected_target
+        or payload.get("training_objective") != training_objective
     ):
         raise MigrationError("previous UTD segment does not match the source profile")
     previous_examples = _nonnegative_int(
@@ -746,22 +777,49 @@ def _plan_utd_segment(
     committed_replay_samples: int,
     timestamp_ns: int,
 ) -> dict[str, Any] | None:
-    """Return the prospective UTD segment a target change requires, if any.
+    """Return a prospective UTD segment for a target or eligible-game change.
 
     A changed target never re-rates history: the new segment starts at the
     durable boundary with the recovery checkpoint's consumed examples and the
     ledger's committed samples, so the ratio applies only to samples generated
-    from here on. An unchanged target leaves the live segment untouched.
+    from here on. Changing which games qualify also starts a new segment, so
+    retired game types cannot fund optimizer updates under the new objective.
     """
 
     old_target = old.learner.target_updates_per_new_sample
     new_target = new.learner.target_updates_per_new_sample
+    old_scope = (
+        "ring10_pie" if old.orchestration.training_objective == "ring10_pie" else None
+    )
+    new_scope = (
+        "ring10_pie" if new.orchestration.training_objective == "ring10_pie" else None
+    )
+
+    def scoped_count(scope: str | None) -> int:
+        if scope is None:
+            return committed_replay_samples
+        from startrain.replay_store import training_committed_sample_count
+
+        path = run_root / "replay" / "manifest.sqlite3"
+        with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True) as db:
+            db.execute("PRAGMA query_only = ON")
+            return training_committed_sample_count(
+                db,
+                run_id=run_id,
+                generation_family=generation_family,
+                training_objective=scope,
+            )
+
     previous_path = run_root / "learner" / UTD_SEGMENT_FILENAME
     if new_target is None:
         if old_target is not None:
             raise MigrationError("removing update-to-data control is not supported")
         return None
-    if old_target is not None and float(old_target) == float(new_target):
+    if (
+        old_target is not None
+        and float(old_target) == float(new_target)
+        and old_scope == new_scope
+    ):
         if previous_path.is_file():
             _read_previous_utd_segment(
                 previous_path,
@@ -769,7 +827,8 @@ def _plan_utd_segment(
                 generation_family=generation_family,
                 expected_target=float(old_target),
                 examples_consumed=examples_consumed,
-                committed_replay_samples=committed_replay_samples,
+                committed_replay_samples=scoped_count(old_scope),
+                training_objective=old_scope,
             )
         return None
     if old_target is None:
@@ -784,7 +843,8 @@ def _plan_utd_segment(
             generation_family=generation_family,
             expected_target=float(old_target),
             examples_consumed=examples_consumed,
-            committed_replay_samples=committed_replay_samples,
+            committed_replay_samples=scoped_count(old_scope),
+            training_objective=old_scope,
         )
     _require_proportional_cadence(old, new, scale=float(new_target) / float(old_target))
     return {
@@ -793,8 +853,9 @@ def _plan_utd_segment(
         "generation_family": generation_family,
         "target_updates_per_new_sample": float(new_target),
         "baseline_examples_consumed": examples_consumed,
-        "baseline_committed_replay_samples": committed_replay_samples,
+        "baseline_committed_replay_samples": scoped_count(new_scope),
         "created_ns": timestamp_ns,
+        **({"training_objective": new_scope} if new_scope is not None else {}),
     }
 
 
@@ -1223,7 +1284,16 @@ def _validate_recovery_checkpoint_payload(
     serialized = config.as_dict()
     if not isinstance(checkpoint_config, Mapping) or any(
         checkpoint_config.get(section) != serialized[section]
-        for section in ("game", "model", "loss", "optimizer")
+        for section in ("model", "loss", "optimizer")
+    ):
+        raise MigrationError(
+            "recovery checkpoint experiment configuration is incompatible"
+        )
+    from startrain.checkpoint import game_configs_compatible
+
+    actual_game = checkpoint_config.get("game")
+    if not isinstance(actual_game, Mapping) or not game_configs_compatible(
+        actual_game, serialized["game"]
     ):
         raise MigrationError(
             "recovery checkpoint experiment configuration is incompatible"
@@ -1389,6 +1459,7 @@ def _validate_variant_arena_boundary(
         or path
         in {
             "arena.balanced_cells",
+            "arena.variant_policy",
             "arena.cell_regression_floor_elo",
             "arena.handicap_severity_cycle",
             "arena.simulations",
@@ -1581,7 +1652,10 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
     balanced_scope_change = (
         old_config.arena.balanced_cells
         and new_config.arena.balanced_cells
-        and old_config.arena.rings != new_config.arena.rings
+        and (
+            old_config.arena.rings != new_config.arena.rings
+            or old_config.arena.variant_policy != new_config.arena.variant_policy
+        )
     )
     if balanced_scope_change:
         from startrain.balanced_evaluation import evaluation_contract
@@ -1664,6 +1738,29 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
         committed_replay_samples=replay_boundary.committed_samples,
         timestamp_ns=timestamp_ns,
     )
+    strength_epoch_payload = None
+    if old_config.arena.variant_policy != new_config.arena.variant_policy:
+        from dataclasses import replace
+        from startrain.balanced_evaluation import evaluation_contract
+
+        simulations, candidates = (
+            new_config.orchestration.historical_evaluation.search_budget(
+                new_config.arena
+            )
+        )
+        strength_config = replace(
+            new_config.arena, simulations=simulations, max_considered=candidates
+        )
+        strength_epoch_payload = {
+            "schema_version": 1,
+            "started_ns": timestamp_ns,
+            "minimum_candidate_step": learner_step,
+            "anchor_identity": champion_identity,
+            "evaluation_contract_identity": evaluation_contract(strength_config)[
+                "identity"
+            ],
+            "source_commit": to_source_commit,
+        }
     change_records = [
         {"path": path, "from": before, "to": after} for path, before, after in changes
     ]
@@ -1700,6 +1797,8 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
     }
     if utd_segment_payload is not None:
         migration_record["utd_segment"] = dict(utd_segment_payload)
+    if strength_epoch_payload is not None:
+        migration_record["strength_epoch"] = dict(strength_epoch_payload)
     if not old_config.arena.balanced_cells and new_config.arena.balanced_cells:
         migration_record["evaluation_contract_transition"] = {
             "kind": "legacy_to_balanced",
@@ -1745,6 +1844,7 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
         (run_root / "status" / "coordinator.json", "coordinator status"),
         (run_root / "learner" / "candidate.json", "learner candidate"),
         (run_root / "learner" / UTD_SEGMENT_FILENAME, "UTD segment"),
+        (run_root / "strength-epoch.json", "strength epoch"),
         (resume_cutover_path, "resume cutover"),
         (run_root / "arena" / "promotion-status.json", "promotion status"),
         (run_root / "replay" / "initialized.json", "replay initialization"),
@@ -1795,6 +1895,16 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
         migrations_path,
         run_root / "profile.sha256",
         run_root / "source-commit.txt",
+        *(
+            (run_root / "learner" / UTD_SEGMENT_FILENAME,)
+            if utd_segment_payload is not None
+            else ()
+        ),
+        *(
+            (run_root / "strength-epoch.json",)
+            if strength_epoch_payload is not None
+            else ()
+        ),
     ):
         if not path.exists():
             expected_absent.append(path)
@@ -1869,6 +1979,7 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
         champion_model_identity=champion_identity,
         coordinator_lock_status=lock_status,
         utd_segment_payload=utd_segment_payload,
+        strength_epoch_payload=strength_epoch_payload,
     )
 
 
@@ -2079,6 +2190,23 @@ def _assert_inputs_unchanged(plan: MigrationPlan, *, check_lock: bool) -> None:
         or replay.updated_ns != plan.replay_updated_ns
     ):
         raise MigrationError("replay ledger boundary changed before apply")
+    if (
+        plan.utd_segment_payload is not None
+        and plan.utd_segment_payload.get("training_objective") == "ring10_pie"
+    ):
+        from startrain.replay_store import training_committed_sample_count
+
+        path = plan.run_root / "replay" / "manifest.sqlite3"
+        with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True) as db:
+            db.execute("PRAGMA query_only = ON")
+            count = training_committed_sample_count(
+                db,
+                run_id=str(plan.migration_record["run_id"]),
+                generation_family=str(plan.migration_record["generation_family"]),
+                training_objective="ring10_pie",
+            )
+        if count != plan.utd_segment_payload["baseline_committed_replay_samples"]:
+            raise MigrationError("eligible replay boundary changed before apply")
 
 
 @contextmanager
@@ -2211,6 +2339,7 @@ def apply_migration(plan: MigrationPlan) -> dict[str, object]:
             plan.run_root / "profile.sha256",
             plan.run_root / "source-commit.txt",
             plan.utd_segment_path,
+            plan.strength_epoch_path,
         )
         states = tuple(_capture_file_state(path) for path in mutable_paths)
         backup_parent_existed = plan.backup_directory.parent.exists()
@@ -2220,6 +2349,13 @@ def apply_migration(plan: MigrationPlan) -> dict[str, object]:
                 _atomic_write_bytes(
                     plan.utd_segment_path,
                     _json_bytes(plan.utd_segment_payload),
+                    mode=0o644,
+                    overwrite=True,
+                )
+            if plan.strength_epoch_payload is not None:
+                _atomic_write_bytes(
+                    plan.strength_epoch_path,
+                    _json_bytes(plan.strength_epoch_payload),
                     mode=0o644,
                     overwrite=True,
                 )
