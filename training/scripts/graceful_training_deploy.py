@@ -155,6 +155,35 @@ class Deployment:
             for name in ("report", "backup", "disaster-backup")
         ]
         self.units = [self.main, self.support[0], *self.oneshots]
+        overrides = p.get("unit_source_releases", {})
+        require(
+            isinstance(overrides, dict) and set(overrides) <= set(self.units),
+            "unit source releases must name only managed services",
+        )
+        self.unit_source_releases: dict[str, Path] = {}
+        for unit, value in overrides.items():
+            require(
+                isinstance(value, str)
+                and Path(value).is_absolute()
+                and str(Path(value)) == value
+                and ".." not in Path(value).parts
+                and Path(value) != self.release,
+                f"invalid source release for {unit}",
+            )
+            self.unit_source_releases[unit] = Path(value)
+        reason = p.get(
+            "migration_reason",
+            "Pie-standard training policy; preserve learned state and replay",
+        )
+        require(
+            isinstance(reason, str)
+            and reason == reason.strip()
+            and 1 <= len(reason) <= 256
+            and "\n" not in reason
+            and "\r" not in reason,
+            "migration reason must be a single descriptive line",
+        )
+        self.migration_reason = reason
         self.python = str(self.release / "training/.venv/bin/python")
         self.env = os.environ | {
             "PYTHONPATH": str(self.release / "training"),
@@ -230,6 +259,24 @@ class Deployment:
             timeout=timeout,
         )
 
+    def unit_source_release(self, unit: str) -> Path:
+        return self.unit_source_releases.get(unit, self.old_release)
+
+    def validate_source_unit(self, unit: str, contents: str) -> None:
+        expected = self.unit_source_release(unit)
+        training = str(expected / "training")
+        require(
+            str(expected) in contents, f"saved unit lacks its source release: {unit}"
+        )
+        require(
+            self.show(unit, "WorkingDirectory") == training,
+            f"source unit working directory differs from plan: {unit}",
+        )
+        require(
+            training + "/" in self.show(unit, "ExecStart"),
+            f"source unit command differs from plan: {unit}",
+        )
+
     def validate_prepared(self) -> None:
         require(
             active_authority(self.root) == (self.source, self.plan["source_commit"]),
@@ -241,7 +288,7 @@ class Deployment:
         )
         require(
             self.show(self.main, "WorkingDirectory")
-            == str(self.old_release / "training"),
+            == str(self.unit_source_release(self.main) / "training"),
             "source unit points to another release",
         )
         self.run(
@@ -292,6 +339,7 @@ class Deployment:
                 "unit is not the expected regular local fragment",
             )
             require(not self.show(unit, "DropInPaths"), "unit has unplanned drop-ins")
+            self.validate_source_unit(unit, path.read_text())
             shutil.copy2(path, folder / unit)
         self.save(
             "prepared.json",
@@ -362,8 +410,13 @@ class Deployment:
             )
             contents = source.read_text()
             if not original:
+                old_release = self.unit_source_release(unit)
+                require(
+                    str(old_release) in contents,
+                    f"saved unit lacks its source release: {unit}",
+                )
                 contents = contents.replace(
-                    str(self.old_release), str(self.release)
+                    str(old_release), str(self.release)
                 ).replace(str(self.source), str(profile))
             destination = self.base / (unit + ".next")
             destination.write_text(contents)
@@ -393,7 +446,7 @@ class Deployment:
             old_profile=source,
             new_profile=candidate,
             target_profile_name=target,
-            reason="Pie-standard training policy; preserve learned state and replay",
+            reason=self.migration_reason,
             run_root=self.root,
             from_source_commit=source_commit,
             to_source_commit=self.plan["target_commit"],

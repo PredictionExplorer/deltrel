@@ -122,7 +122,7 @@ def test_dependency_closure_retains_controlled_graph_live_evidence_and_rejects_c
         "classification": gate.POLICY_TRANSITION_CLASS,
         "run_id": "run",
         "source_profile": ref("source-profile"),
-        "source_gate": ref("source-gate"),
+        "source_gate": ref("search-allocation-gates/" + "b" * 64),
         "source_config_sha256": "b" * 64,
         "target_config_sha256": "c" * 64,
         "measurement_scope": gate.POLICY_TRANSITION_SCOPE,
@@ -130,7 +130,7 @@ def test_dependency_closure_retains_controlled_graph_live_evidence_and_rejects_c
     }
     values = {
         "status/transition.json": receipt,
-        "status/source-gate.json": source,
+        "status/search-allocation-gates/" + "b" * 64 + ".json": source,
         "status/activation.json": {
             "format": "startrain.graph-cache-controlled-activation",
             "schema_version": 1,

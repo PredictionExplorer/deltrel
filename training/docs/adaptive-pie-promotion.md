@@ -170,7 +170,23 @@ PYTHONPATH=. .venv/bin/python scripts/prepare_pie_training_profile.py \
 
 The tool publishes a complete validated file, refuses to overwrite a file, and
 does not deploy. Frozen reference profiles and their admission receipts remain
-unchanged. Deployment must follow the existing release verification, admission,
+unchanged. For the optimized production profile, retain the complete admitted
+search-evidence chain with an allocation-only receipt:
+
+```sh
+PYTHONPATH=. .venv/bin/python scripts/prepare_pie_promotion_gate.py \
+  --source-profile /absolute/path/to/registered-active-profile.yaml \
+  --target-profile /absolute/path/to/new-profile.yaml
+```
+
+This receipt permits exactly the promotion allocation change. It rehashes the
+original evidence, including the previous training-policy and controlled-cache
+receipts, and makes no new throughput or strength qualification claim. Backup
+and offline restore retain and verify that full chain. When support services
+use a separate release, the deployment plan pins each service's source release
+so its parser and backup code move with the new profile.
+
+Deployment must follow the existing release verification, admission,
 checkpointed stop, migration, and resume process. A changed sampling schedule
 alone is not evidence of better Elo per hour; compare actual decision cost and
 the independent strength ladder after activation.

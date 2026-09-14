@@ -25,6 +25,11 @@ GATE_FORMAT = "startrain.ring-search-allocation-gate"
 POLICY_TRANSITION_FORMAT = "startrain.search-allocation-policy-transition"
 POLICY_TRANSITION_CLASS = "unchanged-execution-policy-transition"
 POLICY_TRANSITION_SCOPE = "original-frozen-six-variant-workload"
+PROMOTION_TRANSITION_FORMAT = "startrain.search-allocation-promotion-transition"
+PROMOTION_TRANSITION_CLASS = (
+    "unchanged-selfplay-execution-promotion-allocation-transition"
+)
+PROMOTION_TRANSITION_SCOPE = POLICY_TRANSITION_SCOPE
 FULL_PROBABILITY_FLOOR = 0.35
 MAX_INCREMENTAL_REGRET_UPPER95 = 0.02
 TIMING_SETUP_COUNTERS = (
@@ -538,6 +543,8 @@ def _validate_policy_transition_gate(
     gate: dict[str, Any],
     target: ExperimentConfig,
     verified: dict[str, tuple[int, ...]],
+    *,
+    _fresh: bool = False,
 ) -> None:
     """Continue an admitted execution plan through one explicit policy change.
 
@@ -584,7 +591,10 @@ def _validate_policy_transition_gate(
     if source_gate_path != allocation_gate_path(source):
         _fail("policy transition must pin the source configuration's original gate")
     source_gate = _json(source_contents)
-    if "training_policy_transition" in source_gate:
+    if (
+        "training_policy_transition" in source_gate
+        or "promotion_allocation_transition" in source_gate
+    ):
         _fail("policy transition receipts cannot be chained")
     expected = dict(source_gate)
     expected["target_config_sha256"] = canonical_config_sha256(target)
@@ -593,13 +603,85 @@ def _validate_policy_transition_gate(
         _fail("policy transition must preserve the complete original gate and reports")
     # Original quality, rate and separately controlled cache-capacity admission
     # are all revalidated under their exact source configuration and identities.
-    validate_production_ring_allocations(source)
+    validate_production_ring_allocations(source, _fresh=_fresh)
     inherited = _VERIFIED_GATES.get(str(source_gate_path))
     if inherited is None:
         _fail("policy transition source has no verified allocation evidence")
     for path, signature in inherited.items():
         if path in verified and verified[path] != signature:
             _fail("source evidence changed while inheriting its admission")
+        verified[path] = signature
+
+
+def _validate_promotion_transition_gate(
+    root: Path,
+    gate: dict[str, Any],
+    target: ExperimentConfig,
+    verified: dict[str, tuple[int, ...]],
+) -> None:
+    """Carry existing admission through exactly one promotion-only change.
+
+    The source may already carry its one training-policy transition. It may
+    never carry another promotion transition. Exact config transforms make
+    the inheritance order finite: original -> pie training -> adaptive screen.
+    All original artifact references and qualification limits remain intact.
+    """
+    from .pie_promotion import validate_pie_promotion_transition
+
+    reference = gate["promotion_allocation_transition"]
+    _, contents = _read_ref(root, reference, verified)
+    receipt = _json(contents)
+    if (
+        set(receipt)
+        != {
+            "format",
+            "schema_version",
+            "classification",
+            "run_id",
+            "source_profile",
+            "source_gate",
+            "source_config_sha256",
+            "target_config_sha256",
+            "measurement_scope",
+            "new_objective_performance_qualified",
+        }
+        or receipt.get("format") != PROMOTION_TRANSITION_FORMAT
+        or type(receipt.get("schema_version")) is not int
+        or receipt["schema_version"] != 1
+        or receipt.get("classification") != PROMOTION_TRANSITION_CLASS
+        or receipt.get("run_id") != target.orchestration.run_id
+        or receipt.get("target_config_sha256") != canonical_config_sha256(target)
+        or receipt.get("measurement_scope") != PROMOTION_TRANSITION_SCOPE
+        or receipt.get("new_objective_performance_qualified") is not False
+    ):
+        _fail("promotion transition receipt identity or evidence scope is invalid")
+    source_path, _ = _read_ref(root, receipt["source_profile"], verified)
+    source = load_config(source_path)
+    if receipt["source_config_sha256"] != canonical_config_sha256(source):
+        _fail("promotion transition source configuration hash differs")
+    validate_pie_promotion_transition(source, target)
+    source_gate_path, source_contents = _read_ref(
+        root, receipt["source_gate"], verified
+    )
+    if source_gate_path != allocation_gate_path(source):
+        _fail("promotion transition must pin the source configuration's original gate")
+    original = _json(source_contents)
+    if "promotion_allocation_transition" in original:
+        _fail("promotion transition receipts cannot be chained")
+    expected = dict(original)
+    expected["target_config_sha256"] = canonical_config_sha256(target)
+    expected["promotion_allocation_transition"] = reference
+    if gate != expected:
+        _fail("promotion transition must preserve the complete source gate and reports")
+    # This new wrapper obtains fresh cryptographic checks of the complete
+    # source closure, including any earlier training-policy inheritance.
+    validate_production_ring_allocations(source, _fresh=True)
+    inherited = _VERIFIED_GATES.get(str(source_gate_path))
+    if inherited is None:
+        _fail("promotion transition source has no verified allocation evidence")
+    for path, signature in inherited.items():
+        if path in verified and verified[path] != signature:
+            _fail("source evidence changed while inheriting promotion admission")
         verified[path] = signature
 
 
@@ -613,7 +695,9 @@ def _cache_verified_gate(
         _VERIFIED_GATES.popitem(last=False)
 
 
-def validate_production_ring_allocations(config: ExperimentConfig) -> None:
+def validate_production_ring_allocations(
+    config: ExperimentConfig, *, _fresh: bool = False
+) -> None:
     allocations = config.selfplay.ring_search_allocations
     for allocation in allocations:
         if not 0 < allocation.fast_policy_weight <= 0.25:
@@ -631,7 +715,8 @@ def validate_production_ring_allocations(config: ExperimentConfig) -> None:
         path = _safe_path(root, str(path.relative_to(root)))
         cache_key = str(path)
         cached = _VERIFIED_GATES.get(cache_key)
-        if cached is not None and _unchanged(root, cached):
+        fresh = _fresh or config.arena.allocation_policy == "adaptive_pie"
+        if cached is not None and not fresh and _unchanged(root, cached):
             _VERIFIED_GATES.move_to_end(cache_key)
             return
         _VERIFIED_GATES.pop(cache_key, None)
@@ -646,6 +731,7 @@ def validate_production_ring_allocations(config: ExperimentConfig) -> None:
                 "graph_cache_reports",
                 "graph_cache_controlled_activation",
                 "training_policy_transition",
+                "promotion_allocation_transition",
             }
             != {
                 "format",
@@ -662,8 +748,12 @@ def validate_production_ring_allocations(config: ExperimentConfig) -> None:
             or gate.get("target_config_sha256") != canonical_config_sha256(config)
         ):
             _fail("gate identity/configuration fields are invalid")
+        if "promotion_allocation_transition" in gate:
+            _validate_promotion_transition_gate(root, gate, config, verified)
+            _cache_verified_gate(root, cache_key, verified)
+            return
         if "training_policy_transition" in gate:
-            _validate_policy_transition_gate(root, gate, config, verified)
+            _validate_policy_transition_gate(root, gate, config, verified, _fresh=fresh)
             _cache_verified_gate(root, cache_key, verified)
             return
         baseline_path, _ = _read_ref(root, gate["baseline_profile"], verified)

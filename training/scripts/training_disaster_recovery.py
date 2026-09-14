@@ -1408,6 +1408,10 @@ def _allocation_gate_references(
             )
         if "training_policy_transition" in payload:
             references.append((payload["training_policy_transition"], "status-json"))
+        if "promotion_allocation_transition" in payload:
+            references.append(
+                (payload["promotion_allocation_transition"], "status-json")
+            )
         result = []
         for reference, kind in references:
             if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
@@ -1459,8 +1463,9 @@ def _allocation_gate_dependency_closure(
     load_json: Callable[[str, str], Mapping[str, Any]],
     *,
     allow_policy_transition: bool = True,
+    allow_promotion_transition: bool = True,
 ) -> list[tuple[str, str, str]]:
-    """Resolve the complete evidence graph, allowing one policy transition only.
+    """Resolve one promotion transition around at most one training transition.
 
     The supplied reader must verify the expected digest before returning JSON.
     Snapshot capture reads copied immutable objects; offline verification reads
@@ -1468,12 +1473,22 @@ def _allocation_gate_dependency_closure(
     """
     if "training_policy_transition" in payload and not allow_policy_transition:
         raise DisasterRecoveryError("allocation policy transitions cannot be chained")
+    if "promotion_allocation_transition" in payload and not allow_promotion_transition:
+        raise DisasterRecoveryError(
+            "promotion allocation transitions cannot be chained"
+        )
     references = _allocation_gate_references(payload)
     activation = payload.get("graph_cache_controlled_activation")
     if activation is not None:
         receipt = load_json(activation["path"], activation["sha256"])
         references.extend(_controlled_graph_activation_references(receipt))
-    transition = payload.get("training_policy_transition")
+    promotion_transition = "promotion_allocation_transition" in payload
+    transition_key = (
+        "promotion_allocation_transition"
+        if promotion_transition
+        else "training_policy_transition"
+    )
+    transition = payload.get(transition_key)
     if transition is None:
         return references
 
@@ -1481,8 +1496,24 @@ def _allocation_gate_dependency_closure(
         POLICY_TRANSITION_CLASS,
         POLICY_TRANSITION_FORMAT,
         POLICY_TRANSITION_SCOPE,
+        PROMOTION_TRANSITION_CLASS,
+        PROMOTION_TRANSITION_FORMAT,
+        PROMOTION_TRANSITION_SCOPE,
     )
 
+    expected_format, expected_class, expected_scope = (
+        (
+            PROMOTION_TRANSITION_FORMAT,
+            PROMOTION_TRANSITION_CLASS,
+            PROMOTION_TRANSITION_SCOPE,
+        )
+        if promotion_transition
+        else (
+            POLICY_TRANSITION_FORMAT,
+            POLICY_TRANSITION_CLASS,
+            POLICY_TRANSITION_SCOPE,
+        )
+    )
     receipt = load_json(transition["path"], transition["sha256"])
     if (
         set(receipt)
@@ -1498,11 +1529,11 @@ def _allocation_gate_dependency_closure(
             "measurement_scope",
             "new_objective_performance_qualified",
         }
-        or receipt.get("format") != POLICY_TRANSITION_FORMAT
+        or receipt.get("format") != expected_format
         or type(receipt.get("schema_version")) is not int
         or receipt["schema_version"] != 1
-        or receipt.get("classification") != POLICY_TRANSITION_CLASS
-        or receipt.get("measurement_scope") != POLICY_TRANSITION_SCOPE
+        or receipt.get("classification") != expected_class
+        or receipt.get("measurement_scope") != expected_scope
         or receipt.get("new_objective_performance_qualified") is not False
         or receipt.get("run_id") != payload.get("run_id")
         or receipt.get("target_config_sha256") != payload.get("target_config_sha256")
@@ -1520,12 +1551,23 @@ def _allocation_gate_dependency_closure(
             )
         )
     source_reference = receipt["source_gate"]
+    source_config_sha256 = _sha256_text(
+        "allocation policy source configuration hash", receipt["source_config_sha256"]
+    )
+    if _logical_path(source_reference["path"]) != (
+        f"status/search-allocation-gates/{source_config_sha256}.json"
+    ):
+        raise DisasterRecoveryError(
+            "allocation policy transition must pin the source configuration's original gate"
+        )
     source = load_json(source_reference["path"], source_reference["sha256"])
-    if "training_policy_transition" in source:
+    if "promotion_allocation_transition" in source or (
+        not promotion_transition and "training_policy_transition" in source
+    ):
         raise DisasterRecoveryError("allocation policy transitions cannot be chained")
     expected = dict(source)
     expected["target_config_sha256"] = receipt["target_config_sha256"]
-    expected["training_policy_transition"] = transition
+    expected[transition_key] = transition
     if (
         payload != expected
         or source.get("target_config_sha256") != receipt["source_config_sha256"]
@@ -1535,7 +1577,10 @@ def _allocation_gate_dependency_closure(
         )
     references.extend(
         _allocation_gate_dependency_closure(
-            source, load_json, allow_policy_transition=False
+            source,
+            load_json,
+            allow_policy_transition=promotion_transition,
+            allow_promotion_transition=False,
         )
     )
     return list(dict.fromkeys(references))

@@ -4,6 +4,7 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -57,6 +58,180 @@ def deployment(tmp_path):
     result = deploy.Deployment(plan_path)
     result.test_plan_path = plan_path
     return result
+
+
+def mixed_release_deployment(deployment):
+    plan = deepcopy(deployment.plan)
+    backup = deployment.root.parent / "newer-backup-release"
+    (backup / "training").mkdir(parents=True)
+    plan["unit_source_releases"] = {
+        deployment.prefix + "-disaster-backup.service": str(backup)
+    }
+    plan["migration_reason"] = (
+        "Adaptive promotion allocation; preserve learner state and replay"
+    )
+    write(deployment.test_plan_path, plan)
+    return deploy.Deployment(deployment.test_plan_path)
+
+
+def source_unit_text(deployment, unit):
+    training = deployment.unit_source_release(unit) / "training"
+    return (
+        "[Service]\n"
+        f"WorkingDirectory={training}\n"
+        f"Environment=PYTHONPATH={training}\n"
+        f"ExecStart={training}/.venv/bin/python {training}/worker.py --profile {deployment.source}\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "mode", ["forward", "compatible_rollback", "original_rollback"]
+)
+def test_unit_rewrite_preserves_newer_backup_code_and_exact_mixed_rollback(
+    deployment, monkeypatch, mode
+):
+    subject = mixed_release_deployment(deployment)
+    folder = subject.base / "units"
+    folder.mkdir()
+    original = {unit: source_unit_text(subject, unit) for unit in subject.units}
+    for unit, contents in original.items():
+        (folder / unit).write_text(contents)
+    write(
+        subject.base / "prepared.json",
+        {"unit_sha256": {unit: deploy.digest(folder / unit) for unit in subject.units}},
+    )
+    installed = {}
+
+    def run(command, name, **_options):
+        if command[1] == "install":
+            installed[Path(command[-1]).name] = Path(command[-2]).read_text()
+        else:
+            assert command == ["sudo", "systemctl", "daemon-reload"]
+
+    monkeypatch.setattr(subject, "run", run)
+    profile = (
+        subject.target
+        if mode == "forward"
+        else subject.root / "compatible-rollback.yaml"
+    )
+    subject.install_units(profile, original=mode == "original_rollback")
+    assert set(installed) == set(subject.units)
+    if mode == "original_rollback":
+        assert installed == original
+    else:
+        for unit, contents in installed.items():
+            assert f"WorkingDirectory={subject.release}/training\n" in contents
+            assert f"Environment=PYTHONPATH={subject.release}/training\n" in contents
+            assert f"ExecStart={subject.release}/training/.venv/bin/python" in contents
+            assert f"--profile {profile}\n" in contents
+            assert str(subject.unit_source_release(unit)) not in contents
+
+
+@pytest.mark.parametrize(
+    "defect", [None, "working_directory", "command", "saved_release"]
+)
+def test_prepare_verifies_each_units_declared_release_before_stopping(
+    deployment, monkeypatch, defect
+):
+    subject = mixed_release_deployment(deployment)
+    backup_unit = subject.prefix + "-disaster-backup.service"
+    originals = {unit: source_unit_text(subject, unit) for unit in subject.units}
+    if defect == "saved_release":
+        originals[backup_unit] = originals[backup_unit].replace(
+            str(subject.unit_source_release(backup_unit)), str(subject.old_release)
+        )
+    original_read = Path.read_text
+
+    def read_text(path, *args, **kwargs):
+        if path.parent == Path("/etc/systemd/system"):
+            return originals[path.name]
+        return original_read(path, *args, **kwargs)
+
+    def show(unit, field):
+        release = subject.unit_source_release(unit)
+        values = {
+            "FragmentPath": "/etc/systemd/system/" + unit,
+            "DropInPaths": "",
+            "WorkingDirectory": str(release / "training"),
+            "ExecStart": str(release / "training/.venv/bin/python") + " worker.py",
+            "ActiveState": "active",
+            "UnitFileState": "enabled",
+        }
+        if unit == backup_unit:
+            if defect == "working_directory":
+                values["WorkingDirectory"] = str(subject.old_release / "training")
+            elif defect == "command":
+                values["ExecStart"] = str(
+                    subject.old_release / "training/.venv/bin/python"
+                )
+        return values[field]
+
+    monkeypatch.setattr(subject, "validate_prepared", lambda: None)
+    monkeypatch.setattr(subject, "show", show)
+    monkeypatch.setattr(Path, "read_text", read_text)
+    monkeypatch.setattr(
+        deploy.shutil,
+        "copy2",
+        lambda source, target: target.write_text(originals[source.name]),
+    )
+    monkeypatch.setattr(
+        subject, "run", lambda *args, **kwargs: pytest.fail("prepare mutated a service")
+    )
+    if defect is None:
+        subject.prepare()
+        assert (subject.base / "prepared.json").exists()
+    else:
+        with pytest.raises(
+            RuntimeError, match="source release|working directory|command"
+        ):
+            subject.prepare()
+        assert not (subject.base / "prepared.json").exists()
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        [],
+        {"unmanaged.service": "/prior"},
+        {"training.service": "relative"},
+        {"training.service": "/prior/../other"},
+    ],
+)
+def test_invalid_unit_release_overrides_fail_before_service_actions(
+    deployment, override
+):
+    plan = deepcopy(deployment.plan)
+    plan["unit_source_releases"] = override
+    write(deployment.test_plan_path, plan)
+    with pytest.raises(RuntimeError, match="source release"):
+        deploy.Deployment(deployment.test_plan_path)
+
+
+def test_descriptive_migration_reason_reaches_migrator_with_legacy_default_preserved(
+    deployment, monkeypatch
+):
+    assert (
+        deployment.migration_reason
+        == "Pie-standard training policy; preserve learned state and replay"
+    )
+    subject = mixed_release_deployment(deployment)
+    requests = []
+    fake_plan = SimpleNamespace(heartbeat_step=5, learner_step=5, output=lambda **_: {})
+    monkeypatch.setattr(
+        deploy, "plan_migration", lambda request: requests.append(request) or fake_plan
+    )
+    monkeypatch.setattr(deploy, "apply_migration", lambda _: {"status": "applied"})
+    from scripts import deployment_metadata
+
+    monkeypatch.setattr(deployment_metadata, "record_intent", lambda *_: None)
+    monkeypatch.setattr(deployment_metadata, "mark_committed", lambda *_: None)
+    subject.migrate(
+        subject.source,
+        subject.candidate,
+        subject.target.name,
+        subject.plan["source_commit"],
+    )
+    assert requests[0].reason == subject.plan["migration_reason"]
 
 
 def stopped_files(
