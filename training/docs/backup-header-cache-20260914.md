@@ -17,10 +17,19 @@ The change memoizes validated headers only for one `create_snapshot`,
 `verify_snapshot`, or `garbage_collect` invocation. Nested operations share the
 same context; successful completion and exceptions both discard it. Every
 lookup checks device, inode, size, modification time, change time, and backup
-namespace. Replaced or changed documents receive full validation again; deleted
-documents lose their cached proof. A change during initial validation fails.
+namespace **and hashes the current document bytes with SHA256**. Reuse requires
+the current digest and length to equal the validated document. Replaced or
+changed documents receive full validation again; deleted documents lose their
+cached proof. A fresh byte check after initial parsing also detects a concurrent
+content change before exposing that proof.
 Cached documents and their nested metadata are read-only, and catalog entries
 are frozen.
+
+An initial metadata-only implementation was withdrawn before support-service
+activation. The target-host test demonstrated actual same-size byte changes
+with restored modification time and colliding change-time timestamps. Current
+byte verification removes that timestamp assumption; deterministic tests also
+force identical stat signatures while corrupting the bytes.
 
 Directory contents, latest pointers, and commit markers are reread normally.
 New, uncommitted, committed, missing, and corrupt documents retain their prior
@@ -38,15 +47,19 @@ excluded. All passes produced the same validated header summary digest.
 
 | Measure | Without reuse | With reuse |
 |---|---:|---:|
-| Median CPU time | 3.248 s | 0.500 s |
-| Median elapsed time | 3.333 s | 0.512 s |
+| Median CPU time | 3.295 s | 0.556 s |
+| Median elapsed time | 3.419 s | 0.589 s |
 | Full envelope validations | 512 | 64 |
 | Catalog bytes parsed | 109.35 MB | 13.67 MB |
+| Current-byte SHA256 checks | 512 | 512 |
+| Current document bytes rehashed | 109.35 MB | 109.35 MB |
 
-This is a **6.49× reduction in CPU time for the measured header-selection
+This is a **5.93× reduction in CPU time for the measured header-selection
 component**. It is not a measurement of complete backup duration, NFS behavior,
 model training throughput, or Elo. The first scan still fully validates all
-historical catalogs, and payload copying/verification remains necessary.
+historical catalogs; all subsequent scans still hash the current bytes. Payload
+copying/verification remains necessary. Benchmark revision 2 supersedes the
+withdrawn metadata-only measurement.
 
 Tests cover immutable return values, nested contexts, exception cleanup,
 replacement, corruption with restored modification time, concurrent change,

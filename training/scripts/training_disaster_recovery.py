@@ -2920,10 +2920,26 @@ def _snapshot_header(path: Path, backup_root: Path) -> VerifiedSnapshot:
         raise DisasterRecoveryError("snapshot path does not match its backup root")
     if cache is not None:
         if prior is not None and prior.signature == signature:
-            cache[key] = prior
-            return prior.snapshot
+            # Filesystem timestamps can collide within one clock tick, even
+            # when a writer changes bytes and restores mtime. Reuse skips JSON
+            # parsing/expansion, never verification of the current bytes.
+            digest, size = _hash_file(path)
+            if _snapshot_header_signature(path) != signature:
+                raise DisasterRecoveryError(
+                    "snapshot document changed during header validation"
+                )
+            if digest == prior.snapshot.sha256 and size == prior.snapshot.bytes:
+                cache[key] = prior
+                return prior.snapshot
     payload, catalog, data, digest = _snapshot_envelope(path, backup_root)
-    if _snapshot_header_signature(path) != signature:
+    # Fence the parsed document before exposing it, including filesystems
+    # whose coarse timestamps cannot reveal a same-size concurrent write.
+    current_digest, current_size = _hash_file(path)
+    if (
+        _snapshot_header_signature(path) != signature
+        or current_digest != digest
+        or current_size != len(data)
+    ):
         raise DisasterRecoveryError(
             "snapshot document changed during header validation"
         )

@@ -126,7 +126,56 @@ def test_document_change_during_validation_never_enters_cache(monkeypatch, tmp_p
 
     def changed(document, root):
         result = original(document, root)
-        document.write_bytes(document.read_bytes())
+        document.write_bytes(
+            document.read_bytes().replace(b"profile.yaml", b"profilx.yaml")
+        )
+        return result
+
+    monkeypatch.setattr(recovery, "_snapshot_envelope", changed)
+    with recovery._snapshot_header_operation():
+        with pytest.raises(
+            recovery.DisasterRecoveryError, match="changed during header"
+        ):
+            recovery._snapshot_headers(path.parent, tmp_path)
+        assert recovery._SNAPSHOT_HEADER_CACHE.get() == {}
+
+
+def test_equal_stat_signatures_never_substitute_for_current_byte_verification(
+    monkeypatch, tmp_path
+):
+    path = header(tmp_path, 1)
+    frozen_signature = recovery._snapshot_header_signature(path)
+    monkeypatch.setattr(
+        recovery, "_snapshot_header_signature", lambda _: frozen_signature
+    )
+    counts = count_parses(monkeypatch)
+    with recovery._snapshot_header_operation():
+        recovery._snapshot_headers(path.parent, tmp_path)
+        contents = path.read_bytes()
+        changed = contents.replace(b"profile.yaml", b"profilx.yaml")
+        assert len(contents) == len(changed) and contents != changed
+        path.write_bytes(changed)
+        with pytest.raises(recovery.DisasterRecoveryError, match="immutable identity"):
+            recovery._snapshot_headers(path.parent, tmp_path)
+        assert counts == {path: 2}
+        assert recovery._SNAPSHOT_HEADER_CACHE.get() == {}
+
+
+def test_equal_stat_race_during_initial_parse_never_publishes_a_header(
+    monkeypatch, tmp_path
+):
+    path = header(tmp_path, 1)
+    frozen_signature = recovery._snapshot_header_signature(path)
+    monkeypatch.setattr(
+        recovery, "_snapshot_header_signature", lambda _: frozen_signature
+    )
+    original = recovery._snapshot_envelope
+
+    def changed(document, root):
+        result = original(document, root)
+        document.write_bytes(
+            document.read_bytes().replace(b"profile.yaml", b"profilx.yaml")
+        )
         return result
 
     monkeypatch.setattr(recovery, "_snapshot_envelope", changed)
