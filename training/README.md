@@ -3,12 +3,12 @@
 This directory contains the implemented training, arena, serving and browser-export
 pipeline for the Double *Star variant family on rings 4, 6, 8, and 10.
 
-The next training policy is **90% even games with pie and 10% handicap games**,
+The deployed training policy is **90% even games with pie and 10% handicap games**,
 split equally between classic and Double *Star. Handicap games run only on ring 10
-and never use pie. The 85/5/5/5 board allocation is retained. The implementation is
-local and has **not been deployed**. See [pie-even training](docs/pie-even-training.md)
-for replay exclusions, evaluation, and preparing a future migration from the active
-profile without losing its measured execution settings.
+and never use pie. The 85/5/5/5 board allocation is retained. See the
+[verified deployment record](docs/pie-policy-deployment-20260913.md) and
+[pie-even training](docs/pie-even-training.md) for replay exclusions, evaluation,
+and preparing profiles while preserving their measured execution settings.
 
 **No trained model is checked into this repository.** The code and tests establish the
 pipeline contracts; they do not establish strong or superhuman play. `starserve` needs a

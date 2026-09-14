@@ -1,6 +1,7 @@
 # Pie-even training policy
 
-Implemented locally on September 13, 2026. This change has not been deployed.
+Deployed on September 14, 2026 UTC, following local implementation on September
+13. See the [verified deployment record](pie-policy-deployment-20260913.md).
 
 The `ring10_pie` objective trains both classic (one stone per turn) and Double
 *Star (two stones per turn). Every even game uses the pie rule: the responder
@@ -75,7 +76,7 @@ namespaces and cannot enter this contract. Migration also starts a new strength
 epoch anchored to the retained champion, with the historical search budget.
 Elo/hour remains unavailable until the new measurement has sufficient evidence.
 
-## Preparing the later deployment
+## Preparing a profile
 
 `configs/h100-8gpu-pie-even.yaml` is a validated reference profile based on the
 earlier largest-board template. It is not a replacement for the current

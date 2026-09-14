@@ -1,0 +1,844 @@
+{
+  "deployment": "pie-standard training and backup header cache",
+  "training_code_commit": "c2904f933109909695a8b8da179426a18ccdd252",
+  "backup_tool_commit": "93c8f25119858d9024913909c144c583ebc837fb",
+  "build": {
+    "status": "validated",
+    "release": "/home/ubuntu/edgeconnect-releases/variant-pie-even-20260913",
+    "commit": "c2904f933109909695a8b8da179426a18ccdd252",
+    "archive_sha256": "04557115e56b56411b5f3ce137432b73bf100d0c337f797c6976446d34eb82c3",
+    "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
+    "source_files": 603,
+    "rewritten_environment_files": [
+      "training/.venv/bin/py.test",
+      "training/.venv/bin/startrain-arena",
+      "training/.venv/bin/startrain-selfplay",
+      "training/.venv/bin/pygmentize",
+      "training/.venv/bin/pip-audit",
+      "training/.venv/bin/startrain-actor",
+      "training/.venv/bin/startrain-publish-browser",
+      "training/.venv/bin/starserve",
+      "training/.venv/bin/activate",
+      "training/.venv/bin/coverage",
+      "training/.venv/bin/websockets",
+      "training/.venv/bin/proton-viewer",
+      "training/.venv/bin/f2py",
+      "training/.venv/bin/pip3.11",
+      "training/.venv/bin/mutmut",
+      "training/.venv/bin/httpx",
+      "training/.venv/bin/uvicorn",
+      "training/.venv/bin/torchfrtrace",
+      "training/.venv/bin/coverage3",
+      "training/.venv/bin/isympy",
+      "training/.venv/bin/normalizer",
+      "training/.venv/bin/check-model",
+      "training/.venv/bin/startrain-distill",
+      "training/.venv/bin/nodeenv",
+      "training/.venv/bin/pyright-langserver",
+      "training/.venv/bin/torchrun",
+      "training/.venv/bin/check-node",
+      "training/.venv/bin/pyright-python",
+      "training/.venv/bin/startrain-train",
+      "training/.venv/bin/watchfiles",
+      "training/.venv/bin/numpy-config",
+      "training/.venv/bin/activate.fish",
+      "training/.venv/bin/pip3",
+      "training/.venv/bin/pip",
+      "training/.venv/bin/backend-test-tools",
+      "training/.venv/bin/dotenv",
+      "training/.venv/bin/doesitcache",
+      "training/.venv/bin/idna",
+      "training/.venv/bin/pyright-python-langserver",
+      "training/.venv/bin/markdown-it",
+      "training/.venv/bin/activate.nu",
+      "training/.venv/bin/proton",
+      "training/.venv/bin/hypothesis",
+      "training/.venv/bin/activate.bat",
+      "training/.venv/bin/startrain-promote",
+      "training/.venv/bin/activate.csh",
+      "training/.venv/bin/startrain-orchestrate",
+      "training/.venv/bin/startrain-preflight",
+      "training/.venv/bin/pyright",
+      "training/.venv/bin/pytest",
+      "training/.venv/bin/onnxruntime_test",
+      "training/.venv/bin/fastapi",
+      "training/.venv/bin/coverage-3.11",
+      "training/.venv/lib/python3.11/site-packages/_editable_impl_startrain.pth",
+      "training/.venv/lib/python3.11/site-packages/startrain-0.3.0.dist-info/direct_url.json"
+    ],
+    "packages_count": 103,
+    "completed_ns": 1789345215905179053
+  },
+  "cpu_checkpoint_precheck": {
+    "status": "passed",
+    "step": 267799,
+    "checkpoint_sha256": "e7c6e503d8dbe65ee607782664f98aa92e15e3e3d59b0b7c3a9a515f2caca1c1",
+    "parameters": 17402775,
+    "optimizer_state_entries": 255,
+    "new_objective": "ring10_pie",
+    "checked_ns": 1789345243998039852
+  },
+  "admission": {
+    "classification": "unchanged-execution-policy-transition",
+    "source_config_sha256": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3",
+    "target_config_sha256": "93931ec33c73902d3a606bacd44a887e7525ae46e2bad7b6c700016837c9ed85",
+    "original_gate": {
+      "path": "status/search-allocation-gates/7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3.json",
+      "sha256": "1133b04604a8f6a93804064aece054450c1764f32c09cbad824e031d1a8569b3"
+    },
+    "receipt": {
+      "path": "status/search-allocation-gates/93931ec33c73902d3a606bacd44a887e7525ae46e2bad7b6c700016837c9ed85.policy-transition.json",
+      "sha256": "23ec8483b610183f626cb22e24b9f5af97c501984df26cf4d64d502374317492"
+    },
+    "gate": {
+      "path": "status/search-allocation-gates/93931ec33c73902d3a606bacd44a887e7525ae46e2bad7b6c700016837c9ed85.json",
+      "sha256": "78b6508be523b642c50a94f8c4c0896bfd30b94935d46e2d5f2ac848a623b4ed"
+    },
+    "measurement_scope": "original-frozen-six-variant-workload",
+    "new_objective_performance_qualified": false,
+    "deployment_performed": false
+  },
+  "cuda_smoke": {
+    "checkpoint_sha256": "bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd",
+    "checkpoint_step": 268457,
+    "completed_ns": 1789346812992414367,
+    "graph_metrics": {
+      "cache_bytes": 0,
+      "cache_entries": 0,
+      "cache_evictions": 0,
+      "cache_hits": 0,
+      "cache_misses": 96,
+      "cache_seconds": 0.00011751428246498108,
+      "deduplicated_rows": 0,
+      "evaluator_calls": 48,
+      "evaluator_rows": 96,
+      "graph_captures": 4,
+      "graph_entries": 4,
+      "graph_evictions": 0,
+      "graph_fallbacks": 0,
+      "graph_negative_entries": 0,
+      "graph_replays": 48,
+      "graph_retained_bytes": 129544192,
+      "graph_validation_failures": 0,
+      "graph_validation_replays": 4,
+      "graph_warmup_calls": 16,
+      "graph_warmup_rows": 32,
+      "h2d_enqueue_seconds": 0.0042410604655742645,
+      "neural_calls": 48,
+      "neural_padding_rows": 0,
+      "neural_round_trip_seconds": 5.206727121490985,
+      "neural_rows": 96,
+      "return_seconds": 0.010022338479757309
+    },
+    "learner_losses": {
+      "alive": 0.0,
+      "outcome": 0.0,
+      "ownership": 0.0,
+      "policy": 10.347304344177246,
+      "score_margin": 0.0,
+      "soft_policy": 6.138450622558594,
+      "total": 11.881916999816895
+    },
+    "started_ns": 1789346751645207490,
+    "status": "passed",
+    "timing_claim": "correctness smoke only",
+    "training_artifacts_written": false,
+    "variants": [
+      {
+        "difference": {
+          "policy_logits": 0.0,
+          "values": 0.0
+        },
+        "ring": 4,
+        "variant": "pie-classic"
+      },
+      {
+        "difference": {
+          "policy_logits": 0.0,
+          "values": 0.0
+        },
+        "ring": 4,
+        "variant": "pie-double"
+      },
+      {
+        "difference": {
+          "policy_logits": 0.0,
+          "values": 0.0
+        },
+        "ring": 6,
+        "variant": "pie-classic"
+      },
+      {
+        "difference": {
+          "policy_logits": 0.0,
+          "values": 0.0
+        },
+        "ring": 6,
+        "variant": "pie-double"
+      },
+      {
+        "difference": {
+          "policy_logits": 0.0,
+          "values": 0.0
+        },
+        "ring": 8,
+        "variant": "pie-classic"
+      },
+      {
+        "difference": {
+          "policy_logits": 0.0,
+          "values": 0.0
+        },
+        "ring": 8,
+        "variant": "pie-double"
+      },
+      {
+        "difference": {
+          "policy_logits": 0.0,
+          "values": 0.0
+        },
+        "ring": 10,
+        "variant": "pie-classic"
+      },
+      {
+        "difference": {
+          "policy_logits": 0.0,
+          "values": 0.0
+        },
+        "ring": 10,
+        "variant": "pie-double"
+      },
+      {
+        "difference": {
+          "policy_logits": 0.0,
+          "values": 0.0
+        },
+        "ring": 10,
+        "variant": "handicap-2-classic"
+      },
+      {
+        "difference": {
+          "policy_logits": 0.0,
+          "values": 0.0
+        },
+        "ring": 10,
+        "variant": "handicap-2-double"
+      },
+      {
+        "difference": {
+          "policy_logits": 0.0,
+          "values": 0.0
+        },
+        "ring": 10,
+        "variant": "handicap-9-classic"
+      },
+      {
+        "difference": {
+          "policy_logits": 0.0,
+          "values": 0.0
+        },
+        "ring": 10,
+        "variant": "handicap-9-double"
+      }
+    ]
+  },
+  "cutover_complete": {
+    "completed_ns": 1789347437262646200,
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+    "readiness": {
+      "actual_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd.pt",
+      "expected_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd.pt",
+      "observed_ns": 1789347437155783040,
+      "ready": true,
+      "step": 268545
+    },
+    "source_commit": "c2904f933109909695a8b8da179426a18ccdd252",
+    "status": "complete"
+  },
+  "preserved_snapshot": {
+    "checkpoint": {
+      "checkpoint": "recovery/sha256-bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd.pt",
+      "checkpoint_bytes": 212718055,
+      "checkpoint_sha256": "bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd",
+      "epoch": 4401,
+      "examples_consumed": 137449984,
+      "format": "startrain.recovery-pointer",
+      "generation_family": "variant-network-a",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "step": 268457,
+      "updated_ns": 1789346614500094118
+    },
+    "checkpoint_sha256": "bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd",
+    "checkpoint_step": 268457,
+    "created_ns": 1789346750119015102,
+    "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/pie-cutover-20260913",
+    "files": 44053,
+    "format": "startrain.preserved-stopped-run",
+    "inventory_sha256": "35e9286dd589d7a8a4f127c616d356dd2d271b99998d7833c931cce1244da80d",
+    "payload_checksum_verification": "deferred-to-offline-verify",
+    "replay_shards": 43722,
+    "schema_version": 1,
+    "source_run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+    "status": "preserved"
+  },
+  "launch": {
+    "checkpoint": {
+      "checkpoint": "recovery/sha256-bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd.pt",
+      "checkpoint_bytes": 212718055,
+      "checkpoint_sha256": "bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd",
+      "epoch": 4401,
+      "examples_consumed": 137449984,
+      "format": "startrain.recovery-pointer",
+      "generation_family": "variant-network-a",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "step": 268457,
+      "updated_ns": 1789346614500094118
+    },
+    "launched_ns": 1789346835511675042,
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml"
+  },
+  "stop_requested": {
+    "requested_ns": 1789346613064910070
+  },
+  "stopped": {
+    "checkpoint": {
+      "checkpoint": "recovery/sha256-bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd.pt",
+      "checkpoint_bytes": 212718055,
+      "checkpoint_sha256": "bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd",
+      "epoch": 4401,
+      "examples_consumed": 137449984,
+      "format": "startrain.recovery-pointer",
+      "generation_family": "variant-network-a",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "step": 268457,
+      "updated_ns": 1789346614500094118
+    },
+    "discarded_uncheckpointed_examples": 0,
+    "discarded_uncheckpointed_steps": 0,
+    "observed_ns": 1789346740709679938,
+    "progress_available": true
+  },
+  "migration": {
+    "backup_bundle": "/home/ubuntu/edgeconnect-runs/variant-network/migration-backups/1789346818391299153-profile-pie-even-20260913",
+    "boundary": {
+      "champion_model_identity": "sha256-30aa86efbb093e41e9db0b0a9b93fb586d26e257a598946409527e1f343d7628",
+      "committed_replay_samples": 98356293,
+      "discarded_uncheckpointed_steps": 0,
+      "examples_consumed": 137449984,
+      "heartbeat_step": 268457,
+      "learner_step": 268457,
+      "recovery_interval_steps": 1000
+    },
+    "changes": [
+      {
+        "from": "<missing>",
+        "path": "arena.variant_policy",
+        "to": "pie_even"
+      },
+      {
+        "from": false,
+        "path": "game.pie_rule",
+        "to": true
+      },
+      {
+        "from": 0.16666666666666666,
+        "path": "learner.segment_quotas.classic",
+        "to": 0.0
+      },
+      {
+        "from": 0.3333333333333333,
+        "path": "learner.segment_quotas.handicap",
+        "to": 0.1
+      },
+      {
+        "from": 0.3333333333333333,
+        "path": "learner.segment_quotas.pie",
+        "to": 0.9
+      },
+      {
+        "from": 0.16666666666666666,
+        "path": "learner.segment_quotas.standard",
+        "to": 0.0
+      },
+      {
+        "from": "ring10_priority",
+        "path": "orchestration.training_objective",
+        "to": "ring10_pie"
+      },
+      {
+        "from": false,
+        "path": "selfplay.pie",
+        "to": true
+      },
+      {
+        "from": "<missing>",
+        "path": "selfplay.pie_even_training",
+        "to": true
+      },
+      {
+        "from": 0.16666666666666666,
+        "path": "selfplay.variants.classic",
+        "to": 0.0
+      },
+      {
+        "from": 0.3333333333333333,
+        "path": "selfplay.variants.handicap",
+        "to": 0.1
+      },
+      {
+        "from": 0.3333333333333333,
+        "path": "selfplay.variants.pie",
+        "to": 0.9
+      },
+      {
+        "from": 0.16666666666666666,
+        "path": "selfplay.variants.standard",
+        "to": 0.0
+      }
+    ],
+    "coordinator_lock": "absent",
+    "generation_family": "variant-network-a",
+    "kind": "profile",
+    "mode": "apply",
+    "run_id": "variant-network",
+    "source": {
+      "config_sha256": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3",
+      "profile": "profile-cpu-efficiency-20260912.yaml",
+      "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a",
+      "source_commit": "8d0d643d30430afd9cd7c662fe4648aedecfca3e"
+    },
+    "status": "ok",
+    "strength_epoch": {
+      "anchor_identity": "sha256-30aa86efbb093e41e9db0b0a9b93fb586d26e257a598946409527e1f343d7628",
+      "evaluation_contract_identity": "sha256-b62ec3697a8134c1017892a6950870656ab2e22b5764979ee6b89ad08440c8d8",
+      "minimum_candidate_step": 268457,
+      "schema_version": 1,
+      "source_commit": "c2904f933109909695a8b8da179426a18ccdd252",
+      "started_ns": 1789346818391299153
+    },
+    "target": {
+      "config_sha256": "93931ec33c73902d3a606bacd44a887e7525ae46e2bad7b6c700016837c9ed85",
+      "profile": "profile-pie-even-20260913.yaml",
+      "profile_sha256": "1717a724307c5e90d59631bad51961800646003d76e838b6bef989aba38df277",
+      "source_commit": "c2904f933109909695a8b8da179426a18ccdd252"
+    },
+    "utd_segment": {
+      "baseline_committed_replay_samples": 1550701,
+      "baseline_examples_consumed": 137449984,
+      "created_ns": 1789346818391299153,
+      "generation_family": "variant-network-a",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "target_updates_per_new_sample": 1.5,
+      "training_objective": "ring10_pie"
+    },
+    "writes": [
+      "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+      "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.sha256",
+      "/home/ubuntu/edgeconnect-runs/variant-network/continuous-migrations.jsonl",
+      "/home/ubuntu/edgeconnect-runs/variant-network/profile.sha256",
+      "/home/ubuntu/edgeconnect-runs/variant-network/source-commit.txt",
+      "/home/ubuntu/edgeconnect-runs/variant-network/learner/utd-segment.json",
+      "/home/ubuntu/edgeconnect-runs/variant-network/strength-epoch.json"
+    ]
+  },
+  "live_verification": {
+    "status": "verified_live",
+    "observed_ns": 1789348001301026746,
+    "code_commit": "c2904f933109909695a8b8da179426a18ccdd252",
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+    "profile_sha256": "1717a724307c5e90d59631bad51961800646003d76e838b6bef989aba38df277",
+    "stopped_step": 268457,
+    "learner": {
+      "enriched_samples_since_window_open": 0,
+      "epoch": 4416,
+      "examples_consumed": 137629184,
+      "heartbeat_ns": 1789348000243419150,
+      "learning_rate_multiplier": 1.0,
+      "new_committed_samples_since_window_open": 952,
+      "phase": "update_to_data_wait",
+      "pid": 2679039,
+      "progress": 860,
+      "progress_ns": 1789348000243410720,
+      "rank": 0,
+      "replay_samples": 1670389,
+      "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd.pt",
+      "schema_version": 1,
+      "step": 268807,
+      "target_updates_per_new_sample": 1.5,
+      "window_age_seconds": 7.646156209055334,
+      "window_batches_allocated": 653,
+      "window_batches_consumed": 3,
+      "window_publication_revision": 1175588,
+      "window_reuse": true,
+      "window_selection_max_shard_id": 1245385,
+      "worker": "learner",
+      "world_size": 1
+    },
+    "workers": {
+      "actor-cpu-ring4": {
+        "pid": 2679047,
+        "state": "running",
+        "restart_count": 0
+      },
+      "actor-gpu-1": {
+        "pid": 2679040,
+        "state": "running",
+        "restart_count": 0
+      },
+      "actor-gpu-2": {
+        "pid": 2679041,
+        "state": "running",
+        "restart_count": 0
+      },
+      "actor-gpu-3": {
+        "pid": 2679042,
+        "state": "running",
+        "restart_count": 0
+      },
+      "actor-gpu-4": {
+        "pid": 2679043,
+        "state": "running",
+        "restart_count": 0
+      },
+      "actor-gpu-5": {
+        "pid": 2679044,
+        "state": "running",
+        "restart_count": 0
+      },
+      "actor-gpu-6": {
+        "pid": 2679045,
+        "state": "running",
+        "restart_count": 0
+      },
+      "actor-gpu-7": {
+        "pid": 2679046,
+        "state": "running",
+        "restart_count": 0
+      },
+      "arena-promotion": {
+        "pid": 2679048,
+        "state": "running",
+        "restart_count": 0
+      },
+      "learner": {
+        "pid": 2679039,
+        "state": "running",
+        "restart_count": 0
+      }
+    },
+    "hardware_healthy": true,
+    "utd": {
+      "baseline_committed_replay_samples": 1550701,
+      "baseline_examples_consumed": 137449984,
+      "created_ns": 1789346818391299153,
+      "generation_family": "variant-network-a",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "target_updates_per_new_sample": 1.5,
+      "training_objective": "ring10_pie"
+    },
+    "latest_selection": {
+      "r10/handicap-classic": 27902,
+      "r10/handicap-double": 27901,
+      "r10/pie-classic": 209262,
+      "r10/pie-double": 209262,
+      "r4/pie-classic": 134039,
+      "r4/pie-double": 134039,
+      "r6/pie-classic": 108618,
+      "r6/pie-double": 108618,
+      "r8/pie-classic": 169717,
+      "r8/pie-double": 169717
+    },
+    "ring10_handicap_fraction": 0.11764668677937372,
+    "weighted_global_handicap_fraction": 0.09999968376246765,
+    "nonfinite_loss_count": 0,
+    "nonfinite_gradient_count": 0,
+    "arena_contract": {
+      "schema_version": 2,
+      "objective": "pie-90-even-10-handicap-rings-10-complete-severity-cycle-v2",
+      "rules_schema": "edgeconnect.star.rules.v3",
+      "rules_hash": "fnv1a64:a5d932b0ef8354e8",
+      "search_algorithm": "gumbel-completed-q-v2-finite-noise-selected-keep",
+      "cells": [
+        "r10/classic-pie",
+        "r10/double-pie",
+        "r10/classic-handicap",
+        "r10/double-handicap"
+      ],
+      "handicap_severity_cycle": [
+        2,
+        4,
+        6,
+        9
+      ],
+      "handicap_pda": [
+        1,
+        1,
+        2,
+        2,
+        2,
+        3,
+        3,
+        3
+      ],
+      "simulations": 256,
+      "max_considered": 64,
+      "c_visit": 50.0,
+      "c_scale": 1.0,
+      "unforced_opening_fraction": 0.2,
+      "swap_dead_zone": 0.02,
+      "seed_schedule": "sha256-balanced-cell-pair-opening-v1-root-seat-move-v2",
+      "native_root_seed": "explicit-seed-statehash-fixed-tree-index-zero",
+      "handicap_schedule": "absolute-pair-index-mod-severity-cycle-v1",
+      "observation_unit": "all-cells-complete-role-reversed-severity-cycle",
+      "statistical_test": "complete-cycle-weighted-paired-hoeffding-mixture-v2",
+      "hoeffding_lambdas": [
+        0.0625,
+        0.125,
+        0.25,
+        0.5,
+        1.0,
+        2.0,
+        4.0,
+        8.0
+      ],
+      "pair_independence": "independent seed streams across pairs; arbitrary dependence within each seat reversal",
+      "variant_policy": "pie_even",
+      "cell_weights": {
+        "r10/classic-pie": 0.45,
+        "r10/double-pie": 0.45,
+        "r10/classic-handicap": 0.05,
+        "r10/double-handicap": 0.05
+      },
+      "evaluation_allocation": "equal-pairs-per-cell-per-severity-cycle",
+      "effective_pairs_per_cycle": 9.75609756097561,
+      "identity": "sha256-15744dbbfd180b2de2262847769d4be9078812d68652dd1143d41b7b9492c7df"
+    },
+    "strength_epoch": {
+      "anchor_identity": "sha256-30aa86efbb093e41e9db0b0a9b93fb586d26e257a598946409527e1f343d7628",
+      "evaluation_contract_identity": "sha256-b62ec3697a8134c1017892a6950870656ab2e22b5764979ee6b89ad08440c8d8",
+      "minimum_candidate_step": 268457,
+      "schema_version": 1,
+      "source_commit": "c2904f933109909695a8b8da179426a18ccdd252",
+      "started_ns": 1789346818391299153
+    },
+    "preserved_ready_logical_positions": 3563698,
+    "preserved_allowed_positions": 1550701,
+    "preserved_retired_positions": 2012997,
+    "archive": {
+      "checkpoint": {
+        "checkpoint": "recovery/sha256-bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd.pt",
+        "checkpoint_bytes": 212718055,
+        "checkpoint_sha256": "bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd",
+        "epoch": 4401,
+        "examples_consumed": 137449984,
+        "format": "startrain.recovery-pointer",
+        "generation_family": "variant-network-a",
+        "run_id": "variant-network",
+        "schema_version": 1,
+        "step": 268457,
+        "updated_ns": 1789346614500094118
+      },
+      "checkpoint_sha256": "bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd",
+      "checkpoint_step": 268457,
+      "created_ns": 1789346750119015102,
+      "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/pie-cutover-20260913",
+      "files": 44053,
+      "format": "startrain.preserved-stopped-run",
+      "inventory_sha256": "35e9286dd589d7a8a4f127c616d356dd2d271b99998d7833c931cce1244da80d",
+      "payload_checksum_verification": "deferred-to-offline-verify",
+      "replay_shards": 43722,
+      "schema_version": 1,
+      "source_run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+      "status": "preserved"
+    }
+  },
+  "final_health": {
+    "observed_ns": 1789350125998497696,
+    "step": 269630,
+    "hardware_healthy": true,
+    "worker_restarts": {
+      "actor-cpu-ring4": 0,
+      "actor-gpu-1": 0,
+      "actor-gpu-2": 0,
+      "actor-gpu-3": 0,
+      "actor-gpu-4": 0,
+      "actor-gpu-5": 0,
+      "actor-gpu-6": 0,
+      "actor-gpu-7": 0,
+      "arena-promotion": 0,
+      "learner": 0
+    },
+    "main_pid": 2678969,
+    "learner_pid": 2679039,
+    "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-bfc9d3aeb8b3090cd20bad03203668c51db3126b8fa02f608cd6650c6d29ffbd.pt",
+    "protection_units": {
+      "edgeconnect-startrain-variant-network-monitor.service": "active",
+      "edgeconnect-startrain-variant-network-report.timer": "active",
+      "edgeconnect-startrain-variant-network-backup.timer": "active",
+      "edgeconnect-startrain-variant-network-disaster-backup.timer": "active"
+    }
+  },
+  "backup_build": {
+    "status": "validated",
+    "release": "/home/ubuntu/edgeconnect-releases/backup-cache-20260914-v2",
+    "commit": "93c8f25119858d9024913909c144c583ebc837fb",
+    "archive_sha256": "157166494eba6ceea539543467b031442ac35dea57c08ab49186c270575aff71",
+    "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
+    "source_files": 606,
+    "rewritten_environment_files": [
+      "training/.venv/bin/py.test",
+      "training/.venv/bin/startrain-arena",
+      "training/.venv/bin/startrain-selfplay",
+      "training/.venv/bin/pygmentize",
+      "training/.venv/bin/pip-audit",
+      "training/.venv/bin/startrain-actor",
+      "training/.venv/bin/startrain-publish-browser",
+      "training/.venv/bin/starserve",
+      "training/.venv/bin/activate",
+      "training/.venv/bin/coverage",
+      "training/.venv/bin/websockets",
+      "training/.venv/bin/proton-viewer",
+      "training/.venv/bin/f2py",
+      "training/.venv/bin/pip3.11",
+      "training/.venv/bin/mutmut",
+      "training/.venv/bin/httpx",
+      "training/.venv/bin/uvicorn",
+      "training/.venv/bin/torchfrtrace",
+      "training/.venv/bin/coverage3",
+      "training/.venv/bin/isympy",
+      "training/.venv/bin/normalizer",
+      "training/.venv/bin/check-model",
+      "training/.venv/bin/startrain-distill",
+      "training/.venv/bin/nodeenv",
+      "training/.venv/bin/pyright-langserver",
+      "training/.venv/bin/torchrun",
+      "training/.venv/bin/check-node",
+      "training/.venv/bin/pyright-python",
+      "training/.venv/bin/startrain-train",
+      "training/.venv/bin/watchfiles",
+      "training/.venv/bin/numpy-config",
+      "training/.venv/bin/activate.fish",
+      "training/.venv/bin/pip3",
+      "training/.venv/bin/pip",
+      "training/.venv/bin/backend-test-tools",
+      "training/.venv/bin/dotenv",
+      "training/.venv/bin/doesitcache",
+      "training/.venv/bin/idna",
+      "training/.venv/bin/pyright-python-langserver",
+      "training/.venv/bin/markdown-it",
+      "training/.venv/bin/activate.nu",
+      "training/.venv/bin/proton",
+      "training/.venv/bin/hypothesis",
+      "training/.venv/bin/activate.bat",
+      "training/.venv/bin/startrain-promote",
+      "training/.venv/bin/activate.csh",
+      "training/.venv/bin/startrain-orchestrate",
+      "training/.venv/bin/startrain-preflight",
+      "training/.venv/bin/pyright",
+      "training/.venv/bin/pytest",
+      "training/.venv/bin/onnxruntime_test",
+      "training/.venv/bin/fastapi",
+      "training/.venv/bin/coverage-3.11",
+      "training/.venv/lib/python3.11/site-packages/_editable_impl_startrain.pth",
+      "training/.venv/lib/python3.11/site-packages/startrain-0.3.0.dist-info/direct_url.json"
+    ],
+    "packages_count": 103,
+    "completed_ns": 1789349077878522396
+  },
+  "backup_real_catalog_verification": {
+    "status": "passed",
+    "tool_commit": "93c8f25119858d9024913909c144c583ebc837fb",
+    "real_catalogs": 4,
+    "catalog_bytes": 19361164,
+    "two_passes_seconds": 1.6014814376831055,
+    "snapshot_hashes": [
+      "98d76705dc890061f11c2d6c3ecbe88edc522150a829bb119190314ed9d37f47",
+      "159fa6454b7efb6b0caa8e2c969892ca72c4f23308565874e12382f24d01ae1b",
+      "ac5c828ce0572d5204eb5590fa7770730f2e4380005d44820d4174dd303bfd52",
+      "fce393cab6314a895cf5f7005b876abe344853b4a2ea9958f3770258ae248dc3"
+    ],
+    "content_rehashed_on_reuse": true,
+    "source_modified": false
+  },
+  "backup_activation": {
+    "status": "installed",
+    "tool_commit": "93c8f25119858d9024913909c144c583ebc837fb",
+    "release": "/home/ubuntu/edgeconnect-releases/backup-cache-20260914-v2",
+    "unit": "edgeconnect-startrain-variant-network-disaster-backup.service",
+    "unit_sha256": "1b509186c552eb4634bb1550da6a8e3c21799d7fb1a6bed06b1b1f3915e7541f",
+    "main_pid_before": "2678969",
+    "main_pid_after": "2678969",
+    "training_interrupted": false,
+    "installed_ns": 1789349387020202513
+  },
+  "post_policy_backup_latest": {
+    "bytes": 8540815,
+    "created_ns": 1789348389936484541,
+    "generation_family": "variant-network-a",
+    "path": "1789348389936484541-fce393cab6314a895cf5f7005b876abe344853b4a2ea9958f3770258ae248dc3.json",
+    "report": "startrain-disaster-recovery-latest",
+    "run_id": "variant-network",
+    "schema_version": 1,
+    "sha256": "fce393cab6314a895cf5f7005b876abe344853b4a2ea9958f3770258ae248dc3"
+  },
+  "validation": {
+    "training_server_tests": 324,
+    "training_server_deselected_cuda": 1,
+    "backup_server_tests": 49,
+    "local_archive_verification_exit": 0,
+    "web_unit_tests_prior_turn": 252,
+    "chromium_e2e_prior_turn": 27
+  },
+  "new_checkpoint_verification": {
+    "status": "verified",
+    "step": 269457,
+    "checkpoint_sha256": "bd552306f58f850e6e292375d02d6d8bd31f2968890c5b272ecf560e085051fe",
+    "examples_consumed": 137961984,
+    "game_pie_default": true,
+    "utd_segment": {
+      "schema_version": 1,
+      "run_id": "variant-network",
+      "generation_family": "variant-network-a",
+      "target_updates_per_new_sample": 1.5,
+      "baseline_examples_consumed": 137449984,
+      "baseline_committed_replay_samples": 1550701,
+      "training_objective": "ring10_pie"
+    },
+    "has_optimizer": true,
+    "has_scheduler": true,
+    "has_ema": true,
+    "verified_ns": 1789349790865493918
+  },
+  "backup_completed_with_optimized_tool": {
+    "ActiveState": "inactive",
+    "ExecMainStatus": "0",
+    "ExecMainStartTimestamp": "Mon 2026-09-14 01:29:47 UTC",
+    "ExecMainExitTimestamp": "Mon 2026-09-14 01:36:49 UTC",
+    "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/backup-cache-20260914-v2/training"
+  },
+  "verified_latest_backup_pointer": {
+    "bytes": 8400570,
+    "created_ns": 1789349729276694174,
+    "generation_family": "variant-network-a",
+    "path": "1789349729276694174-4e4c0190dfa709948bddb1781c9dfaf33b116a5c4b635ccc57731c4d90633134.json",
+    "report": "startrain-disaster-recovery-latest",
+    "run_id": "variant-network",
+    "schema_version": 1,
+    "sha256": "4e4c0190dfa709948bddb1781c9dfaf33b116a5c4b635ccc57731c4d90633134"
+  },
+  "verified_latest_backup_commit": {
+    "bytes": 8400570,
+    "created_ns": 1789349729276694174,
+    "generation_family": "variant-network-a",
+    "path": "1789349729276694174-4e4c0190dfa709948bddb1781c9dfaf33b116a5c4b635ccc57731c4d90633134.json",
+    "report": "startrain-disaster-recovery-snapshot-commit",
+    "run_id": "variant-network",
+    "schema_version": 1,
+    "sha256": "4e4c0190dfa709948bddb1781c9dfaf33b116a5c4b635ccc57731c4d90633134"
+  }
+}
