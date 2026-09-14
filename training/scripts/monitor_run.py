@@ -2743,6 +2743,7 @@ def collect_snapshot(
                 validated_profile.arena,
                 simulations=validated_profile.arena.strength_simulations,
                 max_considered=max_considered,
+                allocation_policy="equal_cells",
             )
         )
     strength_efficiency = _strength_efficiency_status(
@@ -2758,6 +2759,10 @@ def collect_snapshot(
             cell_count = (
                 len(configured_rings) * 6 if isinstance(configured_rings, list) else 24
             )
+            if isinstance(expected_balanced_contract, dict):
+                cells = expected_balanced_contract.get("cells")
+                if isinstance(cells, list):
+                    cell_count = len(cells)
             _add_warning(
                 warnings,
                 "WARN",

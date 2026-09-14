@@ -19,9 +19,19 @@ import torch
 
 from .arena import (
     ARENA_RESULT_SCHEMA_VERSION,
+    ArenaGame,
     ArenaPair,
     ArenaRunner,
     summarize_completed_arena_pairs,
+)
+from .adaptive_promotion import (
+    allocation_contract,
+    allocation_metrics,
+    cell_pair_prefixes,
+    next_allocation,
+    pending_suspected_review,
+    plan_complete,
+    plan_targets,
 )
 from .checkpoint import (
     ModelManifest,
@@ -32,6 +42,7 @@ from .checkpoint import (
 )
 from .checkpoint import write_model_pointer
 from .config import ArenaConfig, ExperimentConfig, load_config
+from .config_compatibility import without_search_execution_defaults
 from .device import (
     empty_device_cache,
     peak_memory_stats,
@@ -63,6 +74,7 @@ from .training import maybe_compile_model
 REJECTION_DECISIONS = frozenset(
     {"reject", "reject_ring_regression", "reject_max_pairs"}
 )
+_MAX_ADAPTIVE_ALLOCATION_BYTES = 8 * 1024 * 1024
 
 
 def _persisted_pair_key(pair: ArenaPair) -> tuple[int, str, int]:
@@ -729,6 +741,321 @@ class PromotionSupervisor:
     def _resume_path(result_path: Path) -> Path:
         return result_path.with_name(f"{result_path.stem}.resume.json")
 
+    def _adaptive_allocation(
+        self,
+        candidate: ModelManifest,
+        champion: ModelManifest,
+        accumulated: list[ArenaPair],
+        *,
+        review_only: bool = False,
+    ) -> dict[str, object] | None:
+        """Persist exact cell targets before dispatch, retaining interrupted work."""
+        from .balanced_evaluation import (
+            balanced_opening_seed,
+            category as variant_category,
+            cell_variant,
+            evaluation_contract,
+        )
+        from .selfplay import GameVariant
+
+        config = self._arena_config(candidate, champion)
+        result_path = self._result_path(candidate, champion)
+        path = result_path.with_name(f"{result_path.stem}.allocation.json")
+        identity = {
+            "schema_version": 1,
+            "run_id": self.run_identity.run_id,
+            "generation_family": self.run_identity.generation_family,
+            "candidate_identity": candidate.model_identity,
+            "baseline_identity": champion.model_identity,
+            "candidate_manifest": str(
+                (candidate.artifact_manifest or candidate.path).resolve()
+            ),
+            "baseline_manifest": str(
+                (champion.artifact_manifest or champion.path).resolve()
+            ),
+            "evaluation_contract": evaluation_contract(config),
+            "allocation_contract": allocation_contract(config),
+        }
+        evidence = {_persisted_pair_key(pair): pair for pair in accumulated}
+        state = self._load_resume_state(result_path, candidate, champion)
+        if state is not None:
+            expected_config = without_search_execution_defaults(
+                {"arena": asdict(config)}
+            )["arena"]
+            supplied_config = without_search_execution_defaults(
+                {"arena": state.get("config")}
+            )["arena"]
+            if isinstance(expected_config, dict) and isinstance(supplied_config, dict):
+                expected_config.pop("exact_clinch_termination", None)
+                supplied_config.pop("exact_clinch_termination", None)
+            if (
+                state.get("candidate") != candidate.model_version
+                or state.get("baseline") != champion.model_version
+                or json.dumps(expected_config, sort_keys=True)
+                != json.dumps(supplied_config, sort_keys=True)
+            ):
+                raise ValueError("adaptive allocation resume contract is incompatible")
+            grouped_games: dict[tuple[int, str, int], dict[int, ArenaGame]] = {}
+            entries = state.get("game_states")
+            if not isinstance(entries, list):
+                raise ValueError("adaptive allocation resume games are invalid")
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    raise ValueError("adaptive allocation resume game is invalid")
+                result = entry.get("result")
+                if result is None:
+                    continue
+                if not isinstance(result, dict):
+                    raise ValueError("adaptive allocation completed game is invalid")
+                game = ArenaGame(**result)
+                if any(
+                    entry.get(key) != getattr(game, key)
+                    for key in ("ring", "variant", "pair", "candidate_player")
+                ):
+                    raise ValueError("adaptive allocation resume game identity changed")
+                key = (game.ring, game.variant, game.pair)
+                seats = grouped_games.setdefault(key, {})
+                if game.candidate_player in seats:
+                    raise ValueError("adaptive allocation resume duplicates a seat")
+                seats[game.candidate_player] = game
+            for seats in grouped_games.values():
+                if set(seats) != {0, 1}:
+                    continue
+                first, second = seats[0], seats[1]
+                if any(
+                    getattr(first, key) != getattr(second, key)
+                    for key in ("opening_seed", "opening_action", "forced_opening")
+                ):
+                    raise ValueError("adaptive allocation resumed seats disagree")
+                pair = ArenaPair(
+                    ring=first.ring,
+                    pair=first.pair,
+                    opening_seed=first.opening_seed,
+                    opening_action=first.opening_action,
+                    forced_opening=first.forced_opening,
+                    outcomes=(first.outcome, second.outcome),
+                    variant=first.variant,
+                    segment=first.segment,
+                )
+                key = _persisted_pair_key(pair)
+                if key in evidence and evidence[key] != pair:
+                    raise ValueError(
+                        "adaptive allocation has conflicting durable pairs"
+                    )
+                evidence[key] = pair
+        history: list[dict[str, object]] = []
+        if path.exists():
+            if path.stat().st_size > _MAX_ADAPTIVE_ALLOCATION_BYTES:
+                raise ValueError("adaptive allocation history exceeds its size limit")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if (
+                not isinstance(payload, dict)
+                or set(payload) != {*identity, "plan_history"}
+                or any(payload.get(key) != value for key, value in identity.items())
+                or type(payload.get("schema_version")) is not int
+            ):
+                raise ValueError("adaptive allocation identity is incompatible")
+            records = payload.get("plan_history")
+            if not isinstance(records, list) or not records:
+                raise ValueError("adaptive allocation history is invalid")
+            prior = None
+            for index, record in enumerate(records):
+                if (
+                    not isinstance(record, dict)
+                    or type(record.get("plan_index")) is not int
+                    or record.get("plan_index") != index
+                    or not isinstance(record.get("decision_summary"), dict)
+                    or type(record.get("extra_handicap_pairs_total")) is not int
+                ):
+                    raise ValueError("adaptive allocation plan is invalid")
+                decision_pairs = self._pairs_from_result(
+                    {"pairs": record.get("decision_pairs")}
+                )
+                if (prior is None and decision_pairs) or (
+                    prior is not None
+                    and (
+                        not plan_complete(prior, decision_pairs, config)
+                        or len(decision_pairs)
+                        != sum(plan_targets(prior, config).values())
+                    )
+                ):
+                    raise ValueError(
+                        "adaptive allocation decision predates its completed plan"
+                    )
+                material = json.dumps(
+                    [asdict(pair) for pair in decision_pairs],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+                if record.get("decision_pairs_sha256") != hashlib.sha256(
+                    material
+                ).hexdigest() or any(
+                    evidence.get(_persisted_pair_key(pair)) != pair
+                    for pair in decision_pairs
+                ):
+                    raise ValueError(
+                        "adaptive allocation decision evidence is incompatible"
+                    )
+                recomputed_summary = summarize_completed_arena_pairs(
+                    decision_pairs,
+                    config,
+                    completed_allocation_targets=plan_targets(prior, config)
+                    if prior is not None
+                    else None,
+                )
+                if json.dumps(recomputed_summary, sort_keys=True) != json.dumps(
+                    record["decision_summary"], sort_keys=True
+                ):
+                    raise ValueError("adaptive allocation decision summary changed")
+                sticky_review = (
+                    prior is not None and prior.get("phase") == "handicap_review"
+                )
+                requested_review = record.get("phase") == "handicap_review"
+                prior_promotion = recomputed_summary.get("promotion")
+                if (
+                    requested_review
+                    and not sticky_review
+                    and (
+                        not isinstance(prior_promotion, dict)
+                        or prior_promotion.get("decision") != "promote"
+                    )
+                ):
+                    raise ValueError("adaptive review lacks its promotion trigger")
+                expected = next_allocation(
+                    config,
+                    previous_plan=prior,
+                    summary=record["decision_summary"],
+                    review_only=requested_review or sticky_review,
+                )
+                if expected is None and sticky_review and not requested_review:
+                    expected = next_allocation(
+                        config, previous_plan=prior, summary=record["decision_summary"]
+                    )
+                actual = {
+                    key: value
+                    for key, value in record.items()
+                    if key
+                    not in {
+                        "plan_index",
+                        "decision_summary",
+                        "decision_pairs",
+                        "decision_pairs_sha256",
+                    }
+                }
+                if expected != actual:
+                    raise ValueError(
+                        "adaptive allocation plan disagrees with its policy"
+                    )
+                plan_targets(record, config)
+                history.append(record)
+                prior = record
+        elif accumulated or (state is not None and state.get("game_states")):
+            raise ValueError("adaptive evidence is missing its durable allocation plan")
+        active = history[-1] if history else None
+        if active is not None:
+            targets = plan_targets(active, config)
+            for ring, category, index in evidence:
+                cell = f"r{ring}/{category}"
+                if cell not in targets or index >= targets[cell]:
+                    raise ValueError(
+                        "adaptive evidence exceeds its committed allocation"
+                    )
+            if state is not None:
+                entries = state.get("game_states")
+                assert isinstance(entries, list)
+                for entry in entries:
+                    if (
+                        type(entry.get("ring")) is not int
+                        or type(entry.get("pair")) is not int
+                        or entry["pair"] < 0
+                        or type(entry.get("candidate_player")) is not int
+                        or entry["candidate_player"] not in (0, 1)
+                    ):
+                        raise ValueError("adaptive resume allocation index is invalid")
+                    variant = GameVariant.parse(entry["variant"])
+                    name = variant_category(variant)
+                    cell = f"r{entry['ring']}/{name}"
+                    if cell not in targets or entry["pair"] >= targets[cell]:
+                        raise ValueError(
+                            "adaptive resume exceeds its committed allocation"
+                        )
+                    if (
+                        cell_variant(name, entry["pair"], config) != variant
+                        or type(entry.get("opening_seed")) is not int
+                        or entry["opening_seed"]
+                        != balanced_opening_seed(
+                            config.seed, entry["ring"], variant, entry["pair"]
+                        )
+                    ):
+                        raise ValueError(
+                            "adaptive resume disagrees with its seed schedule"
+                        )
+            if review_only and pending_suspected_review(active, accumulated, config):
+                return active
+            if review_only and not plan_complete(active, accumulated, config):
+                return None
+            if not review_only and not plan_complete(active, accumulated, config):
+                return active
+        decision_pairs = [
+            asdict(pair) for pair in sorted(accumulated, key=_persisted_pair_key)
+        ]
+        summary = summarize_completed_arena_pairs(
+            accumulated,
+            config,
+            completed_allocation_targets=plan_targets(active, config)
+            if active is not None
+            else None,
+        )
+        continue_review = (
+            active is not None and active.get("phase") == "handicap_review"
+        )
+        promotion_summary = summary.get("promotion")
+        if (
+            review_only
+            and not continue_review
+            and (
+                not isinstance(promotion_summary, dict)
+                or promotion_summary.get("decision") != "promote"
+            )
+        ):
+            return None
+        planned = next_allocation(
+            config,
+            previous_plan=active,
+            summary=summary,
+            review_only=review_only or continue_review,
+        )
+        if planned is None and continue_review and not review_only:
+            planned = next_allocation(
+                config, previous_plan=active, summary=summary, review_only=False
+            )
+        if planned is None:
+            return None
+        record = {
+            **planned,
+            "plan_index": len(history),
+            "decision_summary": summary,
+            "decision_pairs": decision_pairs,
+            "decision_pairs_sha256": hashlib.sha256(
+                json.dumps(
+                    decision_pairs, sort_keys=True, separators=(",", ":")
+                ).encode()
+            ).hexdigest(),
+        }
+        record = json.loads(json.dumps(record))
+        payload = {**identity, "plan_history": [*history, record]}
+        if (
+            len(
+                (
+                    json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+                ).encode()
+            )
+            > _MAX_ADAPTIVE_ALLOCATION_BYTES
+        ):
+            raise ValueError("adaptive allocation history exceeds its size limit")
+        atomic_json(path, payload)
+        return record
+
     def _load_resume_state(
         self,
         result_path: Path,
@@ -990,6 +1317,7 @@ class PromotionSupervisor:
             simulations = self.experiment.arena.strength_simulations
         return replace(
             self.experiment.arena,
+            allocation_policy="equal_cells",
             pairs_per_ring=configured.pairs_per_ring,
             minimum_pairs_per_ring=configured.max_pairs_per_ring,
             max_pairs_per_ring=configured.max_pairs_per_ring,
@@ -1216,8 +1544,14 @@ class PromotionSupervisor:
                 )
             return 0, "superseded"
 
-        starts, counts = self._wave_plan(accumulated)
-        if all(count <= 0 for count in counts.values()):
+        if self.experiment.arena.allocation_policy == "adaptive_pie":
+            exhausted = (
+                self._adaptive_allocation(candidate, champion, accumulated) is None
+            )
+        else:
+            _, counts = self._wave_plan(accumulated)
+            exhausted = all(count <= 0 for count in counts.values())
+        if exhausted:
             if previous is None:
                 raise ValueError("max-pair promotion result is missing")
             self._reject_max_pairs(
@@ -1356,7 +1690,28 @@ class PromotionSupervisor:
                                 superseded_by_step=newer.model_step,
                             )
                         return waves, "superseded"
-                    starts, counts = self._wave_plan(accumulated)
+                    allocation = None
+                    cell_targets = None
+                    if arena_config.allocation_policy == "adaptive_pie":
+                        allocation = self._adaptive_allocation(
+                            candidate, champion, accumulated
+                        )
+                        if allocation is not None:
+                            cell_targets = plan_targets(allocation, arena_config)
+                        starts = dict.fromkeys(arena_config.rings, 0)
+                        counts = {
+                            ring: max(
+                                (
+                                    target
+                                    for cell, target in (cell_targets or {}).items()
+                                    if cell.startswith(f"r{ring}/")
+                                ),
+                                default=0,
+                            )
+                            for ring in arena_config.rings
+                        }
+                    else:
+                        starts, counts = self._wave_plan(accumulated)
                     if all(count <= 0 for count in counts.values()):
                         if previous_result is None:
                             raise ValueError("max-pair promotion result is missing")
@@ -1378,16 +1733,21 @@ class PromotionSupervisor:
                     )
                     persisted_chunk = False
                     pair_ratios = arena_config.promotion_pair_ratios
-                    for chunk_starts, chunk_counts in self._pair_chunks(
-                        starts,
-                        counts,
-                        chunk_size=(
-                            arena_config.pair_chunk_size
-                            or max(counts.values(), default=1)
-                        ),
-                        pair_ratios=pair_ratios,
-                        existing_counts=self._ring_pair_counts(accumulated),
-                    ):
+                    chunks = (
+                        [(starts, counts)]
+                        if cell_targets is not None
+                        else self._pair_chunks(
+                            starts,
+                            counts,
+                            chunk_size=(
+                                arena_config.pair_chunk_size
+                                or max(counts.values(), default=1)
+                            ),
+                            pair_ratios=pair_ratios,
+                            existing_counts=self._ring_pair_counts(accumulated),
+                        )
+                    )
+                    for chunk_starts, chunk_counts in chunks:
                         if stop_requested():
                             return waves + int(persisted_chunk), "stopped"
                         chunk_started = (
@@ -1395,8 +1755,14 @@ class PromotionSupervisor:
                         )
                         result = runner.run(
                             progress=progress,
-                            pair_starts=chunk_starts,
-                            pair_counts=chunk_counts,
+                            **(
+                                {"cell_pair_targets": cell_targets}
+                                if cell_targets is not None
+                                else {
+                                    "pair_starts": chunk_starts,
+                                    "pair_counts": chunk_counts,
+                                }
+                            ),
                             stop_requested=stop_requested,
                             **(
                                 {
@@ -1432,6 +1798,8 @@ class PromotionSupervisor:
                             wave_index=waves,
                             pair_starts=chunk_starts,
                             pair_counts=chunk_counts,
+                            cell_pair_targets=cell_targets,
+                            allocation_plan=allocation,
                         )
                         persisted_chunk = True
                         previous_result = result
@@ -1472,6 +1840,8 @@ class PromotionSupervisor:
         wave_index: int,
         pair_starts: Mapping[int, int],
         pair_counts: Mapping[int, int],
+        cell_pair_targets: Mapping[str, int] | None = None,
+        allocation_plan: Mapping[str, object] | None = None,
     ) -> tuple[str, bool]:
         if arena_config.balanced_cells:
             from .balanced_evaluation import evaluation_contract
@@ -1498,10 +1868,17 @@ class PromotionSupervisor:
         evaluation_metrics["peak_cuda_reserved_bytes"] = (
             peak_reserved if collect_cuda_metrics else None
         )
-        if arena_config.balanced_cells:
+        finished = {_persisted_pair_key(pair) for pair in accumulated}
+        if cell_pair_targets is not None:
+            evaluation_metrics["requested_pairs"] = sum(
+                (int(cell.split("/", 1)[0][1:]), cell.split("/", 1)[1], index)
+                not in finished
+                for cell, target in cell_pair_targets.items()
+                for index in range(target)
+            )
+        elif arena_config.balanced_cells:
             from .balanced_evaluation import balanced_categories
 
-            finished = {_persisted_pair_key(pair) for pair in accumulated}
             evaluation_metrics["requested_pairs"] = sum(
                 (ring, name, index) not in finished
                 for ring in arena_config.rings
@@ -1604,6 +1981,35 @@ class PromotionSupervisor:
             },
             **weighted_metadata,
         }
+        if cell_pair_targets is not None:
+            prefixes = cell_pair_prefixes(accumulated, arena_config)
+            wave_plan.update(
+                {
+                    "allocation_policy": "adaptive_pie",
+                    "phase": (allocation_plan or {}).get("phase", "continuation"),
+                    "allocation_plan_index": (allocation_plan or {}).get("plan_index"),
+                    "cell_pair_starts": prefixes,
+                    "cell_pair_targets": dict(cell_pair_targets),
+                    "cell_pair_deficits": {
+                        cell: sum(
+                            (
+                                int(cell.split("/", 1)[0][1:]),
+                                cell.split("/", 1)[1],
+                                index,
+                            )
+                            not in finished
+                            for index in range(target)
+                        )
+                        for cell, target in cell_pair_targets.items()
+                    },
+                    "extra_handicap_check": (allocation_plan or {}).get(
+                        "extra_handicap_check"
+                    ),
+                    "extra_handicap_pairs_total": (allocation_plan or {}).get(
+                        "extra_handicap_pairs_total", 0
+                    ),
+                }
+            )
         result["wave_plan"] = wave_plan
         result["wave_history"] = [*previous_history, wave_plan]
         result["arena_seed_block"] = arena_config.seed
@@ -1627,7 +2033,33 @@ class PromotionSupervisor:
         result["schema_version"] = ARENA_RESULT_SCHEMA_VERSION
         result["pairs"] = [asdict(pair) for pair in accumulated]
         if accumulated or arena_config.balanced_cells:
-            result.update(summarize_completed_arena_pairs(accumulated, arena_config))
+            if arena_config.allocation_policy == "adaptive_pie":
+                if allocation_plan is None:
+                    raise ValueError(
+                        "adaptive promotion is missing its committed allocation"
+                    )
+                if plan_complete(allocation_plan, accumulated, arena_config):
+                    completed_targets = plan_targets(allocation_plan, arena_config)
+                else:
+                    previous_boundary = self._pairs_from_result(
+                        {"pairs": allocation_plan.get("decision_pairs")}
+                    )
+                    completed_targets = (
+                        cell_pair_prefixes(previous_boundary, arena_config)
+                        if previous_boundary
+                        else None
+                    )
+                result.update(
+                    summarize_completed_arena_pairs(
+                        accumulated,
+                        arena_config,
+                        completed_allocation_targets=completed_targets,
+                    )
+                )
+            else:
+                result.update(
+                    summarize_completed_arena_pairs(accumulated, arena_config)
+                )
         if previous is not None:
             previous_games = previous.get("games", [])
             result_games = result.get("games", [])
@@ -1644,6 +2076,35 @@ class PromotionSupervisor:
         ):
             raise ValueError("arena result promotion is invalid")
         decision = promotion_result["decision"]
+        if arena_config.allocation_policy == "adaptive_pie":
+            result["sampling_allocation"] = allocation_metrics(
+                accumulated, arena_config
+            )
+            if allocation_plan is None:
+                raise ValueError(
+                    "adaptive promotion is missing its committed allocation"
+                )
+            allocation_complete = plan_complete(
+                allocation_plan, accumulated, arena_config
+            )
+            promotion_result["allocation_boundary_complete"] = allocation_complete
+            if decision in {"promote", "reject"} and not allocation_complete:
+                promotion_result["provisional_global_decision"] = decision
+                promotion_result["decision"] = "continue"
+                promotion_result["deferred_until_allocation_complete"] = True
+                decision = "continue"
+            if decision == "promote" and allocation_complete:
+                review = self._adaptive_allocation(
+                    candidate, champion, accumulated, review_only=True
+                )
+                if review is not None:
+                    decision = "continue"
+                    promotion_result["decision"] = decision
+                    promotion_result["deferred_for_handicap_review"] = {
+                        "allocation_plan_index": review["plan_index"],
+                        "cell_pair_targets": review["cell_pair_targets"],
+                        "extra_handicap_check": review["extra_handicap_check"],
+                    }
         if decision == "continue" and max_reached:
             decision = "reject_max_pairs"
             promotion_result["decision"] = decision
@@ -1803,6 +2264,8 @@ class PromotionSupervisor:
         self,
         accumulated: list[ArenaPair],
     ) -> bool:
+        if self.experiment.arena.allocation_policy == "adaptive_pie":
+            return len(accumulated) >= 4 * self.experiment.arena.max_pairs_per_ring
         if self.experiment.arena.balanced_cells:
             return all(
                 count >= self.experiment.arena.max_pairs_per_ring

@@ -1534,6 +1534,9 @@ class ArenaConfig:
     # Legacy contracts remain readable with exactly their original identities.
     # New training uses pie for even games and ring-10-only handicap cells.
     variant_policy: Literal["legacy_six", "pie_even"] = "legacy_six"
+    # Opt in separately: frozen equal-allocation evidence keeps its identity.
+    # The adaptive policy preserves the score weights and total pair budget.
+    allocation_policy: Literal["equal_cells", "adaptive_pie"] = "equal_cells"
     cell_regression_floor_elo: float = -100.0
     handicap_severity_cycle: tuple[int, ...] = (2, 4, 6, 9)
     strength_simulations: int = 1_024
@@ -1547,6 +1550,16 @@ class ArenaConfig:
             raise ConfigError("arena.variant_policy must be legacy_six or pie_even")
         if self.variant_policy == "pie_even" and not self.balanced_cells:
             raise ConfigError("pie_even evaluation requires balanced_cells")
+        if self.allocation_policy not in ("equal_cells", "adaptive_pie"):
+            raise ConfigError(
+                "arena.allocation_policy must be equal_cells or adaptive_pie"
+            )
+        if self.allocation_policy == "adaptive_pie" and (
+            not self.balanced_cells
+            or self.variant_policy != "pie_even"
+            or self.rings != (10,)
+        ):
+            raise ConfigError("adaptive_pie allocation requires ring-10 pie_even cells")
         if type(self.exact_clinch_termination) is not bool:
             raise ConfigError("arena.exact_clinch_termination must be boolean")
         if not isinstance(self.search_execution, SearchExecutionConfig):
@@ -1584,6 +1597,17 @@ class ArenaConfig:
             or self.segment_regression_floor_elo
         ):
             raise ConfigError("balanced arena forbids legacy segment/ratio schedules")
+        if self.allocation_policy == "adaptive_pie" and (
+            type(self.minimum_pairs_per_ring) is not int
+            or type(self.max_pairs_per_ring) is not int
+            or self.minimum_pairs_per_ring < len(self.handicap_severity_cycle)
+            or self.minimum_pairs_per_ring % len(self.handicap_severity_cycle) != 0
+            or self.max_pairs_per_ring < self.minimum_pairs_per_ring
+        ):
+            raise ConfigError(
+                "adaptive_pie initial check must cover whole handicap severity cycles "
+                "within the total pair budget"
+            )
         if (
             not self.rings
             or any(
@@ -2065,6 +2089,8 @@ class ExperimentConfig:
             del result["selfplay"]["pie_even_training"]
         if self.arena.variant_policy == "legacy_six":
             del result["arena"]["variant_policy"]
+        if self.arena.allocation_policy == "equal_cells":
+            del result["arena"]["allocation_policy"]
         return result
 
 

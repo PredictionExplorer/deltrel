@@ -218,6 +218,8 @@ def without_search_execution_defaults(payload: Mapping[str, Any]) -> dict[str, A
     arena = result.get("arena")
     if isinstance(arena, dict) and arena.get("variant_policy") == "legacy_six":
         del arena["variant_policy"]
+    if isinstance(arena, dict) and arena.get("allocation_policy") == "equal_cells":
+        del arena["allocation_policy"]
     selfplay = result.get("selfplay")
     if isinstance(selfplay, dict) and selfplay.get("pie_even_training") is False:
         del selfplay["pie_even_training"]
@@ -422,6 +424,7 @@ def without_efficiency_defaults(payload: Mapping[str, Any]) -> dict[str, Any]:
             ):
                 del refresh["inference"]
     arena = result.get("arena", {})
+    omit(arena, "allocation_policy", "equal_cells")
     omit(arena, "balanced_cells", False)
     omit(arena, "cell_regression_floor_elo", -100.0)
     omit(arena, "handicap_severity_cycle", (2, 4, 6, 9))

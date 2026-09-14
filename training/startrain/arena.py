@@ -31,6 +31,7 @@ from .search_options import (
 from .search_sessions import CompletedSearchCache
 from .balanced_evaluation import (
     balanced_categories,
+    balanced_cells,
     balanced_opening_seed,
     balanced_search_seed,
     category,
@@ -1258,13 +1259,17 @@ def summarize_arena_pairs(
 def summarize_completed_arena_pairs(
     pairs: Sequence[ArenaPair],
     config: ArenaConfig,
+    *,
+    completed_allocation_targets: Mapping[str, int] | None = None,
 ) -> dict[str, object]:
     """Summarize complete pairs without treating partial ring coverage as a decision."""
 
     if config.balanced_cells:
         from .balanced_evaluation import summarize_balanced_pairs
 
-        return summarize_balanced_pairs(pairs, config)
+        return summarize_balanced_pairs(
+            pairs, config, completed_allocation_targets=completed_allocation_targets
+        )
     if not pairs:
         raise ValueError("arena summary requires pairs")
     standard, segments = _split_segments(pairs)
@@ -1429,6 +1434,7 @@ class ArenaRunner:
         progress: Callable[..., None] | None = None,
         pair_starts: Mapping[int, int] | None = None,
         pair_counts: Mapping[int, int] | None = None,
+        cell_pair_targets: Mapping[str, int] | None = None,
         stop_requested: Callable[[], bool] | None = None,
         previous_pairs: Sequence[ArenaPair] | None = None,
         resume_state: Mapping[str, object] | None = None,
@@ -1440,8 +1446,63 @@ class ArenaRunner:
         stopped search restarts only its current move; completed moves and lone
         finished seats survive. Stable per-game seeds make regrouping resumed
         games independent of which other games have already finished.
+
+        Balanced cell targets are absolute exclusive index bounds. Every cell
+        must be present, including cells requesting no additional work. They
+        cannot be combined with the legacy per-ring wave ranges.
         """
+        targets = None
+        if cell_pair_targets is not None:
+            if not self.config.balanced_cells:
+                raise ValueError("cell_pair_targets requires balanced evaluation")
+            if pair_starts is not None or pair_counts is not None:
+                raise ValueError(
+                    "cell_pair_targets cannot be combined with pair_starts or pair_counts"
+                )
+            if not isinstance(cell_pair_targets, Mapping):
+                raise ValueError("cell_pair_targets must be a mapping")
+            targets = dict(cell_pair_targets)
+            if set(targets) != set(balanced_cells(self.config)):
+                raise ValueError(
+                    "cell_pair_targets must name exactly the configured cells"
+                )
+            if any(type(value) is not int or value < 0 for value in targets.values()):
+                raise ValueError(
+                    "cell_pair_targets values must be nonnegative integers"
+                )
+        prior = list(previous_pairs or ())
+        finished: set[tuple[int, str, int]] = set()
+        cell_ranges: dict[tuple[int, str], range] = {}
+        if self.config.balanced_cells:
+            from .balanced_evaluation import grouped_cell_pairs, pair_key
+
+            grouped_cell_pairs(prior, self.config)
+            if any((pair_starts or {}).values()) and not prior:
+                raise ValueError(
+                    "balanced continuation requires persisted previous pairs"
+                )
+            finished = {pair_key(pair) for pair in prior}
+            for ring in self.config.rings:
+                first = int((pair_starts or {}).get(ring, 0))
+                final = first + int(
+                    (pair_counts or {}).get(ring, self.config.pairs_per_ring)
+                )
+                for name in balanced_categories(self.config, ring):
+                    cell_ranges[ring, name] = (
+                        range(targets[f"r{ring}/{name}"])
+                        if targets is not None
+                        else range(first, final)
+                    )
         self._initialize_resume(resume_state, checkpoint)
+        if targets is not None:
+            for ring, label, pair, _seat in self._resume_games:
+                name = category(GameVariant.parse(label))
+                if (ring, name, pair) not in finished and pair >= targets[
+                    f"r{ring}/{name}"
+                ]:
+                    raise ValueError(
+                        "cell_pair_targets cannot omit an already-started resume pair"
+                    )
         started_ns = time.time_ns()
         started = time.perf_counter()
         should_stop = stop_requested or (lambda: False)
@@ -1459,29 +1520,11 @@ class ArenaRunner:
             for ring in self.config.rings
         )
         interrupted = False
-        prior = list(previous_pairs or ())
-        finished: set[tuple[int, str, int]] = set()
         if self.config.balanced_cells:
-            from .balanced_evaluation import (
-                pair_key,
-                grouped_cell_pairs,
-            )
-
-            grouped_cell_pairs(prior, self.config)
-            if any((pair_starts or {}).values()) and not prior:
-                raise ValueError(
-                    "balanced continuation requires persisted previous pairs"
-                )
-            finished = {pair_key(pair) for pair in prior}
             requested_pairs = sum(
                 (ring, name, index) not in finished
-                for ring in self.config.rings
-                for index in range(
-                    int((pair_starts or {}).get(ring, 0)),
-                    int((pair_starts or {}).get(ring, 0))
-                    + int((pair_counts or {}).get(ring, self.config.pairs_per_ring)),
-                )
-                for name in balanced_categories(self.config, ring)
+                for (ring, name), indices in cell_ranges.items()
+                for index in indices
             )
         # Dynamo/Inductor compiled models are not thread-safe. Keep the two
         # GIL-releasing native search groups parallel, but route both models
@@ -1495,8 +1538,8 @@ class ArenaRunner:
                 final_pair = first_pair + pair_count
                 if self.config.balanced_cells:
                     by_variant: dict[GameVariant, list[int]] = {}
-                    for index in range(first_pair, final_pair):
-                        for name in balanced_categories(self.config, ring):
+                    for name in balanced_categories(self.config, ring):
+                        for index in cell_ranges[ring, name]:
                             if (ring, name, index) in finished:
                                 continue
                             variant = cell_variant(name, index, self.config)
@@ -1721,6 +1764,8 @@ class ArenaRunner:
         if self._resume_contract is not None:
             with self._resume_lock:
                 result["resume_state"] = self._resume_snapshot()
+        if targets is not None:
+            cast(dict[str, object], result["search"])["cell_pair_targets"] = targets
         execution = self.config.search_execution.contract()
         if execution is not None:
             search_metadata = cast(dict[str, object], result["search"])

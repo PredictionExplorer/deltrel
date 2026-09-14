@@ -63,12 +63,19 @@ classic-pie and double-pie each have weight 0.45; classic-handicap and
 double-handicap each have weight 0.05. Both handicap modes cover the complete
 configured severity cycle. Paired games reverse the candidate's seat.
 
-Evaluation still schedules equal numbers of pairs per category to retain
+The original `equal_cells` allocation schedules equal numbers of pairs per category to retain
 handicap regression evidence. The aggregate score uses the 90/10 weights.
 Its Hoeffding confidence sequence accounts for unequal weights: for `L`
 severities and normalized cell weights `w`, each complete cycle has effective
 pair count `L / sum(w²)`. The actual pair count remains separately reported.
 Per-category regression guards are retained.
+
+The opt-in [`adaptive_pie` promotion allocation](adaptive-pie-promotion.md)
+keeps the same score weights, starts with 32 games, then uses 90/10 continuation
+rounds and bounded targeted handicap checks. Its joint sequential test supports
+unequal allocations without a full severity-cycle barrier and keeps the
+320-game cap. Historical
+strength crossplay continues to use the original equal allocation.
 
 The versioned `pie_even` evaluation contract includes the new cell set, weights,
 and statistical method. Old results and partial games remain in their original

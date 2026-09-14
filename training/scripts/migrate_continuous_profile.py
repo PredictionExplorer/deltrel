@@ -131,6 +131,7 @@ _ALLOWED_PROFILE_PATHS = {
     ("selfplay", "pie"),
     ("selfplay", "pie_even_training"),
     ("arena", "variant_policy"),
+    ("arena", "allocation_policy"),
     ("selfplay", "rings"),
     ("arena", "rings"),
     ("arena", "required_regression_rings"),
@@ -1460,6 +1461,7 @@ def _validate_variant_arena_boundary(
         in {
             "arena.balanced_cells",
             "arena.variant_policy",
+            "arena.allocation_policy",
             "arena.cell_regression_floor_elo",
             "arena.handicap_severity_cycle",
             "arena.simulations",
@@ -1474,7 +1476,7 @@ def _validate_variant_arena_boundary(
     arena_root = run_root / "arena"
     isolated_transition = legacy_to_balanced or balanced_scope_change
     if balanced_scope_change:
-        # A changed balanced cell set has a distinct immutable result and
+        # A changed cell set or allocation has a distinct immutable result and
         # resume namespace. Preserve and pin every old record, including
         # sidecars and historical links against older champions.
         retained = tuple(sorted(arena_root.glob("*.json")))
@@ -1655,6 +1657,7 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
         and (
             old_config.arena.rings != new_config.arena.rings
             or old_config.arena.variant_policy != new_config.arena.variant_policy
+            or old_config.arena.allocation_policy != new_config.arena.allocation_policy
         )
     )
     if balanced_scope_change:
@@ -1749,7 +1752,10 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
             )
         )
         strength_config = replace(
-            new_config.arena, simulations=simulations, max_considered=candidates
+            new_config.arena,
+            simulations=simulations,
+            max_considered=candidates,
+            allocation_policy="equal_cells",
         )
         strength_epoch_payload = {
             "schema_version": 1,

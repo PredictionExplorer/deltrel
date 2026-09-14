@@ -1,0 +1,180 @@
+{
+  "report": "adaptive-paired-promotion-synthetic-power-cost",
+  "schema_version": 1,
+  "seed": 71341,
+  "runtime": "3.11.13",
+  "simulation_wall_seconds": 1.4046073339413851,
+  "source_sha256": {
+    "scripts/benchmark_adaptive_promotion.py": "e1ceb29bc1840471f530d623a8d865373cfb058581358ed23040f3bf8d2879ef",
+    "startrain/balanced_evaluation.py": "ce6442cae0f11bf11c1c7672724646f4155077fcd4aff16365420277ec487e9f",
+    "startrain/adaptive_promotion.py": "6d1c6f15be88ce5a705c76c3a7fcd946172c3e7cdf093b82c9a988bce866c7aa"
+  },
+  "revision_authority": "source-file-digests; no claim that current HEAD contains these edits",
+  "budget": {
+    "maximum_pairs": 160,
+    "initial_pairs_per_cell": 4,
+    "base_continuation": [
+      9,
+      9,
+      1,
+      1
+    ],
+    "extra_handicap_cap": 80
+  },
+  "scope": "controlled synthetic allocation comparison; reviews use suspected-regression points; full production sticky-review and cost-relevance selector not simulated",
+  "cost_model": "pair-equivalent search proxy: pie1; handicap severities2/4/6/9 cost1.5/2.5/2.5/4.5 from frozen PDA budgets; excludes game lengths and inference batching",
+  "limitations": [
+    "No measured GPU time, total game simulations, live promotion rate, or Elo/hour is claimed.",
+    "Each synthetic Bernoulli represents a maximally correlated role-reversed pair; neutral handicap scenarios use deterministic paired score0.5.",
+    "Null stress allocates extra handicap work from completed prior outcomes; all decisions use complete committed allocation boundaries."
+  ],
+  "results": [
+    {
+      "scenario": "heterogeneous_null",
+      "pie_pair_means": [
+        0.55,
+        0.45
+      ],
+      "handicap_stratum_means": [
+        [
+          0.95,
+          0.05,
+          0.8,
+          0.2
+        ],
+        [
+          0.05,
+          0.95,
+          0.2,
+          0.8
+        ]
+      ],
+      "neutral_handicap_pairs_constant_half": false,
+      "outcome_dependent_null_stress": true,
+      "equal_cells": {
+        "trials": 1000,
+        "decision_rates": {
+          "promote": 0.007,
+          "reject": 0.038,
+          "cell_regression": 0.0,
+          "inconclusive": 0.955
+        },
+        "mean_pairs": 156.752,
+        "mean_games": 313.504,
+        "mean_search_cost_proxy": 293.91,
+        "mean_extra_handicap_pairs": 0.0
+      },
+      "adaptive": {
+        "trials": 1000,
+        "decision_rates": {
+          "promote": 0.0,
+          "reject": 0.004,
+          "cell_regression": 0.0,
+          "inconclusive": 0.996
+        },
+        "mean_pairs": 159.424,
+        "mean_games": 318.848,
+        "mean_search_cost_proxy": 233.184,
+        "mean_extra_handicap_pairs": 23.904
+      }
+    },
+    {
+      "scenario": "modest_pie_gain",
+      "pie_pair_means": [
+        0.65,
+        0.65
+      ],
+      "handicap_stratum_means": [
+        [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ]
+      ],
+      "neutral_handicap_pairs_constant_half": true,
+      "outcome_dependent_null_stress": false,
+      "equal_cells": {
+        "trials": 256,
+        "decision_rates": {
+          "promote": 0.375,
+          "reject": 0.0,
+          "cell_regression": 0.0,
+          "inconclusive": 0.625
+        },
+        "mean_pairs": 139.0,
+        "mean_games": 278.0,
+        "mean_search_cost_proxy": 260.625,
+        "mean_extra_handicap_pairs": 0.0
+      },
+      "adaptive": {
+        "trials": 256,
+        "decision_rates": {
+          "promote": 0.5859375,
+          "reject": 0.0,
+          "cell_regression": 0.0,
+          "inconclusive": 0.4140625
+        },
+        "mean_pairs": 133.734375,
+        "mean_games": 267.46875,
+        "mean_search_cost_proxy": 165.3125,
+        "mean_extra_handicap_pairs": 0.0
+      }
+    },
+    {
+      "scenario": "decisive_pie_gain",
+      "pie_pair_means": [
+        0.75,
+        0.75
+      ],
+      "handicap_stratum_means": [
+        [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ],
+        [
+          0.5,
+          0.5,
+          0.5,
+          0.5
+        ]
+      ],
+      "neutral_handicap_pairs_constant_half": true,
+      "outcome_dependent_null_stress": false,
+      "equal_cells": {
+        "trials": 256,
+        "decision_rates": {
+          "promote": 0.93359375,
+          "reject": 0.0,
+          "cell_regression": 0.0,
+          "inconclusive": 0.06640625
+        },
+        "mean_pairs": 85.375,
+        "mean_games": 170.75,
+        "mean_search_cost_proxy": 160.078125,
+        "mean_extra_handicap_pairs": 0.0
+      },
+      "adaptive": {
+        "trials": 256,
+        "decision_rates": {
+          "promote": 1.0,
+          "reject": 0.0,
+          "cell_regression": 0.0,
+          "inconclusive": 0.0
+        },
+        "mean_pairs": 78.21875,
+        "mean_games": 156.4375,
+        "mean_search_cost_proxy": 100.7734375,
+        "mean_extra_handicap_pairs": 0.0
+      }
+    }
+  ]
+}

@@ -15,11 +15,16 @@ import yaml
 
 from startrain.config import load_config
 from startrain.pie_policy import pie_training_config
+from startrain.pie_promotion import pie_promotion_config
 
 
-def prepare_profile(source_path: Path, output_path: Path) -> dict[str, object]:
+def prepare_profile(
+    source_path: Path, output_path: Path, *, adaptive_promotion: bool = False
+) -> dict[str, object]:
     source = load_config(source_path)
     candidate = pie_training_config(source)
+    if adaptive_promotion:
+        candidate = pie_promotion_config(candidate)
     # JSON converts dataclass tuples to plain YAML sequences without Python tags.
     payload = json.loads(json.dumps(candidate.as_dict(), allow_nan=False))
     encoded = (
@@ -58,6 +63,7 @@ def prepare_profile(source_path: Path, output_path: Path) -> dict[str, object]:
         "profile": str(output_path.resolve()),
         "profile_sha256": hashlib.sha256(encoded.encode()).hexdigest(),
         "training_objective": candidate.orchestration.training_objective,
+        "promotion_allocation": candidate.arena.allocation_policy,
         "deployment_performed": False,
     }
 
@@ -66,8 +72,20 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--adaptive-promotion",
+        action="store_true",
+        help="Prepare pie-heavy promotion with adaptive, bounded handicap checks.",
+    )
     args = parser.parse_args(argv)
-    print(json.dumps(prepare_profile(args.config, args.output), indent=2))
+    print(
+        json.dumps(
+            prepare_profile(
+                args.config, args.output, adaptive_promotion=args.adaptive_promotion
+            ),
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":

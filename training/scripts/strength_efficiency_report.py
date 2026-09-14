@@ -2270,6 +2270,7 @@ def _active_strength_config(
             config.arena,
             simulations=config.arena.strength_simulations,
             max_considered=max_considered,
+            allocation_policy="equal_cells",
         ),
         provenance,
     )
