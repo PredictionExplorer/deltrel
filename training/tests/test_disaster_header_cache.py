@@ -46,9 +46,9 @@ def count_parses(monkeypatch):
     counts = {}
     original = recovery._snapshot_envelope
 
-    def counted(path, root):
+    def counted(path, root, **kwargs):
         counts[path] = counts.get(path, 0) + 1
-        return original(path, root)
+        return original(path, root, **kwargs)
 
     monkeypatch.setattr(recovery, "_snapshot_envelope", counted)
     return counts

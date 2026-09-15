@@ -21,7 +21,7 @@ import tempfile
 import time
 import uuid
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import wraps
@@ -31,7 +31,7 @@ from typing import Any, ParamSpec, TypeVar
 
 import yaml
 
-from scripts.replay_manifest_backup import create_backup_with_evidence
+from scripts.replay_manifest_backup import captured_backup_with_evidence
 from startrain.checkpoint import (
     MODEL_MANIFEST_FORMAT,
     MODEL_MANIFEST_VERSION,
@@ -133,6 +133,10 @@ _ALLOWED_KINDS = {
 
 class DisasterRecoveryError(RuntimeError):
     """A fail-closed disaster-recovery validation error."""
+
+
+class _ReplayCaptureRetired(DisasterRecoveryError):
+    """GC retired an uncaptured shard; a fresh ledger can be captured safely."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1261,7 +1265,7 @@ def _ready_shards(
 ) -> list[tuple[int, str, str]]:
     try:
         uri = f"{ledger.resolve().as_uri()}?mode=ro&immutable=1"
-        with sqlite3.connect(uri, uri=True, timeout=30.0) as connection:
+        with closing(sqlite3.connect(uri, uri=True, timeout=30.0)) as connection:
             connection.row_factory = sqlite3.Row
             columns = {
                 str(row["name"])
@@ -1323,11 +1327,111 @@ def _ready_shards(
         raise DisasterRecoveryError(f"cannot read replay backup ledger: {exc}") from exc
 
 
+def _is_missing_source(error: BaseException, source: Path) -> bool:
+    """Do not mistake a missing destination or an integrity failure for source GC."""
+    cause: BaseException | None = error
+    while cause is not None:
+        if (
+            isinstance(cause, FileNotFoundError)
+            and cause.filename is not None
+            and Path(cause.filename) == source
+        ):
+            return True
+        cause = cause.__cause__
+    return False
+
+
+def _recover_retired_shard(
+    builder: _SnapshotBuilder,
+    *,
+    shard_id: int,
+    relative: str,
+    checksum: str,
+) -> CatalogEntry:
+    replay_root = builder.run_root / "replay"
+    source = replay_root / relative
+    if not source.resolve().is_relative_to(replay_root):
+        raise DisasterRecoveryError(f"ready replay shard escapes run root: {source}")
+    ledger = replay_root / "manifest.sqlite3"
+    _require_regular_file(ledger, name="live replay ledger")
+    try:
+        # Replay GC commits row deletion before unlinking the immutable file.
+        # A still-registered missing shard is an integrity fault, never a retry.
+        with closing(
+            sqlite3.connect(f"{ledger.as_uri()}?mode=ro", uri=True, timeout=30.0)
+        ) as connection:
+            registered = connection.execute(
+                "SELECT 1 FROM shards WHERE id = ? OR relative_path = ? LIMIT 1",
+                (shard_id, relative),
+            ).fetchone()
+    except sqlite3.Error as exc:
+        raise DisasterRecoveryError(
+            f"cannot establish replay shard retirement: {source}: {exc}"
+        ) from exc
+    if registered is not None:
+        raise DisasterRecoveryError(
+            f"missing ready replay shard is still registered in the live ledger: {source}"
+        )
+    destination = _object_path(builder.backup_root, checksum)
+    try:
+        destination.lstat()
+    except FileNotFoundError as exc:
+        raise _ReplayCaptureRetired(
+            f"replay shard {shard_id} retired before archival; retaking ledger"
+        ) from exc
+    # The original snapshot remains complete when its exact bytes were archived
+    # earlier. With no source to compare, verify the stored content in full.
+    _validate_immutable_object_metadata(
+        destination, expected_sha256=checksum, expected_bytes=None
+    )
+    size = _validate_object(destination, expected_sha256=checksum, expected_bytes=None)
+    return CatalogEntry(checksum, size, "replay-shard")
+
+
+def _capture_replay_shards(
+    builder: _SnapshotBuilder,
+    ledger_entry: CatalogEntry,
+    *,
+    run_id: str,
+    generation_family: str,
+) -> None:
+    # Enumerate exactly the ledger bytes archived, after releasing local backup
+    # retention's lock. Live ledger rows and files may continue to retire.
+    ledger = _object_path(builder.backup_root, ledger_entry.sha256)
+    for shard_id, relative, checksum in _ready_shards(
+        ledger, run_id=run_id, generation_family=generation_family
+    ):
+        source = builder.run_root / "replay" / relative
+        logical = f"replay/{relative}"
+        resolved = source
+        try:
+            resolved, _ = _path_within(
+                builder.run_root / "replay", source, name="ready replay shard"
+            )
+            builder.add_shard(resolved, logical, checksum)
+        except DisasterRecoveryError as exc:
+            if not (
+                _is_missing_source(exc, source) or _is_missing_source(exc, resolved)
+            ):
+                raise
+            builder.catalog[logical] = _recover_retired_shard(
+                builder, shard_id=shard_id, relative=relative, checksum=checksum
+            )
+
+
 def _capture_state_fence(run_root: Path, profile: Path) -> dict[str, tuple[int, ...]]:
+    replay_root = run_root / "replay"
+    if replay_root.is_symlink() or (replay_root.exists() and not replay_root.is_dir()):
+        raise DisasterRecoveryError(
+            f"replay state fence directory is unsafe: {replay_root}"
+        )
+    manifest = replay_root / "manifest.sqlite3"
     paths = {
         profile.expanduser().resolve(),
         run_root / "run.json",
         run_root / "replay" / "initialized.json",
+        replay_root / "restore-marker.json",
+        manifest,
         run_root / "learner" / "recovery.json",
         run_root / "learner" / "recovery.journal.jsonl",
         run_root / "learner" / "resume-cutover.json",
@@ -1337,12 +1441,18 @@ def _capture_state_fence(run_root: Path, profile: Path) -> dict[str, tuple[int, 
     fence: dict[str, tuple[int, ...]] = {}
     for path in sorted(paths):
         try:
-            metadata = path.stat()
+            metadata = path.lstat()
         except FileNotFoundError:
             fence[str(path)] = ()
             continue
         if path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
             raise DisasterRecoveryError(f"mutable state fence path is unsafe: {path}")
+        # Ordinary WAL writes and checkpoints may change the main database's
+        # size and timestamps. Its identity alone fences replacement/restoration
+        # without turning healthy replay publication into perpetual recapture.
+        if path == manifest:
+            fence[str(path)] = (metadata.st_dev, metadata.st_ino)
+            continue
         fence[str(path)] = (
             metadata.st_dev,
             metadata.st_ino,
@@ -1693,36 +1803,32 @@ def _collect_payloads(
 
     replay_capture_started_ns = time.time_ns()
     try:
-        ledger_backup, evidence = create_backup_with_evidence(
+        with captured_backup_with_evidence(
             run_root,
             retain=replay_backup_retain,
-        )
+        ) as (ledger_backup, evidence):
+            ledger_entry = builder.add(
+                ledger_backup,
+                "replay/manifest.sqlite3",
+                "replay-ledger",
+                expected_sha256=_sha256_text(
+                    "replay backup SHA-256",
+                    evidence.get("sha256"),
+                ),
+            )
     except (OSError, RuntimeError, ValueError) as exc:
         raise DisasterRecoveryError(f"online replay backup failed: {exc}") from exc
-    ledger_entry = builder.add(
-        ledger_backup,
-        "replay/manifest.sqlite3",
-        "replay-ledger",
-        expected_sha256=_sha256_text(
-            "replay backup SHA-256",
-            evidence.get("sha256"),
-        ),
-    )
     if ledger_entry.bytes != _positive_int(
         "replay backup bytes",
         evidence.get("bytes"),
     ):
         raise DisasterRecoveryError("replay backup evidence has the wrong byte length")
-    for _, relative, checksum in _ready_shards(
-        ledger_backup,
+    _capture_replay_shards(
+        builder,
+        ledger_entry,
         run_id=identity.run_id,
         generation_family=identity.generation_family,
-    ):
-        source = run_root / "replay" / relative
-        resolved, _ = _path_within(
-            run_root / "replay", source, name="ready replay shard"
-        )
-        builder.add_shard(resolved, f"replay/{relative}", checksum)
+    )
 
     for logical in _MODEL_POINTERS:
         path = run_root / logical
@@ -1826,14 +1932,17 @@ def _collect_payloads(
 def _snapshot_envelope(
     path: Path,
     backup_root: Path,
+    *,
+    _staged_document: Path | None = None,
 ) -> tuple[
     dict[str, Any],
     dict[str, CatalogEntry],
     bytes,
     str,
 ]:
-    _require_regular_file(path, name="snapshot document")
-    data = path.read_bytes()
+    document = path if _staged_document is None else _staged_document
+    _require_regular_file(document, name="snapshot document")
+    data = document.read_bytes()
     payload = _json_loads(data, name=f"snapshot document {path}")
     if not isinstance(payload, dict):
         raise DisasterRecoveryError("snapshot document must be a JSON object")
@@ -2003,7 +2112,7 @@ def _validate_replay_database(
 ) -> tuple[int, int]:
     try:
         uri = f"{path.resolve().as_uri()}?mode=ro&immutable=1"
-        with sqlite3.connect(uri, uri=True, timeout=30.0) as connection:
+        with closing(sqlite3.connect(uri, uri=True, timeout=30.0)) as connection:
             connection.row_factory = sqlite3.Row
             integrity = [
                 str(row[0]) for row in connection.execute("PRAGMA integrity_check")
@@ -2435,8 +2544,14 @@ def _verify_snapshot_document(
     backup_root: Path,
     *,
     full_objects: bool = True,
+    _staged_document: Path | None = None,
 ) -> VerifiedSnapshot:
-    payload, catalog, data, digest = _snapshot_envelope(snapshot, backup_root)
+    if _staged_document is None:
+        payload, catalog, data, digest = _snapshot_envelope(snapshot, backup_root)
+    else:
+        payload, catalog, data, digest = _snapshot_envelope(
+            snapshot, backup_root, _staged_document=_staged_document
+        )
     for logical, entry in catalog.items():
         parts = PurePosixPath(logical).parts
         if "logs" in parts or logical.endswith(("-wal", "-shm")):
@@ -2853,8 +2968,10 @@ def _verify_snapshot_document(
         utd_committed_samples = committed_samples
         if training_objective is not None:
             ledger_path = _object_path(backup_root, ledger_entry.sha256)
-            with sqlite3.connect(
-                f"{ledger_path.resolve().as_uri()}?mode=ro&immutable=1", uri=True
+            with closing(
+                sqlite3.connect(
+                    f"{ledger_path.resolve().as_uri()}?mode=ro&immutable=1", uri=True
+                )
             ) as connection:
                 utd_committed_samples = training_committed_sample_count(
                     connection,
@@ -3169,6 +3286,50 @@ def verify_snapshot(
 verify = verify_snapshot
 
 
+def _publish_verified_snapshot(
+    path: Path,
+    data: bytes,
+    backup_root: Path,
+) -> VerifiedSnapshot:
+    """Validate owned staging bytes before they enter the snapshot namespace.
+
+    A process killed during validation can leave only an ignored temporary file,
+    never an invalid final document that would prevent later backup collection.
+    """
+
+    temporary_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
+            delete=False,
+        ) as temporary:
+            temporary_name = temporary.name
+            temporary.write(data)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+            os.fchmod(temporary.fileno(), 0o444)
+            verified = _verify_snapshot_document(
+                path,
+                backup_root,
+                full_objects=False,
+                _staged_document=Path(temporary_name),
+            )
+            try:
+                os.link(temporary_name, path, follow_symlinks=False)
+            except FileExistsError as exc:
+                raise DisasterRecoveryError(
+                    f"refusing to reuse an existing snapshot document: {path}"
+                ) from exc
+            _fsync_directory(path.parent)
+            return verified
+    finally:
+        if temporary_name is not None:
+            Path(temporary_name).unlink(missing_ok=True)
+
+
 @_reuse_snapshot_headers
 def create_snapshot(
     run_root: str | Path,
@@ -3221,13 +3382,25 @@ def create_snapshot(
         family: str | None = None
         for attempt in range(1, _SNAPSHOT_CAPTURE_ATTEMPTS + 1):
             before = _capture_state_fence(root, profile_path)
-            catalog, source, run_id, family = _collect_payloads(
-                root,
-                profile_path,
-                destination,
-                replay_backup_retain=replay_backup_retain,
-                allow_legacy_missing_initialized=allow_legacy_missing_initialized,
-            )
+            try:
+                catalog, source, run_id, family = _collect_payloads(
+                    root,
+                    profile_path,
+                    destination,
+                    replay_backup_retain=replay_backup_retain,
+                    allow_legacy_missing_initialized=allow_legacy_missing_initialized,
+                )
+            except _ReplayCaptureRetired as exc:
+                if attempt == _SNAPSHOT_CAPTURE_ATTEMPTS:
+                    raise DisasterRecoveryError(
+                        "replay shards retired during every snapshot capture attempt"
+                    ) from exc
+                print(
+                    f"snapshot capture {attempt}/{_SNAPSHOT_CAPTURE_ATTEMPTS}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                continue
             after = _capture_state_fence(root, profile_path)
             if before == after:
                 break
@@ -3291,11 +3464,10 @@ def create_snapshot(
         data = _canonical_json(document)
         digest = _sha256_bytes(data)
         snapshot_path = run_directory / f"{created_ns}-{digest}.json"
-        _publish_immutable_bytes(snapshot_path, data)
-        verified = _verify_snapshot_document(
+        verified = _publish_verified_snapshot(
             snapshot_path,
+            data,
             destination,
-            full_objects=False,
         )
         latest = {
             "report": LATEST_REPORT,

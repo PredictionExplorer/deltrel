@@ -331,13 +331,21 @@ def _backup_evidence_locked(destination: Path) -> dict[str, object]:
     }
 
 
-def create_backup_with_evidence(
+@contextmanager
+def captured_backup_with_evidence(
     run_root: Path,
     *,
     retain: int,
     max_total_bytes: int = 20 * 1024 * 1024 * 1024,
     blocking: bool = True,
-) -> tuple[Path, dict[str, object]]:
+) -> Iterator[tuple[Path, dict[str, object]]]:
+    """Keep a captured ledger safe from local backup retention until consumed.
+
+    The replay-backup service flock remains held through the caller's context.
+    All SQLite connections and read transactions close before yielding, so the
+    caller can copy the immutable ledger without blocking training writers.
+    """
+
     if retain <= 0:
         raise ValueError("retain must be positive")
     if max_total_bytes <= 0:
@@ -349,7 +357,23 @@ def create_backup_with_evidence(
             retain=retain,
             max_total_bytes=max_total_bytes,
         )
-        return destination, _backup_evidence_locked(destination)
+        yield destination, _backup_evidence_locked(destination)
+
+
+def create_backup_with_evidence(
+    run_root: Path,
+    *,
+    retain: int,
+    max_total_bytes: int = 20 * 1024 * 1024 * 1024,
+    blocking: bool = True,
+) -> tuple[Path, dict[str, object]]:
+    with captured_backup_with_evidence(
+        run_root,
+        retain=retain,
+        max_total_bytes=max_total_bytes,
+        blocking=blocking,
+    ) as captured:
+        return captured
 
 
 def create_backup(
