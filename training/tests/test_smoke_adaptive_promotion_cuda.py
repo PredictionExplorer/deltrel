@@ -3,6 +3,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+from copy import deepcopy
 
 import pytest
 import torch
@@ -162,6 +163,104 @@ def test_native_config_preserves_production_padding_and_graph_shadow_is_separate
         )
         == 24
     )
+
+
+@pytest.mark.parametrize(
+    ("production_status", "graphs", "shadow_status", "boundary_changed", "expected"),
+    [
+        ("failed", False, "passed", False, "failed"),
+        ("passed", False, "failed", False, "passed"),
+        ("passed", True, "failed", False, "failed"),
+        ("passed", True, "passed", False, "passed"),
+        ("passed", False, "failed", True, "failed"),
+        ("passed", False, "passed", True, "failed"),
+    ],
+)
+def test_required_production_and_optional_shadow_boundaries_are_explicit(
+    monkeypatch, production_status, graphs, shadow_status, boundary_changed, expected
+):
+    production = {
+        "status": production_status,
+        "production_inference": {"configuration": {"cuda_graphs": graphs}},
+    }
+    shadow = {
+        "status": shadow_status,
+        "error": "bitwise mismatch" if shadow_status == "failed" else None,
+    }
+    stages = []
+
+    def run_stage(command, timeout):
+        stages.append(("--shadow-only" in command, timeout))
+        return deepcopy(shadow if "--shadow-only" in command else production)
+
+    checks = []
+
+    def revalidate(*_args):
+        checks.append(True)
+        if boundary_changed:
+            raise RuntimeError("checkpoint changed")
+
+    monkeypatch.setattr(smoke, "run_owned_stage", run_stage)
+    monkeypatch.setattr(smoke, "revalidate_boundary", revalidate)
+    result = smoke.run_stages(
+        SimpleNamespace(profile="profile", checkpoint="checkpoint", output="report")
+    )
+    assert result["status"] == expected
+    if production_status == "failed":
+        assert stages == [(False, 180)]
+        assert result["shadow_graph_check"]["status"] == "not_run"
+        assert checks == []
+    else:
+        assert stages == [(False, 180), (True, 60)]
+        assert checks == [True]
+        assert result["shadow_graph_check"]["status"] == shadow_status
+        assert result["shadow_graph_parity_qualified"] is (shadow_status == "passed")
+        if boundary_changed:
+            assert "checkpoint changed" in result["boundary_revalidation_error"]
+
+
+def test_reused_shadow_failure_stays_failed_after_successful_cold_retry(monkeypatch):
+    from scripts import validate_cuda_graph_runtime as graph_checks
+
+    class Graph:
+        def __init__(self):
+            self._graphs = SimpleNamespace(_entries={})
+            self._graphs.clear = self._graphs._entries.clear
+            self.logical_rows = {18}
+            self.comparisons = 0
+            self.calls = self.captures = 0
+
+        def efficiency_snapshot(self):
+            return {"graph_captures": self.captures, "graph_replays": self.calls}
+
+        def evaluate(self, mode):
+            self.calls += 1
+            if not self._graphs._entries:
+                self.captures += 1
+                self._graphs._entries["shape"] = True
+            if self.calls == 3:
+                assert mode == "double"
+                raise ValueError("policy_logits max_abs=0.125")
+            self.comparisons += 1
+
+    monkeypatch.setattr(smoke, "root_probe", lambda _native, _config, mode: mode)
+    monkeypatch.setattr(
+        graph_checks, "check_health", lambda graph: graph.efficiency_snapshot()
+    )
+    monkeypatch.setattr(graph_checks, "entry_records", lambda graph: [])
+    result = smoke.shadow_checks(None, Graph(), None, None)
+    assert result["status"] == "failed"
+    failed = next(row for row in result["attempts"] if row["status"] == "failed")
+    assert (failed["mode"], failed["phase"], failed["comparison_index"]) == (
+        "double",
+        "reused-entry",
+        2,
+    )
+    retry = result["attempts"][3]
+    assert (
+        retry["mode"] == "double" and retry["phase"] == "cold-retry-after-reuse-failure"
+    )
+    assert retry["status"] == "passed"
 
 
 @pytest.mark.native

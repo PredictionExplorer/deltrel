@@ -199,3 +199,12 @@ Deployment must follow the existing release verification, admission,
 checkpointed stop, migration, and resume process. A changed sampling schedule
 alone is not evidence of better Elo per hour; compare actual decision cost and
 the independent strength ladder after activation.
+
+The stopped-run GPU check qualifies the actual promotion runtime with 18-game
+cohorts, the unchanged 256-simulation budget, and interrupted/resumed native
+search. A separate bounded worker can compare CUDA graphs with ordinary
+inference. That diagnostic is recorded independently when promotion has graphs
+disabled; it does not grant graph-parity qualification or change inference
+settings. Production failures and changed checkpoint/profile boundaries always
+block activation, and a graph-enabled promotion profile also requires the graph
+comparison to pass.

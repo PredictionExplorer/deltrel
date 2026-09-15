@@ -23,6 +23,7 @@ from startrain.inference import GraphInferenceAdapter, InferenceConfig
 
 
 TIMEOUT_SECONDS = 180
+SHADOW_TIMEOUT_SECONDS = 60
 PAIRS_PER_MODE = 9
 
 
@@ -242,6 +243,110 @@ def exercise_prefix_resume(native, adapter, config, label: str) -> dict:
     }
 
 
+def record_input_layouts(adapter) -> dict[str, object]:
+    """Observe already transferred inputs; never materialize a lazy request."""
+    layouts = {}
+    original = adapter._to_device
+
+    def observed(host):
+        encoded = original(host)
+        signature = [
+            {
+                "shape": list(tensor.shape),
+                "stride": list(tensor.stride()),
+                "dtype": str(tensor.dtype),
+            }
+            for tensor in encoded.model_args()
+        ]
+        layouts[json.dumps(signature, sort_keys=True)] = signature
+        return encoded
+
+    adapter._to_device = observed
+    return layouts
+
+
+def current_math_policy() -> dict:
+    import torch
+
+    return {
+        "float32_matmul_precision": torch.get_float32_matmul_precision(),
+        "matmul_allow_tf32": torch.backends.cuda.matmul.allow_tf32,
+        "cudnn_allow_tf32": torch.backends.cudnn.allow_tf32,
+        "allow_bf16_reduced_precision_reduction": torch.backends.cuda.matmul.allow_bf16_reduced_precision_reduction,
+    }
+
+
+def root_probe(native, config, mode):
+    states = native.StateBatch(10, 18, mode=mode, pie=True)
+    states.apply_many(list(range(18)), list(range(18)))
+    search = native.SearchBatch(
+        states,
+        simulations=config.simulations,
+        max_considered=config.max_considered,
+        deterministic_seed=17,
+    )
+    return search.root_requests()
+
+
+def shadow_checks(native, graph, regular, config) -> dict:
+    from scripts.validate_cuda_graph_runtime import check_health, entry_records
+
+    attempts = []
+
+    def attempt(request, mode, phase):
+        before = graph.efficiency_snapshot()
+        record = {
+            "mode": mode,
+            "phase": phase,
+            "comparison_index": len(attempts),
+            "captures_before": before["graph_captures"],
+            "replays_before": before["graph_replays"],
+        }
+        print(
+            json.dumps({"event": "shadow-comparison-start", **record}),
+            file=sys.stderr,
+            flush=True,
+        )
+        try:
+            graph.evaluate(request)
+            record["status"] = "passed"
+        except Exception as error:
+            record.update(status="failed", error=f"{type(error).__name__}: {error}")
+        record["graph_metrics"] = graph.efficiency_snapshot()
+        attempts.append(record)
+        return record
+
+    for mode in ("classic", "double"):
+        request = root_probe(native, config, mode)
+        for _ in range(2):
+            reused = bool(graph._graphs is not None and graph._graphs._entries)
+            result = attempt(request, mode, "reused-entry" if reused else "cold-entry")
+            if result["status"] == "failed" and reused:
+                assert graph._graphs is not None
+                graph._graphs.clear()
+                attempt(request, mode, "cold-retry-after-reuse-failure")
+    health_error = None
+    try:
+        health = check_health(graph)
+        if health.get("graph_replays", 0) <= 0 or 18 not in graph.logical_rows:
+            raise RuntimeError("shadow probe did not replay the 18-row graph geometry")
+    except Exception as error:
+        health_error = f"{type(error).__name__}: {error}"
+    return {
+        "status": "passed"
+        if health_error is None and all(item["status"] == "passed" for item in attempts)
+        else "failed",
+        "attempts": attempts,
+        "health_error": health_error,
+        "metrics": graph.efficiency_snapshot(),
+        "capture_entries": entry_records(graph),
+        "same_shape_prediction_comparisons": graph.comparisons,
+        "comparison_tolerance": "bitwise equality; original mismatches remain failures even if cold retries pass",
+        "initialization_order": "reference-first, matching the prior smoke; graph backend retains its own warmup policy",
+        "ordinary_reference_extra_warmup_calls_per_mode": 0,
+    }
+
+
 def run_smoke(args) -> dict:
     import torch
     from scripts.benchmark_actor_throughput import _gpu_ownership
@@ -271,6 +376,12 @@ def run_smoke(args) -> dict:
         raise RuntimeError("CUDA is required")
     torch.set_num_threads(4)
     torch.set_num_interop_threads(1)
+    if args.shadow_only:
+        # Match the earlier graph diagnostic in this isolated process only.
+        # Actual production arithmetic policy is left untouched.
+        torch.set_float32_matmul_precision("highest")
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = True
     device = torch.device("cuda:0")
     torch.cuda.set_device(device)
     context = torch.empty(1, device=device)
@@ -307,58 +418,69 @@ def run_smoke(args) -> dict:
             "smoke requires production BF16 and the existing 32-entry graph capacity"
         )
     production_config, shadow_config = smoke_inference_configs(config)
-    production = ObservedAdapter(
-        compiled,
-        device=device,
-        config=production_config,
-        homogeneous_relational_bias=runtime.homogeneous_relational_bias,
-        model_version="sha256-" + pinned["checkpoint_sha256"],
-        model_step=metadata["step"],
-    )
-    graph = ComparedGraphAdapter(
-        compiled,
-        device=device,
-        config=shadow_config,
-        homogeneous_relational_bias=runtime.homogeneous_relational_bias,
-        model_version="sha256-" + pinned["checkpoint_sha256"],
-        model_step=metadata["step"],
-    )
-    regular = regular_adapter(graph)
-    graph.install_reference(regular)
+    adapters = []
     native = load_star_native(required=True)
     if native is None:
         raise RuntimeError("native extension unavailable")
     try:
-        variants = []
-        for mode in ("classic", "double"):
-            states = native.StateBatch(10, 18, mode=mode, pie=True)
-            # Unique roots preserve all 18 neural rows with production dedupe.
-            states.apply_many(list(range(18)), list(range(18)))
-            probe = native.SearchBatch(
-                states,
-                simulations=config.arena.simulations,
-                max_considered=config.arena.max_considered,
-                deterministic_seed=17,
+        common = dict(
+            device=device,
+            homogeneous_relational_bias=runtime.homogeneous_relational_bias,
+            model_version="sha256-" + pinned["checkpoint_sha256"],
+            model_step=metadata["step"],
+        )
+        if args.shadow_only:
+            graph = ComparedGraphAdapter(compiled, config=shadow_config, **common)
+            regular = regular_adapter(graph)
+            adapters.extend((regular, graph))
+            graph.install_reference(regular)
+            graph_layouts = record_input_layouts(graph)
+            regular_layouts = record_input_layouts(regular)
+            detail = shadow_checks(native, graph, regular, config.arena)
+            detail.update(
+                configuration=asdict(shadow_config),
+                reference_configuration=asdict(regular.config),
+                logical_row_counts=sorted(graph.logical_rows),
+                physical_row_buckets=sorted(graph.physical_rows),
+                graph_input_layouts=list(graph_layouts.values()),
+                reference_input_layouts=list(regular_layouts.values()),
+                native_search_and_resume=False,
             )
-            production.evaluate(probe.root_requests())
-            graph.evaluate(probe.root_requests())
-            graph.evaluate(probe.root_requests())
-            variants.append(
-                exercise_prefix_resume(native, production, config.arena, f"pie-{mode}")
-            )
+            specific = {"shadow_graph_check": detail}
+            status = detail["status"]
+        else:
+            production = ObservedAdapter(compiled, config=production_config, **common)
+            adapters.append(production)
+            layouts = record_input_layouts(production)
+            variants = []
+            for mode in ("classic", "double"):
+                production.evaluate(root_probe(native, config.arena, mode))
+                variants.append(
+                    exercise_prefix_resume(
+                        native, production, config.arena, f"pie-{mode}"
+                    )
+                )
+            check_health(production)
+            if (
+                18 not in production.logical_rows
+                or production._inference_batch_rows(18) not in production.physical_rows
+            ):
+                raise RuntimeError(
+                    "smoke did not execute the actual production 18-row geometry"
+                )
+            specific = {
+                "variants": variants,
+                "production_inference": {
+                    "configuration": asdict(production_config),
+                    "logical_row_counts": sorted(production.logical_rows),
+                    "physical_row_buckets": sorted(production.physical_rows),
+                    "input_layouts": list(layouts.values()),
+                    "metrics": production.efficiency_snapshot(),
+                    "native_search_and_resume": True,
+                },
+            }
+            status = "passed"
         torch.cuda.synchronize(device)
-        health = check_health(graph)
-        if health.get("graph_replays", 0) <= 0 or 18 not in graph.logical_rows:
-            raise RuntimeError(
-                "smoke did not replay graphs at the requested cohort geometry"
-            )
-        if (
-            18 not in production.logical_rows
-            or production._inference_batch_rows(18) not in production.physical_rows
-        ):
-            raise RuntimeError(
-                "smoke did not execute the actual production 18-row geometry"
-            )
         ownership_after = _gpu_ownership(gpu_uuid)
         if ownership_after.get("verified") is not True:
             raise RuntimeError("GPU became shared during the stopped-run smoke")
@@ -368,27 +490,14 @@ def run_smoke(args) -> dict:
         ):
             raise RuntimeError("stopped-run artifacts changed during the smoke")
         return {
-            "status": "passed",
+            "status": status,
             "format": "startrain.adaptive-promotion-cuda-smoke",
-            "schema_version": 1,
+            "schema_version": 2,
+            "stage": "shadow" if args.shadow_only else "production",
             "profile_sha256": profile_hash,
             **pinned,
-            "variants": variants,
-            "production_inference": {
-                "configuration": asdict(production_config),
-                "logical_row_counts": sorted(production.logical_rows),
-                "physical_row_buckets": sorted(production.physical_rows),
-                "metrics": production.efficiency_snapshot(),
-                "native_search_and_resume": True,
-            },
-            "shadow_graph_check": {
-                "configuration": asdict(shadow_config),
-                "same_shape_prediction_comparisons": graph.comparisons,
-                "logical_row_counts": sorted(graph.logical_rows),
-                "physical_row_buckets": sorted(graph.physical_rows),
-                "metrics": health,
-                "native_search_and_resume": False,
-            },
+            **specific,
+            "math_policy": current_math_policy(),
             "gpu_ownership_before": ownership_before,
             "gpu_ownership_after": ownership_after,
             "peak_cuda_allocated_bytes": torch.cuda.max_memory_allocated(device),
@@ -396,16 +505,14 @@ def run_smoke(args) -> dict:
             "native": native_artifacts(native),
             "smoke_source_sha256": sha256_file(Path(__file__)),
             "model_copies": 1,
-            "comparison_scope": "production execution for native waves; separate same-shape ordinary/graph root comparison; one checkpoint reused for both seats",
             "started_ns": started,
             "completed_ns": time.time_ns(),
             "training_artifacts_written": False,
             "timing_claim": "correctness and memory smoke only; no throughput or Elo claim",
         }
     finally:
-        regular.close()
-        graph.close()
-        production.close()
+        for adapter in adapters:
+            adapter.close()
         del context
 
 
@@ -429,12 +536,107 @@ def publish_report(path: Path, report: dict) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def run_owned_stage(command: list[str], timeout: int) -> dict:
+    from scripts.benchmark_actor_throughput import _run_owned
+
+    try:
+        child = _run_owned(command, env=dict(os.environ), timeout=timeout)
+        if child.returncode:
+            raise RuntimeError(child.stderr[-6000:])
+        report = json.loads(child.stdout.strip().splitlines()[-1])
+        if not isinstance(report, dict) or report.get("status") not in (
+            "passed",
+            "failed",
+        ):
+            raise ValueError("smoke worker returned an invalid report")
+    except (subprocess.TimeoutExpired, RuntimeError, ValueError, IndexError) as error:
+        report = {
+            "status": "failed",
+            "error": str(error),
+            "training_artifacts_written": False,
+        }
+        stderr = getattr(error, "stderr", None)
+        if stderr:
+            report["worker_stderr_tail"] = (
+                stderr.decode(errors="replace")
+                if isinstance(stderr, bytes)
+                else str(stderr)
+            )[-6000:]
+    report["child_timeout_seconds"] = timeout
+    return report
+
+
+def revalidate_boundary(args, production: dict) -> None:
+    from startrain.config import load_config
+    from startrain.checkpoint import sha256_file
+    from scripts.benchmark_actor_throughput import _gpu_ownership
+
+    current = require_stopped_run(load_config(args.profile), args.checkpoint)
+    if any(
+        production.get(key) != value for key, value in current.items()
+    ) or sha256_file(args.profile) != production.get("profile_sha256"):
+        raise RuntimeError(
+            "parent found changed stopped-run/profile/checkpoint evidence"
+        )
+    ownership = _gpu_ownership(production["gpu_ownership_after"]["gpu_uuid"])
+    if ownership.get("owner_pids") != []:
+        raise RuntimeError(
+            "parent could not verify the GPU is idle after smoke workers"
+        )
+
+
+def run_stages(args) -> dict:
+    command = [
+        sys.executable,
+        "-m",
+        "scripts.smoke_adaptive_promotion_cuda",
+        "--profile",
+        str(args.profile),
+        "--checkpoint",
+        str(args.checkpoint),
+        "--output",
+        str(args.output),
+        "--worker",
+    ]
+    production = run_owned_stage(command, TIMEOUT_SECONDS)
+    if production.get("status") != "passed":
+        return {
+            **production,
+            "qualification_scope": "required production check failed",
+            "shadow_graph_check": {"status": "not_run"},
+        }
+    shadow = run_owned_stage([*command, "--shadow-only"], SHADOW_TIMEOUT_SECONDS)
+    required = production["production_inference"]["configuration"]["cuda_graphs"]
+    report = {
+        **production,
+        "status": "passed"
+        if not required or shadow.get("status") == "passed"
+        else "failed",
+        "qualification_scope": "actual production runtime; shadow graph diagnostic is separate",
+        "production_check_status": "passed",
+        "shadow_graph_check": shadow,
+        "shadow_required_for_production": required,
+        "shadow_graph_parity_qualified": shadow.get("status") == "passed",
+    }
+    try:
+        revalidate_boundary(args, production)
+    except Exception as error:
+        report.update(
+            status="failed",
+            boundary_revalidation_error=f"{type(error).__name__}: {error}",
+        )
+    else:
+        report["parent_boundary_revalidated"] = True
+    return report
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--shadow-only", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.output.exists():
         raise ValueError("smoke output must be a new file")
@@ -447,28 +649,10 @@ def main() -> None:
     validate_output(
         args.output, load_config(args.profile), args.profile, args.checkpoint
     )
-    from scripts.benchmark_actor_throughput import _controller_signals, _run_owned
+    from scripts.benchmark_actor_throughput import _controller_signals
 
-    command = [
-        sys.executable,
-        "-m",
-        "scripts.smoke_adaptive_promotion_cuda",
-        *sys.argv[1:],
-        "--worker",
-    ]
-    try:
-        with _controller_signals():
-            child = _run_owned(command, env=dict(os.environ), timeout=TIMEOUT_SECONDS)
-        if child.returncode:
-            raise RuntimeError(child.stderr[-6000:])
-        report = json.loads(child.stdout.strip().splitlines()[-1])
-    except (subprocess.TimeoutExpired, RuntimeError, ValueError, IndexError) as error:
-        report = {
-            "status": "failed",
-            "error": str(error),
-            "training_artifacts_written": False,
-        }
-    report["child_timeout_seconds"] = TIMEOUT_SECONDS
+    with _controller_signals():
+        report = run_stages(args)
     publish_report(args.output, report)
     print(json.dumps(report))
     if report.get("status") != "passed":
