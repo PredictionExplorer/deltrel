@@ -1,0 +1,536 @@
+{
+  "observed_ns": 1789492719713824968,
+  "rollout": "/home/ubuntu/edgeconnect-rollouts/backup-retirement-20260915",
+  "build": {
+    "status": "validated",
+    "release": "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915",
+    "commit": "c796ba9a61e208e2ad2a263b63dc427e856a38e5",
+    "archive_sha256": "d90b7fcab722429374d1bf4358f01ad12eafb1efff07c4e56dcc04256a917b85",
+    "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
+    "source_files": 634,
+    "packages_count": 103,
+    "completed_ns": 1789491103507021781
+  },
+  "tests": [
+    {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "134",
+      "time": "29.338",
+      "timestamp": "2026-09-15T16:51:12.731157+00:00",
+      "hostname": "192-222-52-230"
+    }
+  ],
+  "deployment_controller_sha256": {
+    "deploy_backup.py": "9166e1efe272a78bcfbe9791f4a55635a9ffce2c5a254632bc8ce2e0e29e32b3",
+    "deploy_backup_v2.py": "2d7b967ad83153b2c2689edc3a241b28ab20fa912434dd21e98a54457ba10766"
+  },
+  "before": {
+    "backup": {
+      "ActiveState": "activating",
+      "DropInPaths": "",
+      "ExecMainExitTimestamp": "",
+      "ExecMainStartTimestampMonotonic": "2558246824113",
+      "ExecMainStatus": "0",
+      "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/training_disaster_recovery.py snapshot --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --expected-backup-mount /lambda/nfs/texas-north-fs ; ignore_errors=no ; start_time=[Tue 2026-09-15 16:53:49 UTC] ; stop_time=[n/a] ; pid=3078795 ; code=(null) ; status=0/0 }",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.service",
+      "MainPID": "3078795",
+      "NRestarts": "0",
+      "PythonPath": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training",
+      "Result": "success",
+      "SubState": "start",
+      "UnitFileState": "static",
+      "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training"
+    },
+    "backup_tool_commit": "c796ba9a61e208e2ad2a263b63dc427e856a38e5",
+    "captured_ns": 1789491389957467269,
+    "learner_phase": "update_to_data_wait",
+    "learner_step": 321773,
+    "profile_authority_sha256": "c19d0c4da81790a9db022b8c21c59af0c497e0302e8f26e68078910131d18ab9",
+    "profile_sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
+    "source_commit": "4f6027c50117eee8b66b59dfebbef7257d47fe12",
+    "source_commit_sha256": "ad33aed00fe37ef00965ae11f80cd6459c4f21bf8d0ab44b3eed569a6ab87749",
+    "staged_unit_sha256": "89604a96fc807df06e2369e740edfaa787989a49bf2ebc0263e17a2d50f4f5ed",
+    "strength_epoch_sha256": "6586b9c9ca392d4569d3bc1ef279186f81cc31f67614aa42d842cc642a39ca82",
+    "timer": {
+      "ActiveState": "active",
+      "DropInPaths": "",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.timer",
+      "PythonPath": "",
+      "Result": "success",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "trainer": {
+      "ActiveState": "active",
+      "DropInPaths": "",
+      "ExecMainExitTimestamp": "",
+      "ExecMainStartTimestampMonotonic": "2499293363067",
+      "ExecMainStatus": "0",
+      "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/startrain-orchestrate ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/startrain-orchestrate --config /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:31:16 UTC] ; stop_time=[n/a] ; pid=2918356 ; code=(null) ; status=0/0 }",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network.service",
+      "MainPID": "2918356",
+      "NRestarts": "0",
+      "PythonPath": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training",
+      "Result": "success",
+      "SubState": "running",
+      "UnitFileState": "enabled",
+      "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training"
+    },
+    "unit_sha256": "3d5008299b6215ea28e772846f356e692ef14358263584c2884cebb56fc39bf9",
+    "utd_segment_sha256": "1e6b4dfd1b1f0ed76dd471a200e22567afa5c5838798dd12ac461f24b7def288",
+    "worker_count": 10,
+    "worker_restarts": {
+      "actor-cpu-ring4": 0,
+      "actor-gpu-1": 0,
+      "actor-gpu-2": 0,
+      "actor-gpu-3": 0,
+      "actor-gpu-4": 0,
+      "actor-gpu-5": 0,
+      "actor-gpu-6": 0,
+      "actor-gpu-7": 0,
+      "arena-promotion": 0,
+      "learner": 0
+    }
+  },
+  "quiescent-backup": {
+    "observed_ns": 1789491846502058254,
+    "previous_result": {
+      "ActiveState": "inactive",
+      "DropInPaths": "",
+      "ExecMainExitTimestamp": "Tue 2026-09-15 17:04:06 UTC",
+      "ExecMainStartTimestampMonotonic": "2558246824113",
+      "ExecMainStatus": "0",
+      "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/training_disaster_recovery.py snapshot --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --expected-backup-mount /lambda/nfs/texas-north-fs ; ignore_errors=no ; start_time=[Tue 2026-09-15 16:53:49 UTC] ; stop_time=[Tue 2026-09-15 17:04:06 UTC] ; pid=3078795 ; code=exited ; status=0 }",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.service",
+      "MainPID": "0",
+      "NRestarts": "0",
+      "PythonPath": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training",
+      "Result": "success",
+      "SubState": "dead",
+      "UnitFileState": "static",
+      "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training"
+    }
+  },
+  "activation": {
+    "backup": {
+      "ActiveState": "activating",
+      "DropInPaths": "",
+      "ExecMainExitTimestamp": "",
+      "ExecMainStartTimestampMonotonic": "2558864086092",
+      "ExecMainStatus": "0",
+      "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/scripts/training_disaster_recovery.py snapshot --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --expected-backup-mount /lambda/nfs/texas-north-fs ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.service",
+      "MainPID": "3081437",
+      "NRestarts": "0",
+      "PythonPath": "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training",
+      "Result": "success",
+      "SubState": "start",
+      "UnitFileState": "static",
+      "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training"
+    },
+    "backup_launch_observed_ns": 1789491846502058254,
+    "backup_tool_commit": "c796ba9a61e208e2ad2a263b63dc427e856a38e5",
+    "observed_ns": 1789492122509260263,
+    "previous_backup_result": {
+      "ActiveState": "inactive",
+      "DropInPaths": "",
+      "ExecMainExitTimestamp": "Tue 2026-09-15 17:04:06 UTC",
+      "ExecMainStartTimestampMonotonic": "2558246824113",
+      "ExecMainStatus": "0",
+      "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/training_disaster_recovery.py snapshot --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --expected-backup-mount /lambda/nfs/texas-north-fs ; ignore_errors=no ; start_time=[Tue 2026-09-15 16:53:49 UTC] ; stop_time=[Tue 2026-09-15 17:04:06 UTC] ; pid=3078795 ; code=exited ; status=0 }",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.service",
+      "MainPID": "0",
+      "NRestarts": "0",
+      "PythonPath": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training",
+      "Result": "success",
+      "SubState": "dead",
+      "UnitFileState": "static",
+      "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training"
+    },
+    "running_process": {
+      "boot_id": "7651f2eb-5e3f-427f-9648-9619672d576c",
+      "cmdline": [
+        "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/.venv/bin/python",
+        "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/scripts/training_disaster_recovery.py",
+        "snapshot",
+        "--run-root",
+        "/home/ubuntu/edgeconnect-runs/variant-network",
+        "--profile",
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml",
+        "--backup-root",
+        "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network",
+        "--expected-backup-mount",
+        "/lambda/nfs/texas-north-fs"
+      ],
+      "cwd": "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training",
+      "pythonpath": "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training",
+      "start_ticks": "255886406"
+    },
+    "status": "adopted-running-backup",
+    "timer": {
+      "ActiveState": "active",
+      "DropInPaths": "",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.timer",
+      "PythonPath": "",
+      "Result": "success",
+      "SubState": "waiting",
+      "UnitFileState": "enabled"
+    },
+    "training": {
+      "learner_phase": "update_to_data_wait",
+      "learner_step": 322034,
+      "profile_authority_sha256": "c19d0c4da81790a9db022b8c21c59af0c497e0302e8f26e68078910131d18ab9",
+      "profile_sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
+      "source_commit": "4f6027c50117eee8b66b59dfebbef7257d47fe12",
+      "source_commit_sha256": "ad33aed00fe37ef00965ae11f80cd6459c4f21bf8d0ab44b3eed569a6ab87749",
+      "strength_epoch_sha256": "6586b9c9ca392d4569d3bc1ef279186f81cc31f67614aa42d842cc642a39ca82",
+      "trainer": {
+        "ActiveState": "active",
+        "DropInPaths": "",
+        "ExecMainExitTimestamp": "",
+        "ExecMainStartTimestampMonotonic": "2499293363067",
+        "ExecMainStatus": "0",
+        "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/startrain-orchestrate ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/startrain-orchestrate --config /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }",
+        "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network.service",
+        "MainPID": "2918356",
+        "NRestarts": "0",
+        "PythonPath": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training",
+        "Result": "success",
+        "SubState": "running",
+        "UnitFileState": "enabled",
+        "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training"
+      },
+      "utd_segment_sha256": "1e6b4dfd1b1f0ed76dd471a200e22567afa5c5838798dd12ac461f24b7def288",
+      "worker_count": 10,
+      "worker_restarts": {
+        "actor-cpu-ring4": 0,
+        "actor-gpu-1": 0,
+        "actor-gpu-2": 0,
+        "actor-gpu-3": 0,
+        "actor-gpu-4": 0,
+        "actor-gpu-5": 0,
+        "actor-gpu-6": 0,
+        "actor-gpu-7": 0,
+        "arena-promotion": 0,
+        "learner": 0
+      }
+    },
+    "unit_sha256": "89604a96fc807df06e2369e740edfaa787989a49bf2ebc0263e17a2d50f4f5ed"
+  },
+  "activation-error": {
+    "error": "RuntimeError('trainer changed: ExecStart')",
+    "observed_ns": 1789491846854352208
+  },
+  "adoption-before": {
+    "backup": {
+      "ActiveState": "activating",
+      "DropInPaths": "",
+      "ExecMainExitTimestamp": "",
+      "ExecMainStartTimestampMonotonic": "2558864086092",
+      "ExecMainStatus": "0",
+      "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/training_disaster_recovery.py snapshot --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --expected-backup-mount /lambda/nfs/texas-north-fs ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.service",
+      "MainPID": "3081437",
+      "NRestarts": "0",
+      "PythonPath": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training",
+      "Result": "success",
+      "SubState": "start",
+      "UnitFileState": "static",
+      "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training"
+    },
+    "observed_ns": 1789492122216116821,
+    "process": {
+      "boot_id": "7651f2eb-5e3f-427f-9648-9619672d576c",
+      "cmdline": [
+        "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/.venv/bin/python",
+        "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/scripts/training_disaster_recovery.py",
+        "snapshot",
+        "--run-root",
+        "/home/ubuntu/edgeconnect-runs/variant-network",
+        "--profile",
+        "/home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml",
+        "--backup-root",
+        "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network",
+        "--expected-backup-mount",
+        "/lambda/nfs/texas-north-fs"
+      ],
+      "cwd": "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training",
+      "pythonpath": "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training",
+      "start_ticks": "255886406"
+    },
+    "training": {
+      "learner_phase": "update_to_data_wait",
+      "learner_step": 322034,
+      "profile_authority_sha256": "c19d0c4da81790a9db022b8c21c59af0c497e0302e8f26e68078910131d18ab9",
+      "profile_sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
+      "source_commit": "4f6027c50117eee8b66b59dfebbef7257d47fe12",
+      "source_commit_sha256": "ad33aed00fe37ef00965ae11f80cd6459c4f21bf8d0ab44b3eed569a6ab87749",
+      "strength_epoch_sha256": "6586b9c9ca392d4569d3bc1ef279186f81cc31f67614aa42d842cc642a39ca82",
+      "trainer": {
+        "ActiveState": "active",
+        "DropInPaths": "",
+        "ExecMainExitTimestamp": "",
+        "ExecMainStartTimestampMonotonic": "2499293363067",
+        "ExecMainStatus": "0",
+        "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/startrain-orchestrate ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/startrain-orchestrate --config /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }",
+        "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network.service",
+        "MainPID": "2918356",
+        "NRestarts": "0",
+        "PythonPath": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training",
+        "Result": "success",
+        "SubState": "running",
+        "UnitFileState": "enabled",
+        "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training"
+      },
+      "utd_segment_sha256": "1e6b4dfd1b1f0ed76dd471a200e22567afa5c5838798dd12ac461f24b7def288",
+      "worker_count": 10,
+      "worker_restarts": {
+        "actor-cpu-ring4": 0,
+        "actor-gpu-1": 0,
+        "actor-gpu-2": 0,
+        "actor-gpu-3": 0,
+        "actor-gpu-4": 0,
+        "actor-gpu-5": 0,
+        "actor-gpu-6": 0,
+        "actor-gpu-7": 0,
+        "arena-promotion": 0,
+        "learner": 0
+      }
+    }
+  },
+  "recovery": {
+    "backup": {
+      "ActiveState": "activating",
+      "DropInPaths": "",
+      "ExecMainExitTimestamp": "",
+      "ExecMainStartTimestampMonotonic": "2558864086092",
+      "ExecMainStatus": "0",
+      "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/scripts/training_disaster_recovery.py snapshot --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --expected-backup-mount /lambda/nfs/texas-north-fs ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.service",
+      "MainPID": "3081437",
+      "NRestarts": "0",
+      "PythonPath": "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training",
+      "Result": "success",
+      "SubState": "start",
+      "UnitFileState": "static",
+      "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training"
+    },
+    "observed_ns": 1789492122588039722,
+    "status": "unchanged",
+    "timer": {
+      "ActiveState": "active",
+      "DropInPaths": "",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.timer",
+      "PythonPath": "",
+      "Result": "success",
+      "SubState": "waiting",
+      "UnitFileState": "enabled"
+    },
+    "unit_restored": false
+  },
+  "audit": {
+    "backup": {
+      "ActiveState": "activating",
+      "DropInPaths": "",
+      "ExecMainExitTimestamp": "",
+      "ExecMainStartTimestampMonotonic": "2559728880145",
+      "ExecMainStatus": "0",
+      "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training/scripts/training_disaster_recovery.py snapshot --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --expected-backup-mount /lambda/nfs/texas-north-fs ; ignore_errors=no ; start_time=[Tue 2026-09-15 17:18:31 UTC] ; stop_time=[n/a] ; pid=3084577 ; code=(null) ; status=0/0 }",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.service",
+      "MainPID": "3084577",
+      "NRestarts": "0",
+      "PythonPath": "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training",
+      "Result": "success",
+      "SubState": "start",
+      "UnitFileState": "static",
+      "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/backup-retirement-20260915/training"
+    },
+    "observed_ns": 1789492719656665726,
+    "timer": {
+      "ActiveState": "active",
+      "DropInPaths": "",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.timer",
+      "PythonPath": "",
+      "Result": "success",
+      "SubState": "running",
+      "UnitFileState": "enabled"
+    },
+    "training": {
+      "learner_phase": "update_to_data_wait",
+      "learner_step": 322251,
+      "profile_authority_sha256": "c19d0c4da81790a9db022b8c21c59af0c497e0302e8f26e68078910131d18ab9",
+      "profile_sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
+      "source_commit": "4f6027c50117eee8b66b59dfebbef7257d47fe12",
+      "source_commit_sha256": "ad33aed00fe37ef00965ae11f80cd6459c4f21bf8d0ab44b3eed569a6ab87749",
+      "strength_epoch_sha256": "6586b9c9ca392d4569d3bc1ef279186f81cc31f67614aa42d842cc642a39ca82",
+      "trainer": {
+        "ActiveState": "active",
+        "DropInPaths": "",
+        "ExecMainExitTimestamp": "",
+        "ExecMainStartTimestampMonotonic": "2499293363067",
+        "ExecMainStatus": "0",
+        "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/startrain-orchestrate ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/startrain-orchestrate --config /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }",
+        "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network.service",
+        "MainPID": "2918356",
+        "NRestarts": "0",
+        "PythonPath": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training",
+        "Result": "success",
+        "SubState": "running",
+        "UnitFileState": "enabled",
+        "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training"
+      },
+      "utd_segment_sha256": "1e6b4dfd1b1f0ed76dd471a200e22567afa5c5838798dd12ac461f24b7def288",
+      "worker_count": 10,
+      "worker_restarts": {
+        "actor-cpu-ring4": 0,
+        "actor-gpu-1": 0,
+        "actor-gpu-2": 0,
+        "actor-gpu-3": 0,
+        "actor-gpu-4": 0,
+        "actor-gpu-5": 0,
+        "actor-gpu-6": 0,
+        "actor-gpu-7": 0,
+        "arena-promotion": 0,
+        "learner": 0
+      }
+    }
+  },
+  "existing-backup-verified": {
+    "status": "verified",
+    "started_ns": 1789491251992309681,
+    "completed_ns": 1789491408947267264,
+    "snapshot": {
+      "status": "ok",
+      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789490892820149212-1da0cb7de4580011b5a31dc371ed386fc4116aaf5ad150808983349e345edd3c.json",
+      "snapshot_sha256": "1da0cb7de4580011b5a31dc371ed386fc4116aaf5ad150808983349e345edd3c",
+      "snapshot_bytes": 9353236,
+      "run_id": "variant-network",
+      "generation_family": "variant-network-a",
+      "created_ns": 1789490892820149212,
+      "catalog_files": 48289,
+      "catalog_bytes": 23519417578,
+      "objects": 48287
+    }
+  },
+  "first-new-backup-verified": {
+    "status": "verified",
+    "started_ns": 1789492532664334548,
+    "completed_ns": 1789492637974623064,
+    "commit_marker": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789492359189101136-772e9c9cac335124d66febabb2221a32e592f8ab20385639e5af96b3c14a8787.json.commit",
+    "snapshot": {
+      "status": "ok",
+      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789492359189101136-772e9c9cac335124d66febabb2221a32e592f8ab20385639e5af96b3c14a8787.json",
+      "snapshot_sha256": "772e9c9cac335124d66febabb2221a32e592f8ab20385639e5af96b3c14a8787",
+      "snapshot_bytes": 9295629,
+      "run_id": "variant-network",
+      "generation_family": "variant-network-a",
+      "created_ns": 1789492359189101136,
+      "catalog_files": 47992,
+      "catalog_bytes": 23449434331,
+      "objects": 47990
+    }
+  },
+  "first-activation-attempt/recovery": {
+    "backup": {
+      "ActiveState": "activating",
+      "DropInPaths": "",
+      "ExecMainExitTimestamp": "",
+      "ExecMainStartTimestampMonotonic": "2558864086092",
+      "ExecMainStatus": "0",
+      "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/training_disaster_recovery.py snapshot --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --expected-backup-mount /lambda/nfs/texas-north-fs ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.service",
+      "MainPID": "3081437",
+      "NRestarts": "0",
+      "PythonPath": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training",
+      "Result": "success",
+      "SubState": "start",
+      "UnitFileState": "static",
+      "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training"
+    },
+    "observed_ns": 1789491847518509275,
+    "status": "unchanged",
+    "timer": {
+      "ActiveState": "active",
+      "DropInPaths": "",
+      "FragmentPath": "/etc/systemd/system/edgeconnect-startrain-variant-network-disaster-backup.timer",
+      "PythonPath": "",
+      "Result": "success",
+      "SubState": "waiting",
+      "UnitFileState": "enabled"
+    },
+    "unit_restored": false
+  },
+  "controller_regression": {
+    "scope": "local mocked metadata only; no systemctl or server calls",
+    "controller": "/private/tmp/edgeconnect-backup-retirement-20260915/deploy_backup_v2.py",
+    "controller_sha256": "2d7b967ad83153b2c2689edc3a241b28ab20fa912434dd21e98a54457ba10766",
+    "tests_run": 7,
+    "failures": 0,
+    "errors": 0,
+    "successful": true,
+    "test_output": "test_accept_runtime_annotations_reset_by_daemon_reload (__main__.ExecStartNormalization.test_accept_runtime_annotations_reset_by_daemon_reload) ... ok\ntest_reject_changed_actual_start (__main__.ExecStartNormalization.test_reject_changed_actual_start) ... ok\ntest_reject_changed_configured_arguments (__main__.ExecStartNormalization.test_reject_changed_configured_arguments) ... ok\ntest_reject_changed_configured_executable (__main__.ExecStartNormalization.test_reject_changed_configured_executable) ... ok\ntest_reject_changed_main_pid (__main__.ExecStartNormalization.test_reject_changed_main_pid) ... ok\ntest_reject_changed_restart_count (__main__.ExecStartNormalization.test_reject_changed_restart_count) ... ok\ntest_reject_unrecognized_execstart_serialization (__main__.ExecStartNormalization.test_reject_unrecognized_execstart_serialization) ... ok\n\n----------------------------------------------------------------------\nRan 7 tests in 0.001s\n\nOK\n"
+  },
+  "backup_reports": [
+    {
+      "timestamp_us": "1789491845661614",
+      "pid": "3078795",
+      "message": {
+        "catalog_bytes": 23449910416,
+        "catalog_files": 47806,
+        "created_ns": 1789491732417097862,
+        "generation_family": "variant-network-a",
+        "objects": 47804,
+        "run_id": "variant-network",
+        "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789491732417097862-d6b0d5e850ceb2365b006b606969c0b0fc0d9d5e5418e65e6e44e2b185ed36bb.json",
+        "snapshot_bytes": 9259802,
+        "snapshot_sha256": "d6b0d5e850ceb2365b006b606969c0b0fc0d9d5e5418e65e6e44e2b185ed36bb",
+        "status": "ok"
+      }
+    },
+    {
+      "timestamp_us": "1789492471508887",
+      "pid": "3081437",
+      "message": {
+        "catalog_bytes": 23449434331,
+        "catalog_files": 47992,
+        "created_ns": 1789492359189101136,
+        "generation_family": "variant-network-a",
+        "objects": 47990,
+        "run_id": "variant-network",
+        "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789492359189101136-772e9c9cac335124d66febabb2221a32e592f8ab20385639e5af96b3c14a8787.json",
+        "snapshot_bytes": 9295629,
+        "snapshot_sha256": "772e9c9cac335124d66febabb2221a32e592f8ab20385639e5af96b3c14a8787",
+        "status": "ok"
+      }
+    }
+  ],
+  "local_validation": {
+    "test_suites": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "134",
+        "time": "11.622",
+        "timestamp": "2026-09-15T11:49:53.976469-05:00",
+        "hostname": "Mac.localdomain"
+      }
+    ],
+    "ruff": "passed",
+    "format_check": "passed",
+    "full_project_pyright": {
+      "errors": 0,
+      "warnings": 0
+    },
+    "git_diff_check": "passed"
+  },
+  "temporary_unit_cleanup": {
+    "unit": "edgeconnect-backup-retirement-activate-20260915.service",
+    "cleared_ns": 1789492756708600707,
+    "journal_preserved": "/home/ubuntu/edgeconnect-rollouts/backup-retirement-20260915/first-activation-attempt/journal.log"
+  }
+}
