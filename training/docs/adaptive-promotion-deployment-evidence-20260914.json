@@ -1,0 +1,2574 @@
+{
+  "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+  "attempts": [
+    {
+      "rollout": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914",
+      "plan": {
+        "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+        "evidence_root": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914/cutover",
+        "source_release": "/home/ubuntu/edgeconnect-releases/variant-pie-even-20260913",
+        "target_release": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914",
+        "source_profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+        "source_profile_sha256": "1717a724307c5e90d59631bad51961800646003d76e838b6bef989aba38df277",
+        "candidate_profile": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914/profile-adaptive-candidate.yaml",
+        "candidate_profile_sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
+        "target_profile_name": "profile-adaptive-promotion-20260914.yaml",
+        "source_commit": "c2904f933109909695a8b8da179426a18ccdd252",
+        "target_commit": "8351e39b8195dcd71f15d36e26177dc9de39fd9f",
+        "main_unit": "edgeconnect-startrain-variant-network.service",
+        "expected_workers": [
+          "actor-cpu-ring4",
+          "actor-gpu-1",
+          "actor-gpu-2",
+          "actor-gpu-3",
+          "actor-gpu-4",
+          "actor-gpu-5",
+          "actor-gpu-6",
+          "actor-gpu-7",
+          "arena-promotion",
+          "learner"
+        ],
+        "smoke_script": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914/training/scripts/smoke_adaptive_promotion_cuda.py",
+        "smoke_script_sha256": "9553d272fce2391c70226e8bae4c97b632eebb46336341646840051b4e5aa856",
+        "preserved_snapshot": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914",
+        "unit_source_releases": {
+          "edgeconnect-startrain-variant-network-disaster-backup.service": "/home/ubuntu/edgeconnect-releases/backup-cache-20260914-v2"
+        },
+        "migration_reason": "Adaptive pie-heavy promotion allocation; preserve learner, replay, credit, and strength history"
+      },
+      "build": {
+        "status": "validated",
+        "commit": "8351e39b8195dcd71f15d36e26177dc9de39fd9f",
+        "archive_sha256": "b7fd45f17404c8d695d762fcf48dca5597ab4ada2bf6ef562c3dc05b6f8a7418",
+        "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
+        "packages_count": 103,
+        "completed_ns": 1789428315071814578
+      },
+      "qualification_delta": null,
+      "admission": {
+        "classification": "unchanged-selfplay-execution-promotion-allocation-transition",
+        "source_config_sha256": "93931ec33c73902d3a606bacd44a887e7525ae46e2bad7b6c700016837c9ed85",
+        "target_config_sha256": "3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af",
+        "original_gate": {
+          "path": "status/search-allocation-gates/93931ec33c73902d3a606bacd44a887e7525ae46e2bad7b6c700016837c9ed85.json",
+          "sha256": "78b6508be523b642c50a94f8c4c0896bfd30b94935d46e2d5f2ac848a623b4ed"
+        },
+        "receipt": {
+          "path": "status/search-allocation-gates/3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af.promotion-transition.json",
+          "sha256": "4ca57eea29b26aa5fe5b8a486659c2ef11bcc29242663106838f14bbb69cf8ae"
+        },
+        "gate": {
+          "path": "status/search-allocation-gates/3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af.json",
+          "sha256": "eb263ee0d41d34afbe150ae2943526e09dbfbc84b4061aba9782a27f190ae6b8"
+        },
+        "measurement_scope": "original-frozen-six-variant-workload",
+        "new_objective_performance_qualified": false,
+        "deployment_performed": false
+      },
+      "test_suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "612",
+          "time": "565.917",
+          "timestamp": "2026-09-14T23:15:33.035809+00:00",
+          "hostname": "192-222-52-230"
+        }
+      ],
+      "stopped": {
+        "checkpoint": {
+          "checkpoint": "recovery/sha256-d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc.pt",
+          "checkpoint_bytes": 212718119,
+          "checkpoint_sha256": "d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc",
+          "epoch": 5684,
+          "examples_consumed": 152967168,
+          "format": "startrain.recovery-pointer",
+          "generation_family": "variant-network-a",
+          "run_id": "variant-network",
+          "schema_version": 1,
+          "step": 298764,
+          "updated_ns": 1789428734168003962
+        },
+        "discarded_uncheckpointed_steps": 0,
+        "discarded_uncheckpointed_examples": 0,
+        "observed_ns": 1789429338682294840
+      },
+      "first_stop_request": {
+        "requested_ns": 1789428851991216109
+      },
+      "failure": {
+        "error": "checkpoint examples are ahead of learner",
+        "failed_ns": 1789428850139502974
+      },
+      "gpu_smoke": null,
+      "recovered": {
+        "status": "recovered",
+        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+        "readiness": {
+          "actual_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc.pt",
+          "expected_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc.pt",
+          "observed_ns": 1789429865139228810,
+          "ready": true,
+          "step": 298870
+        },
+        "recovered_ns": 1789429865247409754
+      },
+      "launch": {
+        "checkpoint": {
+          "checkpoint": "recovery/sha256-d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc.pt",
+          "checkpoint_bytes": 212718119,
+          "checkpoint_sha256": "d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc",
+          "epoch": 5684,
+          "examples_consumed": 152967168,
+          "format": "startrain.recovery-pointer",
+          "generation_family": "variant-network-a",
+          "run_id": "variant-network",
+          "schema_version": 1,
+          "step": 298764,
+          "updated_ns": 1789428734168003962
+        },
+        "launched_ns": 1789429357509116707,
+        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml"
+      },
+      "complete": null,
+      "archive": {
+        "checkpoint": {
+          "checkpoint": "recovery/sha256-d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc.pt",
+          "checkpoint_bytes": 212718119,
+          "checkpoint_sha256": "d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc",
+          "epoch": 5684,
+          "examples_consumed": 152967168,
+          "format": "startrain.recovery-pointer",
+          "generation_family": "variant-network-a",
+          "run_id": "variant-network",
+          "schema_version": 1,
+          "step": 298764,
+          "updated_ns": 1789428734168003962
+        },
+        "checkpoint_sha256": "d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc",
+        "checkpoint_step": 298764,
+        "created_ns": 1789429306964192350,
+        "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914",
+        "files": 49288,
+        "format": "startrain.preserved-stopped-run",
+        "inventory_sha256": "76fc4929ad54acd7bc9937b908edcac8799b5dd74523f608d29e27cce188251e",
+        "payload_checksum_verification": "deferred-to-offline-verify",
+        "replay_shards": 48900,
+        "schema_version": 1,
+        "source_run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+        "status": "preserved"
+      },
+      "manual_telemetry_reconciliation": {
+        "proof": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914/cutover/telemetry-reconciliation-proof.json",
+        "sha256": "c3fd22b3753b4c2deaeb5c0572c622b45b5362f2aee1696fa14a77f717e0c610",
+        "before_examples": 152966656,
+        "checkpoint_examples": 152967168,
+        "step": 298764,
+        "checkpoint_sha256": "d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc",
+        "reconciled_ns": 1789429247354879142
+      }
+    },
+    {
+      "rollout": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914-v2",
+      "plan": {
+        "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+        "evidence_root": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914-v2/cutover",
+        "source_release": "/home/ubuntu/edgeconnect-releases/variant-pie-even-20260913",
+        "target_release": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2",
+        "source_profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+        "source_profile_sha256": "1717a724307c5e90d59631bad51961800646003d76e838b6bef989aba38df277",
+        "candidate_profile": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914-v2/profile-adaptive-candidate.yaml",
+        "candidate_profile_sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
+        "target_profile_name": "profile-adaptive-promotion-20260914-v2.yaml",
+        "source_commit": "c2904f933109909695a8b8da179426a18ccdd252",
+        "target_commit": "789598ce9e91b58d795433a8ea176fa54f0d727d",
+        "main_unit": "edgeconnect-startrain-variant-network.service",
+        "expected_workers": [
+          "actor-cpu-ring4",
+          "actor-gpu-1",
+          "actor-gpu-2",
+          "actor-gpu-3",
+          "actor-gpu-4",
+          "actor-gpu-5",
+          "actor-gpu-6",
+          "actor-gpu-7",
+          "arena-promotion",
+          "learner"
+        ],
+        "smoke_script": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py",
+        "smoke_script_sha256": "9553d272fce2391c70226e8bae4c97b632eebb46336341646840051b4e5aa856",
+        "preserved_snapshot": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v2",
+        "unit_source_releases": {
+          "edgeconnect-startrain-variant-network-disaster-backup.service": "/home/ubuntu/edgeconnect-releases/backup-cache-20260914-v2"
+        },
+        "migration_reason": "Adaptive pie-heavy promotion allocation; preserve learner, replay, credit, and strength history"
+      },
+      "build": {
+        "status": "validated",
+        "commit": "789598ce9e91b58d795433a8ea176fa54f0d727d",
+        "archive_sha256": "d3787194a48f981113c7700ee510f04c08eeaf6a3dea82d0b30c0fbbcdefd75c",
+        "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
+        "packages_count": 103,
+        "completed_ns": 1789430497494851588
+      },
+      "qualification_delta": {
+        "core_commit": "8351e39b8195dcd71f15d36e26177dc9de39fd9f",
+        "core_tests_passed": 612,
+        "changed_source_files": [
+          "training/docs/adaptive-pie-promotion.md",
+          "training/scripts/graceful_training_deploy.py",
+          "training/startrain/cli.py",
+          "training/startrain/learner.py",
+          "training/tests/test_learner_final_heartbeat.py",
+          "training/tests/test_stopped_heartbeat_reconciliation.py",
+          "training/tests/test_stopped_heartbeat_reconciliation_faults.py"
+        ]
+      },
+      "admission": {
+        "reused_verified_gate": "/home/ubuntu/edgeconnect-runs/variant-network/status/search-allocation-gates/3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af.json",
+        "sha256": "eb263ee0d41d34afbe150ae2943526e09dbfbc84b4061aba9782a27f190ae6b8",
+        "new_objective_performance_qualified": false
+      },
+      "test_suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "190",
+          "time": "19.807",
+          "timestamp": "2026-09-15T00:01:05.558489+00:00",
+          "hostname": "192-222-52-230"
+        }
+      ],
+      "stopped": {
+        "checkpoint": {
+          "checkpoint": "recovery/sha256-1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0.pt",
+          "checkpoint_bytes": 212718119,
+          "checkpoint_sha256": "1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0",
+          "epoch": 5699,
+          "examples_consumed": 153179648,
+          "format": "startrain.recovery-pointer",
+          "generation_family": "variant-network-a",
+          "run_id": "variant-network",
+          "schema_version": 1,
+          "step": 299179,
+          "updated_ns": 1789430611443775842
+        },
+        "discarded_uncheckpointed_steps": 0,
+        "discarded_uncheckpointed_examples": 0,
+        "observed_ns": 1789430776986884955
+      },
+      "first_stop_request": {
+        "requested_ns": 1789430776776155668
+      },
+      "failure": {
+        "error": "cuda-smoke failed; see its log",
+        "failed_ns": 1789430774949074024
+      },
+      "gpu_smoke": {
+        "child_timeout_seconds": 180,
+        "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py\", line 479, in <module>\n    main()\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py\", line 442, in main\n    print(json.dumps(run_smoke(args)))\n                     ^^^^^^^^^^^^^^^\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py\", line 344, in run_smoke\n    graph.evaluate(probe.root_requests())\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/startrain/inference.py\", line 605, in evaluate\n    response, _ = self._evaluate(requests, include_details=False)\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/startrain/inference.py\", line 1194, in _evaluate\n    return self.evaluate_prepared(\n           ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py\", line 150, in evaluate_prepared\n    compare_predictions(before, after)\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/scripts/validate_cuda_graph_runtime.py\", line 204, in compare_predictions\n    raise ValueError(\nValueError: graph policy_logits differs from same-shape regular inference; max_abs=0.125\n",
+        "status": "failed",
+        "training_artifacts_written": false
+      },
+      "recovered": {
+        "status": "recovered",
+        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+        "readiness": {
+          "actual_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0.pt",
+          "expected_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0.pt",
+          "observed_ns": 1789431313200865299,
+          "ready": true,
+          "step": 299314
+        },
+        "recovered_ns": 1789431313306368741
+      },
+      "launch": {
+        "checkpoint": {
+          "checkpoint": "recovery/sha256-1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0.pt",
+          "checkpoint_bytes": 212718119,
+          "checkpoint_sha256": "1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0",
+          "epoch": 5699,
+          "examples_consumed": 153179648,
+          "format": "startrain.recovery-pointer",
+          "generation_family": "variant-network-a",
+          "run_id": "variant-network",
+          "schema_version": 1,
+          "step": 299179,
+          "updated_ns": 1789430611443775842
+        },
+        "launched_ns": 1789430795961771568,
+        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml"
+      },
+      "complete": null,
+      "archive": {
+        "checkpoint": {
+          "checkpoint": "recovery/sha256-1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0.pt",
+          "checkpoint_bytes": 212718119,
+          "checkpoint_sha256": "1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0",
+          "epoch": 5699,
+          "examples_consumed": 153179648,
+          "format": "startrain.recovery-pointer",
+          "generation_family": "variant-network-a",
+          "run_id": "variant-network",
+          "schema_version": 1,
+          "step": 299179,
+          "updated_ns": 1789430611443775842
+        },
+        "checkpoint_sha256": "1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0",
+        "checkpoint_step": 299179,
+        "created_ns": 1789430723115144430,
+        "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v2",
+        "files": 52856,
+        "format": "startrain.preserved-stopped-run",
+        "inventory_sha256": "8acbd1213287484f5b32d33af0c7260ca9420f949d3f0cb03c099f7743bb102c",
+        "payload_checksum_verification": "deferred-to-offline-verify",
+        "replay_shards": 52467,
+        "schema_version": 1,
+        "source_run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+        "status": "preserved"
+      }
+    },
+    {
+      "rollout": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914-v3",
+      "plan": {
+        "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+        "evidence_root": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914-v3/cutover",
+        "source_release": "/home/ubuntu/edgeconnect-releases/variant-pie-even-20260913",
+        "target_release": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3",
+        "source_profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+        "source_profile_sha256": "1717a724307c5e90d59631bad51961800646003d76e838b6bef989aba38df277",
+        "candidate_profile": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914-v3/profile-adaptive-candidate.yaml",
+        "candidate_profile_sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
+        "target_profile_name": "profile-adaptive-promotion-20260914-v3.yaml",
+        "source_commit": "c2904f933109909695a8b8da179426a18ccdd252",
+        "target_commit": "4f6027c50117eee8b66b59dfebbef7257d47fe12",
+        "main_unit": "edgeconnect-startrain-variant-network.service",
+        "expected_workers": [
+          "actor-cpu-ring4",
+          "actor-gpu-1",
+          "actor-gpu-2",
+          "actor-gpu-3",
+          "actor-gpu-4",
+          "actor-gpu-5",
+          "actor-gpu-6",
+          "actor-gpu-7",
+          "arena-promotion",
+          "learner"
+        ],
+        "smoke_script": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/smoke_adaptive_promotion_cuda.py",
+        "smoke_script_sha256": "f8c470957f5802adf5c1e7f7558645c202429cb490fa4b6a777529c33ef60c4d",
+        "preserved_snapshot": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v3",
+        "unit_source_releases": {
+          "edgeconnect-startrain-variant-network-disaster-backup.service": "/home/ubuntu/edgeconnect-releases/backup-cache-20260914-v2"
+        },
+        "migration_reason": "Adaptive pie-heavy promotion allocation; preserve learner, replay, credit, and strength history"
+      },
+      "build": {
+        "status": "validated",
+        "commit": "4f6027c50117eee8b66b59dfebbef7257d47fe12",
+        "archive_sha256": "dd8473323cc577489ec746e921a699ef295567e962a0cef986b8ea8d82926125",
+        "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
+        "packages_count": 103,
+        "completed_ns": 1789431903533816722
+      },
+      "qualification_delta": {
+        "core_commit": "789598ce9e91b58d795433a8ea176fa54f0d727d",
+        "core_tests_passed": 190,
+        "changed_source_files": [
+          "training/docs/adaptive-pie-promotion.md",
+          "training/scripts/smoke_adaptive_promotion_cuda.py",
+          "training/tests/test_smoke_adaptive_promotion_cuda.py"
+        ]
+      },
+      "admission": {
+        "reused_verified_gate": "/home/ubuntu/edgeconnect-runs/variant-network/status/search-allocation-gates/3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af.json",
+        "sha256": "eb263ee0d41d34afbe150ae2943526e09dbfbc84b4061aba9782a27f190ae6b8",
+        "new_objective_performance_qualified": false
+      },
+      "test_suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "177",
+          "time": "18.564",
+          "timestamp": "2026-09-15T00:24:32.829180+00:00",
+          "hostname": "192-222-52-230"
+        }
+      ],
+      "stopped": {
+        "checkpoint": {
+          "checkpoint": "recovery/sha256-d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15.pt",
+          "checkpoint_bytes": 212718119,
+          "checkpoint_sha256": "d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15",
+          "epoch": 5714,
+          "examples_consumed": 153392640,
+          "format": "startrain.recovery-pointer",
+          "generation_family": "variant-network-a",
+          "run_id": "variant-network",
+          "schema_version": 1,
+          "step": 299595,
+          "updated_ns": 1789432022514368460
+        },
+        "discarded_uncheckpointed_steps": 0,
+        "discarded_uncheckpointed_examples": 0,
+        "observed_ns": 1789432115031008027
+      },
+      "first_stop_request": {
+        "requested_ns": 1789432021078660336
+      },
+      "failure": null,
+      "gpu_smoke": {
+        "checkpoint_bytes": 212718119,
+        "checkpoint_sha256": "d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15",
+        "checkpoint_step": 299595,
+        "child_timeout_seconds": 180,
+        "completed_ns": 1789432171973384180,
+        "coordinator_lock": "absent",
+        "coordinator_status_sha256": "24db2131c7d41abeea5f641507acc3fde35d8284222301a45b12d32650743c6e",
+        "format": "startrain.adaptive-promotion-cuda-smoke",
+        "generation_family": "variant-network-a",
+        "gpu_ownership_after": {
+          "gpu_uuid": "GPU-ae118622-5e0c-da99-3a41-2df94f7d9f60",
+          "observed_ns": 1789432171767621698,
+          "owner_pids": [
+            2916612
+          ],
+          "verified": true
+        },
+        "gpu_ownership_before": {
+          "gpu_uuid": "GPU-ae118622-5e0c-da99-3a41-2df94f7d9f60",
+          "observed_ns": 1789432130174868751,
+          "owner_pids": [
+            2916612
+          ],
+          "verified": true
+        },
+        "math_policy": {
+          "allow_bf16_reduced_precision_reduction": true,
+          "cudnn_allow_tf32": true,
+          "float32_matmul_precision": "highest",
+          "matmul_allow_tf32": false
+        },
+        "model_copies": 1,
+        "native": {
+          "native_path": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+          "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
+          "native_wrapper_path": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/lib/python3.11/site-packages/star_native/__init__.py",
+          "native_wrapper_sha256": "854ee2f2696eb047389cd5576fbb1e113cd9b307ec6eef8c2926cc241af7e0af"
+        },
+        "parent_boundary_revalidated": true,
+        "peak_cuda_allocated_bytes": 321698304,
+        "peak_cuda_reserved_bytes": 423624704,
+        "production_check_status": "passed",
+        "production_inference": {
+          "configuration": {
+            "cache_max_bytes": 0,
+            "cache_max_entries": 0,
+            "compact_inference_gather": false,
+            "cuda_graph_max_bytes": 51539607552,
+            "cuda_graph_max_entries": 32,
+            "cuda_graphs": false,
+            "deduplicate": true,
+            "feature_schema_version": 4,
+            "pinned_buffer_slots": 2,
+            "pinned_transfers": true,
+            "precision": "bf16",
+            "preserve_broadcast_topology": true,
+            "score_utility_weight": 0.05,
+            "small_batch_graph_buckets": true
+          },
+          "input_layouts": [
+            [
+              {
+                "dtype": "torch.float32",
+                "shape": [
+                  32,
+                  275,
+                  19
+                ],
+                "stride": [
+                  5225,
+                  19,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.float32",
+                "shape": [
+                  32,
+                  25
+                ],
+                "stride": [
+                  25,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.int64",
+                "shape": [
+                  32,
+                  275,
+                  7
+                ],
+                "stride": [
+                  1925,
+                  7,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.bool",
+                "shape": [
+                  32,
+                  275,
+                  7
+                ],
+                "stride": [
+                  1925,
+                  7,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.int64",
+                "shape": [
+                  32,
+                  275,
+                  7
+                ],
+                "stride": [
+                  1925,
+                  7,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.bool",
+                "shape": [
+                  32,
+                  275
+                ],
+                "stride": [
+                  275,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.bool",
+                "shape": [
+                  32,
+                  275
+                ],
+                "stride": [
+                  275,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.int64",
+                "shape": [
+                  32
+                ],
+                "stride": [
+                  1
+                ]
+              }
+            ],
+            [
+              {
+                "dtype": "torch.float32",
+                "shape": [
+                  8,
+                  275,
+                  19
+                ],
+                "stride": [
+                  5225,
+                  19,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.float32",
+                "shape": [
+                  8,
+                  25
+                ],
+                "stride": [
+                  25,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.int64",
+                "shape": [
+                  8,
+                  275,
+                  7
+                ],
+                "stride": [
+                  1925,
+                  7,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.bool",
+                "shape": [
+                  8,
+                  275,
+                  7
+                ],
+                "stride": [
+                  1925,
+                  7,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.int64",
+                "shape": [
+                  8,
+                  275,
+                  7
+                ],
+                "stride": [
+                  1925,
+                  7,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.bool",
+                "shape": [
+                  8,
+                  275
+                ],
+                "stride": [
+                  275,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.bool",
+                "shape": [
+                  8,
+                  275
+                ],
+                "stride": [
+                  275,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.int64",
+                "shape": [
+                  8
+                ],
+                "stride": [
+                  1
+                ]
+              }
+            ],
+            [
+              {
+                "dtype": "torch.float32",
+                "shape": [
+                  16,
+                  275,
+                  19
+                ],
+                "stride": [
+                  5225,
+                  19,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.float32",
+                "shape": [
+                  16,
+                  25
+                ],
+                "stride": [
+                  25,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.int64",
+                "shape": [
+                  16,
+                  275,
+                  7
+                ],
+                "stride": [
+                  1925,
+                  7,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.bool",
+                "shape": [
+                  16,
+                  275,
+                  7
+                ],
+                "stride": [
+                  1925,
+                  7,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.int64",
+                "shape": [
+                  16,
+                  275,
+                  7
+                ],
+                "stride": [
+                  1925,
+                  7,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.bool",
+                "shape": [
+                  16,
+                  275
+                ],
+                "stride": [
+                  275,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.bool",
+                "shape": [
+                  16,
+                  275
+                ],
+                "stride": [
+                  275,
+                  1
+                ]
+              },
+              {
+                "dtype": "torch.int64",
+                "shape": [
+                  16
+                ],
+                "stride": [
+                  1
+                ]
+              }
+            ]
+          ],
+          "logical_row_counts": [
+            18
+          ],
+          "metrics": {
+            "cache_bytes": 0,
+            "cache_entries": 0,
+            "cache_evictions": 0,
+            "cache_hits": 0,
+            "cache_misses": 18540,
+            "cache_seconds": 0.015229295007884502,
+            "deduplicated_rows": 991,
+            "evaluator_calls": 2058,
+            "evaluator_rows": 18540,
+            "graph_captures": 0,
+            "graph_evictions": 0,
+            "graph_fallbacks": 0,
+            "graph_replays": 0,
+            "graph_validation_failures": 0,
+            "graph_validation_replays": 0,
+            "graph_warmup_calls": 0,
+            "graph_warmup_rows": 0,
+            "h2d_enqueue_seconds": 0.28582296101376414,
+            "neural_calls": 1030,
+            "neural_padding_rows": 10627,
+            "neural_round_trip_seconds": 28.313366112299263,
+            "neural_rows": 28176,
+            "pinned_allocated_bytes": 1362112,
+            "pinned_allocations": 16,
+            "pinned_reuses": 4104,
+            "pinned_waits": 0,
+            "return_seconds": 0.8273185780271888,
+            "transferred_bytes": 599669808
+          },
+          "native_search_and_resume": true,
+          "physical_row_buckets": [
+            8,
+            16,
+            32
+          ]
+        },
+        "profile_sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
+        "qualification_scope": "actual production runtime; shadow graph diagnostic is separate",
+        "recovery_pointer_sha256": "959abbe652aaeed125141b8facd1cccdf3bc6f298cf4897c7bf6488d096c648f",
+        "run_id": "variant-network",
+        "schema_version": 2,
+        "shadow_graph_check": {
+          "checkpoint_bytes": 212718119,
+          "checkpoint_sha256": "d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15",
+          "checkpoint_step": 299595,
+          "child_timeout_seconds": 60,
+          "completed_ns": 1789432206611380753,
+          "coordinator_lock": "absent",
+          "coordinator_status_sha256": "24db2131c7d41abeea5f641507acc3fde35d8284222301a45b12d32650743c6e",
+          "format": "startrain.adaptive-promotion-cuda-smoke",
+          "generation_family": "variant-network-a",
+          "gpu_ownership_after": {
+            "gpu_uuid": "GPU-ae118622-5e0c-da99-3a41-2df94f7d9f60",
+            "observed_ns": 1789432206418824308,
+            "owner_pids": [
+              2917090
+            ],
+            "verified": true
+          },
+          "gpu_ownership_before": {
+            "gpu_uuid": "GPU-ae118622-5e0c-da99-3a41-2df94f7d9f60",
+            "observed_ns": 1789432175910362249,
+            "owner_pids": [
+              2917090
+            ],
+            "verified": true
+          },
+          "math_policy": {
+            "allow_bf16_reduced_precision_reduction": true,
+            "cudnn_allow_tf32": true,
+            "float32_matmul_precision": "highest",
+            "matmul_allow_tf32": false
+          },
+          "model_copies": 1,
+          "native": {
+            "native_path": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+            "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
+            "native_wrapper_path": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/lib/python3.11/site-packages/star_native/__init__.py",
+            "native_wrapper_sha256": "854ee2f2696eb047389cd5576fbb1e113cd9b307ec6eef8c2926cc241af7e0af"
+          },
+          "peak_cuda_allocated_bytes": 296745472,
+          "peak_cuda_reserved_bytes": 511705088,
+          "profile_sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
+          "recovery_pointer_sha256": "959abbe652aaeed125141b8facd1cccdf3bc6f298cf4897c7bf6488d096c648f",
+          "run_id": "variant-network",
+          "schema_version": 2,
+          "shadow_graph_check": {
+            "attempts": [
+              {
+                "captures_before": 0,
+                "comparison_index": 0,
+                "graph_metrics": {
+                  "cache_bytes": 0,
+                  "cache_entries": 0,
+                  "cache_evictions": 0,
+                  "cache_hits": 0,
+                  "cache_misses": 18,
+                  "cache_seconds": 2.303207293152809e-05,
+                  "deduplicated_rows": 0,
+                  "evaluator_calls": 1,
+                  "evaluator_rows": 18,
+                  "graph_captures": 1,
+                  "graph_entries": 1,
+                  "graph_evictions": 0,
+                  "graph_fallbacks": 0,
+                  "graph_negative_entries": 0,
+                  "graph_replays": 1,
+                  "graph_retained_bytes": 167917056,
+                  "graph_validation_failures": 0,
+                  "graph_validation_replays": 1,
+                  "graph_warmup_calls": 4,
+                  "graph_warmup_rows": 96,
+                  "h2d_enqueue_seconds": 0.0005533378571271896,
+                  "neural_calls": 1,
+                  "neural_padding_rows": 6,
+                  "neural_round_trip_seconds": 4.589077292010188,
+                  "neural_rows": 24,
+                  "pinned_allocated_bytes": 510792,
+                  "pinned_allocations": 4,
+                  "pinned_reuses": 0,
+                  "pinned_waits": 0,
+                  "return_seconds": 0.0006583184003829956,
+                  "transferred_bytes": 510792
+                },
+                "mode": "classic",
+                "phase": "cold-entry",
+                "replays_before": 0,
+                "status": "passed"
+              },
+              {
+                "captures_before": 1,
+                "comparison_index": 1,
+                "graph_metrics": {
+                  "cache_bytes": 0,
+                  "cache_entries": 0,
+                  "cache_evictions": 0,
+                  "cache_hits": 0,
+                  "cache_misses": 36,
+                  "cache_seconds": 3.451714292168617e-05,
+                  "deduplicated_rows": 0,
+                  "evaluator_calls": 2,
+                  "evaluator_rows": 36,
+                  "graph_captures": 1,
+                  "graph_entries": 1,
+                  "graph_evictions": 0,
+                  "graph_fallbacks": 0,
+                  "graph_negative_entries": 0,
+                  "graph_replays": 2,
+                  "graph_retained_bytes": 167917056,
+                  "graph_validation_failures": 0,
+                  "graph_validation_replays": 1,
+                  "graph_warmup_calls": 4,
+                  "graph_warmup_rows": 96,
+                  "h2d_enqueue_seconds": 0.0020446917042136192,
+                  "neural_calls": 2,
+                  "neural_padding_rows": 12,
+                  "neural_round_trip_seconds": 4.596317924093455,
+                  "neural_rows": 48,
+                  "pinned_allocated_bytes": 1021584,
+                  "pinned_allocations": 8,
+                  "pinned_reuses": 0,
+                  "pinned_waits": 0,
+                  "return_seconds": 0.0012017120607197285,
+                  "transferred_bytes": 1021584
+                },
+                "mode": "classic",
+                "phase": "reused-entry",
+                "replays_before": 1,
+                "status": "passed"
+              },
+              {
+                "captures_before": 1,
+                "comparison_index": 2,
+                "graph_metrics": {
+                  "cache_bytes": 0,
+                  "cache_entries": 0,
+                  "cache_evictions": 0,
+                  "cache_hits": 0,
+                  "cache_misses": 54,
+                  "cache_seconds": 4.6990346163511276e-05,
+                  "deduplicated_rows": 0,
+                  "evaluator_calls": 3,
+                  "evaluator_rows": 54,
+                  "graph_captures": 1,
+                  "graph_entries": 1,
+                  "graph_evictions": 0,
+                  "graph_fallbacks": 0,
+                  "graph_negative_entries": 0,
+                  "graph_replays": 3,
+                  "graph_retained_bytes": 167917056,
+                  "graph_validation_failures": 0,
+                  "graph_validation_replays": 1,
+                  "graph_warmup_calls": 4,
+                  "graph_warmup_rows": 96,
+                  "h2d_enqueue_seconds": 0.002312698867172003,
+                  "neural_calls": 3,
+                  "neural_padding_rows": 18,
+                  "neural_round_trip_seconds": 4.602255162317306,
+                  "neural_rows": 72,
+                  "pinned_allocated_bytes": 1021584,
+                  "pinned_allocations": 8,
+                  "pinned_reuses": 4,
+                  "pinned_waits": 0,
+                  "return_seconds": 0.0017419932410120964,
+                  "transferred_bytes": 1532376
+                },
+                "mode": "double",
+                "phase": "reused-entry",
+                "replays_before": 2,
+                "status": "passed"
+              },
+              {
+                "captures_before": 1,
+                "comparison_index": 3,
+                "graph_metrics": {
+                  "cache_bytes": 0,
+                  "cache_entries": 0,
+                  "cache_evictions": 0,
+                  "cache_hits": 0,
+                  "cache_misses": 72,
+                  "cache_seconds": 5.9429556131362915e-05,
+                  "deduplicated_rows": 0,
+                  "evaluator_calls": 4,
+                  "evaluator_rows": 72,
+                  "graph_captures": 1,
+                  "graph_entries": 1,
+                  "graph_evictions": 0,
+                  "graph_fallbacks": 0,
+                  "graph_negative_entries": 0,
+                  "graph_replays": 4,
+                  "graph_retained_bytes": 167917056,
+                  "graph_validation_failures": 0,
+                  "graph_validation_replays": 1,
+                  "graph_warmup_calls": 4,
+                  "graph_warmup_rows": 96,
+                  "h2d_enqueue_seconds": 0.0025873547419905663,
+                  "neural_calls": 4,
+                  "neural_padding_rows": 24,
+                  "neural_round_trip_seconds": 4.608142245095223,
+                  "neural_rows": 96,
+                  "pinned_allocated_bytes": 1021584,
+                  "pinned_allocations": 8,
+                  "pinned_reuses": 8,
+                  "pinned_waits": 0,
+                  "return_seconds": 0.0022533563897013664,
+                  "transferred_bytes": 2043168
+                },
+                "mode": "double",
+                "phase": "reused-entry",
+                "replays_before": 3,
+                "status": "passed"
+              }
+            ],
+            "capture_entries": [
+              {
+                "capture_stream": 94211779459632,
+                "entry_identity": 127815764450640,
+                "original_argument_signatures": [
+                  [
+                    "tensor",
+                    [
+                      24,
+                      275,
+                      19
+                    ],
+                    [
+                      5225,
+                      19,
+                      1
+                    ],
+                    "torch.float32",
+                    "cuda:0"
+                  ],
+                  [
+                    "tensor",
+                    [
+                      24,
+                      25
+                    ],
+                    [
+                      25,
+                      1
+                    ],
+                    "torch.float32",
+                    "cuda:0"
+                  ],
+                  [
+                    "tensor",
+                    [
+                      24,
+                      275,
+                      7
+                    ],
+                    [
+                      1925,
+                      7,
+                      1
+                    ],
+                    "torch.int64",
+                    "cuda:0"
+                  ],
+                  [
+                    "tensor",
+                    [
+                      24,
+                      275,
+                      7
+                    ],
+                    [
+                      1925,
+                      7,
+                      1
+                    ],
+                    "torch.bool",
+                    "cuda:0"
+                  ],
+                  [
+                    "tensor",
+                    [
+                      24,
+                      275,
+                      7
+                    ],
+                    [
+                      1925,
+                      7,
+                      1
+                    ],
+                    "torch.int64",
+                    "cuda:0"
+                  ],
+                  [
+                    "tensor",
+                    [
+                      24,
+                      275
+                    ],
+                    [
+                      275,
+                      1
+                    ],
+                    "torch.bool",
+                    "cuda:0"
+                  ],
+                  [
+                    "tensor",
+                    [
+                      24,
+                      275
+                    ],
+                    [
+                      275,
+                      1
+                    ],
+                    "torch.bool",
+                    "cuda:0"
+                  ],
+                  [
+                    "tensor",
+                    [
+                      24
+                    ],
+                    [
+                      1
+                    ],
+                    "torch.int64",
+                    "cuda:0"
+                  ]
+                ],
+                "original_keyword_signatures": [
+                  [
+                    "homogeneous_ring",
+                    [
+                      "int",
+                      10
+                    ]
+                  ],
+                  [
+                    "inference_relation_bias",
+                    [
+                      "tuple",
+                      [
+                        "tensor",
+                        [
+                          1,
+                          12,
+                          276,
+                          276
+                        ],
+                        [
+                          914112,
+                          76176,
+                          276,
+                          1
+                        ],
+                        "torch.bfloat16",
+                        "cuda:0"
+                      ],
+                      [
+                        "tensor",
+                        [
+                          1,
+                          12,
+                          276,
+                          276
+                        ],
+                        [
+                          914112,
+                          76176,
+                          276,
+                          1
+                        ],
+                        "torch.bfloat16",
+                        "cuda:0"
+                      ],
+                      [
+                        "tensor",
+                        [
+                          1,
+                          12,
+                          276,
+                          276
+                        ],
+                        [
+                          914112,
+                          76176,
+                          276,
+                          1
+                        ],
+                        "torch.bfloat16",
+                        "cuda:0"
+                      ],
+                      [
+                        "tensor",
+                        [
+                          1,
+                          12,
+                          276,
+                          276
+                        ],
+                        [
+                          914112,
+                          76176,
+                          276,
+                          1
+                        ],
+                        "torch.bfloat16",
+                        "cuda:0"
+                      ],
+                      [
+                        "tensor",
+                        [
+                          1,
+                          12,
+                          276,
+                          276
+                        ],
+                        [
+                          914112,
+                          76176,
+                          276,
+                          1
+                        ],
+                        "torch.bfloat16",
+                        "cuda:0"
+                      ],
+                      [
+                        "tensor",
+                        [
+                          1,
+                          12,
+                          276,
+                          276
+                        ],
+                        [
+                          914112,
+                          76176,
+                          276,
+                          1
+                        ],
+                        "torch.bfloat16",
+                        "cuda:0"
+                      ],
+                      [
+                        "tensor",
+                        [
+                          1,
+                          12,
+                          276,
+                          276
+                        ],
+                        [
+                          914112,
+                          76176,
+                          276,
+                          1
+                        ],
+                        "torch.bfloat16",
+                        "cuda:0"
+                      ],
+                      [
+                        "tensor",
+                        [
+                          1,
+                          12,
+                          276,
+                          276
+                        ],
+                        [
+                          914112,
+                          76176,
+                          276,
+                          1
+                        ],
+                        "torch.bfloat16",
+                        "cuda:0"
+                      ]
+                    ]
+                  ]
+                ],
+                "physical_rows": 24,
+                "retained_bytes": 167917056
+              }
+            ],
+            "comparison_tolerance": "bitwise equality; original mismatches remain failures even if cold retries pass",
+            "configuration": {
+              "cache_max_bytes": 0,
+              "cache_max_entries": 0,
+              "compact_inference_gather": false,
+              "cuda_graph_max_bytes": 51539607552,
+              "cuda_graph_max_entries": 32,
+              "cuda_graphs": true,
+              "deduplicate": true,
+              "feature_schema_version": 4,
+              "pinned_buffer_slots": 2,
+              "pinned_transfers": true,
+              "precision": "bf16",
+              "preserve_broadcast_topology": true,
+              "score_utility_weight": 0.05,
+              "small_batch_graph_buckets": true
+            },
+            "graph_input_layouts": [
+              [
+                {
+                  "dtype": "torch.float32",
+                  "shape": [
+                    24,
+                    275,
+                    19
+                  ],
+                  "stride": [
+                    5225,
+                    19,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.float32",
+                  "shape": [
+                    24,
+                    25
+                  ],
+                  "stride": [
+                    25,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.int64",
+                  "shape": [
+                    24,
+                    275,
+                    7
+                  ],
+                  "stride": [
+                    1925,
+                    7,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.bool",
+                  "shape": [
+                    24,
+                    275,
+                    7
+                  ],
+                  "stride": [
+                    1925,
+                    7,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.int64",
+                  "shape": [
+                    24,
+                    275,
+                    7
+                  ],
+                  "stride": [
+                    1925,
+                    7,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.bool",
+                  "shape": [
+                    24,
+                    275
+                  ],
+                  "stride": [
+                    275,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.bool",
+                  "shape": [
+                    24,
+                    275
+                  ],
+                  "stride": [
+                    275,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.int64",
+                  "shape": [
+                    24
+                  ],
+                  "stride": [
+                    1
+                  ]
+                }
+              ]
+            ],
+            "health_error": null,
+            "initialization_order": "reference-first, matching the prior smoke; graph backend retains its own warmup policy",
+            "logical_row_counts": [
+              18
+            ],
+            "metrics": {
+              "cache_bytes": 0,
+              "cache_entries": 0,
+              "cache_evictions": 0,
+              "cache_hits": 0,
+              "cache_misses": 72,
+              "cache_seconds": 5.9429556131362915e-05,
+              "deduplicated_rows": 0,
+              "evaluator_calls": 4,
+              "evaluator_rows": 72,
+              "graph_captures": 1,
+              "graph_entries": 1,
+              "graph_evictions": 0,
+              "graph_fallbacks": 0,
+              "graph_negative_entries": 0,
+              "graph_replays": 4,
+              "graph_retained_bytes": 167917056,
+              "graph_validation_failures": 0,
+              "graph_validation_replays": 1,
+              "graph_warmup_calls": 4,
+              "graph_warmup_rows": 96,
+              "h2d_enqueue_seconds": 0.0025873547419905663,
+              "neural_calls": 4,
+              "neural_padding_rows": 24,
+              "neural_round_trip_seconds": 4.608142245095223,
+              "neural_rows": 96,
+              "pinned_allocated_bytes": 1021584,
+              "pinned_allocations": 8,
+              "pinned_reuses": 8,
+              "pinned_waits": 0,
+              "return_seconds": 0.0022533563897013664,
+              "transferred_bytes": 2043168
+            },
+            "native_search_and_resume": false,
+            "ordinary_reference_extra_warmup_calls_per_mode": 0,
+            "physical_row_buckets": [
+              24
+            ],
+            "reference_configuration": {
+              "cache_max_bytes": 0,
+              "cache_max_entries": 0,
+              "compact_inference_gather": false,
+              "cuda_graph_max_bytes": 51539607552,
+              "cuda_graph_max_entries": 32,
+              "cuda_graphs": true,
+              "deduplicate": true,
+              "feature_schema_version": 4,
+              "pinned_buffer_slots": 2,
+              "pinned_transfers": true,
+              "precision": "bf16",
+              "preserve_broadcast_topology": true,
+              "score_utility_weight": 0.05,
+              "small_batch_graph_buckets": true
+            },
+            "reference_input_layouts": [
+              [
+                {
+                  "dtype": "torch.float32",
+                  "shape": [
+                    24,
+                    275,
+                    19
+                  ],
+                  "stride": [
+                    5225,
+                    19,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.float32",
+                  "shape": [
+                    24,
+                    25
+                  ],
+                  "stride": [
+                    25,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.int64",
+                  "shape": [
+                    24,
+                    275,
+                    7
+                  ],
+                  "stride": [
+                    1925,
+                    7,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.bool",
+                  "shape": [
+                    24,
+                    275,
+                    7
+                  ],
+                  "stride": [
+                    1925,
+                    7,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.int64",
+                  "shape": [
+                    24,
+                    275,
+                    7
+                  ],
+                  "stride": [
+                    1925,
+                    7,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.bool",
+                  "shape": [
+                    24,
+                    275
+                  ],
+                  "stride": [
+                    275,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.bool",
+                  "shape": [
+                    24,
+                    275
+                  ],
+                  "stride": [
+                    275,
+                    1
+                  ]
+                },
+                {
+                  "dtype": "torch.int64",
+                  "shape": [
+                    24
+                  ],
+                  "stride": [
+                    1
+                  ]
+                }
+              ]
+            ],
+            "same_shape_prediction_comparisons": 4,
+            "status": "passed"
+          },
+          "smoke_source_sha256": "f8c470957f5802adf5c1e7f7558645c202429cb490fa4b6a777529c33ef60c4d",
+          "stage": "shadow",
+          "started_ns": 1789432174986715457,
+          "status": "passed",
+          "stopped_worker_pids": {
+            "actor-cpu-ring4": 2911559,
+            "actor-gpu-1": 2911552,
+            "actor-gpu-2": 2911553,
+            "actor-gpu-3": 2911554,
+            "actor-gpu-4": 2911555,
+            "actor-gpu-5": 2911556,
+            "actor-gpu-6": 2911557,
+            "actor-gpu-7": 2911558,
+            "arena-promotion": 2911560,
+            "learner": 2911551
+          },
+          "timing_claim": "correctness and memory smoke only; no throughput or Elo claim",
+          "training_artifacts_written": false
+        },
+        "shadow_graph_parity_qualified": true,
+        "shadow_required_for_production": false,
+        "smoke_source_sha256": "f8c470957f5802adf5c1e7f7558645c202429cb490fa4b6a777529c33ef60c4d",
+        "stage": "production",
+        "started_ns": 1789432129231475987,
+        "status": "passed",
+        "stopped_worker_pids": {
+          "actor-cpu-ring4": 2911559,
+          "actor-gpu-1": 2911552,
+          "actor-gpu-2": 2911553,
+          "actor-gpu-3": 2911554,
+          "actor-gpu-4": 2911555,
+          "actor-gpu-5": 2911556,
+          "actor-gpu-6": 2911557,
+          "actor-gpu-7": 2911558,
+          "arena-promotion": 2911560,
+          "learner": 2911551
+        },
+        "timing_claim": "correctness and memory smoke only; no throughput or Elo claim",
+        "training_artifacts_written": false,
+        "variants": [
+          {
+            "pairs": 9,
+            "resumed_histories_verified": true,
+            "simulations_per_root": 256,
+            "variant": "pie-classic",
+            "waves": [
+              {
+                "game_slots": 18,
+                "searched_moves": 18,
+                "shared_inference": {
+                  "active_requests": 0,
+                  "batched_requests": 514,
+                  "cancelled_requests": 0,
+                  "completed_requests": 514,
+                  "failed_requests": 0,
+                  "graph_residency": [],
+                  "neural_batches": 257,
+                  "pending_requests": 0,
+                  "physical_inference": {
+                    "cache_evictions": 0,
+                    "cache_hits": 0,
+                    "cache_misses": 4626,
+                    "cache_seconds": 0.003991602919995785,
+                    "deduplicated_rows": 379,
+                    "graph_captures": 0,
+                    "graph_entries": 0,
+                    "graph_evictions": 0,
+                    "graph_fallbacks": 0,
+                    "graph_negative_entries": 0,
+                    "graph_replays": 0,
+                    "graph_retained_bytes": 0,
+                    "graph_validation_failures": 0,
+                    "graph_validation_replays": 0,
+                    "graph_warmup_calls": 0,
+                    "graph_warmup_rows": 0,
+                    "h2d_enqueue_seconds": 0.07198075391352177,
+                    "key_seconds": 0.04197474243119359,
+                    "neural_calls": 257,
+                    "neural_padding_rows": 2209,
+                    "neural_round_trip_seconds": 2.0488049434497952,
+                    "neural_rows": 6456,
+                    "prepare_seconds": 0.35323128290474415,
+                    "return_seconds": 0.21550463186576962,
+                    "total_neural_calls": 257,
+                    "total_neural_rows": 6456
+                  },
+                  "queue_wait_seconds": 1.007498526480049,
+                  "requested_rows": 4626,
+                  "submitted_requests": 514,
+                  "worker_failures": 0,
+                  "worker_seconds": 2.7327941809780896
+                }
+              },
+              {
+                "game_slots": 18,
+                "searched_moves": 36,
+                "shared_inference": {
+                  "active_requests": 0,
+                  "batched_requests": 514,
+                  "cancelled_requests": 0,
+                  "completed_requests": 514,
+                  "failed_requests": 0,
+                  "graph_residency": [],
+                  "neural_batches": 257,
+                  "pending_requests": 0,
+                  "physical_inference": {
+                    "cache_evictions": 0,
+                    "cache_hits": 0,
+                    "cache_misses": 4626,
+                    "cache_seconds": 0.003866801969707012,
+                    "deduplicated_rows": 270,
+                    "graph_captures": 0,
+                    "graph_entries": 0,
+                    "graph_evictions": 0,
+                    "graph_fallbacks": 0,
+                    "graph_negative_entries": 0,
+                    "graph_replays": 0,
+                    "graph_retained_bytes": 0,
+                    "graph_validation_failures": 0,
+                    "graph_validation_replays": 0,
+                    "graph_warmup_calls": 0,
+                    "graph_warmup_rows": 0,
+                    "h2d_enqueue_seconds": 0.06835907464846969,
+                    "key_seconds": 0.04483039164915681,
+                    "neural_calls": 257,
+                    "neural_padding_rows": 2396,
+                    "neural_round_trip_seconds": 1.8968499656766653,
+                    "neural_rows": 6752,
+                    "prepare_seconds": 0.3597705257125199,
+                    "return_seconds": 0.21167437033727765,
+                    "total_neural_calls": 257,
+                    "total_neural_rows": 6752
+                  },
+                  "queue_wait_seconds": 1.0065335063263774,
+                  "requested_rows": 4626,
+                  "submitted_requests": 514,
+                  "worker_failures": 0,
+                  "worker_seconds": 2.580943669192493
+                }
+              }
+            ]
+          },
+          {
+            "pairs": 9,
+            "resumed_histories_verified": true,
+            "simulations_per_root": 256,
+            "variant": "pie-double",
+            "waves": [
+              {
+                "game_slots": 18,
+                "searched_moves": 18,
+                "shared_inference": {
+                  "active_requests": 0,
+                  "batched_requests": 514,
+                  "cancelled_requests": 0,
+                  "completed_requests": 514,
+                  "failed_requests": 0,
+                  "graph_residency": [],
+                  "neural_batches": 257,
+                  "pending_requests": 0,
+                  "physical_inference": {
+                    "cache_evictions": 0,
+                    "cache_hits": 0,
+                    "cache_misses": 4626,
+                    "cache_seconds": 0.0036088614724576473,
+                    "deduplicated_rows": 300,
+                    "graph_captures": 0,
+                    "graph_entries": 0,
+                    "graph_evictions": 0,
+                    "graph_fallbacks": 0,
+                    "graph_negative_entries": 0,
+                    "graph_replays": 0,
+                    "graph_retained_bytes": 0,
+                    "graph_validation_failures": 0,
+                    "graph_validation_replays": 0,
+                    "graph_warmup_calls": 0,
+                    "graph_warmup_rows": 0,
+                    "h2d_enqueue_seconds": 0.06771971611306071,
+                    "key_seconds": 0.035536933690309525,
+                    "neural_calls": 257,
+                    "neural_padding_rows": 2370,
+                    "neural_round_trip_seconds": 1.8970033582299948,
+                    "neural_rows": 6696,
+                    "prepare_seconds": 0.3394307619892061,
+                    "return_seconds": 0.18764355732128024,
+                    "total_neural_calls": 257,
+                    "total_neural_rows": 6696
+                  },
+                  "queue_wait_seconds": 1.0194788295775652,
+                  "requested_rows": 4626,
+                  "submitted_requests": 514,
+                  "worker_failures": 0,
+                  "worker_seconds": 2.551840992178768
+                }
+              },
+              {
+                "game_slots": 18,
+                "searched_moves": 36,
+                "shared_inference": {
+                  "active_requests": 0,
+                  "batched_requests": 514,
+                  "cancelled_requests": 0,
+                  "completed_requests": 514,
+                  "failed_requests": 0,
+                  "graph_residency": [],
+                  "neural_batches": 257,
+                  "pending_requests": 0,
+                  "physical_inference": {
+                    "cache_evictions": 0,
+                    "cache_hits": 0,
+                    "cache_misses": 4626,
+                    "cache_seconds": 0.0037099584005773067,
+                    "deduplicated_rows": 42,
+                    "graph_captures": 0,
+                    "graph_entries": 0,
+                    "graph_evictions": 0,
+                    "graph_fallbacks": 0,
+                    "graph_negative_entries": 0,
+                    "graph_replays": 0,
+                    "graph_retained_bytes": 0,
+                    "graph_validation_failures": 0,
+                    "graph_validation_replays": 0,
+                    "graph_warmup_calls": 0,
+                    "graph_warmup_rows": 0,
+                    "h2d_enqueue_seconds": 0.06841866346076131,
+                    "key_seconds": 0.03976110368967056,
+                    "neural_calls": 257,
+                    "neural_padding_rows": 3624,
+                    "neural_round_trip_seconds": 1.9564215522259474,
+                    "neural_rows": 8208,
+                    "prepare_seconds": 0.3558766762726009,
+                    "return_seconds": 0.2108282996341586,
+                    "total_neural_calls": 257,
+                    "total_neural_rows": 8208
+                  },
+                  "queue_wait_seconds": 0.9997230982407928,
+                  "requested_rows": 4626,
+                  "submitted_requests": 514,
+                  "worker_failures": 0,
+                  "worker_seconds": 2.6891864757053554
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "recovered": null,
+      "launch": {
+        "checkpoint": {
+          "checkpoint": "recovery/sha256-d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15.pt",
+          "checkpoint_bytes": 212718119,
+          "checkpoint_sha256": "d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15",
+          "epoch": 5714,
+          "examples_consumed": 153392640,
+          "format": "startrain.recovery-pointer",
+          "generation_family": "variant-network-a",
+          "run_id": "variant-network",
+          "schema_version": 1,
+          "step": 299595,
+          "updated_ns": 1789432022514368460
+        },
+        "launched_ns": 1789432231658743629,
+        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml"
+      },
+      "complete": {
+        "completed_ns": 1789433009770062304,
+        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml",
+        "readiness": {
+          "actual_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15.pt",
+          "expected_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15.pt",
+          "observed_ns": 1789433009664113794,
+          "ready": true,
+          "step": 299869
+        },
+        "source_commit": "4f6027c50117eee8b66b59dfebbef7257d47fe12",
+        "status": "complete"
+      },
+      "archive": {
+        "checkpoint": {
+          "checkpoint": "recovery/sha256-d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15.pt",
+          "checkpoint_bytes": 212718119,
+          "checkpoint_sha256": "d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15",
+          "epoch": 5714,
+          "examples_consumed": 153392640,
+          "format": "startrain.recovery-pointer",
+          "generation_family": "variant-network-a",
+          "run_id": "variant-network",
+          "schema_version": 1,
+          "step": 299595,
+          "updated_ns": 1789432022514368460
+        },
+        "checkpoint_sha256": "d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15",
+        "checkpoint_step": 299595,
+        "created_ns": 1789432126203420941,
+        "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v3",
+        "files": 52270,
+        "format": "startrain.preserved-stopped-run",
+        "inventory_sha256": "e7e947c327b709db5d8f7a6b17a7a020c2bbed6b9847c70d20c8e75cf814f274",
+        "payload_checksum_verification": "deferred-to-offline-verify",
+        "replay_shards": 51880,
+        "schema_version": 1,
+        "source_run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+        "status": "preserved"
+      }
+    }
+  ],
+  "post_deployment_audit": {
+    "status": "passed",
+    "observed_ns": 1789433692697436406,
+    "source_commit": "4f6027c50117eee8b66b59dfebbef7257d47fe12",
+    "profile": [
+      "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
+      "/home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml"
+    ],
+    "learner_step": 300174,
+    "examples_consumed": 153689088,
+    "stopped_step": 299595,
+    "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15.pt",
+    "workers": {
+      "actor-cpu-ring4": {
+        "failure_class": null,
+        "failure_exit_code": null,
+        "failure_reason": null,
+        "gpu_ids": [],
+        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-cpu-ring4.heartbeat.json",
+        "heartbeat_grace_until_ns": null,
+        "last_exit_code": null,
+        "last_progress": 54,
+        "pid": 2918434,
+        "restart_count": 0,
+        "role": "actor",
+        "state": "running"
+      },
+      "actor-gpu-1": {
+        "failure_class": null,
+        "failure_exit_code": null,
+        "failure_reason": null,
+        "gpu_ids": [
+          1
+        ],
+        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-1.heartbeat.json",
+        "heartbeat_grace_until_ns": null,
+        "last_exit_code": null,
+        "last_progress": 128,
+        "pid": 2918427,
+        "restart_count": 0,
+        "role": "actor",
+        "state": "running"
+      },
+      "actor-gpu-2": {
+        "failure_class": null,
+        "failure_exit_code": null,
+        "failure_reason": null,
+        "gpu_ids": [
+          2
+        ],
+        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-2.heartbeat.json",
+        "heartbeat_grace_until_ns": null,
+        "last_exit_code": null,
+        "last_progress": 32,
+        "pid": 2918428,
+        "restart_count": 0,
+        "role": "actor",
+        "state": "running"
+      },
+      "actor-gpu-3": {
+        "failure_class": null,
+        "failure_exit_code": null,
+        "failure_reason": null,
+        "gpu_ids": [
+          3
+        ],
+        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-3.heartbeat.json",
+        "heartbeat_grace_until_ns": null,
+        "last_exit_code": null,
+        "last_progress": 29,
+        "pid": 2918429,
+        "restart_count": 0,
+        "role": "actor",
+        "state": "running"
+      },
+      "actor-gpu-4": {
+        "failure_class": null,
+        "failure_exit_code": null,
+        "failure_reason": null,
+        "gpu_ids": [
+          4
+        ],
+        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-4.heartbeat.json",
+        "heartbeat_grace_until_ns": null,
+        "last_exit_code": null,
+        "last_progress": 88,
+        "pid": 2918430,
+        "restart_count": 0,
+        "role": "actor",
+        "state": "running"
+      },
+      "actor-gpu-5": {
+        "failure_class": null,
+        "failure_exit_code": null,
+        "failure_reason": null,
+        "gpu_ids": [
+          5
+        ],
+        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-5.heartbeat.json",
+        "heartbeat_grace_until_ns": null,
+        "last_exit_code": null,
+        "last_progress": 58,
+        "pid": 2918431,
+        "restart_count": 0,
+        "role": "actor",
+        "state": "running"
+      },
+      "actor-gpu-6": {
+        "failure_class": null,
+        "failure_exit_code": null,
+        "failure_reason": null,
+        "gpu_ids": [
+          6
+        ],
+        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-6.heartbeat.json",
+        "heartbeat_grace_until_ns": null,
+        "last_exit_code": null,
+        "last_progress": 33,
+        "pid": 2918432,
+        "restart_count": 0,
+        "role": "actor",
+        "state": "running"
+      },
+      "actor-gpu-7": {
+        "failure_class": null,
+        "failure_exit_code": null,
+        "failure_reason": null,
+        "gpu_ids": [
+          7
+        ],
+        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-7.heartbeat.json",
+        "heartbeat_grace_until_ns": null,
+        "last_exit_code": null,
+        "last_progress": 23,
+        "pid": 2918433,
+        "restart_count": 0,
+        "role": "actor",
+        "state": "running"
+      },
+      "arena-promotion": {
+        "failure_class": null,
+        "failure_exit_code": null,
+        "failure_reason": null,
+        "gpu_ids": [
+          7
+        ],
+        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/arena-promotion.heartbeat.json",
+        "heartbeat_grace_until_ns": null,
+        "last_exit_code": null,
+        "last_progress": 117,
+        "pid": 2918435,
+        "restart_count": 0,
+        "role": "arena",
+        "state": "running"
+      },
+      "learner": {
+        "failure_class": null,
+        "failure_exit_code": null,
+        "failure_reason": null,
+        "gpu_ids": [
+          0
+        ],
+        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/learner.heartbeat.json",
+        "heartbeat_grace_until_ns": null,
+        "last_exit_code": null,
+        "last_progress": 1194,
+        "pid": 2918426,
+        "restart_count": 0,
+        "role": "learner",
+        "state": "running"
+      }
+    },
+    "metadata_preserved": {
+      "learner/utd-segment.json": "1e6b4dfd1b1f0ed76dd471a200e22567afa5c5838798dd12ac461f24b7def288",
+      "strength-epoch.json": "6586b9c9ca392d4569d3bc1ef279186f81cc31f67614aa42d842cc642a39ca82"
+    },
+    "evaluation_contract": {
+      "schema_version": 3,
+      "objective": "adaptive-allocation-stratified-paired-hoeffding-v3",
+      "rules_schema": "edgeconnect.star.rules.v3",
+      "rules_hash": "fnv1a64:a5d932b0ef8354e8",
+      "search_algorithm": "gumbel-completed-q-v2-finite-noise-selected-keep",
+      "cells": [
+        "r10/classic-pie",
+        "r10/double-pie",
+        "r10/classic-handicap",
+        "r10/double-handicap"
+      ],
+      "handicap_severity_cycle": [
+        2,
+        4,
+        6,
+        9
+      ],
+      "handicap_pda": [
+        1,
+        1,
+        2,
+        2,
+        2,
+        3,
+        3,
+        3
+      ],
+      "simulations": 256,
+      "max_considered": 64,
+      "c_visit": 50.0,
+      "c_scale": 1.0,
+      "unforced_opening_fraction": 0.2,
+      "swap_dead_zone": 0.02,
+      "seed_schedule": "sha256-balanced-cell-pair-opening-v1-root-seat-move-v2",
+      "native_root_seed": "explicit-seed-statehash-fixed-tree-index-zero",
+      "handicap_schedule": "absolute-pair-index-mod-severity-cycle-v1",
+      "observation_unit": "completed-precommitted-allocation-of-role-reversed-pairs",
+      "statistical_test": "adaptive-allocation-composite-null-hoeffding-mixture-v3",
+      "hoeffding_lambdas": [
+        0.0625,
+        0.125,
+        0.25,
+        0.5,
+        1.0,
+        2.0,
+        4.0,
+        8.0
+      ],
+      "pair_independence": "independent seed streams across pairs; arbitrary dependence within each seat reversal",
+      "variant_policy": "pie_even",
+      "cell_weights": {
+        "r10/classic-pie": 0.45,
+        "r10/double-pie": 0.45,
+        "r10/classic-handicap": 0.05,
+        "r10/double-handicap": 0.05
+      },
+      "evaluation_allocation": "initial-coverage-then-predictable-adaptive-cell-targets",
+      "allocation_policy": "adaptive_pie",
+      "allocation": {
+        "schema_version": 1,
+        "policy": "initial-coverage-then-pie-heavy-cost-aware-v1",
+        "initial_pairs_per_cell": 4,
+        "continuation_pairs_per_pie_cell": 9,
+        "continuation_pairs_per_handicap_cell": 1,
+        "maximum_total_pairs": 160,
+        "maximum_extra_handicap_pairs": 80,
+        "maximum_extra_cycles_per_allocation": 1,
+        "handicap_cost_proxy": "two-seats-times-simulations-times-mean-(1+2^pda)/2",
+        "uncertainty_priority": "decision-relevant-weighted-width-reduction-per-cost",
+        "suspected_regression": "point-below-floor-and-interval-straddles-floor",
+        "promotion_review": "finish-reserved-suspected-regression-cycles-within-extra-cap",
+        "review_phase_persistence": "continue-suspected-checks-after-global-evidence-dips-until-resolved-or-bounded",
+        "global_decision_boundary": "all-pairs-in-committed-allocation-complete",
+        "tail_allocation": "largest-remainder-9-9-1-1-stable-cell-order"
+      },
+      "global_null_bound": "weighted-stratum-fractional-knapsack-v1",
+      "pair_coefficients": {
+        "pie": 1.0,
+        "handicap_initial": 0.1111111111111111,
+        "handicap_after_initial": 1.0,
+        "initial_pairs_per_cell": 4
+      },
+      "cell_diagnostic_tail_error_allocation": "configured-tail-error-times-cell-weight",
+      "partial_severity_bound": "qLmu-plus-min-r-Lmu-v1",
+      "statistical_parameters": {
+        "alpha": 0.05,
+        "beta": 0.05,
+        "confidence": 0.95,
+        "null_elo": 0.0,
+        "alternative_elo": 35.0,
+        "cell_regression_floor_elo": -100.0
+      },
+      "identity": "sha256-400dc692f581a442f033b24d3edf709be6aec3e57941db30c854f77a84fcd820"
+    },
+    "units": {
+      "edgeconnect-startrain-variant-network.service": "Result=success\nExecStart={ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/startrain-orchestrate ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/startrain-orchestrate --config /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:31:16 UTC] ; stop_time=[n/a] ; pid=2918356 ; code=(null) ; status=0/0 }\nEnvironment=PYTHONUNBUFFERED=1 TORCHINDUCTOR_COMPILE_THREADS=2 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training TORCH_NCCL_ASYNC_ERROR_HANDLING=1 PATH=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nWorkingDirectory=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=active\n",
+      "edgeconnect-startrain-variant-network-monitor.service": "Result=success\nExecStart={ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python -u /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/monitor_run.py --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --unit edgeconnect-startrain-variant-network.service --disaster-backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --interval 5 --format jsonl --telemetry-output /home/ubuntu/edgeconnect-runs/variant-network/status/monitor-5s.jsonl --telemetry-max-bytes 52428800 --telemetry-retain-files 7 ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:43:29 UTC] ; stop_time=[n/a] ; pid=2920770 ; code=(null) ; status=0/0 }\nEnvironment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training:/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts\nWorkingDirectory=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=active\n",
+      "edgeconnect-startrain-variant-network-report.service": "Result=success\nExecStart={ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/strength_efficiency_report.py --run-root /home/ubuntu/edgeconnect-runs/variant-network --provisioned-gpus 8 --output /home/ubuntu/edgeconnect-runs/variant-network/strength-efficiency.json --quiet ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:43:29 UTC] ; stop_time=[Tue 2026-09-15 00:43:57 UTC] ; pid=2920771 ; code=exited ; status=0 }\nEnvironment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nWorkingDirectory=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=inactive\n",
+      "edgeconnect-startrain-variant-network-backup.service": "Result=success\nExecStart={ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/replay_manifest_backup.py backup --run-root /home/ubuntu/edgeconnect-runs/variant-network --retain 3 ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nEnvironment=PYTHONDONTWRITEBYTECODE=1\nWorkingDirectory=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=inactive\n",
+      "edgeconnect-startrain-variant-network-disaster-backup.service": "Result=success\nExecStart={ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/training_disaster_recovery.py snapshot --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --expected-backup-mount /lambda/nfs/texas-north-fs ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:43:29 UTC] ; stop_time=[Tue 2026-09-15 00:52:49 UTC] ; pid=2920772 ; code=exited ; status=0 }\nEnvironment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nWorkingDirectory=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=inactive\n"
+    },
+    "champion": {
+      "format": "startrain.model-pointer",
+      "generation_family": "variant-network-a",
+      "manifest": "manifests/manifest-4e4de1abf995fd98679c83b0561894fae614d40d307f790735c417888c578b55.json",
+      "manifest_bytes": 701,
+      "manifest_sha256": "4e4de1abf995fd98679c83b0561894fae614d40d307f790735c417888c578b55",
+      "model_identity": "sha256-30aa86efbb093e41e9db0b0a9b93fb586d26e257a598946409527e1f343d7628",
+      "model_step": 229501,
+      "promotion_result": "../arena/balanced-0b813f9da32a1be5-sha256-30aa86efbb093e41e9db0b0a9b93fb586d26e257a598946409527e1f343d7628-vs-sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a.json",
+      "role": "champion",
+      "run_id": "variant-network",
+      "schema_version": 2,
+      "updated_ns": 1789292753083549112
+    },
+    "candidate": {
+      "format": "startrain.model-pointer",
+      "generation_family": "variant-network-a",
+      "manifest": "manifests/manifest-bb06a6c9fcb52ad353b6f29af9857bb41ef75083f3d42ab53954db5c3b8eb6de.json",
+      "manifest_bytes": 701,
+      "manifest_sha256": "bb06a6c9fcb52ad353b6f29af9857bb41ef75083f3d42ab53954db5c3b8eb6de",
+      "model_identity": "sha256-1f4daf2dd394b4d1ac8937bd5e84391f25b6eaf294df7a3f8917f1a77bfb74cd",
+      "model_step": 288097,
+      "role": "candidate",
+      "run_id": "variant-network",
+      "schema_version": 2,
+      "updated_ns": 1789399637531937324
+    },
+    "promotion_status": {
+      "candidate_identity": "sha256-1f4daf2dd394b4d1ac8937bd5e84391f25b6eaf294df7a3f8917f1a77bfb74cd",
+      "candidate_step": 288097,
+      "champion_identity": "sha256-30aa86efbb093e41e9db0b0a9b93fb586d26e257a598946409527e1f343d7628",
+      "champion_step": 229501,
+      "conclusive": false,
+      "consecutive_conclusive_rejections": 0,
+      "consecutive_terminal_rejections": 0,
+      "cutover_created_ns": null,
+      "decision": "continue",
+      "evaluation_contract_identity": "sha256-400dc692f581a442f033b24d3edf709be6aec3e57941db30c854f77a84fcd820",
+      "schema_version": 1,
+      "terminal": false,
+      "updated_ns": 1789433195432266277
+    },
+    "active_arena_heartbeat": {
+      "acknowledgement": "released",
+      "active_games": 2,
+      "candidate_step": 288097,
+      "champion_step": 229501,
+      "decision": "continue",
+      "gpu_id": 7,
+      "heartbeat_ns": 1789433691144465873,
+      "lease_token": "8110da8cb8814bb1888919054d516cd4",
+      "model_identity": "sha256-1f4daf2dd394b4d1ac8937bd5e84391f25b6eaf294df7a3f8917f1a77bfb74cd",
+      "pairs": 0,
+      "phase": "waiting_for_gpu_pause",
+      "pid": 2918435,
+      "progress": 117,
+      "progress_ns": 1789433496549411946,
+      "remaining_seconds": 9.915713847,
+      "ring": 10,
+      "schema_version": 1,
+      "superseded_by_step": 288097,
+      "variant": "handicap-4-double",
+      "wave": 16,
+      "worker": "arena-promotion"
+    },
+    "last_decision_contract_matches_active": true,
+    "active_allocation_files": [
+      "/home/ubuntu/edgeconnect-runs/variant-network/arena/balanced-400dc692f581a442-sha256-1f4daf2dd394b4d1ac8937bd5e84391f25b6eaf294df7a3f8917f1a77bfb74cd-vs-sha256-30aa86efbb093e41e9db0b0a9b93fb586d26e257a598946409527e1f343d7628.allocation.json"
+    ]
+  },
+  "preserved_metadata_before": {
+    "learner/utd-segment.json": "1e6b4dfd1b1f0ed76dd471a200e22567afa5c5838798dd12ac461f24b7def288",
+    "strength-epoch.json": "6586b9c9ca392d4569d3bc1ef279186f81cc31f67614aa42d842cc642a39ca82"
+  },
+  "preserved_metadata_after": {
+    "learner/utd-segment.json": "1e6b4dfd1b1f0ed76dd471a200e22567afa5c5838798dd12ac461f24b7def288",
+    "strength-epoch.json": "6586b9c9ca392d4569d3bc1ef279186f81cc31f67614aa42d842cc642a39ca82"
+  },
+  "archive_verification_units": {
+    "edgeconnect-adaptive-archive-verify-20260914.service": "Result=success\nExecMainExitTimestamp=\nActiveState=inactive\n",
+    "edgeconnect-adaptive-archive-verify-20260914-v2.service": "Result=success\nExecMainExitTimestamp=\nActiveState=inactive\n",
+    "edgeconnect-adaptive-archive-verify-20260914-v3.service": "Result=success\nExecMainExitTimestamp=\nActiveState=inactive\n"
+  },
+  "archive_verification_results": {
+    "edgeconnect-adaptive-archive-verify-20260914.service": {
+      "checkpoint_sha256": "d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc",
+      "checkpoint_step": 298764,
+      "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914",
+      "files": 49288,
+      "replay_shards": 48900,
+      "status": "verified"
+    },
+    "edgeconnect-adaptive-archive-verify-20260914-v2.service": {
+      "checkpoint_sha256": "1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0",
+      "checkpoint_step": 299179,
+      "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v2",
+      "files": 52856,
+      "replay_shards": 52467,
+      "status": "verified"
+    },
+    "edgeconnect-adaptive-archive-verify-20260914-v3.service": {
+      "checkpoint_sha256": "d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15",
+      "checkpoint_step": 299595,
+      "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v3",
+      "files": 52270,
+      "replay_shards": 51880,
+      "status": "verified"
+    }
+  },
+  "preservation_union": {
+    "snapshots": [
+      {
+        "path": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914",
+        "checkpoint_step": 298764,
+        "shards": 48900,
+        "ready_samples_at_snapshot": 4066132
+      },
+      {
+        "path": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v2",
+        "checkpoint_step": 299179,
+        "shards": 52467,
+        "ready_samples_at_snapshot": 4127475
+      },
+      {
+        "path": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v3",
+        "checkpoint_step": 299595,
+        "shards": 51880,
+        "ready_samples_at_snapshot": 4098815
+      }
+    ],
+    "unique_immutable_replay_files_retained": 60356,
+    "logical_positions_not_summed_across_revisions": true
+  },
+  "first_new_backup": {
+    "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789433465241036061-67dafbecc9811896fc9046f030a988513bd3ba1567087598f841f4ffa4a0e3da.json",
+    "pointer": {
+      "bytes": 9613328,
+      "created_ns": 1789433465241036061,
+      "generation_family": "variant-network-a",
+      "path": "1789433465241036061-67dafbecc9811896fc9046f030a988513bd3ba1567087598f841f4ffa4a0e3da.json",
+      "report": "startrain-disaster-recovery-latest",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "sha256": "67dafbecc9811896fc9046f030a988513bd3ba1567087598f841f4ffa4a0e3da"
+    },
+    "commit_marker": {
+      "bytes": 9613328,
+      "created_ns": 1789433465241036061,
+      "generation_family": "variant-network-a",
+      "path": "1789433465241036061-67dafbecc9811896fc9046f030a988513bd3ba1567087598f841f4ffa4a0e3da.json",
+      "report": "startrain-disaster-recovery-snapshot-commit",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "sha256": "67dafbecc9811896fc9046f030a988513bd3ba1567087598f841f4ffa4a0e3da"
+    },
+    "catalog_files": 49649,
+    "profile": {
+      "bytes": 13012,
+      "kind": "profile",
+      "sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a"
+    },
+    "admission_entries": {
+      "status/search-allocation-gates/3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af.json": {
+        "bytes": 3900,
+        "kind": "status-json",
+        "sha256": "eb263ee0d41d34afbe150ae2943526e09dbfbc84b4061aba9782a27f190ae6b8"
+      },
+      "status/search-allocation-gates/3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af.promotion-transition.json": {
+        "bytes": 879,
+        "kind": "status-json",
+        "sha256": "4ca57eea29b26aa5fe5b8a486659c2ef11bcc29242663106838f14bbb69cf8ae"
+      },
+      "status/search-allocation-gates/93931ec33c73902d3a606bacd44a887e7525ae46e2bad7b6c700016837c9ed85.json": {
+        "bytes": 3638,
+        "kind": "status-json",
+        "sha256": "78b6508be523b642c50a94f8c4c0896bfd30b94935d46e2d5f2ac848a623b4ed"
+      }
+    },
+    "source": {
+      "legacy_initialized_missing": false,
+      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml",
+      "profile_logical_path": "profile-adaptive-promotion-20260914-v3.yaml",
+      "replay_backup": {
+        "bytes": 706580480,
+        "created_ns": 1789433043388367452,
+        "cutoff_started_ns": 1789433014730044331,
+        "sha256": "579df2f8691525787745abd885e5110d5784cdd1279ba2eed27cc2939e4112c7"
+      },
+      "run_root": "/home/ubuntu/edgeconnect-runs/variant-network"
+    }
+  },
+  "final_health": {
+    "observed_ns": 1789433692254216750,
+    "nonfinite_loss_count": 0,
+    "nonfinite_gradient_count": 0,
+    "metric_step": 300170,
+    "monitor_warnings": [
+      {
+        "code": "balanced_strength_unmeasured",
+        "message": "balanced champion strength awaits complete connected 4-cell measurement evidence",
+        "severity": "WARN"
+      }
+    ],
+    "hardware_health": {
+      "driver_version": "580.105.08",
+      "expected_indices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "gpus": [
+        {
+          "aggregate_dram_uncorrectable": 0,
+          "aggregate_sram_uncorrectable_parity": 0,
+          "aggregate_sram_uncorrectable_secded": 0,
+          "channel_repair_pending": false,
+          "ecc_mode": "Enabled",
+          "healthy": true,
+          "index": 0,
+          "mig_mode": "Disabled",
+          "pci_bus_id": "00000000:61:00.0",
+          "product_name": "NVIDIA H100 80GB HBM3",
+          "reasons": [],
+          "recovery_action": "None",
+          "remapped_rows_failure": false,
+          "remapped_rows_pending": false,
+          "serial": "1654425037468",
+          "sram_threshold_exceeded": false,
+          "tpc_repair_pending": false,
+          "uuid": "GPU-ae118622-5e0c-da99-3a41-2df94f7d9f60",
+          "volatile_dram_uncorrectable": 0,
+          "volatile_sram_uncorrectable_parity": 0,
+          "volatile_sram_uncorrectable_secded": 0
+        },
+        {
+          "aggregate_dram_uncorrectable": 0,
+          "aggregate_sram_uncorrectable_parity": 0,
+          "aggregate_sram_uncorrectable_secded": 0,
+          "channel_repair_pending": false,
+          "ecc_mode": "Enabled",
+          "healthy": true,
+          "index": 1,
+          "mig_mode": "Disabled",
+          "pci_bus_id": "00000000:62:00.0",
+          "product_name": "NVIDIA H100 80GB HBM3",
+          "reasons": [],
+          "recovery_action": "None",
+          "remapped_rows_failure": false,
+          "remapped_rows_pending": false,
+          "serial": "1652923000790",
+          "sram_threshold_exceeded": false,
+          "tpc_repair_pending": false,
+          "uuid": "GPU-4d262f8e-2ce1-e4b1-f3ee-a4ac824157cc",
+          "volatile_dram_uncorrectable": 0,
+          "volatile_sram_uncorrectable_parity": 0,
+          "volatile_sram_uncorrectable_secded": 0
+        },
+        {
+          "aggregate_dram_uncorrectable": 0,
+          "aggregate_sram_uncorrectable_parity": 0,
+          "aggregate_sram_uncorrectable_secded": 0,
+          "channel_repair_pending": false,
+          "ecc_mode": "Enabled",
+          "healthy": true,
+          "index": 2,
+          "mig_mode": "Disabled",
+          "pci_bus_id": "00000000:63:00.0",
+          "product_name": "NVIDIA H100 80GB HBM3",
+          "reasons": [],
+          "recovery_action": "None",
+          "remapped_rows_failure": false,
+          "remapped_rows_pending": false,
+          "serial": "1650124048976",
+          "sram_threshold_exceeded": false,
+          "tpc_repair_pending": false,
+          "uuid": "GPU-e5d70da7-4a4c-3ded-96ff-294eacf622e6",
+          "volatile_dram_uncorrectable": 0,
+          "volatile_sram_uncorrectable_parity": 0,
+          "volatile_sram_uncorrectable_secded": 0
+        },
+        {
+          "aggregate_dram_uncorrectable": 0,
+          "aggregate_sram_uncorrectable_parity": 0,
+          "aggregate_sram_uncorrectable_secded": 0,
+          "channel_repair_pending": false,
+          "ecc_mode": "Enabled",
+          "healthy": true,
+          "index": 3,
+          "mig_mode": "Disabled",
+          "pci_bus_id": "00000000:64:00.0",
+          "product_name": "NVIDIA H100 80GB HBM3",
+          "reasons": [],
+          "recovery_action": "None",
+          "remapped_rows_failure": false,
+          "remapped_rows_pending": false,
+          "serial": "1654425038023",
+          "sram_threshold_exceeded": false,
+          "tpc_repair_pending": false,
+          "uuid": "GPU-03fb6c9b-53b2-1da4-acb2-b51886ca3171",
+          "volatile_dram_uncorrectable": 0,
+          "volatile_sram_uncorrectable_parity": 0,
+          "volatile_sram_uncorrectable_secded": 0
+        },
+        {
+          "aggregate_dram_uncorrectable": 0,
+          "aggregate_sram_uncorrectable_parity": 0,
+          "aggregate_sram_uncorrectable_secded": 0,
+          "channel_repair_pending": false,
+          "ecc_mode": "Enabled",
+          "healthy": true,
+          "index": 4,
+          "mig_mode": "Disabled",
+          "pci_bus_id": "00000000:6A:00.0",
+          "product_name": "NVIDIA H100 80GB HBM3",
+          "reasons": [],
+          "recovery_action": "None",
+          "remapped_rows_failure": false,
+          "remapped_rows_pending": false,
+          "serial": "1654425038365",
+          "sram_threshold_exceeded": false,
+          "tpc_repair_pending": false,
+          "uuid": "GPU-01d38dcd-fc0a-d392-4dce-d3522e7bfec4",
+          "volatile_dram_uncorrectable": 0,
+          "volatile_sram_uncorrectable_parity": 0,
+          "volatile_sram_uncorrectable_secded": 0
+        },
+        {
+          "aggregate_dram_uncorrectable": 0,
+          "aggregate_sram_uncorrectable_parity": 0,
+          "aggregate_sram_uncorrectable_secded": 0,
+          "channel_repair_pending": false,
+          "ecc_mode": "Enabled",
+          "healthy": true,
+          "index": 5,
+          "mig_mode": "Disabled",
+          "pci_bus_id": "00000000:6B:00.0",
+          "product_name": "NVIDIA H100 80GB HBM3",
+          "reasons": [],
+          "recovery_action": "None",
+          "remapped_rows_failure": false,
+          "remapped_rows_pending": false,
+          "serial": "1650124032498",
+          "sram_threshold_exceeded": false,
+          "tpc_repair_pending": false,
+          "uuid": "GPU-aa8e710c-5311-154f-7e89-c486e20e9da3",
+          "volatile_dram_uncorrectable": 0,
+          "volatile_sram_uncorrectable_parity": 0,
+          "volatile_sram_uncorrectable_secded": 0
+        },
+        {
+          "aggregate_dram_uncorrectable": 0,
+          "aggregate_sram_uncorrectable_parity": 0,
+          "aggregate_sram_uncorrectable_secded": 0,
+          "channel_repair_pending": false,
+          "ecc_mode": "Enabled",
+          "healthy": true,
+          "index": 6,
+          "mig_mode": "Disabled",
+          "pci_bus_id": "00000000:6C:00.0",
+          "product_name": "NVIDIA H100 80GB HBM3",
+          "reasons": [],
+          "recovery_action": "None",
+          "remapped_rows_failure": false,
+          "remapped_rows_pending": false,
+          "serial": "1655223007517",
+          "sram_threshold_exceeded": false,
+          "tpc_repair_pending": false,
+          "uuid": "GPU-12411ac7-8e50-85af-1deb-e31312529805",
+          "volatile_dram_uncorrectable": 0,
+          "volatile_sram_uncorrectable_parity": 0,
+          "volatile_sram_uncorrectable_secded": 0
+        },
+        {
+          "aggregate_dram_uncorrectable": 0,
+          "aggregate_sram_uncorrectable_parity": 0,
+          "aggregate_sram_uncorrectable_secded": 0,
+          "channel_repair_pending": false,
+          "ecc_mode": "Enabled",
+          "healthy": true,
+          "index": 7,
+          "mig_mode": "Disabled",
+          "pci_bus_id": "00000000:6D:00.0",
+          "product_name": "NVIDIA H100 80GB HBM3",
+          "reasons": [],
+          "recovery_action": "None",
+          "remapped_rows_failure": false,
+          "remapped_rows_pending": false,
+          "serial": "1650124047776",
+          "sram_threshold_exceeded": false,
+          "tpc_repair_pending": false,
+          "uuid": "GPU-cc18bbde-7a14-b861-4030-7ea13c8e837d",
+          "volatile_dram_uncorrectable": 0,
+          "volatile_sram_uncorrectable_parity": 0,
+          "volatile_sram_uncorrectable_secded": 0
+        }
+      ],
+      "healthy": true,
+      "missing_indices": [],
+      "observed_ns": 1789433662842109341,
+      "probe_status": "available",
+      "safety_status": "safe",
+      "schema_version": 1,
+      "unexpected_indices": []
+    },
+    "first_backup_service": "Result=success\nExecMainStartTimestamp=Tue 2026-09-15 00:43:29 UTC\nExecMainExitTimestamp=Tue 2026-09-15 00:52:49 UTC\nActiveState=inactive\n"
+  }
+}
