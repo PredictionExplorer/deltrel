@@ -114,6 +114,15 @@ and optimizer state, update-to-data credit, and the existing strength epoch.
 Historical 1024-simulation crossplay keeps its original equal allocation and
 contract, including in monitoring and strength reports.
 
+Shutdown publishes the learner step and consumed-example counter together.
+For older releases that leave a stale sample counter after an update-to-data
+wait, deployment can reconcile stopped telemetry only when the verified
+checkpoint, the last wait, the same replay window's completed batches, and the
+checkpoint publication prove the exact difference. Raw records and a bounded
+metric tail are preserved before the status field is corrected. Checkpoint,
+replay, training credit, and original heartbeat timestamps remain unchanged;
+an unexplained mismatch still stops deployment.
+
 ## Verification
 
 Deterministic controller fixtures exercise the real statistical test and the

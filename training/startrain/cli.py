@@ -236,6 +236,7 @@ def train_main(argv: list[str] | None = None) -> None:
     if heartbeat is not None:
         heartbeat.start()
         heartbeat.update(phase="initializing", rank=rank, world_size=world_size)
+    learner: LearnerLoop | None = None
     try:
         with ReplayStore(arguments.replay_store) as store:
             learner = LearnerLoop.from_experiment(
@@ -368,6 +369,7 @@ def train_main(argv: list[str] | None = None) -> None:
                 heartbeat.update(
                     phase="training",
                     step=learner.step,
+                    examples_consumed=learner.examples_consumed,
                     resumed_from=resumed_from,
                 )
             final_step = learner.run(
@@ -379,6 +381,13 @@ def train_main(argv: list[str] | None = None) -> None:
             print(json.dumps({"step": final_step}, sort_keys=True))
     finally:
         if heartbeat is not None:
+            if learner is not None:
+                # Progress fields are merged, so final counters must come from
+                # the learner rather than an earlier UTD-wait notification.
+                heartbeat.update(
+                    step=learner.step,
+                    examples_consumed=learner.examples_consumed,
+                )
             heartbeat.close(final_phase="stopped" if stop.is_set() else "completed")
         if world_size > 1 and torch.distributed.is_initialized():
             torch.distributed.destroy_process_group()

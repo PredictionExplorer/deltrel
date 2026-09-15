@@ -13,6 +13,7 @@ import argparse
 from collections.abc import Mapping
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -20,7 +21,7 @@ import shutil
 import signal
 import subprocess
 import time
-from typing import Any
+from typing import Any, cast
 
 from startrain.runtime import atomic_json
 from scripts.migrate_continuous_profile import (
@@ -55,6 +56,543 @@ def active_authority(root: Path) -> tuple[Path, str]:
     path = Path(filename)
     require(digest(path) == checksum, "active profile checksum mismatch")
     return path, (root / "source-commit.txt").read_text().strip()
+
+
+def _reconciliation_json(contents: bytes) -> dict[str, Any]:
+    def unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result = {}
+        for key, value in pairs:
+            require(key not in result, "reconciliation JSON contains duplicate keys")
+            result[key] = value
+        return result
+
+    def invalid_constant(_value: str) -> None:
+        raise RuntimeError("reconciliation JSON contains nonfinite values")
+
+    def finite_float(value: str) -> float:
+        number = float(value)
+        require(math.isfinite(number), "reconciliation JSON contains nonfinite values")
+        return number
+
+    payload = json.loads(
+        contents,
+        object_pairs_hook=unique,
+        parse_constant=invalid_constant,
+        parse_float=finite_float,
+    )
+    require(isinstance(payload, dict), "reconciliation JSON must be an object")
+    return payload
+
+
+def reconcile_stopped_heartbeat(
+    root: Path, evidence_root: Path, *, expected_workers: list[str]
+) -> dict[str, Any] | None:
+    """Reconcile a proven stopped same-window spin, never checkpoint or credit.
+
+    The checkpoint and ordered wait/consumption/publication metrics prove every
+    missing example. Preserve the raw files and bounded metric tail before
+    correcting only examples_consumed and adding provenance to stopped telemetry.
+    """
+    paths = {
+        "heartbeat": root / "status/learner.heartbeat.json",
+        "coordinator": root / "status/coordinator.json",
+        "recovery": root / "learner/recovery.json",
+        "identity": root / "run.json",
+    }
+    raw = {name: path.read_bytes() for name, path in paths.items() if path.is_file()}
+    learner = _reconciliation_json(raw["heartbeat"])
+    checkpoint = _reconciliation_json(raw["recovery"])
+    old_examples, new_examples = (
+        learner.get("examples_consumed"),
+        checkpoint.get("examples_consumed"),
+    )
+    marker = learner.get("telemetry_reconciliation")
+    if old_examples == new_examples and marker is not None:
+        require(
+            isinstance(marker, dict) and isinstance(marker.get("proof"), str),
+            "existing telemetry reconciliation proof is invalid",
+        )
+        proof_path = Path(marker["proof"])
+        require(
+            proof_path.is_absolute()
+            and proof_path.is_file()
+            and not proof_path.is_symlink(),
+            "existing telemetry reconciliation proof is unavailable",
+        )
+        proof_bytes = proof_path.read_bytes()
+        require(
+            hashlib.sha256(proof_bytes).hexdigest() == marker.get("proof_sha256"),
+            "existing telemetry reconciliation proof checksum changed",
+        )
+        proof = _reconciliation_json(proof_bytes)
+        original_files = proof.get("original_files")
+        require(
+            isinstance(original_files, dict),
+            "existing reconciliation raw evidence is invalid",
+        )
+        assert isinstance(original_files, dict)
+        original = original_files.get("heartbeat")
+        require(
+            isinstance(original, dict),
+            "existing reconciliation raw heartbeat is invalid",
+        )
+        assert isinstance(original, dict)
+        original_contents = original.get("contents_utf8")
+        require(
+            isinstance(original_contents, str),
+            "existing telemetry reconciliation lacks original heartbeat",
+        )
+        assert isinstance(original_contents, str)
+        original_bytes = original_contents.encode("utf-8")
+        require(
+            hashlib.sha256(original_bytes).hexdigest() == original.get("sha256"),
+            "existing telemetry reconciliation original bytes changed",
+        )
+        expected = _reconciliation_json(original_bytes)
+        require(
+            proof.get("checkpoint_sha256")
+            == marker.get("checkpoint_sha256")
+            == checkpoint.get("checkpoint_sha256")
+            and proof.get("verified_examples_consumed") == new_examples
+            and proof.get("original_examples_consumed")
+            == marker.get("original_examples_consumed")
+            == expected.get("examples_consumed")
+            and proof.get("step") == checkpoint.get("step")
+            and proof.get("epoch") == checkpoint.get("epoch"),
+            "existing telemetry reconciliation does not match current recovery state",
+        )
+        expected["examples_consumed"] = new_examples
+        expected["telemetry_reconciliation"] = marker
+        require(
+            expected == learner,
+            "reconciled heartbeat differs from its preserved evidence",
+        )
+        return None
+    if not (
+        type(old_examples) is int
+        and type(new_examples) is int
+        and new_examples > old_examples
+    ):
+        return None
+    require(
+        all(path.is_file() and not path.is_symlink() for path in paths.values()),
+        "reconciliation inputs must be regular files",
+    )
+    owned_directories = [
+        root,
+        root / "status",
+        root / "learner",
+        root / "learner/recovery",
+    ]
+    require(
+        all(path.is_dir() and not path.is_symlink() for path in owned_directories),
+        "reconciliation directories must be owned regular directories",
+    )
+    require(old_examples >= 0, "reconciliation examples must be nonnegative")
+    coordinator = _reconciliation_json(raw["coordinator"])
+    identity = _reconciliation_json(raw["identity"])
+    require(
+        all(
+            isinstance(identity.get(name), str)
+            and bool(identity[name])
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", identity[name])
+            for name in ("run_id", "generation_family")
+        ),
+        "reconciliation run identity is invalid",
+    )
+    require(
+        all(
+            type(payload.get("schema_version")) is int
+            and payload["schema_version"] == 1
+            for payload in (learner, coordinator, identity)
+        ),
+        "reconciliation control schema is invalid",
+    )
+    workers = coordinator.get("workers", {})
+    require(
+        coordinator.get("state") == "stopped"
+        and not coordinator.get("failure")
+        and isinstance(workers, dict)
+        and set(workers) == set(expected_workers)
+        and workers
+        and all(
+            isinstance(worker, dict)
+            and worker.get("state") == "stopped"
+            and type(worker.get("last_exit_code")) is int
+            and worker["last_exit_code"] == 0
+            for worker in workers.values()
+        ),
+        "stale-heartbeat reconciliation requires a completely clean stop",
+    )
+    for pid in [
+        coordinator.get("coordinator_pid"),
+        learner.get("pid"),
+        *(worker.get("pid") for worker in workers.values()),
+    ]:
+        require(
+            pid is None
+            or (type(pid) is int and pid >= 0 and not Path(f"/proc/{pid}").exists()),
+            "reconciliation found a live or invalid process",
+        )
+    require(
+        type(learner.get("pid")) is int
+        and learner["pid"] > 0
+        and learner.get("worker") == "learner",
+        "reconciliation learner identity is invalid",
+    )
+    step, epoch = checkpoint.get("step"), checkpoint.get("epoch")
+    require(
+        learner.get("phase") == "stopped"
+        and type(step) is int
+        and step > 0
+        and type(learner.get("step")) is int
+        and learner["step"] == step
+        and type(epoch) is int
+        and epoch >= 0
+        and type(learner.get("epoch")) is int
+        and learner["epoch"] == epoch,
+        "reconciliation requires the exact stopped step and epoch",
+    )
+    require(
+        checkpoint.get("format") == "startrain.recovery-pointer"
+        and type(checkpoint.get("schema_version")) is int
+        and checkpoint["schema_version"] == 1
+        and isinstance(checkpoint.get("checkpoint_sha256"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", checkpoint["checkpoint_sha256"])
+        and checkpoint.get("checkpoint")
+        == f"recovery/sha256-{checkpoint['checkpoint_sha256']}.pt"
+        and type(checkpoint.get("checkpoint_bytes")) is int
+        and checkpoint["checkpoint_bytes"] > 0,
+        "reconciliation recovery pointer is invalid",
+    )
+    file = root / "learner" / checkpoint["checkpoint"]
+    require(
+        file.resolve().parent == (root / "learner/recovery").resolve(),
+        "reconciliation checkpoint escaped recovery directory",
+    )
+    require(
+        file.stat().st_size == checkpoint["checkpoint_bytes"]
+        and digest(file) == checkpoint["checkpoint_sha256"],
+        "reconciliation checkpoint verification failed",
+    )
+    require(
+        checkpoint.get("run_id") == identity.get("run_id")
+        and checkpoint.get("generation_family") == identity.get("generation_family"),
+        "reconciliation checkpoint run identity differs",
+    )
+    from startrain.checkpoint import inspect_checkpoint
+    from startrain.config import load_config
+
+    profile_path, source_commit = active_authority(root)
+    profile_sha256 = digest(profile_path)
+    profile = load_config(profile_path)
+    require(
+        profile.orchestration.run_id == identity["run_id"]
+        and Path(profile.orchestration.directories.root).resolve() == root.resolve(),
+        "reconciliation profile run identity differs",
+    )
+    metadata = inspect_checkpoint(
+        file,
+        map_location="cpu",
+        expected_sha256=checkpoint["checkpoint_sha256"],
+        expected_bytes=checkpoint["checkpoint_bytes"],
+        expected_model_config=profile.as_dict()["model"],
+        expected_game_config=profile.as_dict()["game"],
+        expected_run_id=identity["run_id"],
+        expected_generation_family=identity["generation_family"],
+    )
+    extra = metadata.get("extra", {})
+    batch = extra.get("global_batch_size")
+    world_size = (
+        len(profile.orchestration.learner_gpus)
+        if profile.orchestration.distributed.enabled
+        else 1
+    )
+    require(
+        metadata.get("step") == step
+        and metadata.get("epoch") == epoch
+        and type(extra.get("examples_consumed")) is int
+        and extra["examples_consumed"] == new_examples
+        and type(batch) is int
+        and batch > 0
+        and batch == profile.train.global_batch_size(world_size)
+        and all(
+            metadata.get(name) is True
+            for name in ("has_optimizer", "has_scheduler", "has_ema")
+        ),
+        "reconciliation checkpoint metadata does not match durable training state",
+    )
+    missing, remainder = divmod(new_examples - old_examples, batch)
+    assert isinstance(step, int)
+    require(
+        remainder == 0 and 1 <= missing <= profile.learner.steps_per_window,
+        "reconciliation example gap is not a bounded complete spin",
+    )
+    metrics_path = root / "learner/metrics.jsonl"
+    require(
+        metrics_path.is_file() and not metrics_path.is_symlink(),
+        "reconciliation metrics are unavailable",
+    )
+    before = metrics_path.stat()
+
+    def signature(value: os.stat_result) -> tuple[int, ...]:
+        return (
+            value.st_dev,
+            value.st_ino,
+            value.st_size,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+        )
+
+    with metrics_path.open("rb") as stream:
+        stream.seek(max(0, before.st_size - 4 * 1024 * 1024))
+        if stream.tell():
+            stream.readline()
+        offset = stream.tell()
+        tail = stream.read(4 * 1024 * 1024)
+    require(tail.endswith(b"\n"), "reconciliation metrics have a partial final record")
+    records = [
+        (_reconciliation_json(line), line.decode("utf-8"))
+        for line in tail.splitlines()
+        if line
+    ]
+
+    def latest(event: str) -> tuple[dict[str, Any], str, int]:
+        matches = [
+            (row, line, index)
+            for index, (row, line) in enumerate(records)
+            if row.get("worker") == "learner" and row.get("event") == event
+        ]
+        require(matches, f"reconciliation is missing {event} evidence")
+        return matches[-1]
+
+    waited, waited_raw, wait_index = latest("utd_wait")
+    consumed, consumed_raw, consumed_index = latest("replay_window_consumed")
+    published, published_raw, published_index = latest("recovery_checkpoint")
+    require(
+        wait_index < consumed_index < published_index,
+        "reconciliation event order is invalid",
+    )
+    require(
+        all(
+            type(row.get("schema_version")) is int
+            and row["schema_version"] == 1
+            and type(row.get("step")) is int
+            and row["step"] >= 0
+            for row in (waited, consumed, published)
+        ),
+        "reconciliation metric counters are invalid",
+    )
+    count, previous_count, opened = (
+        consumed.get("window_batches_consumed"),
+        learner.get("window_batches_consumed"),
+        consumed.get("window_opened_step"),
+    )
+    require(
+        waited["step"] == step - missing
+        and type(waited.get("examples_consumed")) is int
+        and waited["examples_consumed"] == old_examples
+        and consumed["step"] == step
+        and type(consumed.get("epoch")) is int
+        and consumed["epoch"] == epoch
+        and type(consumed.get("window_batches_consumed_this_spin")) is int
+        and consumed["window_batches_consumed_this_spin"] == missing
+        and type(count) is int
+        and type(previous_count) is int
+        and previous_count >= 0
+        and count == previous_count + missing
+        and type(opened) is int
+        and opened >= 0
+        and opened + count == step
+        and type(consumed.get("window_batches_allocated")) is int
+        and consumed["window_batches_allocated"] >= count
+        and type(learner.get("window_batches_allocated")) is int
+        and learner["window_batches_allocated"] == consumed["window_batches_allocated"]
+        and type(consumed.get("window_selection_max_shard_id")) is int
+        and consumed["window_selection_max_shard_id"] > 0
+        and type(learner.get("window_selection_max_shard_id")) is int
+        and learner["window_selection_max_shard_id"]
+        == consumed["window_selection_max_shard_id"],
+        "reconciliation replay evidence does not prove the final consumed spin",
+    )
+    require(
+        published["step"] == step
+        and published.get("checkpoint_sha256") == checkpoint["checkpoint_sha256"]
+        and type(published.get("checkpoint_bytes")) is int
+        and published["checkpoint_bytes"] == checkpoint["checkpoint_bytes"],
+        "reconciliation checkpoint publication differs from durable state",
+    )
+    times = [
+        waited.get("timestamp_ns"),
+        consumed.get("timestamp_ns"),
+        checkpoint.get("updated_ns"),
+        published.get("timestamp_ns"),
+        learner.get("heartbeat_ns"),
+        coordinator.get("timestamp_ns"),
+    ]
+    require(
+        all(type(value) is int and value > 0 for value in times)
+        and times == sorted(cast(list[int], times)),
+        "reconciliation evidence is not chronologically ordered",
+    )
+    require(
+        all(
+            type(row[name]) is int and row[name] >= 0
+            for row, _ in records[wait_index:]
+            if row.get("worker") == "learner"
+            for name in ("step", "epoch", "examples_consumed", "timestamp_ns")
+            if name in row
+        ),
+        "reconciliation later learner counters are invalid",
+    )
+    require(
+        not any(
+            (type(row.get("step")) is int and row["step"] > step)
+            or (
+                type(row.get("examples_consumed")) is int
+                and row["examples_consumed"] > new_examples
+            )
+            for row, _ in records[wait_index:]
+        ),
+        "reconciliation metrics contain later learner progress",
+    )
+    require(
+        signature(before) == signature(metrics_path.stat()),
+        "reconciliation metrics changed during inspection",
+    )
+    require(
+        all(path.read_bytes() == raw[name] for name, path in paths.items()),
+        "stopped reconciliation inputs changed during inspection",
+    )
+    heartbeat_sha = hashlib.sha256(raw["heartbeat"]).hexdigest()
+    proof_name = f"stopped-heartbeat-reconciliation-{heartbeat_sha}.json"
+    proof_path = root / "status" / proof_name
+    audit_proof_path = evidence_root / proof_name
+    proof = {
+        "schema_version": 1,
+        "reason": "checkpointed-same-window-spin-with-stale-final-heartbeat",
+        "step": step,
+        "epoch": epoch,
+        "reconciled_batches": missing,
+        "original_examples_consumed": old_examples,
+        "verified_examples_consumed": new_examples,
+        "global_batch_size": batch,
+        "checkpoint_sha256": checkpoint["checkpoint_sha256"],
+        "profile": str(profile_path),
+        "profile_sha256": profile_sha256,
+        "source_commit": source_commit,
+        "metrics_interval": profile.learner.metrics_interval,
+        "original_files": {
+            name: {
+                "path": str(paths[name]),
+                "sha256": hashlib.sha256(contents).hexdigest(),
+                "contents_utf8": contents.decode("utf-8"),
+            }
+            for name, contents in raw.items()
+        },
+        "metric_evidence": {
+            "path": str(metrics_path),
+            "file_bytes": before.st_size,
+            "tail_offset": offset,
+            "tail_sha256": hashlib.sha256(tail).hexdigest(),
+            "tail_utf8": tail.decode("utf-8"),
+            "utd_wait": waited_raw,
+            "replay_window_consumed": consumed_raw,
+            "recovery_checkpoint": published_raw,
+        },
+        "checkpoint_metadata": {
+            **{
+                name: metadata[name]
+                for name in (
+                    "step",
+                    "epoch",
+                    "has_optimizer",
+                    "has_scheduler",
+                    "has_ema",
+                )
+            },
+            "extra": {
+                name: extra[name]
+                for name in (
+                    "run_id",
+                    "generation_family",
+                    "examples_consumed",
+                    "global_batch_size",
+                )
+            },
+        },
+    }
+    require(not proof_path.is_symlink(), "reconciliation proof may not be a symlink")
+    if proof_path.exists():
+        require(
+            _reconciliation_json(proof_path.read_bytes()) == proof,
+            "stopped-heartbeat reconciliation proof changed",
+        )
+    else:
+        atomic_json(proof_path, proof)
+    proof_path.chmod(0o444)
+    require(
+        not audit_proof_path.is_symlink(),
+        "reconciliation audit copy may not be a symlink",
+    )
+    if audit_proof_path != proof_path:
+        if audit_proof_path.exists():
+            require(
+                audit_proof_path.is_file()
+                and audit_proof_path.read_bytes() == proof_path.read_bytes(),
+                "reconciliation audit copy changed",
+            )
+        else:
+            atomic_json(audit_proof_path, proof)
+        audit_proof_path.chmod(0o444)
+        require(
+            audit_proof_path.read_bytes() == proof_path.read_bytes(),
+            "reconciliation audit copy differs from the run proof",
+        )
+    corrected = dict(learner)
+    corrected["examples_consumed"] = new_examples
+    corrected["telemetry_reconciliation"] = {
+        "reason": proof["reason"],
+        "proof": str(proof_path),
+        "proof_sha256": digest(proof_path),
+        "original_examples_consumed": old_examples,
+        "checkpoint_sha256": checkpoint["checkpoint_sha256"],
+    }
+    require(
+        all(path.read_bytes() == raw[name] for name, path in paths.items()),
+        "stopped reconciliation inputs changed before publication",
+    )
+    require(
+        all(path.is_dir() and not path.is_symlink() for path in owned_directories)
+        and all(path.is_file() and not path.is_symlink() for path in paths.values()),
+        "reconciliation owned paths changed before publication",
+    )
+    require(
+        active_authority(root) == (profile_path, source_commit)
+        and digest(profile_path) == profile_sha256,
+        "reconciliation profile authority changed",
+    )
+    with metrics_path.open("rb") as stream:
+        stream.seek(offset)
+        current_tail = stream.read(len(tail) + 1)
+    require(
+        current_tail == tail and signature(before) == signature(metrics_path.stat()),
+        "reconciliation metrics changed before publication",
+    )
+    require(
+        file.stat().st_size == checkpoint["checkpoint_bytes"]
+        and digest(file) == checkpoint["checkpoint_sha256"],
+        "reconciliation checkpoint changed before publication",
+    )
+    atomic_json(paths["heartbeat"], corrected)
+    return {
+        "proof": str(proof_path),
+        "proof_sha256": digest(proof_path),
+        "audit_proof": str(audit_proof_path),
+        "original_examples_consumed": old_examples,
+        "verified_examples_consumed": new_examples,
+        "reconciled_batches": missing,
+    }
 
 
 def validate_boundary(
@@ -390,9 +928,14 @@ class Deployment:
             ["sudo", "systemctl", "stop", self.main], "stop-workload", timeout=1100
         )
         require(self.show(self.main, "MainPID") == "0", "main process survived stop")
+        reconciliation = reconcile_stopped_heartbeat(
+            self.root, self.base, expected_workers=self.plan["expected_workers"]
+        )
         boundary = validate_boundary(
             self.root, strict=strict, expected_workers=self.plan["expected_workers"]
         )
+        if reconciliation is not None:
+            boundary["telemetry_reconciliation"] = reconciliation
         self.save("stopped.json", boundary)
         owners = subprocess.check_output(
             ["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader"],

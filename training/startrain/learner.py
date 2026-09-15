@@ -2333,6 +2333,7 @@ class LearnerLoop:
                         progress(
                             phase="training",
                             step=self.step,
+                            examples_consumed=self.examples_consumed,
                             epoch=self.epoch,
                             learning_rate_multiplier=self._lr_governor.multiplier,
                         )
