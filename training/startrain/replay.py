@@ -589,12 +589,18 @@ class ReplaySample:
             ("final_peries", derived_peries, topology.peri_count),
             ("final_stars", derived_stars, topology.peri_count // 2),
         ):
+            if derived is None:
+                # These are cached views of spatial targets. Existing callers
+                # remove those targets with dataclasses.replace; carrying the
+                # old cache must not restore a masked target or reject the row.
+                setattr(self, name, None)
+                continue
             supplied = getattr(self, name)
             if supplied is not None:
                 supplied = _integer_array(
                     name, supplied, shape=(2,), dtype=np.dtype(np.int8)
                 )
-                if derived is None or not np.array_equal(supplied, derived):
+                if not np.array_equal(supplied, derived):
                     raise ReplaySchemaError(
                         f"{name} disagrees with final spatial targets"
                     )
@@ -1187,6 +1193,16 @@ class DecodedReplayShard:
                     raise ReplaySchemaError(f"{name} must contain integer counts")
                 if np.any(values == -1) and not np.all(values == -1):
                     raise ReplaySchemaError(f"missing {name} must use two -1 sentinels")
+                required = TARGET_OWNERSHIP | (
+                    TARGET_ALIVE if name == "final_stars" else 0
+                )
+                if (
+                    not np.all(values == -1)
+                    and int(arrays["target_mask"][index]) & required != required
+                ):
+                    raise ReplaySchemaError(
+                        f"stored {name} requires available spatial targets"
+                    )
                 auxiliary[name] = None if np.all(values == -1) else values
         return ReplaySample(
             **common,

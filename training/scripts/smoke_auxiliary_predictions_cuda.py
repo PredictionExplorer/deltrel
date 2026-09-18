@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, replace
+import gc
 import json
 import math
 import os
@@ -41,13 +42,19 @@ from startrain.inference import GraphInferenceAdapter, InferenceConfig
 from startrain.model import GraphResTNet, ModelConfig
 from startrain.native import load_star_native, positions_from_native
 from startrain.optim import build_optimizer, optimizer_checkpoint_contract
-from startrain.replay import ReplaySample, collate_replay_samples, read_replay_shard
+from startrain.replay import (
+    ReplayBatch,
+    ReplaySample,
+    collate_replay_samples,
+    read_replay_shard,
+)
 from startrain.selfplay import GameVariant, _Decision, _future_policy_targets
 from startrain.training import build_scheduler, maybe_compile_model, train_step
 
 
 TIMEOUT_SECONDS = 900
 MAX_REPLAY_SHARDS = 32
+MAX_RUNTIME_BATCH_SIZE = 1024
 PRIMARY_OUTPUTS = (
     "policy_logits",
     "outcome_logits",
@@ -446,6 +453,42 @@ def check_auxiliary_gradients(model: GraphResTNet) -> dict[str, float]:
     return gradients
 
 
+def validate_runtime_batch_size(size: int) -> None:
+    if type(size) is not int or not 1 <= size <= MAX_RUNTIME_BATCH_SIZE:
+        raise ValueError(
+            f"smoke runtime batch size must be an integer in 1..{MAX_RUNTIME_BATCH_SIZE}"
+        )
+
+
+def build_runtime_smoke_batch(
+    samples: list[ReplaySample],
+    size: int,
+) -> tuple[ReplayBatch, dict[str, int | bool]]:
+    """Repeat read-only fixtures to exercise the configured learner shape."""
+    validate_runtime_batch_size(size)
+    if not samples:
+        raise ValueError("smoke requires at least one real replay fixture")
+    runtime_samples = [samples[index % len(samples)] for index in range(size)]
+    distinct = len(
+        {
+            (
+                sample.run_id,
+                sample.generation_family,
+                sample.actor_id,
+                sample.generation,
+                sample.game_id,
+                sample.ply,
+            )
+            for sample in runtime_samples
+        }
+    )
+    return collate_replay_samples(runtime_samples), {
+        "distinct_fixture_samples": distinct,
+        "runtime_batch_size": size,
+        "repeated_smoke_fixtures": size > distinct,
+    }
+
+
 def run_smoke(args: Any) -> dict:
     from scripts.benchmark_actor_throughput import _gpu_ownership
 
@@ -458,6 +501,7 @@ def run_smoke(args: Any) -> dict:
         raise ValueError("smoke requires the auxiliary-enabled BF16 deployment profile")
     if any(getattr(config.loss, name) <= 0 for name in AUXILIARY_LOSSES):
         raise ValueError("smoke requires all five auxiliary losses enabled")
+    validate_runtime_batch_size(config.train.per_rank_batch_size)
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required; CPU tests do not qualify deployment")
     torch.set_num_threads(4)
@@ -479,16 +523,24 @@ def run_smoke(args: Any) -> dict:
         raise RuntimeError("native extension is unavailable")
     parity = check_primary_parity(model, reference, native, device, "bf16")
     native_checks = check_native_inference(model, native, device, "bf16")
+    # Proof records contain only scalars. Release the comparison model before
+    # compiling and exercising the complete production learner batch.
+    del reference, state
+    gc.collect()
+    torch.cuda.empty_cache()
     samples, replay_evidence = load_smoke_replay(
         Path(config.orchestration.directories.root)
     )
-    batch = collate_replay_samples(samples)
+    batch, fixture_report = build_runtime_smoke_batch(
+        samples, config.train.per_rank_batch_size
+    )
     masks = {
         name: int(getattr(batch.targets, name + "_mask").sum())
         for name in AUXILIARY_LOSSES
     }
     if not all(masks.values()):
         raise AssertionError("smoke batch lacks an auxiliary supervision class")
+    torch.cuda.reset_peak_memory_stats(device)
     compiled = maybe_compile_model(
         model,
         enabled=config.train.compile,
@@ -536,7 +588,9 @@ def run_smoke(args: Any) -> dict:
         "primary_parity": parity,
         "native_search_checks": native_checks,
         "replay_sources": replay_evidence,
-        "training_samples": len(samples),
+        "training_samples": config.train.per_rank_batch_size,
+        **fixture_report,
+        "fixture_note": "Replay fixtures are repeated only for runtime-shape qualification; no replay or training state is written.",
         "target_masks": masks,
         "learner_losses": losses,
         "auxiliary_gradient_norms": gradients,

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from startrain.replay import ReplaySample, read_replay_shard
+from startrain.replay import ReplaySample, collate_replay_samples, read_replay_shard
 from startrain.replay_store import (
     DuplicateGameError,
     ReplayStore,
@@ -212,6 +212,11 @@ def test_clinch_finalization_can_enrich_outcome_without_inventing_auxiliary_labe
         row.target_mask == TARGET_POLICY | TARGET_SOFT_POLICY | TARGET_OUTCOME
         for row in restored
     )
+    assert all(row.final_peries is None and row.final_stars is None for row in restored)
+    targets = collate_replay_samples(restored).targets
+    assert not targets.final_peries_mask.any()
+    assert not targets.final_stars_mask.any()
+    assert not targets.final_quarks_mask.any()
 
 
 def test_first_revision_cannot_upgrade_incomplete_credit_authority(publication):

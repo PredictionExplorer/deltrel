@@ -16,14 +16,18 @@ from startrain.config import load_config
 from startrain.model import GraphResTNet
 from startrain.native import score_results_from_native
 from startrain.optim import build_optimizer
-from startrain.replay import collate_replay_samples, write_replay_shard
+from startrain.replay import write_replay_shard
 from startrain.training import build_scheduler, train_step
 from test_auxiliary_replay import samples_from, trajectory
 
 
 def tiny_profile():
     source = load_config(Path(__file__).parents[1] / "configs/small.yaml")
-    source = replace(source, model=replace(source.model, width=16, rrt_groups=1))
+    source = replace(
+        source,
+        model=replace(source.model, width=16, rrt_groups=1),
+        train=replace(source.train, per_rank_batch_size=8),
+    )
     target = replace(
         source,
         model=replace(source.model, auxiliary_predictions=True),
@@ -80,6 +84,7 @@ def replay_fixture(root):
         samples = [
             replace(
                 s,
+                game_id=f"smoke-{mode}",
                 opponent_reply=None,
                 opponent_reply_ply=-1,
                 second_stone=None,
@@ -118,7 +123,14 @@ def test_core_upgrade_parity_native_search_and_real_replay_backward(tmp_path):
     samples, evidence = smoke.load_smoke_replay(tmp_path / "run")
     assert len(samples) == 8 and len(evidence) == 2
     assert manifest.read_bytes() == manifest_before
-    batch = collate_replay_samples(samples)
+    batch, fixture_report = smoke.build_runtime_smoke_batch(
+        samples, config.train.per_rank_batch_size
+    )
+    assert fixture_report == {
+        "distinct_fixture_samples": 8,
+        "runtime_batch_size": 8,
+        "repeated_smoke_fixtures": False,
+    }
     assert all(
         getattr(batch.targets, name + "_mask").any() for name in AUXILIARY_LOSSES
     )
@@ -237,3 +249,39 @@ def test_gradient_check_rejects_missing_nonfinite_or_disconnected_heads(invalid)
         )
     with pytest.raises((FloatingPointError, AssertionError), match="auxiliary"):
         smoke.check_auxiliary_gradients(model)
+
+
+@pytest.mark.native
+def test_runtime_batch_repeats_real_rows_to_configured_shape_without_mutation():
+    decisions, _ = trajectory()
+    samples = samples_from(decisions)[:3]
+    original_policies = [s.policy.copy() for s in samples]
+    batch, report = smoke.build_runtime_smoke_batch(samples, 8)
+    assert report == {
+        "distinct_fixture_samples": 3,
+        "runtime_batch_size": 8,
+        "repeated_smoke_fixtures": True,
+    }
+    assert batch.targets.policy.shape[0] == batch.inputs.node_features.shape[0] == 8
+    for index in range(8):
+        torch.testing.assert_close(
+            batch.targets.policy[index], torch.from_numpy(samples[index % 3].policy)
+        )
+        assert batch.targets.opponent_reply_mask[index] == (
+            samples[index % 3].opponent_reply is not None
+        )
+    for sample, original in zip(samples, original_policies, strict=True):
+        torch.testing.assert_close(
+            torch.from_numpy(sample.policy), torch.from_numpy(original)
+        )
+
+
+@pytest.mark.parametrize("size", [0, -1, 1025, True, 1.5])
+def test_runtime_batch_bound_rejects_before_collation(size, monkeypatch):
+    monkeypatch.setattr(
+        smoke,
+        "collate_replay_samples",
+        lambda rows: pytest.fail("invalid batch was collated"),
+    )
+    with pytest.raises(ValueError, match="1..1024"):
+        smoke.build_runtime_smoke_batch([], size)

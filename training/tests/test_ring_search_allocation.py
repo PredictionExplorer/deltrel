@@ -93,6 +93,20 @@ def test_empty_group_preserves_canonical_authority_and_nonempty_never_disappears
     base = load_config(PROFILE)
     old_payload = asdict(base)
     del old_payload["selfplay"]["ring_search_allocations"]
+    # Reproduce the pre-addition canonical representation. Typed, disabled
+    # release defaults do not change authority for an existing run.
+    del old_payload["selfplay"]["pie_even_training"]
+    del old_payload["arena"]["variant_policy"]
+    del old_payload["arena"]["allocation_policy"]
+    del old_payload["model"]["auxiliary_predictions"]
+    for name in (
+        "opponent_reply",
+        "second_stone",
+        "final_peries",
+        "final_stars",
+        "final_quarks",
+    ):
+        del old_payload["loss"][name]
     assert base.as_dict() == old_payload
     old_hash = hashlib.sha256(
         migration._canonical_config_bytes(old_payload)

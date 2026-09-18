@@ -55,13 +55,15 @@ def test_benchmark_reports_decode_and_selected_row_rates(tmp_path) -> None:
         tmp_path / "benchmark.npz",
         [_sample(index) for index in range(8)],
     )
+    with np.load(path, allow_pickle=False) as archive:
+        member_count = len(archive.files)
 
     result = benchmark_replay_shard(path, rows=3, repeats=2)
 
     assert result["benchmark"] == BENCHMARK_NAME
     assert result["sample_count"] == 8
     assert result["selected_rows"] == 3
-    assert result["npz_members_loaded_per_repeat"] == 41
+    assert result["npz_members_loaded_per_repeat"] == member_count
     assert result["decode_seconds"]["count"] == 2
     assert result["selected_row_materialization_seconds"]["minimum"] >= 0
     assert result["selected_rows_per_second"] > 0

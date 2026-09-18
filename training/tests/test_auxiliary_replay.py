@@ -226,6 +226,18 @@ def test_auxiliary_capability_corruption_fails_closed(tmp_path):
 
 
 @pytest.mark.native
+def test_stored_component_counts_require_available_spatial_labels(tmp_path):
+    decisions, _ = trajectory()
+    path = write_replay_shard(tmp_path / "masked-counts.npz", samples_from(decisions))
+    with np.load(path, allow_pickle=False) as archive:
+        arrays = {name: archive[name] for name in archive.files}
+    arrays["final_peries"][0] = [1, 1]
+    np.savez(path, **arrays)
+    with pytest.raises(ReplaySchemaError, match="requires available spatial"):
+        read_replay_shard(path)
+
+
+@pytest.mark.native
 def test_growing_prefix_digests_allow_only_newly_observed_future_labels():
     decisions, _ = trajectory()
     first = samples_from(decisions[:2])
