@@ -111,13 +111,18 @@ def test_auxiliary_losses_can_be_disabled_without_removing_trained_heads(tmp_pat
 
 
 @pytest.mark.parametrize("interrupt_once", [False, True])
+@pytest.mark.parametrize("source_auxiliary", [False, True])
 def test_controller_recovery_retains_new_heads_checkpoint_and_progress(
-    deployment, monkeypatch, interrupt_once
+    deployment, monkeypatch, interrupt_once, source_auxiliary
 ):
     source = {"model": {"width": 384}, "loss": {"policy": 1.0, "outcome": 1.0}}
+    if source_auxiliary:
+        source["model"]["auxiliary_predictions"] = True
+        source["loss"].update({name: 0.02 for name in AUXILIARY_LOSSES})
     candidate = deepcopy(source)
     candidate["model"]["auxiliary_predictions"] = True
-    candidate["loss"].update({name: 0.05 for name in AUXILIARY_LOSSES})
+    if not source_auxiliary:
+        candidate["loss"].update({name: 0.05 for name in AUXILIARY_LOSSES})
     deployment.source.write_text(yaml.safe_dump(source))
     deployment.candidate.write_text(yaml.safe_dump(candidate))
     deployment.target.write_bytes(deployment.candidate.read_bytes())
@@ -154,9 +159,13 @@ def test_controller_recovery_retains_new_heads_checkpoint_and_progress(
         assert recovery_payload["model"] == source["model"] | {
             "auxiliary_predictions": True
         }
-        assert recovery_payload["loss"] == source["loss"] | {
-            loss_name: 0.0 for loss_name in AUXILIARY_LOSSES
-        }
+        if source_auxiliary:
+            assert recovery_source == deployment.source
+            assert recovery_payload == source
+        else:
+            assert recovery_payload["loss"] == source["loss"] | {
+                loss_name: 0.0 for loss_name in AUXILIARY_LOSSES
+            }
         migrations.append(recovery_source)
         destination = deployment.root / name
         destination.write_bytes(recovery_source.read_bytes())
@@ -181,7 +190,13 @@ def test_controller_recovery_retains_new_heads_checkpoint_and_progress(
             deployment.recover()
     deployment.recover()
     assert len(migrations) == 1
-    assert gates and all(source_path == deployment.source for source_path, _ in gates)
+    if source_auxiliary:
+        assert gates == []
+        assert not (deployment.base / "auxiliary-compatible-recovery.yaml").exists()
+    else:
+        assert gates and all(
+            source_path == deployment.source for source_path, _ in gates
+        )
     assert all(resume == checkpoint for _, resume in resumes)
     assert all(kw == {} for _, kw in installed)  # Keep compatible new release.
     assert all(

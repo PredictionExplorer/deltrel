@@ -1204,9 +1204,9 @@ class Deployment:
         for intent in sorted(self.base.glob("metadata-intent-*.json")):
             repair_interrupted_intent(intent, self.root)
         profile, commit = active_authority(self.root)
-        # Once new heads have learned, recovery must retain their architecture
-        # and all progress. Disable their losses using the compatible reader;
-        # never downgrade or restore an older checkpoint over newer training.
+        # A first-time head addition cannot be downgraded after training.
+        # Retain those heads with zero losses. Later source-only rollouts use
+        # their original profile, including existing auxiliary loss weights.
         recovery_source = self.source
         from startrain.auxiliary_upgrade import AUXILIARY_LOSSES
 
@@ -1216,21 +1216,31 @@ class Deployment:
         require(type(auxiliary_enabled) is bool, "invalid auxiliary recovery flag")
         if auxiliary_enabled:
             recovery_payload = yaml.safe_load(self.source.read_text())
-            recovery_payload["model"]["auxiliary_predictions"] = True
-            for loss_name in AUXILIARY_LOSSES:
-                recovery_payload["loss"][loss_name] = 0.0
-            recovery_source = self.base / "auxiliary-compatible-recovery.yaml"
-            contents = yaml.safe_dump(recovery_payload, sort_keys=False)
-            if recovery_source.exists():
-                require(
-                    recovery_source.read_text() == contents,
-                    "auxiliary recovery profile changed",
+            source_auxiliary_enabled = recovery_payload.get("model", {}).get(
+                "auxiliary_predictions", False
+            )
+            require(
+                type(source_auxiliary_enabled) is bool,
+                "invalid source auxiliary recovery flag",
+            )
+            if not source_auxiliary_enabled:
+                recovery_payload["model"]["auxiliary_predictions"] = True
+                for loss_name in AUXILIARY_LOSSES:
+                    recovery_payload["loss"][loss_name] = 0.0
+                recovery_source = self.base / "auxiliary-compatible-recovery.yaml"
+                contents = yaml.safe_dump(recovery_payload, sort_keys=False)
+                if recovery_source.exists():
+                    require(
+                        recovery_source.read_text() == contents,
+                        "auxiliary recovery profile changed",
+                    )
+                else:
+                    recovery_source.write_text(contents)
+                from scripts.prepare_auxiliary_training_profile import (
+                    ensure_auxiliary_gate,
                 )
-            else:
-                recovery_source.write_text(contents)
-            from scripts.prepare_auxiliary_training_profile import ensure_auxiliary_gate
 
-            ensure_auxiliary_gate(self.source, recovery_source)
+                ensure_auxiliary_gate(self.source, recovery_source)
         recovery_path = self.base / "recovery-intent.json"
         if profile != self.source:
             if (
