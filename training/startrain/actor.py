@@ -22,6 +22,7 @@ from .actor_pause import ActorPauseGate
 from .actor_publication import PublicationProgress
 from .checkpoint import (
     ModelManifest,
+    inference_model_config,
     load_ema_checkpoint,
     load_model_manifest,
     load_resume_cutover,
@@ -309,8 +310,13 @@ class ManifestModelProvider:
             self._pointer_signature = signature
             return self.evaluator
 
-        if self._raw_model is None:
-            model = GraphResTNet(self.config.model).to(self.device)
+        selected_config = inference_model_config(
+            manifest,
+            expected_model=self.config.model,
+            expected_game_config=asdict(self.config.game),
+        )
+        if self._raw_model is None or self._raw_model.config != selected_config:
+            model = GraphResTNet(selected_config).to(self.device)
             self._load_weights(model, manifest)
             model.eval()
             refresh = self.config.orchestration.model_refresh
@@ -384,7 +390,7 @@ class ManifestModelProvider:
         metadata = load_ema_checkpoint(
             manifest.checkpoint,
             model=model,
-            expected_model_config=asdict(self.config.model),
+            expected_model_config=asdict(model.config),
             expected_game_config=asdict(self.config.game),
             map_location=self.device,
             expected_run_id=self.run_identity.run_id,

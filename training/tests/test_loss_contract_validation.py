@@ -97,7 +97,7 @@ def test_empty_teacher_distributions_and_all_illegal_policy_have_zero_gradient()
     for name in ("teacher_policy", "teacher_outcome", "teacher_score_margin", "total"):
         assert loss[name].item() == 0
     loss["total"].backward()
-    for logits in output:
+    for logits in output[:6]:
         assert logits.grad is not None
         assert torch.isfinite(logits.grad).all()
         assert torch.count_nonzero(logits.grad).item() == 0

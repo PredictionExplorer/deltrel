@@ -27,7 +27,13 @@ def test_broadcast_topology_is_explicitly_opted_in_only_for_production():
         profile = load_config(path)
         assert (
             profile.orchestration.model_refresh.inference.preserve_broadcast_topology
-            is (path.name == "h100-8gpu-largest-board-priority.yaml")
+            is (
+                path.name
+                in {
+                    "h100-8gpu-largest-board-priority.yaml",
+                    "h100-8gpu-pie-even.yaml",
+                }
+            )
         )
 
 

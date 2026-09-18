@@ -23,7 +23,7 @@ from startrain.contracts import (
     SCORE_MARGIN_MIN,
 )
 from startrain.features import DoubleStarPosition
-from startrain.topology import get_topology
+from startrain.topology import MAX_NODES, get_topology
 
 API_SCHEMA_VERSION = 3
 
@@ -112,6 +112,8 @@ class AnalyzeRequest(BaseModel):
     history: PlacementHistory | None = None
     pda: StrictPda = 0
     search: SearchBudget
+    # Additive opt-in keeps strict schema-v3 clients' existing response shape.
+    include_predictions: bool = False
 
     @model_validator(mode="after")
     def validate_semantic_state(self) -> "AnalyzeRequest":
@@ -235,6 +237,57 @@ class Timing(BaseModel):
     total: NonnegativeFinite
 
 
+class FinalPlayerPrediction(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    player: StrictPlayer
+    peries: Annotated[float, Field(ge=0.0, le=50.0, allow_inf_nan=False)]
+    stars: Annotated[float, Field(ge=0.0, le=25.0, allow_inf_nan=False)]
+    corners: Annotated[float, Field(ge=0.0, le=5.0, allow_inf_nan=False)]
+    corner_bonus_probability: Probability
+
+
+class FutureMovePrediction(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    player: StrictPlayer
+    kind: Literal["place", "swap"]
+    node: Annotated[int, Field(strict=True, ge=0, lt=MAX_NODES)] | None
+    probability: Probability
+
+    @model_validator(mode="after")
+    def validate_action(self) -> "FutureMovePrediction":
+        if (self.kind == "place") != (self.node is not None):
+            raise ValueError("future placement requires a node; swap must omit it")
+        return self
+
+
+class AuxiliaryPredictions(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    perspective: StrictPlayer
+    final_basis: Literal["official_end"]
+    final_counts: list[FinalPlayerPrediction]
+    opponent_reply: FutureMovePrediction | None
+    second_stone: FutureMovePrediction | None
+
+    @model_validator(mode="after")
+    def validate_players(self) -> "AuxiliaryPredictions":
+        if [item.player for item in self.final_counts] != [0, 1]:
+            raise ValueError("final predictions must name both players in order")
+        if (
+            self.opponent_reply is not None
+            and self.opponent_reply.player != 1 - self.perspective
+        ):
+            raise ValueError("opponent reply has the wrong player")
+        if self.second_stone is not None and (
+            self.second_stone.player != self.perspective
+            or self.second_stone.kind != "place"
+        ):
+            raise ValueError("second stone must be the current player's placement")
+        return self
+
+
 class AnalyzeResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -260,11 +313,20 @@ class AnalyzeResponse(BaseModel):
     model_version: str
     model_step: NonnegativeInt
     timing_ms: Timing
+    predictions: AuxiliaryPredictions | None = None
 
     @model_validator(mode="after")
     def validate_response_shapes(self) -> "AnalyzeResponse":
         if self.swap_recommended and not self.swap_available:
             raise ValueError("a swap can only be recommended while it is available")
+        if (
+            self.swap_recommended
+            and self.predictions is not None
+            and self.predictions.second_stone is not None
+        ):
+            raise ValueError(
+                "a swap ends the turn and cannot have a second-stone forecast"
+            )
         if self.swap_available and not self.variant.pie:
             raise ValueError("swaps are available only in pie games")
         width = len(self.root_actions)

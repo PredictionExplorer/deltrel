@@ -28,6 +28,11 @@ class LossWeights:
     teacher_policy: float = 0.0
     teacher_outcome: float = 0.0
     teacher_score_margin: float = 0.0
+    opponent_reply: float = 0.0
+    second_stone: float = 0.0
+    final_peries: float = 0.0
+    final_stars: float = 0.0
+    final_quarks: float = 0.0
 
     def __post_init__(self) -> None:
         values = (
@@ -40,10 +45,15 @@ class LossWeights:
             self.teacher_policy,
             self.teacher_outcome,
             self.teacher_score_margin,
+            self.opponent_reply,
+            self.second_stone,
+            self.final_peries,
+            self.final_stars,
+            self.final_quarks,
         )
         if any(not math.isfinite(value) or value < 0 for value in values):
             raise ValueError("loss weights must be finite and non-negative")
-        if not any(value > 0 for value in values[:6]):
+        if not any(value > 0 for value in (*values[:6], *values[9:])):
             raise ValueError("at least one loss weight must be positive")
 
     @property
@@ -77,6 +87,18 @@ class TrainingTargets:
     teacher_outcome: Tensor | None = None
     teacher_score_margin: Tensor | None = None
     teacher_mask: Tensor | None = None
+    # Optional future actions and official final-score components. Count columns
+    # are always current-player, opponent, regardless of absolute stone color.
+    opponent_reply: Tensor | None = None
+    second_stone: Tensor | None = None
+    final_peries: Tensor | None = None
+    final_stars: Tensor | None = None
+    final_quarks: Tensor | None = None
+    opponent_reply_mask: Tensor | None = None
+    second_stone_mask: Tensor | None = None
+    final_peries_mask: Tensor | None = None
+    final_stars_mask: Tensor | None = None
+    final_quarks_mask: Tensor | None = None
 
     def _optional(
         self,
@@ -137,6 +159,36 @@ class TrainingTargets:
             teacher_mask=self._optional(
                 "teacher_mask", lambda t: t.to(device, non_blocking=non_blocking)
             ),
+            opponent_reply=self._optional(
+                "opponent_reply", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            second_stone=self._optional(
+                "second_stone", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            final_peries=self._optional(
+                "final_peries", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            final_stars=self._optional(
+                "final_stars", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            final_quarks=self._optional(
+                "final_quarks", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            opponent_reply_mask=self._optional(
+                "opponent_reply_mask", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            second_stone_mask=self._optional(
+                "second_stone_mask", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            final_peries_mask=self._optional(
+                "final_peries_mask", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            final_stars_mask=self._optional(
+                "final_stars_mask", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            final_quarks_mask=self._optional(
+                "final_quarks_mask", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
         )
 
     def pin_memory(self) -> "TrainingTargets":
@@ -172,6 +224,26 @@ class TrainingTargets:
                 "teacher_score_margin", lambda t: t.pin_memory()
             ),
             teacher_mask=self._optional("teacher_mask", lambda t: t.pin_memory()),
+            opponent_reply=self._optional("opponent_reply", lambda t: t.pin_memory()),
+            second_stone=self._optional("second_stone", lambda t: t.pin_memory()),
+            final_peries=self._optional("final_peries", lambda t: t.pin_memory()),
+            final_stars=self._optional("final_stars", lambda t: t.pin_memory()),
+            final_quarks=self._optional("final_quarks", lambda t: t.pin_memory()),
+            opponent_reply_mask=self._optional(
+                "opponent_reply_mask", lambda t: t.pin_memory()
+            ),
+            second_stone_mask=self._optional(
+                "second_stone_mask", lambda t: t.pin_memory()
+            ),
+            final_peries_mask=self._optional(
+                "final_peries_mask", lambda t: t.pin_memory()
+            ),
+            final_stars_mask=self._optional(
+                "final_stars_mask", lambda t: t.pin_memory()
+            ),
+            final_quarks_mask=self._optional(
+                "final_quarks_mask", lambda t: t.pin_memory()
+            ),
         )
 
     def record_stream(self, stream: torch.Stream) -> None:
@@ -202,6 +274,16 @@ class TrainingTargets:
             "teacher_outcome",
             "teacher_score_margin",
             "teacher_mask",
+            "opponent_reply",
+            "second_stone",
+            "final_peries",
+            "final_stars",
+            "final_quarks",
+            "opponent_reply_mask",
+            "second_stone_mask",
+            "final_peries_mask",
+            "final_stars_mask",
+            "final_quarks_mask",
         ):
             value = getattr(self, name)
             if value is not None:
@@ -316,6 +398,27 @@ def _validate_shapes(
     for tensor, shape, name in expected_targets:
         if tensor.shape != shape:
             raise ValueError(f"{name} must have shape {shape}")
+    for name, target_shape, output_shape in (
+        ("opponent_reply", (batch_size, nodes + 1), (batch_size, nodes + 1)),
+        ("second_stone", (batch_size, nodes), (batch_size, nodes)),
+        ("final_peries", (batch_size, 2), (batch_size, 2, 51)),
+        ("final_stars", (batch_size, 2), (batch_size, 2, 26)),
+        ("final_quarks", (batch_size, 2), (batch_size, 2, 6)),
+    ):
+        logits = getattr(output, f"{name}_logits")
+        if logits is not None and logits.shape != output_shape:
+            raise ValueError(f"{name} logits must have shape {output_shape}")
+        target = getattr(targets, name)
+        mask = getattr(targets, f"{name}_mask")
+        if (target is None) != (mask is None):
+            raise ValueError(f"{name} target and availability mask must occur together")
+        if target is not None:
+            if target.shape != target_shape:
+                raise ValueError(f"{name} target must have shape {target_shape}")
+            if mask.shape != (batch_size,) or mask.dtype != torch.bool:
+                raise ValueError(
+                    f"{name} mask must be boolean with shape ({batch_size},)"
+                )
     for weights, name in (
         (targets.sample_weight, "sample weights"),
         (targets.policy_weight, "policy weights"),
@@ -338,6 +441,78 @@ def _validate_shapes(
         ):
             if tensor is None or tensor.shape != shape:
                 raise ValueError(f"{name} must have shape {shape}")
+
+
+def _auxiliary_loss(
+    name: str,
+    logits: Tensor,
+    targets: TrainingTargets,
+    *,
+    legal_action_mask: Tensor,
+    node_mask: Tensor,
+    sample_weight: Tensor,
+    validate_targets: bool,
+) -> Tensor:
+    """Optional supervision; missing rows produce finite, differentiable zero."""
+
+    target = getattr(targets, name)
+    mask = getattr(targets, f"{name}_mask")
+    if target is None or mask is None:
+        # Multiplying before reducing avoids overflow of summed mask sentinels.
+        return (logits.float() * 0.0).sum()
+    if name in ("opponent_reply", "second_stone"):
+        legal = legal_action_mask & node_mask
+        if name == "opponent_reply":
+            legal = torch.cat(
+                (legal, torch.ones_like(legal[:, :1], dtype=torch.bool)), dim=-1
+            )
+        safe_target = torch.where(mask[:, None], target, torch.zeros_like(target))
+        if validate_targets:
+            _require_tensor(
+                torch.isfinite(safe_target) & (safe_target >= 0),
+                f"available {name} targets must be finite and non-negative",
+            )
+            _require_tensor(
+                (safe_target == 0) | legal,
+                f"available {name} targets must use currently empty nodes",
+            )
+            _require_tensor(
+                ~mask
+                | torch.isclose(
+                    safe_target.sum(dim=-1), torch.ones_like(sample_weight)
+                ),
+                f"available {name} targets must sum to one",
+            )
+        values, has_mass = _soft_cross_entropy(logits, safe_target, legal)
+        return _weighted_mean(values, mask & has_mass, sample_weight)
+
+    if target.dtype not in (
+        torch.int8,
+        torch.uint8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+    ):
+        raise ValueError(f"{name} targets must contain integer count classes")
+    safe_target = torch.where(mask[:, None], target, torch.zeros_like(target)).long()
+    if validate_targets:
+        _require_tensor(
+            (safe_target >= 0) & (safe_target < logits.shape[-1]),
+            f"available {name} counts are outside the supported range",
+        )
+        selected_logits = logits.gather(-1, safe_target.unsqueeze(-1)).squeeze(-1)
+        _require_tensor(
+            ~mask[:, None] | (selected_logits > torch.finfo(logits.dtype).min),
+            f"available {name} counts are impossible for the board size",
+        )
+    values = (
+        functional.cross_entropy(
+            logits.float().flatten(0, 1), safe_target.flatten(), reduction="none"
+        )
+        .reshape_as(safe_target)
+        .mean(dim=-1)
+    )
+    return _weighted_mean(values, mask, sample_weight)
 
 
 def compute_losses(
@@ -541,6 +716,42 @@ def compute_losses(
             + weights.teacher_outcome * teacher_outcome_loss
             + weights.teacher_score_margin * teacher_margin_loss
         )
+    for name in (
+        "opponent_reply",
+        "second_stone",
+        "final_peries",
+        "final_stars",
+        "final_quarks",
+    ):
+        logits = getattr(output, f"{name}_logits")
+        weight = getattr(weights, name)
+        if logits is None:
+            if weight:
+                raise ValueError(f"positive {name} loss weight requires its model head")
+            continue
+        value = (
+            _auxiliary_loss(
+                name,
+                logits,
+                targets,
+                legal_action_mask=legal_action_mask,
+                node_mask=node_mask,
+                sample_weight=sample_weight,
+                validate_targets=validate_targets,
+            )
+            if weight
+            else (logits.float() * 0.0).sum()
+        )
+        losses[name] = value
+        losses["total"] = losses["total"] + weight * value
+        if include_diagnostics:
+            mask = getattr(targets, f"{name}_mask")
+            with torch.no_grad():
+                losses[f"{name}_available"] = (
+                    (mask & (sample_weight > 0)).sum()
+                    if weight > 0 and mask is not None
+                    else torch.zeros((), device=logits.device, dtype=torch.int64)
+                )
     if include_diagnostics:
         clinch_mask = (
             targets.clinch_mask.bool()

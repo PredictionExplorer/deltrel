@@ -405,6 +405,7 @@ def _validate_recovery(
         metadata = inspect_checkpoint(
             recovery.checkpoint,
             expected_model_config=experiment.as_dict()["model"],
+            allow_auxiliary_upgrade=experiment.model.auxiliary_predictions,
             expected_game_config=experiment.as_dict()["game"],
             expected_run_id=run_id,
             expected_generation_family=generation_family,
@@ -450,6 +451,7 @@ def _validate_recovery(
             cutover_metadata = inspect_checkpoint(
                 cutover.checkpoint,
                 expected_model_config=experiment.as_dict()["model"],
+                allow_auxiliary_upgrade=experiment.model.auxiliary_predictions,
                 expected_game_config=experiment.as_dict()["game"],
                 expected_run_id=run_id,
                 expected_generation_family=generation_family,

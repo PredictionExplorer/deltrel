@@ -16,8 +16,9 @@ import os
 import tempfile
 import uuid
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -122,6 +123,56 @@ _VARIANT_SAMPLE_ARRAY_NAMES = (
     "teacher_score_margin",
 )
 _REPLAY_SAMPLE_ARRAY_NAMES = _LEGACY_SAMPLE_ARRAY_NAMES + _VARIANT_SAMPLE_ARRAY_NAMES
+REPLAY_AUXILIARY_TARGETS_VERSION = 1
+_AUXILIARY_SAMPLE_ARRAY_NAMES = (
+    "opponent_reply",
+    "opponent_reply_swap",
+    "opponent_reply_ply",
+    "second_stone",
+    "second_stone_ply",
+    "final_peries",
+    "final_stars",
+)
+
+
+@lru_cache(maxsize=4096)
+def _final_components(
+    rings: int,
+    ownership_bytes: bytes,
+    alive_bytes: bytes | None,
+) -> tuple[tuple[int, int], tuple[int, int] | None]:
+    """Decode once per distinct game ending, never walk graphs in collation."""
+    topology = get_topology(rings)
+    owners = np.frombuffer(ownership_bytes, dtype=np.int8)
+    perimeter_owners = owners[topology.is_peri.numpy()]
+    peries = (
+        int(np.count_nonzero(perimeter_owners == 0)),
+        int(np.count_nonzero(perimeter_owners == 1)),
+    )
+    if alive_bytes is None:
+        return peries, None
+    alive = np.frombuffer(alive_bytes, dtype=np.uint8).astype(bool)
+    offsets, neighbors = topology.adjacency_offsets.numpy(), topology.adjacency.numpy()
+    visited = np.zeros(topology.n, dtype=bool)
+    stars = [0, 0]
+    for start in np.flatnonzero(alive):
+        color = int(owners[start])
+        if visited[start] or color not in (0, 1):
+            continue
+        stars[color] += 1
+        visited[start] = True
+        stack = [int(start)]
+        while stack:
+            node = stack.pop()
+            for neighbor in neighbors[offsets[node] : offsets[node + 1]]:
+                if (
+                    alive[neighbor]
+                    and not visited[neighbor]
+                    and owners[neighbor] == color
+                ):
+                    visited[neighbor] = True
+                    stack.append(int(neighbor))
+    return peries, (stars[0], stars[1])
 
 
 class ReplaySchemaError(ValueError):
@@ -268,6 +319,15 @@ class ReplaySample:
     teacher_policy: np.ndarray | None = None
     teacher_outcome: np.ndarray | None = None
     teacher_score_margin: np.ndarray | None = None
+    # Optional schema-v5 capability; policy labels refer to later observed
+    # decisions, with swap occupying the final opponent-reply slot.
+    opponent_reply: np.ndarray | None = None
+    opponent_reply_ply: int = -1
+    second_stone: np.ndarray | None = None
+    second_stone_ply: int = -1
+    # Fixed player order in replay; collation changes to current/opponent order.
+    final_peries: np.ndarray | None = None
+    final_stars: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         schema_version = _checked_int("schema_version", self.schema_version)
@@ -478,6 +538,76 @@ class ReplaySample:
         elif not np.all(final_alive == MISSING_ALIVE):
             raise ReplaySchemaError("missing alive target must use 255")
 
+        for name, size in (
+            ("opponent_reply", topology.n + 1),
+            ("second_stone", topology.n),
+        ):
+            value = getattr(self, name)
+            destination = _checked_int(f"{name}_ply", getattr(self, f"{name}_ply"))
+            setattr(self, f"{name}_ply", destination)
+            if value is None:
+                if destination != -1:
+                    raise ReplaySchemaError(
+                        f"missing {name} requires destination ply=-1"
+                    )
+                continue
+            value = _float_array(name, value, shape=(size,)).copy()
+            if terminal or destination <= ply:
+                raise ReplaySchemaError(
+                    f"{name} must refer to a later observed decision"
+                )
+            if not np.isclose(float(value.sum()), 1.0, atol=2e-6, rtol=2e-6):
+                raise ReplaySchemaError(f"{name} must sum to one")
+            if np.any(value[: topology.n][~legal] > 1e-6):
+                raise ReplaySchemaError(f"{name} has support on an occupied node")
+            if name == "second_stone" and (
+                mode != "double" or opening or moves_left != 2
+            ):
+                raise ReplaySchemaError(
+                    "second_stone requires the first placement of a regular double turn"
+                )
+            if (
+                name == "opponent_reply"
+                and value[-1] > 0
+                and not (pie and opening and handicap == 1 and to_move == 0)
+            ):
+                raise ReplaySchemaError(
+                    "future swap reply requires the pie opening turn"
+                )
+            setattr(self, name, value)
+            setattr(self, f"{name}_ply", destination)
+
+        derived_peries: tuple[int, int] | None = None
+        derived_stars: tuple[int, int] | None = None
+        if target_mask & TARGET_OWNERSHIP:
+            derived_peries, derived_stars = _final_components(
+                rings,
+                final_ownership.tobytes(),
+                final_alive.tobytes() if target_mask & TARGET_ALIVE else None,
+            )
+        for name, derived, maximum in (
+            ("final_peries", derived_peries, topology.peri_count),
+            ("final_stars", derived_stars, topology.peri_count // 2),
+        ):
+            supplied = getattr(self, name)
+            if supplied is not None:
+                supplied = _integer_array(
+                    name, supplied, shape=(2,), dtype=np.dtype(np.int8)
+                )
+                if derived is None or not np.array_equal(supplied, derived):
+                    raise ReplaySchemaError(
+                        f"{name} disagrees with final spatial targets"
+                    )
+            if derived is not None and any(
+                value < 0 or value > maximum for value in derived
+            ):
+                raise ReplaySchemaError(f"{name} exceeds the board's feasible count")
+            setattr(
+                self,
+                name,
+                np.asarray(derived, dtype=np.int8) if derived is not None else None,
+            )
+
         self.rings = rings
         self.stones = stones
         self.to_move = to_move
@@ -557,6 +687,10 @@ class ReplaySample:
         teacher_policy: np.ndarray | None = None,
         teacher_outcome: np.ndarray | None = None,
         teacher_score_margin: np.ndarray | None = None,
+        opponent_reply: np.ndarray | None = None,
+        opponent_reply_ply: int = -1,
+        second_stone: np.ndarray | None = None,
+        second_stone_ply: int = -1,
     ) -> "ReplaySample":
         if clinch_auxiliary_targets not in ("synthetic", "outcome_only"):
             raise ReplaySchemaError(
@@ -642,6 +776,10 @@ class ReplaySample:
             teacher_policy=teacher_policy,
             teacher_outcome=teacher_outcome,
             teacher_score_margin=teacher_score_margin,
+            opponent_reply=opponent_reply,
+            opponent_reply_ply=opponent_reply_ply,
+            second_stone=second_stone,
+            second_stone_ply=second_stone_ply,
         )
 
     def to_position(self) -> DoubleStarPosition:
@@ -708,7 +846,7 @@ def augment_sample(sample: ReplaySample, transform: D5Transform) -> ReplaySample
     assert sample.teacher_policy is not None
     assert sample.teacher_outcome is not None
     assert sample.teacher_score_margin is not None
-    return ReplaySample(
+    augmented = ReplaySample(
         rings=sample.rings,
         stones=nodes(sample.stones),
         to_move=sample.to_move,
@@ -721,8 +859,10 @@ def augment_sample(sample: ReplaySample, transform: D5Transform) -> ReplaySample
         outcome=sample.outcome,
         final_scores=sample.final_scores.copy(),
         final_quarks=sample.final_quarks.copy(),
-        final_ownership=nodes(sample.final_ownership),
-        final_alive=nodes(sample.final_alive),
+        # Validate the existing game ending (cached), then apply the exact D5
+        # permutation below. Component counts are invariant under that map.
+        final_ownership=sample.final_ownership.copy(),
+        final_alive=sample.final_alive.copy(),
         search_provenance=sample.search_provenance,
         policy_provenance=sample.policy_provenance,
         run_id=sample.run_id,
@@ -745,7 +885,24 @@ def augment_sample(sample: ReplaySample, transform: D5Transform) -> ReplaySample
         teacher_policy=nodes(sample.teacher_policy),
         teacher_outcome=sample.teacher_outcome.copy(),
         teacher_score_margin=sample.teacher_score_margin.copy(),
+        opponent_reply=(
+            np.concatenate(
+                (nodes(sample.opponent_reply[:-1]), sample.opponent_reply[-1:])
+            )
+            if sample.opponent_reply is not None
+            else None
+        ),
+        opponent_reply_ply=sample.opponent_reply_ply,
+        second_stone=nodes(sample.second_stone)
+        if sample.second_stone is not None
+        else None,
+        second_stone_ply=sample.second_stone_ply,
+        final_peries=sample.final_peries,
+        final_stars=sample.final_stars,
     )
+    augmented.final_ownership = nodes(sample.final_ownership)
+    augmented.final_alive = nodes(sample.final_alive)
+    return augmented
 
 
 def _offsets(lengths: Sequence[int]) -> np.ndarray:
@@ -780,6 +937,7 @@ def write_replay_shard(
     destination.parent.mkdir(parents=True, exist_ok=True)
     node_offsets = _offsets([sample.stones.size for sample in samples])
     metadata = shard_metadata(len(samples))
+    metadata["auxiliary_targets_version"] = REPLAY_AUXILIARY_TARGETS_VERSION
 
     def required(values: Sequence[np.ndarray | None], name: str) -> list[np.ndarray]:
         output: list[np.ndarray] = []
@@ -872,6 +1030,49 @@ def write_replay_shard(
                 [sample.teacher_score_margin for sample in samples],
                 "teacher_score_margin",
             )
+        ),
+        "opponent_reply": np.concatenate(
+            [
+                s.opponent_reply[:-1]
+                if s.opponent_reply is not None
+                else np.zeros(s.stones.size, np.float32)
+                for s in samples
+            ]
+        ),
+        "opponent_reply_swap": np.asarray(
+            [
+                s.opponent_reply[-1] if s.opponent_reply is not None else 0.0
+                for s in samples
+            ],
+            dtype=np.float32,
+        ),
+        "opponent_reply_ply": np.asarray(
+            [s.opponent_reply_ply for s in samples], dtype=np.int32
+        ),
+        "second_stone": np.concatenate(
+            [
+                s.second_stone
+                if s.second_stone is not None
+                else np.zeros(s.stones.size, np.float32)
+                for s in samples
+            ]
+        ),
+        "second_stone_ply": np.asarray(
+            [s.second_stone_ply for s in samples], dtype=np.int32
+        ),
+        "final_peries": np.stack(
+            [
+                s.final_peries
+                if s.final_peries is not None
+                else np.full(2, -1, np.int8)
+                for s in samples
+            ]
+        ),
+        "final_stars": np.stack(
+            [
+                s.final_stars if s.final_stars is not None else np.full(2, -1, np.int8)
+                for s in samples
+            ]
         ),
     }
     writer = np.savez_compressed if compressed else np.savez
@@ -967,6 +1168,26 @@ class DecodedReplayShard:
                 feature_schema_hash=FEATURE_SCHEMA_HASH,
                 history_known=False,
             )
+        auxiliary: dict[str, Any] = {}
+        if "opponent_reply" in arrays:
+            for name in ("opponent_reply", "second_stone"):
+                destination = _checked_int(f"{name}_ply", arrays[f"{name}_ply"][index])
+                values = arrays[name][node_slice].copy()
+                if name == "opponent_reply":
+                    values = np.concatenate(
+                        (values, arrays["opponent_reply_swap"][index : index + 1])
+                    )
+                if destination == -1 and np.any(values):
+                    raise ReplaySchemaError(f"missing {name} must be all zero")
+                auxiliary[name] = values if destination != -1 else None
+                auxiliary[f"{name}_ply"] = destination
+            for name in ("final_peries", "final_stars"):
+                values = arrays[name][index].copy()
+                if not np.issubdtype(values.dtype, np.integer):
+                    raise ReplaySchemaError(f"{name} must contain integer counts")
+                if np.any(values == -1) and not np.all(values == -1):
+                    raise ReplaySchemaError(f"missing {name} must use two -1 sentinels")
+                auxiliary[name] = None if np.all(values == -1) else values
         return ReplaySample(
             **common,
             rules_hash=arrays["rules_hash"][index],
@@ -982,6 +1203,7 @@ class DecodedReplayShard:
             teacher_policy=arrays["teacher_policy"][node_slice].copy(),
             teacher_outcome=arrays["teacher_outcome"][index].copy(),
             teacher_score_margin=arrays["teacher_score_margin"][index].copy(),
+            **auxiliary,
         )
 
     def samples(self, indices: Sequence[int] | None = None) -> list[ReplaySample]:
@@ -1026,6 +1248,22 @@ def decode_replay_shard(
                 "shards are only readable through the lineage-transfer importer)"
             )
         names = _LEGACY_SAMPLE_ARRAY_NAMES if legacy else _REPLAY_SAMPLE_ARRAY_NAMES
+        auxiliary_version = metadata.get("auxiliary_targets_version")
+        auxiliary_present = set(_AUXILIARY_SAMPLE_ARRAY_NAMES).intersection(shard.files)
+        if auxiliary_version is not None:
+            if (
+                legacy
+                or type(auxiliary_version) is not int
+                or auxiliary_version != REPLAY_AUXILIARY_TARGETS_VERSION
+            ):
+                raise ReplaySchemaError(
+                    "unsupported replay auxiliary targets capability"
+                )
+            names += _AUXILIARY_SAMPLE_ARRAY_NAMES
+        elif auxiliary_present:
+            raise ReplaySchemaError(
+                "auxiliary replay arrays require a versioned capability"
+            )
         missing = set(names).difference(shard.files)
         if missing:
             raise ReplaySchemaError(
@@ -1101,6 +1339,17 @@ def _validate_decoded_shard_arrays(
             "teacher_score_margin"
         ].shape != (count, SCORE_MARGIN_BINS):
             raise ReplaySchemaError("shard teacher columns have invalid shapes")
+    if "opponent_reply" in arrays:
+        for name in ("opponent_reply_ply", "second_stone_ply", "opponent_reply_swap"):
+            if arrays[name].shape != (count,):
+                raise ReplaySchemaError(
+                    "shard auxiliary policy columns have invalid shapes"
+                )
+        for name in ("final_peries", "final_stars"):
+            if arrays[name].shape != (count, 2):
+                raise ReplaySchemaError(
+                    "shard auxiliary count columns have invalid shapes"
+                )
 
     node_offsets = arrays["node_offsets"]
     if node_offsets.shape != (count + 1,):
@@ -1111,6 +1360,8 @@ def _validate_decoded_shard_arrays(
     node_columns = ["stones", "final_ownership", "final_alive"]
     if not legacy:
         node_columns.extend(("history_flags", "teacher_policy"))
+    if "opponent_reply" in arrays:
+        node_columns.extend(("opponent_reply", "second_stone"))
     if any(arrays[name].shape != (node_values,) for name in node_columns):
         raise ReplaySchemaError("shard node columns disagree with node offsets")
     if any(arrays[name].shape != (node_values,) for name in ("policy", "soft_policy")):
@@ -1343,6 +1594,16 @@ def collate_replay_samples(
     outcome = torch.zeros(batch_size, dtype=torch.long)
     margin = torch.zeros(batch_size, dtype=torch.long)
     clinch = torch.zeros(batch_size, dtype=torch.bool)
+    opponent_reply = torch.zeros((batch_size, max_nodes + 1), dtype=torch.float32)
+    second_stone = torch.zeros((batch_size, max_nodes), dtype=torch.float32)
+    auxiliary_counts = {
+        name: torch.zeros((batch_size, 2), dtype=torch.long)
+        for name in ("final_peries", "final_stars", "final_quarks")
+    }
+    auxiliary_masks = {
+        name: torch.zeros(batch_size, dtype=torch.bool)
+        for name in ("opponent_reply", "second_stone", *auxiliary_counts)
+    }
     any_teacher = any(sample.has_teacher for sample in samples)
     teacher_policy = (
         torch.zeros((batch_size, max_nodes), dtype=torch.float32)
@@ -1369,6 +1630,26 @@ def collate_replay_samples(
     }
     for index, sample in enumerate(samples):
         nodes = get_topology(sample.rings).n
+        if sample.opponent_reply is not None:
+            opponent_reply[index, :nodes] = torch.from_numpy(sample.opponent_reply[:-1])
+            # The swap slot follows batch padding, not this sample's last node.
+            opponent_reply[index, max_nodes] = float(sample.opponent_reply[-1])
+            auxiliary_masks["opponent_reply"][index] = True
+        if sample.second_stone is not None:
+            second_stone[index, :nodes] = torch.from_numpy(sample.second_stone)
+            auxiliary_masks["second_stone"][index] = True
+        order = [sample.to_move, 1 - sample.to_move]
+        for name in auxiliary_counts:
+            values = getattr(sample, name)
+            available = values is not None and (
+                name != "final_quarks" or bool(sample.target_mask & TARGET_SCORE_MARGIN)
+            )
+            if available:
+                assert values is not None
+                auxiliary_counts[name][index] = torch.from_numpy(
+                    values[order].astype(np.int64)
+                )
+                auxiliary_masks[name][index] = True
         policy[index] = relocate_sample_actions(
             torch.from_numpy(sample.policy),
             sample_nodes=nodes,
@@ -1452,6 +1733,16 @@ def collate_replay_samples(
             teacher_outcome=teacher_outcome,
             teacher_score_margin=teacher_margin,
             teacher_mask=teacher_mask,
+            opponent_reply=opponent_reply,
+            opponent_reply_mask=auxiliary_masks["opponent_reply"],
+            second_stone=second_stone,
+            second_stone_mask=auxiliary_masks["second_stone"],
+            final_peries=auxiliary_counts["final_peries"],
+            final_peries_mask=auxiliary_masks["final_peries"],
+            final_stars=auxiliary_counts["final_stars"],
+            final_stars_mask=auxiliary_masks["final_stars"],
+            final_quarks=auxiliary_counts["final_quarks"],
+            final_quarks_mask=auxiliary_masks["final_quarks"],
         ),
         feature_path=feature_path,
         variant_labels=tuple(sample.variant_label for sample in samples),

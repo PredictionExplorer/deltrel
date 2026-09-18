@@ -37,6 +37,7 @@ from .checkpoint import (
     ModelManifest,
     collect_model_garbage,
     extract_verified_manifest_config,
+    inference_model_config,
     load_ema_checkpoint,
     load_model_manifest,
 )
@@ -153,7 +154,15 @@ def load_manifest_evaluator(
     device: str,
     allow_heterogeneous_model: bool = False,
 ) -> GraphInferenceAdapter:
-    model_config = experiment.model
+    model_config = (
+        inference_model_config(
+            manifest,
+            expected_model=experiment.model,
+            expected_game_config=asdict(experiment.game),
+        )
+        if not allow_heterogeneous_model
+        else experiment.model
+    )
     if allow_heterogeneous_model:
         verified = extract_verified_manifest_config(
             manifest,

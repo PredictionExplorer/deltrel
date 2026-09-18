@@ -16,12 +16,16 @@ from torch import Tensor
 class RawPrediction:
     """CPU float32 bytes: node policy, two outcome logits, then score logits.
 
+    Detailed roots may also own separate auxiliary logits. They share this
+    cache's byte accounting but never change the primary prediction layout.
+
     Values are deliberately stored before score utility or any caller-specific
     postprocessing. No GPU tensors or views of a larger batch are retained.
     """
 
     packed: bytes
     nodes: int
+    auxiliary: bytes | None = None
 
 
 class BoundedPredictionCache:
@@ -77,6 +81,7 @@ class BoundedPredictionCache:
             + sys.getsizeof(value)
             + sys.getsizeof(value.packed)
             + sys.getsizeof(value.nodes)
+            + sys.getsizeof(value.auxiliary)
             + 256
         )
         previous = self._entries.pop(key, None)

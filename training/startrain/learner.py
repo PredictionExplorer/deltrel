@@ -1548,6 +1548,7 @@ class LearnerLoop:
             # when continuing a legacy global-clipping checkpoint. Missing
             # state in an already-adaptive checkpoint remains a fatal error.
             allow_gradient_clipping_cold_start=self.gradient_clipper is not None,
+            allow_auxiliary_upgrade=self.model.config.auxiliary_predictions,
             map_location=self.learner_config.device,
             expected_model_config=(
                 model_config if isinstance(model_config, Mapping) else None
@@ -1574,6 +1575,23 @@ class LearnerLoop:
         self._resume_utd_segment_state = resume_utd_segment
         self._last_recovery_step = self.step
         self._adopt_checkpoint_governor(metadata.get("extra"))
+        extra = metadata.get("extra", {})
+        if isinstance(extra, Mapping) and isinstance(
+            extra.get("auxiliary_upgrade"), Mapping
+        ):
+            self._auxiliary_upgrade = dict(extra["auxiliary_upgrade"])
+        if isinstance(extra, Mapping) and "auxiliary_supervision" in extra:
+            from .auxiliary_upgrade import AUXILIARY_LOSSES
+
+            supervised = extra["auxiliary_supervision"]
+            if not isinstance(supervised, Mapping) or any(
+                name not in AUXILIARY_LOSSES
+                or type(step) is not int
+                or not 0 < step <= self.step
+                for name, step in supervised.items()
+            ):
+                raise ValueError("checkpoint auxiliary supervision metadata is invalid")
+            self._auxiliary_supervision = dict(supervised)
 
     def _adopt_checkpoint_governor(self, extra: object) -> None:
         """Adopt the resumed checkpoint's learning-rate governance.
@@ -1599,7 +1617,26 @@ class LearnerLoop:
             )
 
     def _checkpoint_extra(self) -> dict[str, object]:
-        return {LEARNING_RATE_GOVERNOR_KEY: self._lr_governor.as_dict()}
+        extra: dict[str, object] = {
+            LEARNING_RATE_GOVERNOR_KEY: self._lr_governor.as_dict()
+        }
+        upgrade = getattr(self, "_auxiliary_upgrade", None)
+        if upgrade is not None:
+            extra["auxiliary_upgrade"] = upgrade
+        supervised = getattr(self, "_auxiliary_supervision", None)
+        if supervised is not None:
+            extra["auxiliary_supervision"] = dict(supervised)
+        return extra
+
+    def _record_auxiliary_supervision(self, losses: Mapping[str, float]) -> None:
+        """Conservatively mark heads trained, using already-synchronized metrics."""
+        from .auxiliary_upgrade import AUXILIARY_LOSSES
+
+        for name in AUXILIARY_LOSSES:
+            if losses.get(name + "_available", 0.0) > 0:
+                if not hasattr(self, "_auxiliary_supervision"):
+                    self._auxiliary_supervision: dict[str, int] = {}
+                self._auxiliary_supervision.setdefault(name, self.step)
 
     def _learning_rate_metrics(self) -> dict[str, object]:
         return {
@@ -2059,6 +2096,7 @@ class LearnerLoop:
                         and self.step % self.learner_config.metrics_interval == 0
                     ):
                         host_metrics = result.to_host()
+                        self._record_auxiliary_supervision(host_metrics.losses)
                         interval_health = interval_train_metrics.to_host()
                         h2d_seconds = (
                             sum(

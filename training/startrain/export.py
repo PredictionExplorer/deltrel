@@ -63,8 +63,11 @@ class ONNXStarModel(nn.Module):
             node_mask,
             legal_action_mask,
             rings,
+            include_auxiliary=False,
         )
-        return tuple(output)  # type: ignore[return-value]
+        # Browser artifacts keep their six-output wire contract. Auxiliary
+        # predictions are served separately by the full-model analysis API.
+        return tuple(output[:6])  # type: ignore[return-value]
 
 
 def export_onnx(

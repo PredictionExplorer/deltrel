@@ -430,7 +430,7 @@ def _champion_pin(path: Path, config: ExperimentConfig) -> ChampionPin:
     verified = extract_verified_manifest_config(manifest, require_ema=True)
     serialized = config.as_dict()
     if (
-        verified.model_config != serialized["model"]
+        verified.model != config.model
         or verified.game_config != serialized["game"]
     ):
         raise ValueError("champion architecture/game contract differs from config")

@@ -156,7 +156,7 @@ def _forward_and_gradients(model, batch, *, shared, bf16=False):
         for name, parameter in model.named_parameters()
         if parameter.grad is not None
     }
-    return tuple(output.detach() for output in outputs), gradients
+    return tuple(output.detach() for output in outputs[:6]), gradients
 
 
 @pytest.mark.parametrize("ring", [4, 6, 8, 10])

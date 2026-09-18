@@ -752,6 +752,61 @@ class _Decision:
     search_evidence: str = ""
 
 
+def _future_policy_targets(decisions: Sequence[_Decision]) -> list[dict[str, Any]]:
+    """Label only observed later decisions in this game's contiguous prefix.
+
+    A double turn's remaining own placement is skipped for opponent-reply
+    prediction. Swapping ends the responder's turn and is a separate label,
+    never the placement policy that was searched before choosing to swap.
+    """
+    targets: list[dict[str, Any]] = [{} for _ in decisions]
+    next_player: list[int | None] = [None, None]
+    for index in range(len(decisions) - 1, -1, -1):
+        source = decisions[index]
+        if index + 1 < len(decisions) and decisions[index + 1].ply != source.ply + 1:
+            raise ValueError(
+                "future policies require a contiguous single-game trajectory"
+            )
+        opponent_index = next_player[1 - source.position.to_move]
+        if opponent_index is not None:
+            reply = decisions[opponent_index]
+            if reply.swapped:
+                distribution = np.zeros(
+                    source.position.stones.numel() + 1, dtype=np.float32
+                )
+                distribution[-1] = 1.0
+            elif reply.policy is not None:
+                distribution = np.concatenate(
+                    (reply.policy, np.zeros(1, dtype=np.float32))
+                )
+            else:
+                distribution = None
+            if distribution is not None:
+                targets[index].update(
+                    opponent_reply=distribution, opponent_reply_ply=reply.ply
+                )
+        if (
+            source.position.mode == "double"
+            and not source.position.opening
+            and source.position.moves_left == 2
+            and not source.swapped
+            and index + 1 < len(decisions)
+        ):
+            second = decisions[index + 1]
+            if (
+                second.position.to_move == source.position.to_move
+                and second.position.moves_left == 1
+                and not second.position.opening
+                and not second.swapped
+                and second.policy is not None
+            ):
+                targets[index].update(
+                    second_stone=second.policy.copy(), second_stone_ply=second.ply
+                )
+        next_player[source.position.to_move] = index
+    return targets
+
+
 @dataclass(frozen=True, slots=True)
 class _ClinchFinalization:
     winner: int
@@ -979,6 +1034,7 @@ class SelfPlayActor:
         final_kind: str = "pending-policy",
         sample_weight: float = 1.0,
         clinch: _ClinchFinalization | None = None,
+        future_targets: Mapping[str, Any] | None = None,
     ) -> ReplaySample:
         mode = "full" if decision.full_search else "fast"
         return ReplaySample.from_position(
@@ -1022,6 +1078,7 @@ class SelfPlayActor:
             model_identity=model_identity,
             weight=sample_weight,
             policy_weight=decision.policy_weight,
+            **(future_targets or {}),
         )
 
     def _write_game_revision(
@@ -1164,9 +1221,14 @@ class SelfPlayActor:
                 continue
             samples = [
                 self._decision_sample(
-                    d, game_id=game_id, model_identity=pinned_versions[row][2]
+                    d,
+                    game_id=game_id,
+                    model_identity=pinned_versions[row][2],
+                    future_targets=future,
                 )
-                for d in decisions
+                for d, future in zip(
+                    decisions, _future_policy_targets(decisions), strict=True
+                )
             ]
             added += self._write_game_revision(
                 samples, decisions, pinned_versions[row], finalized=False
@@ -1218,6 +1280,30 @@ class SelfPlayActor:
                 "abandoned-policy-" + hashlib.sha256(original_game.encode()).hexdigest()
             )
             weights = self._policy_surprise_sample_weights(decisions)
+            future_by_ply = {
+                d.ply: future
+                for d, future in zip(
+                    trajectories[row],
+                    _future_policy_targets(trajectories[row]),
+                    strict=True,
+                )
+            }
+            stored_plies = {
+                decision.ply: index for index, decision in enumerate(decisions)
+            }
+            for future in future_by_ply.values():
+                for name in ("opponent_reply", "second_stone"):
+                    if name not in future:
+                        continue
+                    destination = stored_plies.get(future[f"{name}_ply"])
+                    if destination is None:
+                        # An observed swap can lack a retained search-policy
+                        # row. Do not invent a destination in the compressed
+                        # interrupted-game prefix or skip to a later reply.
+                        future.pop(name)
+                        future.pop(f"{name}_ply")
+                    else:
+                        future[f"{name}_ply"] = destination
             for storage_ply, (decision, weight) in enumerate(
                 zip(decisions, weights, strict=True)
             ):
@@ -1248,6 +1334,7 @@ class SelfPlayActor:
                         model_identity=model_identity,
                         weight=weight,
                         policy_weight=decision.policy_weight,
+                        **future_by_ply[decision.ply],
                     )
                 )
                 self.pending_phases.append(decision.phase)
@@ -2093,6 +2180,7 @@ class SelfPlayActor:
                 bool(swapped_rows[row]) if swapped_rows is not None else False
             )
             sample_weights = self._policy_surprise_sample_weights(decisions)
+            future_targets = _future_policy_targets(decisions)
             game_samples = [
                 self._decision_sample(
                     decision,
@@ -2108,9 +2196,10 @@ class SelfPlayActor:
                     ),
                     sample_weight=sample_weight,
                     clinch=clinch,
+                    future_targets=future,
                 )
-                for decision, sample_weight in zip(
-                    decisions, sample_weights, strict=True
+                for decision, sample_weight, future in zip(
+                    decisions, sample_weights, future_targets, strict=True
                 )
             ]
             if self.config.policy_publication.enabled:

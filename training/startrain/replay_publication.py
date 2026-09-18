@@ -44,6 +44,12 @@ _MUTABLE_FINAL_FIELDS = {
     "teacher_policy",
     "teacher_outcome",
     "teacher_score_margin",
+    "opponent_reply",
+    "opponent_reply_ply",
+    "second_stone",
+    "second_stone_ply",
+    "final_peries",
+    "final_stars",
 }
 
 
@@ -113,13 +119,31 @@ def revision_counts(
 
 
 def _digest_rows(
-    samples: Sequence[ReplaySample], *, immutable: bool
+    samples: Sequence[ReplaySample],
+    *,
+    immutable: bool,
+    future_limit: int | None = None,
+    include_auxiliary: bool = True,
 ) -> tuple[str, ...]:
     digest = hashlib.sha256()
     prefixes = [digest.hexdigest()]
     for sample in samples:
         for field in fields(sample):
             name = field.name
+            # These counts are a deterministic view of the already-hashed
+            # final ownership/alive maps, including for historical schema-v5.
+            if name in {"final_peries", "final_stars"}:
+                continue
+            policy_name = name.removesuffix("_ply")
+            if policy_name in {"opponent_reply", "second_stone"} and (
+                not include_auxiliary
+                or getattr(sample, policy_name) is None
+                or (
+                    future_limit is not None
+                    and getattr(sample, f"{policy_name}_ply") >= future_limit
+                )
+            ):
+                continue
             if immutable and name in _MUTABLE_FINAL_FIELDS:
                 continue
             value = getattr(sample, name)
@@ -140,6 +164,50 @@ def _digest_rows(
             digest.update(data)
         prefixes.append(digest.hexdigest())
     return tuple(prefixes)
+
+
+def _validate_future_policies(samples: Sequence[ReplaySample]) -> None:
+    """Future labels are views of immutable decisions, never new guesses."""
+    for source in samples:
+        for name in ("opponent_reply", "second_stone"):
+            target = getattr(source, name)
+            if target is None:
+                continue
+            destination = getattr(source, f"{name}_ply")
+            if destination >= len(samples):
+                raise ValueError(
+                    "future policy destination lies outside published game"
+                )
+            future = samples[destination]
+            if name == "second_stone":
+                if (
+                    destination != source.ply + 1
+                    or future.to_move != source.to_move
+                    or future.moves_left != 1
+                    or future.opening
+                ):
+                    raise ValueError("second-stone target crosses a turn boundary")
+                expected = future.policy
+            else:
+                expected_destination = next(
+                    (
+                        s.ply
+                        for s in samples[source.ply + 1 :]
+                        if s.to_move != source.to_move
+                    ),
+                    None,
+                )
+                if destination != expected_destination:
+                    raise ValueError(
+                        "opponent-reply target is not the next opponent decision"
+                    )
+                expected = np.zeros(source.stones.size + 1, dtype=np.float32)
+                if "swap=taken" in future.search_provenance.split(":"):
+                    expected[-1] = 1.0
+                else:
+                    expected[:-1] = future.policy
+            if not np.array_equal(target, expected):
+                raise ValueError("future policy changed the recorded later decision")
 
 
 def _record_json(record: ShardRecord, store: ReplayStore) -> str:
@@ -325,6 +393,7 @@ def append_revision(
         raise ValueError("replay run is not registered to this generation family")
     _lease(store.connection, context)
     policy_digests = _digest_rows(batch, immutable=True)
+    _validate_future_policies(batch)
     payload_digests = _digest_rows(batch, immutable=False)
     context_digest = hashlib.sha256(
         json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
@@ -381,10 +450,17 @@ def append_revision(
                 raise ValueError(
                     "previously published semantic state or policy changed"
                 )
-            if not finalized and payload_digests[old_count] != old["payload_digest"]:
-                raise ValueError(
-                    "pending publication payload changed before finalization"
-                )
+            if not finalized:
+                previous_view = _digest_rows(
+                    batch[:old_count], immutable=False, future_limit=old_count
+                )[-1]
+                legacy_view = _digest_rows(
+                    batch[:old_count], immutable=False, include_auxiliary=False
+                )[-1]
+                if old["payload_digest"] not in (previous_view, legacy_view):
+                    raise ValueError(
+                        "pending publication payload changed before finalization"
+                    )
             if not finalized and len(batch) == old_count:
                 raise ValueError("pending game publication made no progress")
             previous_record = _restore_record(str(old["record_json"]), store)

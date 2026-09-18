@@ -1808,6 +1808,14 @@ class ExperimentConfig:
     profile: Literal["continuous", "standalone-smoke"] = "standalone-smoke"
 
     def __post_init__(self) -> None:
+        from .auxiliary_upgrade import AUXILIARY_LOSSES
+
+        if not self.model.auxiliary_predictions and any(
+            getattr(self.loss, name) > 0 for name in AUXILIARY_LOSSES
+        ):
+            raise ConfigError(
+                "auxiliary loss weights require model.auxiliary_predictions"
+            )
         if self.profile not in ("continuous", "standalone-smoke"):
             raise ConfigError("experiment profile is invalid")
         if self.profile == "continuous" and not self.orchestration.enabled:
@@ -2080,6 +2088,15 @@ class ExperimentConfig:
 
     def as_dict(self) -> dict[str, Any]:
         result = asdict(self)
+        # Preserve the exact serialized authority of pre-auxiliary profiles.
+        # Enabled heads and nonzero weights always remain in the fingerprint.
+        if self.model.auxiliary_predictions is False:
+            del result["model"]["auxiliary_predictions"]
+        from .auxiliary_upgrade import AUXILIARY_LOSSES
+
+        for name in AUXILIARY_LOSSES:
+            if getattr(self.loss, name) == 0.0:
+                del result["loss"][name]
         # This optional group has never appeared in a released profile.
         # Omitting only its typed empty default preserves existing authority
         # without multiplying the historical compatibility representations.

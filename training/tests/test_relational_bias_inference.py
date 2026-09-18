@@ -33,14 +33,14 @@ def test_shared_relational_bias_preserves_forward_and_all_parameter_gradients(ri
     for left, right in zip(expected, actual, strict=True):
         torch.testing.assert_close(left, right, atol=1e-11, rtol=1e-11)
     torch.manual_seed(59)
-    upstream = [torch.randn_like(tensor) for tensor in expected]
+    upstream = [torch.randn_like(tensor) for tensor in expected[:6]]
     sum(
         (value * gradient).sum()
-        for value, gradient in zip(expected, upstream, strict=True)
+        for value, gradient in zip(expected[:6], upstream, strict=True)
     ).backward()
     sum(
         (value * gradient).sum()
-        for value, gradient in zip(actual, upstream, strict=True)
+        for value, gradient in zip(actual[:6], upstream, strict=True)
     ).backward()
     original_parameters = dict(original.named_parameters())
     for name, parameter in shared.named_parameters():

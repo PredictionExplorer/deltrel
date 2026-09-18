@@ -23,6 +23,8 @@ import subprocess
 import time
 from typing import Any, cast
 
+import yaml
+
 from startrain.runtime import atomic_json
 from scripts.migrate_continuous_profile import (
     MigrationRequest,
@@ -297,6 +299,7 @@ def reconcile_stopped_heartbeat(
         expected_sha256=checkpoint["checkpoint_sha256"],
         expected_bytes=checkpoint["checkpoint_bytes"],
         expected_model_config=profile.as_dict()["model"],
+        allow_auxiliary_upgrade=profile.model.auxiliary_predictions,
         expected_game_config=profile.as_dict()["game"],
         expected_run_id=identity["run_id"],
         expected_generation_family=identity["generation_family"],
@@ -1201,6 +1204,33 @@ class Deployment:
         for intent in sorted(self.base.glob("metadata-intent-*.json")):
             repair_interrupted_intent(intent, self.root)
         profile, commit = active_authority(self.root)
+        # Once new heads have learned, recovery must retain their architecture
+        # and all progress. Disable their losses using the compatible reader;
+        # never downgrade or restore an older checkpoint over newer training.
+        recovery_source = self.source
+        from startrain.auxiliary_upgrade import AUXILIARY_LOSSES
+
+        candidate_payload = yaml.safe_load(self.candidate.read_text())
+        candidate_model = candidate_payload.get("model", {})
+        auxiliary_enabled = candidate_model.get("auxiliary_predictions", False)
+        require(type(auxiliary_enabled) is bool, "invalid auxiliary recovery flag")
+        if auxiliary_enabled:
+            recovery_payload = yaml.safe_load(self.source.read_text())
+            recovery_payload["model"]["auxiliary_predictions"] = True
+            for loss_name in AUXILIARY_LOSSES:
+                recovery_payload["loss"][loss_name] = 0.0
+            recovery_source = self.base / "auxiliary-compatible-recovery.yaml"
+            contents = yaml.safe_dump(recovery_payload, sort_keys=False)
+            if recovery_source.exists():
+                require(
+                    recovery_source.read_text() == contents,
+                    "auxiliary recovery profile changed",
+                )
+            else:
+                recovery_source.write_text(contents)
+            from scripts.prepare_auxiliary_training_profile import ensure_auxiliary_gate
+
+            ensure_auxiliary_gate(self.source, recovery_source)
         recovery_path = self.base / "recovery-intent.json"
         if profile != self.source:
             if (
@@ -1209,7 +1239,7 @@ class Deployment:
             ):
                 require(
                     commit == self.plan["target_commit"]
-                    and digest(profile) == digest(self.source),
+                    and digest(profile) == digest(recovery_source),
                     "rollback authority differs from intent",
                 )
             else:
@@ -1221,7 +1251,7 @@ class Deployment:
                     "profile-pie-compatible-rollback-" + str(time.time_ns()) + ".yaml"
                 )
                 self.save("recovery-intent.json", {"profile_name": name})
-                self.migrate(profile, self.source, name, commit, recovery=True)
+                self.migrate(profile, recovery_source, name, commit, recovery=True)
                 profile = self.root / name
             self.install_units(profile)
         else:

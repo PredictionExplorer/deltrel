@@ -400,6 +400,7 @@ def load_checkpoint(
     ema: ExponentialMovingAverage | None = None,
     gradient_clipper: GradientClipper | None = None,
     allow_gradient_clipping_cold_start: bool = False,
+    allow_auxiliary_upgrade: bool = False,
     map_location: torch.device | str = "cpu",
     strict: bool = True,
     use_ema_weights: bool = False,
@@ -415,6 +416,14 @@ def load_checkpoint(
     checkpoint_path = Path(source)
     if type(allow_gradient_clipping_cold_start) is not bool:
         raise ValueError("allow_gradient_clipping_cold_start must be boolean")
+    if type(allow_auxiliary_upgrade) is not bool:
+        raise ValueError("allow_auxiliary_upgrade must be boolean")
+    if allow_auxiliary_upgrade and (
+        not strict or use_ema_weights or expected_model_config is None
+    ):
+        raise ValueError(
+            "auxiliary upgrade requires a strict configured training resume"
+        )
     if (use_ema_weights or require_ema) and not strict:
         raise ValueError("EMA checkpoint loading must be strict")
     if expected_sha256 is not None or expected_bytes is not None:
@@ -426,11 +435,24 @@ def load_checkpoint(
     payload = torch.load(checkpoint_path, map_location=map_location, weights_only=True)
     _validate_checkpoint_payload(
         payload,
-        expected_model_config=expected_model_config,
+        expected_model_config=None
+        if allow_auxiliary_upgrade
+        else expected_model_config,
         expected_game_config=expected_game_config,
         expected_run_id=expected_run_id,
         expected_generation_family=expected_generation_family,
     )
+    if allow_auxiliary_upgrade:
+        from .auxiliary_upgrade import upgrade_checkpoint_payload
+
+        assert expected_model_config is not None
+        payload = upgrade_checkpoint_payload(
+            payload,
+            model=model,
+            optimizer=optimizer,
+            gradient_clipper=gradient_clipper,
+            expected_model_config=expected_model_config,
+        )
     ema_payload = payload["ema"]
     if (use_ema_weights or require_ema) and ema_payload is None:
         raise ValueError("checkpoint has no EMA weights")
@@ -696,6 +718,7 @@ def inspect_checkpoint(
     expected_generation_family: str | None = None,
     expected_sha256: str | None = None,
     expected_bytes: int | None = None,
+    allow_auxiliary_upgrade: bool = False,
 ) -> dict[str, Any]:
     """Validate checkpoint contracts and return metadata without a model load."""
 
@@ -709,11 +732,25 @@ def inspect_checkpoint(
     payload = torch.load(checkpoint_path, map_location=map_location, weights_only=True)
     _validate_checkpoint_payload(
         payload,
-        expected_model_config=expected_model_config,
+        expected_model_config=None
+        if allow_auxiliary_upgrade
+        else expected_model_config,
         expected_game_config=expected_game_config,
         expected_run_id=expected_run_id,
         expected_generation_family=expected_generation_family,
     )
+    if allow_auxiliary_upgrade:
+        from .auxiliary_upgrade import is_auxiliary_extension
+
+        if expected_model_config is None:
+            raise ValueError(
+                "auxiliary inspection requires an expected model configuration"
+            )
+        actual = payload["config"]["model"]
+        if normalize_model_config(actual) != normalize_model_config(
+            expected_model_config
+        ) and not is_auxiliary_extension(actual, expected_model_config):
+            raise ValueError("checkpoint model/feature configuration is incompatible")
     return {
         "step": int(payload["step"]),
         "epoch": int(payload["epoch"]),
@@ -820,6 +857,27 @@ def extract_verified_checkpoint_config(
         handicap=int(cast(int, game_config["handicap"])),
         variants=cast(dict[str, object], game_config["variants"]),
     )
+
+
+def inference_model_config(
+    manifest: ModelManifest,
+    *,
+    expected_model: ModelConfig,
+    expected_game_config: Mapping[str, Any],
+) -> ModelConfig:
+    """Retain original architectures for champions predating additive heads."""
+    if not expected_model.auxiliary_predictions:
+        return expected_model
+    verified = extract_verified_manifest_config(
+        manifest, expected_game_config=expected_game_config
+    )
+    actual = verified.model
+    if (
+        replace(actual, auxiliary_predictions=expected_model.auxiliary_predictions)
+        != expected_model
+    ):
+        raise ValueError("inference checkpoint changes the trained architecture")
+    return actual
 
 
 def extract_verified_manifest_config(

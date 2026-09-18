@@ -233,10 +233,20 @@ def _heads(runner: Any, raw: Any, encoded: Any, ring: int) -> dict[str, Any]:
         )
     result = {}
     for name, value in output._asdict().items():
+        if value is None:
+            continue
         if "policy" in name:
             value = value[encoded.legal_action_mask]
         elif name in ("ownership_logits", "alive_logits"):
             value = value[encoded.node_mask]
+        elif name == "second_stone_logits":
+            value = value[encoded.legal_action_mask]
+        elif name in (
+            "opponent_reply_logits",
+            "final_peries_logits",
+            "final_stars_logits",
+        ):
+            value = value[value > torch.finfo(value.dtype).min]
         result[name] = value.detach().float().cpu()
     return result
 

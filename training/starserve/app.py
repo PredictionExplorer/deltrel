@@ -424,11 +424,13 @@ def create_app(
     app.post(
         "/v2/analyze",
         response_model=AnalyzeResponse,
+        response_model_exclude_unset=True,
         response_model_exclude_none=False,
     )(analyze)
     app.post(
         "/v2/move",
         response_model=AnalyzeResponse,
+        response_model_exclude_unset=True,
         response_model_exclude_none=False,
         include_in_schema=False,
     )(analyze)

@@ -27,6 +27,11 @@ from .contracts import (
 from .device import resolve_precision
 from .features import EncodedBatch
 from .features_v3 import encode_legacy_batch
+from .auxiliary_inference import (
+    AuxiliaryPrediction,
+    pack_auxiliary_logits,
+    unpack_auxiliary_prediction,
+)
 from .inference_cache import BoundedPredictionCache, PinnedTransferPool, RawPrediction
 from .inference_graphs import BoundedInferenceGraphs, CudaBackend
 from .native import (
@@ -75,6 +80,7 @@ class DetailedInferenceResponse:
     outcome_values: list[float]
     score_expectations: list[float]
     score_probabilities: list[list[float]]
+    auxiliary_predictions: list[AuxiliaryPrediction] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -435,6 +441,11 @@ class GraphInferenceAdapter:
         )
 
     @property
+    def has_auxiliary_predictions(self) -> bool:
+        raw_model = getattr(self.model, "_orig_mod", self.model)
+        return bool(getattr(getattr(raw_model, "config", None), "auxiliary_predictions", False))
+
+    @property
     def namespace(self) -> InferenceNamespace:
         namespace = (
             self.model_identity,
@@ -444,6 +455,8 @@ class GraphInferenceAdapter:
             self.config.precision,
             RULES_HASH,
         )
+        if self.has_auxiliary_predictions:
+            namespace = (*namespace, "auxiliary-heads-v1")
         raw_model = getattr(self.model, "_orig_mod", self.model)
         signature = getattr(raw_model, "inference_execution_signature", None)
         return (
@@ -801,7 +814,8 @@ class GraphInferenceAdapter:
         return keys
 
     def _run_raw_predictions(
-        self, host: EncodedBatch, *, ring: int | None, logical_rows: int | None = None
+        self, host: EncodedBatch, *, ring: int | None, logical_rows: int | None = None,
+        include_auxiliary: bool = False,
     ) -> list[RawPrediction]:
         requested_rows = host.batch_size if logical_rows is None else logical_rows
         if not 0 < requested_rows <= host.batch_size:
@@ -812,6 +826,8 @@ class GraphInferenceAdapter:
         was_training = self.model.training
         self.model.eval()
         kwargs: dict[str, object] = {}
+        if self.has_auxiliary_predictions:
+            kwargs["include_auxiliary"] = include_auxiliary
         if (
             self.homogeneous_relational_bias
             and ring is not None
@@ -854,14 +870,14 @@ class GraphInferenceAdapter:
                         or output.soft_policy_logits.shape != (rows, host.max_nodes)
                     ):
                         raise ValueError("model output shapes violate inference schema")
-                    return torch.cat(
-                        (
+                    fields = [
                             output.policy_logits.float(),
                             output.outcome_logits.float(),
                             output.score_margin_logits.float(),
-                        ),
-                        dim=1,
-                    )
+                    ]
+                    if include_auxiliary:
+                        fields.append(pack_auxiliary_logits(output, rows, host.max_nodes))
+                    return torch.cat(fields, dim=1)
 
                 pins: tuple[torch.Tensor, ...] = ()
                 if self._graphs is not None:
@@ -877,7 +893,7 @@ class GraphInferenceAdapter:
                     self._graph_weight_stamps = stamps
                 packed_device = (
                     self._graphs.run(
-                        self.namespace,
+                        (*self.namespace, "auxiliary", include_auxiliary),
                         forward,
                         encoded.model_args(),
                         kwargs,
@@ -890,7 +906,8 @@ class GraphInferenceAdapter:
                 # before releasing the owner lock or replaying another request.
                 packed = packed_device.cpu()
                 self._neural_round_trip_seconds += time.perf_counter() - neural_started
-                if not torch.isfinite(packed[:, host.max_nodes :]).all():
+                primary_width = host.max_nodes + 2 + SCORE_MARGIN_MAX - SCORE_MARGIN_MIN + 1
+                if not torch.isfinite(packed[:, host.max_nodes : primary_width]).all():
                     raise ValueError("non-finite neural value predictions")
                 if not torch.isfinite(
                     packed[:, : host.max_nodes].masked_select(host.legal_action_mask)
@@ -903,7 +920,10 @@ class GraphInferenceAdapter:
             if was_training:
                 self.model.train()
         return [
-            RawPrediction(row.numpy().tobytes(), host.max_nodes)
+            RawPrediction(
+                row[:primary_width].numpy().tobytes(), host.max_nodes,
+                row[primary_width:].numpy().tobytes() if include_auxiliary else None,
+            )
             for row in packed[:requested_rows]
         ]
 
@@ -985,6 +1005,11 @@ class GraphInferenceAdapter:
                     "cached inference requires an immutable model identity"
                 )
             rows = sum(request.rows for request in requests)
+            auxiliary_rows = [
+                detailed and self.has_auxiliary_predictions
+                for request, detailed in zip(requests, details_flags, strict=True)
+                for _ in range(request.rows)
+            ]
             cache_started = time.perf_counter()
             keyed = self._prediction_cache.enabled or self.config.deduplicate
             keys: list[bytes] = []
@@ -1021,6 +1046,13 @@ class GraphInferenceAdapter:
                                 "prepared legal-action metadata changed after validation"
                             )
                         keys.extend(self._row_keys(request.encoded, namespace))
+            if keyed:
+                # Detailed roots have their own records; a leaf cache hit cannot
+                # silently omit auxiliary heads, and leaves never require them.
+                keys = [
+                    key + b"\0auxiliary-root-v1" if detailed else key
+                    for key, detailed in zip(keys, auxiliary_rows, strict=True)
+                ]
             predictions: list[RawPrediction | None] = [None] * rows
             misses: list[int] = []
             pending_keys: dict[bytes, int] = {}
@@ -1096,7 +1128,8 @@ class GraphInferenceAdapter:
                     )
                 )
                 fresh = self._run_raw_predictions(
-                    selected, ring=ring, logical_rows=len(misses)
+                    selected, ring=ring, logical_rows=len(misses),
+                    include_auxiliary=any(auxiliary_rows[row] for row in misses),
                 )
                 for row, prediction in zip(misses, fresh, strict=True):
                     predictions[row] = prediction
@@ -1169,6 +1202,11 @@ class GraphInferenceAdapter:
                         outcome_values[start:end].tolist(),
                         expectations[start:end].tolist(),
                         score_probability[start:end].tolist(),
+                        [
+                            unpack_auxiliary_prediction(prediction.auxiliary, nodes)
+                            for prediction in predictions[start:end]
+                            if prediction is not None and prediction.auxiliary is not None
+                        ] if self.has_auxiliary_predictions else None,
                     )
                     if detailed
                     else None
@@ -1283,7 +1321,10 @@ class GraphInferenceAdapter:
                     enabled=autocast,
                 ),
             ):
-                output = self.model(*encoded.model_args())
+                output = self.model(
+                    *encoded.model_args(),
+                    **({"include_auxiliary": include_details} if self.has_auxiliary_predictions else {}),
+                )
                 self._neural_calls += 1
                 self._neural_rows += rows
                 expected_margin_bins = SCORE_MARGIN_MAX - SCORE_MARGIN_MIN + 1
@@ -1325,6 +1366,10 @@ class GraphInferenceAdapter:
                 legal_logits = output.policy_logits.float().masked_select(
                     encoded.legal_action_mask
                 )
+                auxiliary = (
+                    pack_auxiliary_logits(output, rows, encoded.max_nodes).cpu()
+                    if include_details and self.has_auxiliary_predictions else None
+                )
         finally:
             if was_training:
                 self.model.train()
@@ -1356,5 +1401,9 @@ class GraphInferenceAdapter:
             .cpu()
             .tolist(),
             score_probabilities=score_probability.cpu().tolist(),
+            auxiliary_predictions=[
+                unpack_auxiliary_prediction(row.numpy().tobytes(), encoded.max_nodes)
+                for row in auxiliary
+            ] if auxiliary is not None else None,
         )
         return response, details

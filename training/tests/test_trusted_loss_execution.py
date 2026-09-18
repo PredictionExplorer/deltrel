@@ -28,10 +28,12 @@ def test_trusted_losses_preserve_values_gradients_and_diagnostics(teacher, super
     reference = StarModelOutput(
         *(
             torch.randn(t.shape, generator=generator).requires_grad_()
-            for t in outputs(4, 5, 5)
+            for t in outputs(4, 5, 5)[:6]
         )
     )
-    trusted = StarModelOutput(*(t.detach().clone().requires_grad_() for t in reference))
+    trusted = StarModelOutput(
+        *(t.detach().clone().requires_grad_() for t in reference[:6])
+    )
     target = targets(4, 5, 5)
     target.policy[:, 0] = 1
     target.soft_policy[:, 1] = 1
@@ -81,7 +83,7 @@ def test_trusted_losses_preserve_values_gradients_and_diagnostics(teacher, super
         torch.testing.assert_close(actual[name], expected[name], rtol=0, atol=0)
     expected["total"].backward()
     actual["total"].backward()
-    for left, right in zip(reference, trusted, strict=True):
+    for left, right in zip(reference[:6], trusted[:6], strict=True):
         torch.testing.assert_close(left.grad, right.grad, rtol=0, atol=0)
     # Boolean indexing makes output sizes data-dependent and can synchronize a
     # CUDA stream. Trusted replay has already validated these labels on the CPU.

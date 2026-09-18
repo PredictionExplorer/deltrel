@@ -1,4 +1,5 @@
 import { StarAiError } from './errors';
+import { parseServerPredictions } from './predictions';
 import {
   parseStarAiDecision,
   responseFromStarAiDecision,
@@ -48,6 +49,7 @@ export interface AnalyzeRequestV3 {
   };
   /** Browser games are symmetric: neither side holds a playout advantage. */
   pda: 0;
+  include_predictions: true;
   search: {
     simulations: number;
     max_considered: number;
@@ -184,6 +186,7 @@ export function toAnalyzeRequest(
       handicap_stones: [...request.state.history.handicapStones],
     },
     pda: 0,
+    include_predictions: true,
     search: {
       simulations,
       max_considered: maxConsidered,
@@ -343,7 +346,7 @@ export function parseAnalyzeResponse(
   ] as const;
   if (
     !isRecord(payload) ||
-    !hasExactKeys(payload, responseKeys) ||
+    !hasExactKeys(payload, [...responseKeys, ...('predictions' in payload ? ['predictions'] : [])]) ||
     payload.schema_version !== STARSERVE_API_SCHEMA_VERSION
   ) {
     throw new StarAiError('protocol', 'Starserve response schema is incompatible.');
@@ -526,6 +529,7 @@ export function parseAnalyzeResponse(
       rootValue: payload.root_value,
       swapRecommended,
       expectedMargin: payload.score_belief.expected_margin,
+      ...('predictions' in payload ? { predictions: parseServerPredictions(payload.predictions) } : {}),
       rootActions: rootActions.map((rootAction) =>
         codeToAction(rootAction.code, nodeCount),
       ),

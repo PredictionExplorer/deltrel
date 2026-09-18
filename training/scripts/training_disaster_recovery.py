@@ -1522,6 +1522,10 @@ def _allocation_gate_references(
             references.append(
                 (payload["promotion_allocation_transition"], "status-json")
             )
+        if "auxiliary_prediction_transition" in payload:
+            references.append(
+                (payload["auxiliary_prediction_transition"], "status-json")
+            )
         result = []
         for reference, kind in references:
             if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
@@ -1574,8 +1578,9 @@ def _allocation_gate_dependency_closure(
     *,
     allow_policy_transition: bool = True,
     allow_promotion_transition: bool = True,
+    allow_auxiliary_transition: bool = True,
 ) -> list[tuple[str, str, str]]:
-    """Resolve one promotion transition around at most one training transition.
+    """Resolve original -> policy -> promotion -> auxiliary without nesting repeats.
 
     The supplied reader must verify the expected digest before returning JSON.
     Snapshot capture reads copied immutable objects; offline verification reads
@@ -1587,14 +1592,21 @@ def _allocation_gate_dependency_closure(
         raise DisasterRecoveryError(
             "promotion allocation transitions cannot be chained"
         )
+    if "auxiliary_prediction_transition" in payload and not allow_auxiliary_transition:
+        raise DisasterRecoveryError(
+            "auxiliary prediction transitions cannot be chained"
+        )
     references = _allocation_gate_references(payload)
     activation = payload.get("graph_cache_controlled_activation")
     if activation is not None:
         receipt = load_json(activation["path"], activation["sha256"])
         references.extend(_controlled_graph_activation_references(receipt))
+    auxiliary_transition = "auxiliary_prediction_transition" in payload
     promotion_transition = "promotion_allocation_transition" in payload
     transition_key = (
-        "promotion_allocation_transition"
+        "auxiliary_prediction_transition"
+        if auxiliary_transition
+        else "promotion_allocation_transition"
         if promotion_transition
         else "training_policy_transition"
     )
@@ -1609,10 +1621,19 @@ def _allocation_gate_dependency_closure(
         PROMOTION_TRANSITION_CLASS,
         PROMOTION_TRANSITION_FORMAT,
         PROMOTION_TRANSITION_SCOPE,
+        AUXILIARY_TRANSITION_CLASS,
+        AUXILIARY_TRANSITION_FORMAT,
+        AUXILIARY_TRANSITION_SCOPE,
     )
 
     expected_format, expected_class, expected_scope = (
         (
+            AUXILIARY_TRANSITION_FORMAT,
+            AUXILIARY_TRANSITION_CLASS,
+            AUXILIARY_TRANSITION_SCOPE,
+        )
+        if auxiliary_transition
+        else (
             PROMOTION_TRANSITION_FORMAT,
             PROMOTION_TRANSITION_CLASS,
             PROMOTION_TRANSITION_SCOPE,
@@ -1671,8 +1692,14 @@ def _allocation_gate_dependency_closure(
             "allocation policy transition must pin the source configuration's original gate"
         )
     source = load_json(source_reference["path"], source_reference["sha256"])
-    if "promotion_allocation_transition" in source or (
-        not promotion_transition and "training_policy_transition" in source
+    if (
+        "auxiliary_prediction_transition" in source
+        or (not auxiliary_transition and "promotion_allocation_transition" in source)
+        or (
+            not auxiliary_transition
+            and not promotion_transition
+            and "training_policy_transition" in source
+        )
     ):
         raise DisasterRecoveryError("allocation policy transitions cannot be chained")
     expected = dict(source)
@@ -1689,8 +1716,9 @@ def _allocation_gate_dependency_closure(
         _allocation_gate_dependency_closure(
             source,
             load_json,
-            allow_policy_transition=promotion_transition,
-            allow_promotion_transition=False,
+            allow_policy_transition=auxiliary_transition or promotion_transition,
+            allow_promotion_transition=auxiliary_transition,
+            allow_auxiliary_transition=False,
         )
     )
     return list(dict.fromkeys(references))

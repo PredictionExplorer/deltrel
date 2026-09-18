@@ -182,8 +182,9 @@ describe('GameScreen AI lifecycle', () => {
     );
     expect(requestServerAiDecision).toHaveBeenCalledOnce();
     expect(
-      screen.queryByRole('status', { name: 'Engine estimate' }),
-    ).not.toBeInTheDocument();
+      screen.getByRole('status', { name: 'Engine estimate' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Search value')).not.toBeInTheDocument();
   });
 
   it('aborts on exit and ignores a response that arrives after cancellation', async () => {
@@ -355,6 +356,37 @@ describe('GameScreen AI lifecycle', () => {
     expect(candidates[0]).toHaveTextContent('S10');
     expect(candidates[1]).toHaveTextContent('T10');
     expect(candidates[2]).toHaveTextContent('*10');
+    expect((await axe(container)).violations).toEqual([]);
+  });
+
+  it('shows official final predictions during normal play without developer settings', async () => {
+    vi.stubEnv('NEXT_PUBLIC_STAR_AI_DEVTOOLS', '0');
+    const flight = deferred<StarAiDecision>();
+    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    const { container } = render(<GameScreen />);
+    await screen.findByText('Server AI is thinking…');
+    const [request] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    flight.resolve(makeDecision(request, { type: 'place', node: 0 }, {
+      predictions: {
+        perspective: 0, finalBasis: 'official_end',
+        finalCounts: [
+          { player: 0, peries: 12.5, stars: 2.5, corners: 3.2, cornerBonusProbability: 0.8 },
+          { player: 1, peries: 7.5, stars: 1.5, corners: 1.8, cornerBonusProbability: 0.2 },
+        ],
+        opponentReply: { player: 1, kind: 'place', node: 2, probability: 0.25 },
+        secondStone: null,
+      },
+    }));
+    const panel = await screen.findByRole('status', { name: 'Engine estimate' });
+    const table = within(panel).getByRole('table');
+    const ada = within(table).getByRole('row', { name: /Ada/ });
+    expect(within(ada).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['12.5', '2.5', '3.2', '80.0%']);
+    const grace = within(table).getByRole('row', { name: /Grace/ });
+    expect(within(grace).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['7.5', '1.5', '1.8', '20.0%']);
+    expect(within(panel).getByText(/official final counts/)).toBeInTheDocument();
+    expect(within(panel).getByText("Grace's next reply")).toBeInTheDocument();
+    expect(within(panel).getByText('T10 · 25.0%')).toBeInTheDocument();
+    expect(within(panel).queryByText('Search value')).not.toBeInTheDocument();
     expect((await axe(container)).violations).toEqual([]);
   });
 

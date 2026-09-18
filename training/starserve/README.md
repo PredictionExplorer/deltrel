@@ -35,3 +35,28 @@ Cross-request batching may change floating-point rounding because the physical
 batch shape changes. Server latency and playing-strength comparisons should use
 the target device; unit tests establish cache identity, response routing, and
 resource lifetime, not a hardware speedup.
+
+## Optional learned forecasts
+
+Schema-v3 callers can set `include_predictions: true` to receive the optional
+`predictions` field. Existing callers keep the same response shape. The field is
+`null` for legacy models and migrated models until every auxiliary head has
+received labeled supervision. Historical replay alone cannot establish that
+the future-move heads have learned. Model health reports
+`auxiliary_predictions_ready`.
+
+`final_counts` names players 0 and 1 explicitly, independent of whose turn it is.
+It reports expected final peries, stars, controlled corners, and the probability
+of earning the quark-peri bonus (at least three corners). `final_basis` is
+`official_end`: clinched games are scored after filling remaining cells with the
+losing side's stones, exactly as in training. These are learned expectations;
+the current board score is displayed separately.
+
+`opponent_reply` and `second_stone` contain an action and its model probability.
+The second-stone forecast applies only at the beginning of a normal Double turn.
+An opponent's future pie swap can be forecast during the opening. Predictions
+describe the root position, rather than a forced continuation of the chosen move.
+
+Auxiliary heads run with detailed root inference and are cached with a separate
+root key. Normal search leaves skip their computation. None of these predictions
+changes search utility or the selected move.

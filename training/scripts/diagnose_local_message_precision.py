@@ -208,9 +208,18 @@ def capture(
         outputs = (model if runner is None else runner)(
             *encoded.model_args(), homogeneous_ring=ring, inference_relation_bias=bias
         )
-    raw = {
-        name: value.detach().float().cpu() for name, value in outputs._asdict().items()
-    }
+    raw = {}
+    for name, value in outputs._asdict().items():
+        if value is None:
+            continue
+        if name in (
+            "opponent_reply_logits",
+            "second_stone_logits",
+            "final_peries_logits",
+            "final_stars_logits",
+        ):
+            value = value[value > torch.finfo(value.dtype).min]
+        raw[name] = value.detach().float().cpu()
     legal, node = encoded.legal_action_mask.cpu(), encoded.node_mask.cpu()
     heads = {
         name: (

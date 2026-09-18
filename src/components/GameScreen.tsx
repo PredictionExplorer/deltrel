@@ -358,12 +358,10 @@ export function GameScreen() {
         flight.settled = true;
         setAiStatus({ kind: 'idle' });
         current.act(accepted.action);
-        if (devtools) {
-          setPublishedAnalysis({
-            key: `${decision.analysis.stateHash}:${decision.analysis.perspective}`,
-            analysis: decision.analysis,
-          });
-        }
+        setPublishedAnalysis({
+          key: `${decision.analysis.stateHash}:${decision.analysis.perspective}`,
+          analysis: decision.analysis,
+        });
       })
       .catch((error) => {
         if (flight.cancelled || flightRef.current !== flight) return;
@@ -972,11 +970,12 @@ export function GameScreen() {
               onRewind={rewindToViewed}
             />
 
-            {devtools && publishedAnalysis && (
+            {publishedAnalysis && (
               <EngineEstimatePanel
                 analysis={publishedAnalysis.analysis}
                 board={board}
                 playerNames={config.playerNames}
+                showSearchDetails={devtools}
               />
             )}
 

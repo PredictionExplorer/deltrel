@@ -1,5 +1,6 @@
 import { STAR_RULES_HASH } from '../rules';
 import { StarAiError } from './errors';
+import { parsePredictions, validatePredictionState, type StarAiPredictions } from './predictions';
 import {
   STAR_AI_PROTOCOL_SCHEMA_ID,
   STAR_AI_PROTOCOL_VERSION,
@@ -56,6 +57,8 @@ export interface StarAiAnalysis {
   simulations: number;
   maxConsidered: number;
   timingMs: StarAiTiming;
+  /** Missing or null for models without the auxiliary prediction heads. */
+  predictions?: StarAiPredictions | null;
 }
 
 export interface StarAiDecision {
@@ -203,6 +206,7 @@ function parseAnalysis(value: unknown, response: StarAiResponse): StarAiAnalysis
       'simulations',
       'maxConsidered',
       'timingMs',
+      ...('predictions' in value ? ['predictions'] : []),
     ]) ||
     (value.perspective !== 0 && value.perspective !== 1) ||
     value.stateHash !== response.stateHash
@@ -348,6 +352,7 @@ function parseAnalysis(value: unknown, response: StarAiResponse): StarAiAnalysis
     simulations: value.simulations,
     maxConsidered: value.maxConsidered,
     timingMs: parseTiming(value.timingMs),
+    ...('predictions' in value ? { predictions: parsePredictions(value.predictions) } : {}),
   };
 }
 
@@ -386,6 +391,10 @@ export function parseStarAiDecision(
     )
   ) {
     throw new StarAiError('protocol', 'AI decision contains an illegal root action.');
+  }
+  if (decision.analysis.predictions) validatePredictionState(decision.analysis.predictions, request);
+  if (decision.analysis.swapRecommended && decision.analysis.predictions?.secondStone) {
+    throw new StarAiError('protocol', 'AI predictions cannot include a second stone after a pie swap.');
   }
   return { response, analysis: decision.analysis };
 }

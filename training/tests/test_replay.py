@@ -504,6 +504,7 @@ def legacy_v4_shard(path, samples: list[ReplaySample]):
             "feature_schema_hash": LEGACY_FEATURE_SCHEMA_HASH,
         }
     )
+    metadata.pop("auxiliary_targets_version", None)
     arrays["rules_hash"] = np.full(len(samples), LEGACY_RULES_HASH, dtype=np.uint64)
     arrays["feature_schema_hash"] = np.full(
         len(samples), LEGACY_FEATURE_SCHEMA_HASH, dtype=np.uint64

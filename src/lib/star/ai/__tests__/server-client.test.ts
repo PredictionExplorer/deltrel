@@ -78,6 +78,41 @@ afterEach(() => {
 });
 
 describe('starserve v3 adapter', () => {
+  it('accepts optional final predictions and rejects inconsistent player identity or ranges', () => {
+    const predictions = {
+      perspective: 0,
+      final_basis: 'official_end',
+      final_counts: [
+        { player: 0, peries: 12, stars: 2, corners: 3.5, corner_bonus_probability: 0.8 },
+        { player: 1, peries: 8, stars: 3, corners: 1.5, corner_bonus_probability: 0.2 },
+      ],
+      opponent_reply: { player: 1, kind: 'place', node: 2, probability: 0.25 },
+      second_stone: null,
+    };
+    const payload = { ...representativeAnalyzeResponse(), predictions };
+    const decision = parseAnalyzeResponse(request, payload);
+    expect(decision.analysis.predictions).toMatchObject({
+      perspective: 0, finalBasis: 'official_end',
+      finalCounts: [{ player: 0, peries: 12 }, { player: 1, peries: 8 }],
+      opponentReply: { player: 1, node: 2 }, secondStone: null,
+    });
+    expect(parseAnalyzeResponse(request, { ...payload, predictions: null }).analysis.predictions).toBeNull();
+    expect(parseAnalyzeResponse(request, representativeAnalyzeResponse()).analysis.predictions).toBeUndefined();
+    const malformed = [
+      { ...predictions, perspective: 1 },
+      { ...predictions, final_counts: predictions.final_counts.slice(0, 1) },
+      { ...predictions, final_counts: [{ ...predictions.final_counts[0], peries: 21 }, predictions.final_counts[1]] },
+      { ...predictions, final_counts: [{ ...predictions.final_counts[0], stars: NaN }, predictions.final_counts[1]] },
+      { ...predictions, opponent_reply: { ...predictions.opponent_reply, player: 0 } },
+      { ...predictions, opponent_reply: { ...predictions.opponent_reply, node: 274 } },
+      { ...predictions, second_stone: { player: 0, kind: 'place', node: 2, probability: 0.5 } },
+      { ...predictions, unexpected: true },
+    ];
+    for (const invalid of malformed) {
+      expect(() => parseAnalyzeResponse(request, { ...payload, predictions: invalid })).toThrow(/predictions/i);
+    }
+  });
+
   it('converts semantic state to strict snake_case with the variant and history', () => {
     const wire = toAnalyzeRequest(request, {
       simulations: 4,
@@ -104,6 +139,7 @@ describe('starserve v3 adapter', () => {
         handicap_stones: [],
       },
       pda: 0,
+      include_predictions: true,
       search: {
         simulations: 4,
         max_considered: 2,
@@ -141,6 +177,19 @@ describe('starserve v3 adapter', () => {
     );
     expect(swapped.response.action).toEqual({ type: 'swap' });
     expect(swapped.analysis).toMatchObject({ swapRecommended: true, rootValue: -0.4 });
+    expect(() => parseAnalyzeResponse(pieRequest, {
+      ...representativeAnalyzeResponse(pieRequest, pieVariant, true, true),
+      predictions: {
+        perspective: 1,
+        final_basis: 'official_end',
+        final_counts: [
+          { player: 0, peries: 12, stars: 2, corners: 3, corner_bonus_probability: 0.8 },
+          { player: 1, peries: 8, stars: 3, corners: 2, corner_bonus_probability: 0.2 },
+        ],
+        opponent_reply: { player: 0, kind: 'place', node: 2, probability: 0.2 },
+        second_stone: { player: 1, kind: 'place', node: 3, probability: 0.3 },
+      },
+    })).toThrow(/second stone after a pie swap/i);
     const kept = parseAnalyzeResponse(
       pieRequest,
       representativeAnalyzeResponse(pieRequest, pieVariant, true, false),

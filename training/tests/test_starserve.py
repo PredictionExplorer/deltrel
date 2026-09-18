@@ -788,7 +788,8 @@ def test_pie_swap_uses_selected_keep_action_value(
         total_ms=0,
         node_count=get_topology(4).n,
         request=SimpleNamespace(
-            swap_available=True, mode="double", handicap=1, pie=True, history=None
+            swap_available=True, mode="double", handicap=1, pie=True, history=None,
+            include_predictions=False,
         ),
     )
     assert result["root_value"] == root_mean

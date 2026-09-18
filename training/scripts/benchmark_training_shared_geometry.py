@@ -304,10 +304,20 @@ def _capture(
     losses["total"].backward()
     outputs = {}
     for name, tensor in output._asdict().items():
+        if tensor is None:
+            continue
         if "policy" in name:
             tensor = tensor[batch.inputs.legal_action_mask]
         elif name in ("ownership_logits", "alive_logits"):
             tensor = tensor[batch.inputs.node_mask]
+        elif name == "second_stone_logits":
+            tensor = tensor[batch.inputs.legal_action_mask]
+        elif name in (
+            "opponent_reply_logits",
+            "final_peries_logits",
+            "final_stars_logits",
+        ):
+            tensor = tensor[tensor > torch.finfo(tensor.dtype).min]
         outputs[name] = tensor.detach().float().cpu()
     gradients = {
         name: parameter.grad.detach().float().cpu()

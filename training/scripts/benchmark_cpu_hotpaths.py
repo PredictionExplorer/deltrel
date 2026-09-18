@@ -107,8 +107,9 @@ def benchmark_losses(baseline, *, repeats, iterations) -> dict:
     expected, actual = functions["baseline"](), functions["candidate"]()
     for name in expected:
         torch.testing.assert_close(actual[name], expected[name], rtol=0, atol=0)
-    left = torch.autograd.grad(expected["total"], output)
-    right = torch.autograd.grad(actual["total"], output)
+    tensors = tuple(value for value in output if value is not None)
+    left = torch.autograd.grad(expected["total"], tensors)
+    right = torch.autograd.grad(actual["total"], tensors)
     for a, b in zip(left, right, strict=True):
         torch.testing.assert_close(a, b, rtol=0, atol=0)
     counts = {}

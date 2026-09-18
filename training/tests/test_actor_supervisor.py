@@ -529,6 +529,7 @@ def test_manifest_provider_reuses_compiled_evaluator_and_refreshes_weights(
     class TinyGraphModel(nn.Module):
         def __init__(self, _config) -> None:
             super().__init__()
+            self.config = _config
             self.weight = nn.Parameter(torch.zeros(()))
 
         def forward(self, *arguments: torch.Tensor) -> StarModelOutput:
@@ -713,6 +714,7 @@ def test_manifest_provider_fails_closed_after_in_place_reload_error(
     class TinyGraphModel(nn.Module):
         def __init__(self, _config) -> None:
             super().__init__()
+            self.config = _config
             self.weight = nn.Parameter(torch.zeros(()))
 
     load_calls = 0

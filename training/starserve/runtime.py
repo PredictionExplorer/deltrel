@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import threading
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -13,13 +13,20 @@ from typing import Any
 
 import torch
 
-from startrain.checkpoint import ModelManifest, load_ema_checkpoint, load_model_manifest
+from startrain.checkpoint import (
+    ModelManifest,
+    inference_model_config,
+    load_ema_checkpoint,
+    load_model_manifest,
+)
 from startrain.config import ExperimentConfig, load_config
 from startrain.contracts import SCORE_MARGIN_MAX, SCORE_MARGIN_MIN
 from startrain.features import GLOBAL_FEATURE_DIM, NODE_FEATURE_DIM
 from startrain.inference import GraphInferenceAdapter, InferenceConfig
 from startrain.inference_batching import BoundedInferenceBroker, CohortInferenceAdapter
-from startrain.model import GraphResTNet
+from startrain.auxiliary_inference import AuxiliaryPrediction
+from startrain.auxiliary_upgrade import AUXILIARY_LOSSES
+from startrain.model import GraphResTNet, ModelConfig
 from startrain.contracts import MODE_INDEX
 from startrain.native import BITBOARD_WORDS, load_star_native, positions_from_native
 from startrain.training import maybe_compile_model
@@ -65,6 +72,7 @@ class LoadedModel:
     evaluator: GraphInferenceAdapter | CohortInferenceAdapter
     broker: BoundedInferenceBroker | None = None
     search_cache: CompletedSearchCache | None = None
+    auxiliary_predictions_ready: bool = False
 
     def close(self) -> None:
         if self.search_cache is not None:
@@ -259,6 +267,9 @@ class AtomicModelManager:
                 "reload_in_progress": self._loading,
                 "last_reload_ns": self._last_reload_ns,
                 "last_reload_error": self._last_reload_error,
+                "auxiliary_predictions_ready": current.auxiliary_predictions_ready
+                if current
+                else False,
             }
 
     def _same_manifest(self, manifest: ModelManifest) -> bool:
@@ -284,11 +295,16 @@ class AtomicModelManager:
         device: str,
     ) -> LoadedModel:
         target = validate_device_availability(device)
-        model = GraphResTNet(experiment.model).to(target)
+        model_config = inference_model_config(
+            manifest,
+            expected_model=experiment.model,
+            expected_game_config=asdict(experiment.game),
+        )
+        model = GraphResTNet(model_config).to(target)
         metadata = load_ema_checkpoint(
             manifest.checkpoint,
             model=model,
-            expected_model_config=asdict(experiment.model),
+            expected_model_config=asdict(model_config),
             expected_game_config=asdict(experiment.game),
             expected_run_id=manifest.run_id,
             expected_generation_family=manifest.generation_family,
@@ -298,6 +314,7 @@ class AtomicModelManager:
         )
         if int(metadata["step"]) != manifest.model_step:
             raise ValueError("model manifest and EMA checkpoint identity disagree")
+        auxiliary_ready = _auxiliary_heads_ready(model_config, metadata)
         model.eval()
         inference_model = maybe_compile_model(
             model,
@@ -330,7 +347,10 @@ class AtomicModelManager:
         )
         if not self.config.inference.shared_batching:
             return LoadedModel(
-                manifest=manifest, evaluator=evaluator, search_cache=search_cache
+                manifest=manifest,
+                evaluator=evaluator,
+                search_cache=search_cache,
+                auxiliary_predictions_ready=auxiliary_ready,
             )
         inference = self.config.inference
         broker = BoundedInferenceBroker(
@@ -343,7 +363,11 @@ class AtomicModelManager:
             max_wait_seconds=0.0,
         )
         return LoadedModel(
-            manifest, broker.cohort_adapter(evaluator), broker, search_cache
+            manifest,
+            broker.cohort_adapter(evaluator),
+            broker,
+            search_cache,
+            auxiliary_ready,
         )
 
 
@@ -479,6 +503,7 @@ class NativeAnalysisService:
                 node_count=len(request.stones),
                 request=request,
                 swap_dead_zone=self.config.search.swap_dead_zone,
+                auxiliary_ready=lease.model.auxiliary_predictions_ready,
             )
             if cancellation.is_set():
                 raise SearchCancelled()
@@ -577,6 +602,7 @@ class NativeAnalysisService:
         node_count: int,
         request: AnalyzeRequest | None = None,
         swap_dead_zone: float = 0.02,
+        auxiliary_ready: bool = True,
     ) -> dict[str, object]:
         offsets = [int(value) for value in results.action_offsets]
         actions = [int(value) for value in results.actions]
@@ -712,7 +738,7 @@ class NativeAnalysisService:
             for index, probability in enumerate(scores)
         )
         swap_available = bool(request.swap_available) if request is not None else False
-        return {
+        payload: dict[str, object] = {
             "schema_version": API_SCHEMA_VERSION,
             "action": _action_payload(selected[0]),
             "root_actions": [_action_payload(action) for action in actions],
@@ -748,6 +774,136 @@ class NativeAnalysisService:
                 "total": total_ms,
             },
         }
+        if request is not None and request.include_predictions:
+            predictions = (
+                getattr(detailed, "auxiliary_predictions", None)
+                if auxiliary_ready
+                else None
+            )
+            if predictions is not None and len(predictions) != 1:
+                raise AnalysisError(
+                    "model_output_error", "root auxiliary batch has invalid shape"
+                )
+            payload["predictions"] = (
+                _auxiliary_payload(
+                    predictions[0],
+                    request,
+                    swap_recommended=bool(payload["swap_recommended"]),
+                )
+                if predictions is not None
+                else None
+            )
+        return payload
+
+
+def _auxiliary_heads_ready(config: ModelConfig, metadata: Mapping[str, Any]) -> bool:
+    """Require observed supervision for every newly added prediction head."""
+    if not config.auxiliary_predictions:
+        return False
+    step = metadata.get("step")
+    if type(step) is not int or step <= 0:
+        return False
+    extra = metadata.get("extra", {})
+    if not isinstance(extra, Mapping):
+        return False
+    if "auxiliary_upgrade" not in extra:
+        return True
+    upgrade = extra["auxiliary_upgrade"]
+    supervision = extra.get("auxiliary_supervision")
+    if not isinstance(upgrade, Mapping) or not isinstance(supervision, Mapping):
+        return False
+    source_step = upgrade.get("source_step")
+    if type(source_step) is not int or not 0 <= source_step < step:
+        return False
+    # Old replay can teach final counts before any new future-move labels are
+    # sampled. Advancing the learner alone does not establish head readiness.
+    return all(
+        type(supervision.get(name)) is int and source_step < supervision[name] <= step
+        for name in AUXILIARY_LOSSES
+    )
+
+
+def _auxiliary_payload(
+    prediction: AuxiliaryPrediction,
+    request: AnalyzeRequest,
+    *,
+    swap_recommended: bool = False,
+) -> dict[str, object]:
+    """Map model perspective to stable board colors, never to swapped seats."""
+    pairs = (
+        prediction.final_peries,
+        prediction.final_stars,
+        prediction.final_quarks,
+        prediction.quark_bonus_probability,
+    )
+    maxima = (5 * request.rings, (5 * request.rings) // 2, 5, 1)
+    for values, maximum in zip(pairs, maxima, strict=True):
+        if len(values) != 2 or any(
+            not math.isfinite(value) or not 0 <= value <= maximum + 1e-5
+            for value in values
+        ):
+            raise AnalysisError(
+                "model_output_error", "invalid final component prediction"
+            )
+    counts = []
+    for player in (0, 1):
+        index = 0 if player == request.to_move else 1
+        counts.append(
+            {
+                "player": player,
+                "peries": min(float(maxima[0]), prediction.final_peries[index]),
+                "stars": min(float(maxima[1]), prediction.final_stars[index]),
+                "corners": min(5.0, prediction.final_quarks[index]),
+                "corner_bonus_probability": min(
+                    1.0, prediction.quark_bonus_probability[index]
+                ),
+            }
+        )
+
+    def future_move(
+        probabilities: list[float], player: int, *, swap: bool
+    ) -> dict[str, object] | None:
+        nodes = len(request.stones)
+        if (
+            len(probabilities) != nodes + int(swap)
+            or any(
+                not math.isfinite(value) or not 0 <= value <= 1
+                for value in probabilities
+            )
+            or not math.isclose(math.fsum(probabilities), 1, abs_tol=1e-5)
+        ):
+            raise AnalysisError("model_output_error", "invalid future move prediction")
+        # Future placements must be empty now. A future pie decision belongs to
+        # the responder after the opening placement, never after a normal turn.
+        candidates = [node for node, stone in enumerate(request.stones) if stone == -1]
+        if swap and request.pie and request.opening:
+            candidates.append(nodes)
+        if not candidates:
+            return None
+        node = max(candidates, key=probabilities.__getitem__)
+        return {
+            "player": player,
+            "kind": "swap" if node == nodes else "place",
+            "node": None if node == nodes else node,
+            "probability": probabilities[node],
+        }
+
+    return {
+        "perspective": request.to_move,
+        "final_basis": "official_end",
+        "final_counts": counts,
+        "opponent_reply": future_move(
+            prediction.opponent_reply_probabilities, 1 - request.to_move, swap=True
+        ),
+        "second_stone": future_move(
+            prediction.second_stone_probabilities, request.to_move, swap=False
+        )
+        if request.mode == "double"
+        and not request.opening
+        and request.moves_left == 2
+        and not swap_recommended
+        else None,
+    }
 
 
 def _pack_stones(stones: Sequence[int], *, player: int) -> list[int]:

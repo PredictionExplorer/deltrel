@@ -70,6 +70,8 @@ class ModelConfig:
     feature_schema_version: int = FEATURE_SCHEMA_VERSION
     relational_bias: bool = True
     adaln_hidden: int = 32
+    # Optional training targets; the default preserves existing checkpoints.
+    auxiliary_predictions: bool = False
 
     def __post_init__(self) -> None:
         if (
@@ -90,6 +92,8 @@ class ModelConfig:
             )
         if type(self.relational_bias) is not bool:
             raise TypeError("relational_bias must be boolean")
+        if type(self.auxiliary_predictions) is not bool:
+            raise TypeError("auxiliary_predictions must be boolean")
         if isinstance(self.adaln_hidden, bool) or not isinstance(
             self.adaln_hidden, int
         ):
@@ -179,6 +183,11 @@ class StarModelOutput(NamedTuple):
     ownership_logits: Tensor
     alive_logits: Tensor
     soft_policy_logits: Tensor
+    opponent_reply_logits: Tensor | None = None
+    second_stone_logits: Tensor | None = None
+    final_peries_logits: Tensor | None = None
+    final_stars_logits: Tensor | None = None
+    final_quarks_logits: Tensor | None = None
 
 
 class ModelParameterCounts(NamedTuple):
@@ -224,6 +233,9 @@ def model_parameter_counts(config: ModelConfig) -> ModelParameterCounts:
     )
     final_norm_parameters = 2 * width
     head_outputs = 1 + 2 + config.score_margin_bins + 3 + 1 + 1
+    if config.auxiliary_predictions:
+        # Reply node + reply swap + second stone; two players' count beliefs.
+        head_outputs += 3 + 2 * (51 + 26 + 6)
     head_parameters = (width + 1) * head_outputs
     input_and_output = projection_parameters + final_norm_parameters + head_parameters
 
@@ -677,6 +689,26 @@ class GraphResTNet(nn.Module):
             self.relation_tables = None
             self.ring_slots = None
 
+        # Construct these last so toggling the option leaves the seeded primary
+        # model initialization unchanged. No auxiliary parameters exist when off.
+        if config.auxiliary_predictions:
+            self.opponent_reply_head = nn.Linear(width, 1)
+            self.opponent_reply_swap_head = nn.Linear(width, 1)
+            self.second_stone_head = nn.Linear(width, 1)
+            self.final_peries_head = nn.Linear(width, 2 * 51)
+            self.final_stars_head = nn.Linear(width, 2 * 26)
+            self.final_quarks_head = nn.Linear(width, 2 * 6)
+            for head in (
+                self.opponent_reply_head,
+                self.opponent_reply_swap_head,
+                self.second_stone_head,
+                self.final_peries_head,
+                self.final_stars_head,
+                self.final_quarks_head,
+            ):
+                nn.init.normal_(head.weight, std=0.01)
+                nn.init.zeros_(head.bias)
+
     def relation_index_for(self, rings: Tensor, max_nodes: int) -> Tensor | None:
         """Per-sample `(B, 1 + max_nodes, 1 + max_nodes)` relation ids."""
 
@@ -798,6 +830,7 @@ class GraphResTNet(nn.Module):
         *,
         homogeneous_ring: int | None = None,
         inference_relation_bias: tuple[Tensor, ...] | None = None,
+        include_auxiliary: bool = True,
     ) -> StarModelOutput:
         mask_values = node_mask.unsqueeze(-1).to(dtype=node_features.dtype)
         nodes = self.node_projection(node_features) * mask_values
@@ -858,6 +891,43 @@ class GraphResTNet(nn.Module):
             self.soft_node_policy(nodes).squeeze(-1),
             legal_action_mask,
         )
+        opponent_reply_logits = second_stone_logits = None
+        final_peries_logits = final_stars_logits = final_quarks_logits = None
+        if self.config.auxiliary_predictions and include_auxiliary:
+            if rings is None:
+                raise ValueError("auxiliary predictions require per-sample rings")
+            # Future actions can only use currently empty nodes. Swap is a
+            # future-turn label, so today's swap availability cannot mask it.
+            future_node_mask = node_mask & node_features[:, :, 0].bool()
+            reply_nodes = _mask_logits(
+                self.opponent_reply_head(nodes).squeeze(-1), future_node_mask
+            )
+            opponent_reply_logits = torch.cat(
+                (reply_nodes, self.opponent_reply_swap_head(pooled)), dim=-1
+            )
+            second_stone_logits = _mask_logits(
+                self.second_stone_head(nodes).squeeze(-1), future_node_mask
+            )
+            batch_size = nodes.shape[0]
+            final_peries_logits = self.final_peries_head(pooled).reshape(
+                batch_size, 2, 51
+            )
+            final_stars_logits = self.final_stars_head(pooled).reshape(
+                batch_size, 2, 26
+            )
+            final_quarks_logits = self.final_quarks_head(pooled).reshape(
+                batch_size, 2, 6
+            )
+            final_peries_logits = _mask_logits(
+                final_peries_logits,
+                torch.arange(51, device=rings.device)[None, None, :]
+                <= (5 * rings)[:, None, None],
+            )
+            final_stars_logits = _mask_logits(
+                final_stars_logits,
+                torch.arange(26, device=rings.device)[None, None, :]
+                <= ((5 * rings) // 2)[:, None, None],
+            )
         return StarModelOutput(
             policy_logits=policy_logits,
             outcome_logits=self.outcome_head(pooled),
@@ -865,6 +935,11 @@ class GraphResTNet(nn.Module):
             ownership_logits=self.ownership_head(nodes),
             alive_logits=self.alive_head(nodes).squeeze(-1),
             soft_policy_logits=soft_policy_logits,
+            opponent_reply_logits=opponent_reply_logits,
+            second_stone_logits=second_stone_logits,
+            final_peries_logits=final_peries_logits,
+            final_stars_logits=final_stars_logits,
+            final_quarks_logits=final_quarks_logits,
         )
 
     def parameter_count(self) -> int:

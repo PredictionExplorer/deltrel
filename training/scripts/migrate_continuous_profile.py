@@ -26,6 +26,7 @@ import torch
 from startrain.checkpoint import CHECKPOINT_FORMAT, CHECKPOINT_VERSION
 from startrain.config import ExperimentConfig, load_config
 from startrain.config_compatibility import compatible_config_epoch_payloads
+from startrain.auxiliary_upgrade import AUXILIARY_LOSSES, is_auxiliary_extension
 
 if __package__:
     from scripts.validate_continuous_profile import validate_continuous_config
@@ -45,6 +46,8 @@ _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _MISSING = object()
 
 _ALLOWED_PROFILE_PATHS = {
+    ("model", "auxiliary_predictions"),
+    *(("loss", name) for name in AUXILIARY_LOSSES),
     ("selfplay", "ring_search_allocations"),
     ("selfplay", "search_execution", "first_visit_batch_size"),
     ("data", "workers"),
@@ -656,9 +659,21 @@ def _validate_profile_pair(
         raise MigrationError("replay data schema_version is immutable")
     if old.train.seed != new.train.seed:
         raise MigrationError("training seed is immutable")
-    for section in ("model", "loss", "optimizer"):
-        if getattr(old, section) != getattr(new, section):
-            raise MigrationError(f"{section} configuration is immutable")
+    if old.model != new.model and not is_auxiliary_extension(
+        old.as_dict()["model"], new.as_dict()["model"]
+    ):
+        raise MigrationError(
+            "model configuration is immutable except additive prediction heads"
+        )
+    if old.optimizer != new.optimizer:
+        raise MigrationError("optimizer configuration is immutable")
+    old_loss, new_loss = old.as_dict()["loss"], new.as_dict()["loss"]
+    if {k: v for k, v in old_loss.items() if k not in AUXILIARY_LOSSES} != {
+        k: v for k, v in new_loss.items() if k not in AUXILIARY_LOSSES
+    } or (old.loss != new.loss and not new.model.auxiliary_predictions):
+        raise MigrationError(
+            "loss configuration is immutable except auxiliary prediction weights"
+        )
     if old.game != new.game:
         from startrain.checkpoint import game_configs_compatible
 
@@ -1283,9 +1298,25 @@ def _validate_recovery_checkpoint_payload(
         raise MigrationError("recovery checkpoint payload run identity is incompatible")
     checkpoint_config = payload.get("config")
     serialized = config.as_dict()
-    if not isinstance(checkpoint_config, Mapping) or any(
-        checkpoint_config.get(section) != serialized[section]
-        for section in ("model", "loss", "optimizer")
+    from startrain.checkpoint import normalize_model_config
+
+    if not isinstance(checkpoint_config, Mapping):
+        raise MigrationError(
+            "recovery checkpoint experiment configuration is incompatible"
+        )
+    actual_model = checkpoint_config.get("model")
+    actual_loss = checkpoint_config.get("loss")
+    if (
+        not isinstance(actual_model, Mapping)
+        or not isinstance(actual_loss, Mapping)
+        or (
+            normalize_model_config(actual_model)
+            != normalize_model_config(serialized["model"])
+            and not is_auxiliary_extension(actual_model, serialized["model"])
+        )
+        or {k: v for k, v in actual_loss.items() if k not in AUXILIARY_LOSSES}
+        != {k: v for k, v in serialized["loss"].items() if k not in AUXILIARY_LOSSES}
+        or checkpoint_config.get("optimizer") != serialized["optimizer"]
     ):
         raise MigrationError(
             "recovery checkpoint experiment configuration is incompatible"
