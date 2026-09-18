@@ -42,6 +42,12 @@ checkpoint preservation, and final verification are recorded in the
 
 ## Architecture
 
+The September 18 [auxiliary predictions](docs/auxiliary-predictions.md) add
+future replies, Double second stones, and official final peries/stars/corners
+through an additive checkpoint upgrade. See the
+[verified deployment](docs/auxiliary-predictions-deployment-20260918.md) for
+state preservation, live supervision, frontend availability and backups.
+
 - `crates/star-engine`: authoritative Rust board, rules, scoring and D5 symmetry.
 - `crates/star-search`: batched exact-state Gumbel AlphaZero search with Sequential
   Halving and completed-Q statistics.

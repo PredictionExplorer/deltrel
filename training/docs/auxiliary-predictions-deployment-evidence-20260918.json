@@ -1,0 +1,438 @@
+{
+  "schema_version": 1,
+  "status": "deployed_verified",
+  "training_source_commit": "7a077107b1ebba55494b09f80689989e773b9dde",
+  "operator_tool_source_commit": "28410aff86d6a15f5fce7c98b295df7222f4ff6d",
+  "active_profile_authority": "4de5716c57cbcaeff6c7d1f28dc34fecdba2cf2ae50b7739672aaf39736c6b37  /home/ubuntu/edgeconnect-runs/variant-network/profile-auxiliary-predictions-20260918.yaml",
+  "release": "/home/ubuntu/edgeconnect-releases/variant-auxiliary-predictions-20260918-v3",
+  "completed_ns": 1789770908307645448,
+  "observed_ns": 1789772024707806969,
+  "checkpoint_preservation": {
+    "step": 425629,
+    "examples_consumed": 217922048,
+    "sha256": "fd886b27b9b5a56a1cb98c018621f4157e49e178eb4d7b5583bdbdbbdc2c65e1",
+    "discarded_steps": 0,
+    "discarded_examples": 0,
+    "training_state": {
+      "checkpoint_epoch": 10988,
+      "checkpoint_step": 425629,
+      "ema_updates_preserved": 425629,
+      "gradient_clipping_state_preserved": false,
+      "new_auxiliary_parameter_tensors": 12,
+      "old_optimizer_parameter_states_preserved": 255,
+      "old_parameter_tensors_preserved": 255,
+      "progress_metadata_preserved": true,
+      "scheduler_age_preserved": 425629
+    },
+    "clipping_note": "Source checkpoint used global clipping and contained no adaptive clipping history."
+  },
+  "cuda_qualification": {
+    "status": "passed",
+    "runtime_batch_size": 512,
+    "distinct_fixture_samples": 8,
+    "repeated_smoke_fixtures": true,
+    "primary_parity": [
+      {
+        "precision": "bf16",
+        "primary_outputs_bitwise_equal": true,
+        "ring": 4,
+        "variant": "pie-classic"
+      },
+      {
+        "precision": "bf16",
+        "primary_outputs_bitwise_equal": true,
+        "ring": 4,
+        "variant": "pie-double"
+      },
+      {
+        "precision": "bf16",
+        "primary_outputs_bitwise_equal": true,
+        "ring": 6,
+        "variant": "pie-classic"
+      },
+      {
+        "precision": "bf16",
+        "primary_outputs_bitwise_equal": true,
+        "ring": 6,
+        "variant": "pie-double"
+      },
+      {
+        "precision": "bf16",
+        "primary_outputs_bitwise_equal": true,
+        "ring": 8,
+        "variant": "pie-classic"
+      },
+      {
+        "precision": "bf16",
+        "primary_outputs_bitwise_equal": true,
+        "ring": 8,
+        "variant": "pie-double"
+      },
+      {
+        "precision": "bf16",
+        "primary_outputs_bitwise_equal": true,
+        "ring": 10,
+        "variant": "pie-classic"
+      },
+      {
+        "precision": "bf16",
+        "primary_outputs_bitwise_equal": true,
+        "ring": 10,
+        "variant": "pie-double"
+      },
+      {
+        "precision": "bf16",
+        "primary_outputs_bitwise_equal": true,
+        "ring": 10,
+        "variant": "handicap-2-classic"
+      },
+      {
+        "precision": "bf16",
+        "primary_outputs_bitwise_equal": true,
+        "ring": 10,
+        "variant": "handicap-2-double"
+      },
+      {
+        "precision": "bf16",
+        "primary_outputs_bitwise_equal": true,
+        "ring": 10,
+        "variant": "handicap-9-classic"
+      },
+      {
+        "precision": "bf16",
+        "primary_outputs_bitwise_equal": true,
+        "ring": 10,
+        "variant": "handicap-9-double"
+      }
+    ],
+    "native_search_checks": [
+      {
+        "detailed_auxiliary_present": true,
+        "leaf_auxiliary_skipped": true,
+        "mode": "classic",
+        "selected_action": 19,
+        "simulations": 2
+      },
+      {
+        "detailed_auxiliary_present": true,
+        "leaf_auxiliary_skipped": true,
+        "mode": "double",
+        "selected_action": 40,
+        "simulations": 2
+      }
+    ],
+    "target_masks": {
+      "final_peries": 512,
+      "final_quarks": 512,
+      "final_stars": 512,
+      "opponent_reply": 512,
+      "second_stone": 64
+    },
+    "learner_losses": {
+      "alive": 0.22124424576759338,
+      "final_peries": 3.929006814956665,
+      "final_quarks": 1.7881184816360474,
+      "final_stars": 3.260762929916382,
+      "opponent_reply": 5.697869777679443,
+      "outcome": 0.5565336346626282,
+      "ownership": 0.6669519543647766,
+      "policy": 3.089536190032959,
+      "score_margin": 1.4944398403167725,
+      "second_stone": 5.50052547454834,
+      "soft_policy": 4.945870876312256,
+      "total": 6.969040870666504
+    },
+    "auxiliary_gradient_norms": {
+      "final_peries_head.bias": 0.003351102350279689,
+      "final_peries_head.weight": 0.006388593930751085,
+      "final_quarks_head.bias": 0.0012089292285963893,
+      "final_quarks_head.weight": 0.002573370933532715,
+      "final_stars_head.bias": 0.0037398594431579113,
+      "final_stars_head.weight": 0.006425732746720314,
+      "opponent_reply_head.bias": 6.778490933356807e-05,
+      "opponent_reply_head.weight": 0.17434771358966827,
+      "opponent_reply_swap_head.bias": 6.508209480671212e-05,
+      "opponent_reply_swap_head.weight": 0.00010540588846197352,
+      "second_stone_head.bias": 1.0395900972071104e-05,
+      "second_stone_head.weight": 0.23830023407936096
+    },
+    "compile_configuration": {
+      "dynamic": false,
+      "enabled": true,
+      "isolate_recompiles": true
+    },
+    "precision": "bf16",
+    "training_steps": 1,
+    "peak_gpu_memory_bytes": 66786128896,
+    "started_ns": 1789770183933805940,
+    "completed_ns": 1789770244748033447,
+    "qualification": "correctness only; not strength or throughput",
+    "training_artifacts_written": false
+  },
+  "live_learner": {
+    "step": 426181,
+    "epoch": 11008,
+    "examples_consumed": 218204672,
+    "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-fd886b27b9b5a56a1cb98c018621f4157e49e178eb4d7b5583bdbdbbdc2c65e1.pt",
+    "phase": "training"
+  },
+  "first_observed_auxiliary_supervision": {
+    "opponent_reply": {
+      "step": 425790,
+      "timestamp_ns": 1789771096998276652,
+      "rows": 7.0,
+      "loss": 4.793088436126709
+    },
+    "second_stone": {
+      "step": 425790,
+      "timestamp_ns": 1789771096998276652,
+      "rows": 3.0,
+      "loss": 4.893802165985107
+    },
+    "final_peries": {
+      "step": 425630,
+      "timestamp_ns": 1789770440228538677,
+      "rows": 512.0,
+      "loss": 3.710672616958618
+    },
+    "final_stars": {
+      "step": 425630,
+      "timestamp_ns": 1789770440228538677,
+      "rows": 512.0,
+      "loss": 3.052706718444824
+    },
+    "final_quarks": {
+      "step": 425630,
+      "timestamp_ns": 1789770440228538677,
+      "rows": 512.0,
+      "loss": 1.7910178899765015
+    }
+  },
+  "latest_metrics": {
+    "step": 426180,
+    "timestamp_ns": 1789772023331648517,
+    "losses": {
+      "alive": 0.24431169033050537,
+      "clinch_alive": 0.24431169033050537,
+      "clinch_alive_available": 113.0,
+      "clinch_outcome": 0.858299195766449,
+      "clinch_outcome_available": 113.0,
+      "clinch_ownership": 0.4777991473674774,
+      "clinch_ownership_available": 113.0,
+      "clinch_policy": 2.0181081295013428,
+      "clinch_policy_available": 113.0,
+      "clinch_samples": 113.0,
+      "clinch_score_margin": 1.7225805521011353,
+      "clinch_score_margin_available": 113.0,
+      "clinch_soft_policy": 3.79312801361084,
+      "clinch_soft_policy_available": 113.0,
+      "final_peries": 2.6947524547576904,
+      "final_peries_available": 113.0,
+      "final_quarks": 1.2333709001541138,
+      "final_quarks_available": 113.0,
+      "final_stars": 1.4489954710006714,
+      "final_stars_available": 113.0,
+      "opponent_reply": 3.599388837814331,
+      "opponent_reply_available": 103.0,
+      "outcome": 0.858299195766449,
+      "ownership": 0.4777991473674774,
+      "policy": 2.1112358570098877,
+      "score_margin": 1.7225805521011353,
+      "second_stone": 2.7121427059173584,
+      "second_stone_available": 51.0,
+      "soft_policy": 4.413834095001221,
+      "total": 5.516695022583008
+    },
+    "nonfinite_loss_count": 0,
+    "nonfinite_gradient_count": 0
+  },
+  "hardware_healthy": true,
+  "workers": {
+    "actor-cpu-ring4": {
+      "state": "running",
+      "pid": 3836067,
+      "heartbeat_pid": 3836067,
+      "restart_count": 0,
+      "failure_reason": null,
+      "heartbeat_age_seconds": 0.949894467,
+      "inference_completed_requests": null,
+      "inference_failed_requests": null
+    },
+    "actor-gpu-1": {
+      "state": "running",
+      "pid": 3836060,
+      "heartbeat_pid": 3836060,
+      "restart_count": 0,
+      "failure_reason": null,
+      "heartbeat_age_seconds": 0.061276547,
+      "inference_completed_requests": 88418,
+      "inference_failed_requests": 0
+    },
+    "actor-gpu-2": {
+      "state": "running",
+      "pid": 3836061,
+      "heartbeat_pid": 3836061,
+      "restart_count": 0,
+      "failure_reason": null,
+      "heartbeat_age_seconds": 0.217997243,
+      "inference_completed_requests": 89044,
+      "inference_failed_requests": 0
+    },
+    "actor-gpu-3": {
+      "state": "running",
+      "pid": 3836062,
+      "heartbeat_pid": 3836062,
+      "restart_count": 0,
+      "failure_reason": null,
+      "heartbeat_age_seconds": -0.084277987,
+      "inference_completed_requests": 80268,
+      "inference_failed_requests": 0
+    },
+    "actor-gpu-4": {
+      "state": "running",
+      "pid": 3836063,
+      "heartbeat_pid": 3836063,
+      "restart_count": 0,
+      "failure_reason": null,
+      "heartbeat_age_seconds": 0.23577462,
+      "inference_completed_requests": 85539,
+      "inference_failed_requests": 0
+    },
+    "actor-gpu-5": {
+      "state": "running",
+      "pid": 3836064,
+      "heartbeat_pid": 3836064,
+      "restart_count": 0,
+      "failure_reason": null,
+      "heartbeat_age_seconds": 0.258011879,
+      "inference_completed_requests": 85346,
+      "inference_failed_requests": 0
+    },
+    "actor-gpu-6": {
+      "state": "running",
+      "pid": 3836065,
+      "heartbeat_pid": 3836065,
+      "restart_count": 0,
+      "failure_reason": null,
+      "heartbeat_age_seconds": 0.412944432,
+      "inference_completed_requests": 80785,
+      "inference_failed_requests": 0
+    },
+    "actor-gpu-7": {
+      "state": "paused",
+      "pid": 3836066,
+      "heartbeat_pid": 3836066,
+      "restart_count": 0,
+      "failure_reason": null,
+      "heartbeat_age_seconds": -0.091452378,
+      "inference_completed_requests": 42349,
+      "inference_failed_requests": 0
+    },
+    "arena-promotion": {
+      "state": "running",
+      "pid": 3836068,
+      "heartbeat_pid": 3836068,
+      "restart_count": 0,
+      "failure_reason": null,
+      "heartbeat_age_seconds": 3.893927397,
+      "inference_completed_requests": null,
+      "inference_failed_requests": null
+    },
+    "learner": {
+      "state": "running",
+      "pid": 3836059,
+      "heartbeat_pid": 3836059,
+      "restart_count": 0,
+      "failure_reason": null,
+      "heartbeat_age_seconds": 0.173620453,
+      "inference_completed_requests": null,
+      "inference_failed_requests": null
+    }
+  },
+  "metadata_preservation": {
+    "learner/utd-segment.json": {
+      "before_sha256": "1e6b4dfd1b1f0ed76dd471a200e22567afa5c5838798dd12ac461f24b7def288",
+      "after_sha256": "1e6b4dfd1b1f0ed76dd471a200e22567afa5c5838798dd12ac461f24b7def288",
+      "unchanged": true
+    },
+    "strength-epoch.json": {
+      "before_sha256": "6586b9c9ca392d4569d3bc1ef279186f81cc31f67614aa42d842cc642a39ca82",
+      "after_sha256": "6586b9c9ca392d4569d3bc1ef279186f81cc31f67614aa42d842cc642a39ca82",
+      "unchanged": true
+    }
+  },
+  "preserved_snapshot": {
+    "checkpoint_sha256": "fd886b27b9b5a56a1cb98c018621f4157e49e178eb4d7b5583bdbdbbdc2c65e1",
+    "checkpoint_step": 425629,
+    "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/auxiliary-predictions-cutover-20260918-v3",
+    "files": 56637,
+    "replay_shards": 56153,
+    "status": "verified"
+  },
+  "backup": {
+    "checked_ns": 1789772008675998432,
+    "snapshot_sha256": "5b358504614b2cf955a5e368e8f40e4d220ae9e8bc478a714ff26c5374c742ea",
+    "created_ns": 1789771734091362904,
+    "catalog_bytes": 10177253,
+    "catalog_files": 52516,
+    "catalog_payload_bytes": 13800261492,
+    "commit_marker_valid": true,
+    "active_profile_captured": "profile-auxiliary-predictions-20260918.yaml",
+    "active_profile_sha256": "4de5716c57cbcaeff6c7d1f28dc34fecdba2cf2ae50b7739672aaf39736c6b37",
+    "auxiliary_admission_receipts": [
+      "status/search-allocation-gates/28f847e67a2744f51fbb9be94672f6741eae4207225c6da9251ce5a4947d6f11.auxiliary-transition.json",
+      "status/search-allocation-gates/2c71ea67dd3e9bfa35647840a27c54d7a483b8bfec29c167cfc15edd309b90bb.auxiliary-transition.json"
+    ],
+    "source": {
+      "legacy_initialized_missing": false,
+      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-auxiliary-predictions-20260918.yaml",
+      "profile_logical_path": "profile-auxiliary-predictions-20260918.yaml",
+      "replay_backup": {
+        "bytes": 1164886016,
+        "created_ns": 1789771009298441964,
+        "cutoff_started_ns": 1789770913402990360,
+        "sha256": "cc02f756f8ccab1ee4104b938e42c3cdb2642477a5e1ced88daf503093b2b4bb"
+      },
+      "run_root": "/home/ubuntu/edgeconnect-runs/variant-network"
+    },
+    "service": "Result=success\nExecMainStartTimestamp=Fri 2026-09-18 22:51:40 UTC\nExecMainExitTimestamp=\nExecMainStatus=0\nActiveState=activating\n"
+  },
+  "support_services": "active\nactive\nactive\nactive\n",
+  "tests": {
+    "local_full": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "3762",
+      "time": "906.067",
+      "timestamp": "2026-09-18T17:08:01.663849-05:00",
+      "hostname": "Mac.localdomain"
+    },
+    "local_deselected": 17,
+    "frontend_unit_tests": 254,
+    "frontend_typecheck": "passed",
+    "frontend_lint": "passed",
+    "frontend_production_build": "passed",
+    "server_core": 442,
+    "server_v2": 311,
+    "server_v3": [
+      "test_auxiliary_cuda_smoke.py",
+      "test_auxiliary_upgrade.py",
+      "test_graceful_training_deploy.py"
+    ],
+    "note": "Server suites overlap and should not be summed. Operator recovery follow-up passed 64 focused tests."
+  },
+  "local_serving": {
+    "url": "http://127.0.0.1:3001",
+    "device": "mps",
+    "verified_champion_step": 332044,
+    "classic_and_double_live_smoke": "passed",
+    "legacy_model_auxiliary_predictions": "unavailable as expected"
+  },
+  "recovered_first_attempt": {
+    "step": 425165,
+    "discarded_updates": 0,
+    "reason": "Initial GPU validation replay selection saw only recent unfinished prefixes. Fixed selection uses bounded finalized games per mode; verified on preserved real replay before retry."
+  }
+}
