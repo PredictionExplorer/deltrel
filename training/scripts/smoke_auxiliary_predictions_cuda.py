@@ -35,7 +35,7 @@ from startrain.checkpoint import (
     sha256_file,
 )
 from startrain.config import load_config
-from startrain.contracts import TARGET_POLICY
+from startrain.contracts import TARGET_OUTCOME, TARGET_POLICY
 from startrain.features import encode_batch
 from startrain.gradient_clipping import GradientClipper
 from startrain.inference import GraphInferenceAdapter, InferenceConfig
@@ -54,6 +54,7 @@ from startrain.training import build_scheduler, maybe_compile_model, train_step
 
 TIMEOUT_SECONDS = 900
 MAX_REPLAY_SHARDS = 32
+REPLAY_QUERY_TIMEOUT_SECONDS = 5.0
 MAX_RUNTIME_BATCH_SIZE = 1024
 PRIMARY_OUTPUTS = (
     "policy_logits",
@@ -197,9 +198,18 @@ def load_training_state(config: Any, checkpoint: Path, device: str) -> tuple:
 
 def reconstruct_observed_future_targets(rows: list[ReplaySample]) -> list[ReplaySample]:
     """Read-only smoke enrichment of historical contiguous same-game decisions."""
-    groups: dict[tuple[str, str, str, str], list[ReplaySample]] = {}
+    groups: dict[tuple, list[ReplaySample]] = {}
     for sample in rows:
-        key = (sample.run_id, sample.generation_family, sample.actor_id, sample.game_id)
+        key = (
+            sample.run_id,
+            sample.generation_family,
+            sample.actor_id,
+            sample.generation,
+            sample.game_id,
+            sample.model_identity,
+            sample.rings,
+            sample.variant_label,
+        )
         groups.setdefault(key, []).append(sample)
     result = []
     for group in groups.values():
@@ -235,51 +245,133 @@ def load_smoke_replay(run_root: Path) -> tuple[list[ReplaySample], list[dict]]:
     identity = json.loads((run_root / "run.json").read_text())
     database = replay_root / "manifest.sqlite3"
     connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
     try:
-        candidates = connection.execute(
-            "SELECT relative_path,checksum_sha256 FROM shards WHERE state='ready' AND ring=10 "
-            "AND run_id=? AND generation_family=? "
-            "ORDER BY created_ns DESC LIMIT ?",
-            (identity["run_id"], identity["generation_family"], MAX_REPLAY_SHARDS),
-        ).fetchall()
+        if (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='game_publications'"
+            ).fetchone()
+            is None
+        ):
+            raise ValueError("smoke requires a finalized replay publication ledger")
+        candidates: dict[str, list[dict]] = {}
+        for mode in ("classic", "double"):
+            deadline = time.monotonic() + REPLAY_QUERY_TIMEOUT_SECONDS
+            connection.set_progress_handler(
+                lambda: int(time.monotonic() > deadline), 10000
+            )
+            # The run/family publication index and shard primary key identify
+            # complete game heads. Shutdown-flushed pending prefixes never
+            # consume this bounded per-mode candidate allowance.
+            rows = connection.execute(
+                "SELECT p.game_id,p.sample_count,s.relative_path,s.checksum_sha256,"
+                "s.variant,s.actor_id,s.generation,s.model_identity "
+                "FROM game_publications p JOIN shards s ON s.id=p.latest_shard_id "
+                "WHERE p.run_id=? AND p.generation_family=? AND p.finalized=1 "
+                "AND s.run_id=p.run_id AND s.generation_family=p.generation_family "
+                "AND s.state='ready' AND s.ring=10 AND s.sample_count=p.sample_count "
+                "AND (s.variant=? OR s.variant LIKE ?) ORDER BY s.created_ns DESC LIMIT ?",
+                (
+                    identity["run_id"],
+                    identity["generation_family"],
+                    mode,
+                    "%-" + mode,
+                    MAX_REPLAY_SHARDS // 2,
+                ),
+            ).fetchall()
+            candidates[mode] = [dict(row) for row in rows]
+    except sqlite3.OperationalError as error:
+        raise ValueError(f"bounded finalized replay query failed: {error}") from error
     finally:
         connection.close()
     selected: dict[str, list[ReplaySample]] = {"classic": [], "double": []}
     evidence = []
-    for relative, digest in candidates:
-        path = replay_root / relative
-        if path.is_symlink() or not path.resolve().is_relative_to(replay_root):
-            raise ValueError("smoke replay path escapes run root")
-        if sha256_file(path) != digest:
-            raise ValueError("smoke replay shard checksum mismatch")
-        rows = reconstruct_observed_future_targets(read_replay_shard(path))
-        added = False
-        for sample in rows:
-            if (
-                sample.target_mask & TARGET_POLICY
-                and sample.final_peries is not None
-                and sample.final_stars is not None
-                and sample.opponent_reply is not None
+    for mode in ("classic", "double"):
+        for candidate in candidates[mode]:
+            path = replay_root / candidate["relative_path"]
+            if path.is_symlink() or not path.resolve().is_relative_to(replay_root):
+                raise ValueError("smoke replay path escapes run root")
+            if sha256_file(path) != candidate["checksum_sha256"]:
+                raise ValueError("smoke replay shard checksum mismatch")
+            stored_rows = read_replay_shard(path)
+            # Both append paths require an entire contiguous single-game
+            # sequence in its authoritative final revision. Never combine
+            # superseded versions or guess across an absent decision.
+            if len(stored_rows) != candidate["sample_count"] or any(
+                sample.ply != index
+                or sample.game_id != candidate["game_id"]
+                or sample.mode != mode
+                or sample.rings != 10
+                or sample.run_id != identity["run_id"]
+                or sample.generation_family != identity["generation_family"]
+                or sample.actor_id != candidate["actor_id"]
+                or sample.generation != candidate["generation"]
+                or sample.model_identity != candidate["model_identity"]
+                or sample.variant_label != candidate["variant"]
+                or not sample.target_mask & TARGET_OUTCOME
+                or [
+                    part
+                    for part in sample.search_provenance.split(":")
+                    if part.startswith("final=")
+                ]
+                not in (
+                    ["final=board-full"],
+                    ["final=clinch-loser-fill"],
+                    ["final=exact-endgame"],
+                )
+                for index, sample in enumerate(stored_rows)
             ):
-                destination = selected[sample.mode]
-                if len(destination) < 4:
-                    destination.append(sample)
-                    added = True
-                elif (
-                    sample.mode == "double"
-                    and sample.second_stone is not None
-                    and not any(s.second_stone is not None for s in destination)
+                raise ValueError(
+                    "finalized replay head disagrees with its complete game sequence"
+                )
+            rows = reconstruct_observed_future_targets(stored_rows)
+            added = False
+            for sample in rows:
+                if (
+                    sample.target_mask & TARGET_POLICY
+                    and sample.final_peries is not None
+                    and sample.final_stars is not None
+                    and sample.opponent_reply is not None
                 ):
-                    destination[-1] = sample
-                    added = True
-        if added:
-            evidence.append({"path": str(path), "sha256": digest})
-        if all(len(values) == 4 for values in selected.values()) and any(
-            s.second_stone is not None for s in selected["double"]
-        ):
-            break
+                    destination = selected[mode]
+                    if len(destination) < 4:
+                        destination.append(sample)
+                        added = True
+                    elif (
+                        mode == "double"
+                        and sample.second_stone is not None
+                        and not any(s.second_stone is not None for s in destination)
+                    ):
+                        destination[-1] = sample
+                        added = True
+            if added:
+                evidence.append(
+                    {
+                        "path": str(path),
+                        "sha256": candidate["checksum_sha256"],
+                        "source": "finalized-publication",
+                        "mode": mode,
+                        "variant": candidate["variant"],
+                        "game_id": candidate["game_id"],
+                        "stored_game_rows": len(stored_rows),
+                        "ply_first": 0,
+                        "ply_last": len(stored_rows) - 1,
+                        "reconstructed_opponent_reply_rows": sum(
+                            s.opponent_reply is not None for s in rows
+                        ),
+                        "reconstructed_second_stone_rows": sum(
+                            s.second_stone is not None for s in rows
+                        ),
+                        "selected_fixture_rows": len(selected[mode]),
+                    }
+                )
+            if len(selected[mode]) == 4 and (
+                mode != "double"
+                or any(s.second_stone is not None for s in selected[mode])
+            ):
+                break
     samples = selected["classic"] + selected["double"]
-    if not all(selected.values()) or not any(
+    if not all(len(values) == 4 for values in selected.values()) or not any(
         s.second_stone is not None for s in samples
     ):
         raise ValueError(

@@ -72,7 +72,13 @@ def replay_fixture(root):
     )
     connection = sqlite3.connect(replay / "manifest.sqlite3")
     connection.execute(
-        "CREATE TABLE shards(relative_path TEXT,checksum_sha256 TEXT,state TEXT,ring INTEGER,created_ns INTEGER,run_id TEXT,generation_family TEXT)"
+        "CREATE TABLE shards(id INTEGER PRIMARY KEY,relative_path TEXT,checksum_sha256 TEXT,state TEXT,ring INTEGER,created_ns INTEGER,run_id TEXT,generation_family TEXT,variant TEXT,actor_id TEXT,generation INTEGER,model_identity TEXT,sample_count INTEGER)"
+    )
+    connection.execute(
+        "CREATE TABLE game_publications(game_id TEXT PRIMARY KEY,run_id TEXT,generation_family TEXT,latest_shard_id INTEGER,finalized INTEGER,sample_count INTEGER)"
+    )
+    connection.execute(
+        "CREATE INDEX game_publications_run ON game_publications(run_id,generation_family)"
     )
     for index, mode in enumerate(("classic", "double")):
         decisions, state = trajectory(
@@ -94,8 +100,19 @@ def replay_fixture(root):
         ]
         path = write_replay_shard(shards / f"{mode}.npz", samples)
         connection.execute(
-            "INSERT INTO shards VALUES(?,?,'ready',10,?,'manual','manual')",
-            (str(path.relative_to(replay)), sha256_file(path), index),
+            "INSERT INTO shards VALUES(?,?,?,'ready',10,?,'manual','manual',?,'manual',0,'manual',?)",
+            (
+                index + 1,
+                str(path.relative_to(replay)),
+                sha256_file(path),
+                index,
+                samples[0].variant_label,
+                len(samples),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO game_publications VALUES(?,'manual','manual',?,1,?)",
+            (samples[0].game_id, index + 1, len(samples)),
         )
     connection.commit()
     connection.close()
@@ -122,6 +139,13 @@ def test_core_upgrade_parity_native_search_and_real_replay_backward(tmp_path):
     manifest_before = manifest.read_bytes()
     samples, evidence = smoke.load_smoke_replay(tmp_path / "run")
     assert len(samples) == 8 and len(evidence) == 2
+    assert all(item["source"] == "finalized-publication" for item in evidence)
+    assert all(
+        item["stored_game_rows"] == 8
+        and item["ply_first"] == 0
+        and item["ply_last"] == 7
+        for item in evidence
+    )
     assert manifest.read_bytes() == manifest_before
     batch, fixture_report = smoke.build_runtime_smoke_batch(
         samples, config.train.per_rank_batch_size
@@ -209,6 +233,41 @@ def test_smoke_future_reconstruction_does_not_bridge_missing_plies():
     decisions, _ = trajectory()
     rows = samples_from(decisions)
     assert smoke.reconstruct_observed_future_targets([rows[0], rows[2]]) == []
+
+
+@pytest.mark.native
+def test_finalized_mode_selection_ignores_newer_shutdown_prefix_bursts(tmp_path):
+    manifest = replay_fixture(tmp_path)
+    connection = sqlite3.connect(manifest)
+    for index in range(256):
+        shard_id = index + 3
+        connection.execute(
+            "INSERT INTO shards VALUES(?,?,'not-read','ready',10,?,'manual','manual','pie-classic','manual',0,'manual',8)",
+            (shard_id, f"shards/pending-{index}.npz", 1000 + index),
+        )
+        connection.execute(
+            "INSERT INTO game_publications VALUES(?,'manual','manual',?,0,8)",
+            (f"pending-{index}", shard_id),
+        )
+    connection.commit()
+    connection.close()
+    samples, evidence = smoke.load_smoke_replay(tmp_path)
+    assert len(samples) == 8 and {s.mode for s in samples} == {"classic", "double"}
+    assert len(evidence) == 2
+    assert all("pending" not in row["path"] for row in evidence)
+
+
+@pytest.mark.native
+def test_finalized_ledger_mismatch_fails_instead_of_joining_unrelated_rows(tmp_path):
+    manifest = replay_fixture(tmp_path)
+    connection = sqlite3.connect(manifest)
+    connection.execute(
+        "UPDATE game_publications SET game_id='wrong-game' WHERE latest_shard_id=1"
+    )
+    connection.commit()
+    connection.close()
+    with pytest.raises(ValueError, match="complete game sequence"):
+        smoke.load_smoke_replay(tmp_path)
 
 
 def gradient_fixture():
