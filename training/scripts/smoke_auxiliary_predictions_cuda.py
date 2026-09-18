@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict, replace
 import json
+import math
 import os
 from pathlib import Path
 import sqlite3
@@ -421,6 +422,30 @@ def check_native_inference(
     return reports
 
 
+def check_auxiliary_gradients(model: GraphResTNet) -> dict[str, float]:
+    """Require connected, finite heads without rejecting shift-invariant biases."""
+    gradients: dict[str, float] = {}
+    weight_names = []
+    for name, parameter in model.named_parameters():
+        if not is_auxiliary_parameter(name):
+            continue
+        if parameter.grad is None or not torch.isfinite(parameter.grad).all():
+            raise FloatingPointError(f"invalid auxiliary gradient: {name}")
+        norm = float(parameter.grad.float().norm())
+        if not math.isfinite(norm):
+            raise FloatingPointError(f"nonfinite auxiliary gradient norm: {name}")
+        gradients[name] = norm
+        if name.endswith(".weight") and parameter.ndim == 2:
+            weight_names.append(name)
+            if norm <= 0:
+                raise AssertionError(
+                    f"auxiliary head weight received no training gradient: {name}"
+                )
+    if not gradients or not weight_names:
+        raise AssertionError("model has no auxiliary head gradients")
+    return gradients
+
+
 def run_smoke(args: Any) -> dict:
     from scripts.benchmark_actor_throughput import _gpu_ownership
 
@@ -488,14 +513,7 @@ def run_smoke(args: Any) -> dict:
     losses = step.losses
     if not all(np.isfinite(value) for value in losses.values()):
         raise FloatingPointError("nonfinite smoke training loss")
-    gradients = {}
-    for name, parameter in model.named_parameters():
-        if is_auxiliary_parameter(name):
-            if parameter.grad is None or not torch.isfinite(parameter.grad).all():
-                raise FloatingPointError(f"invalid auxiliary gradient: {name}")
-            gradients[name] = float(parameter.grad.float().norm())
-    if not gradients or not all(value > 0 for value in gradients.values()):
-        raise AssertionError("an auxiliary parameter received no training gradient")
+    gradients = check_auxiliary_gradients(model)
     for artifact in replay_evidence:
         if sha256_file(Path(artifact["path"])) != artifact["sha256"]:
             raise RuntimeError("smoke replay bytes changed")

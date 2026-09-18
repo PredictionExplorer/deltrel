@@ -134,10 +134,7 @@ def test_core_upgrade_parity_native_search_and_real_replay_backward(tmp_path):
         gradient_clipper=clipper,
     )
     assert all(torch.isfinite(value).all() for value in result.loss_tensors.values())
-    for name, parameter in model.named_parameters():
-        if smoke.is_auxiliary_parameter(name):
-            assert parameter.grad is not None and torch.isfinite(parameter.grad).all()
-            assert parameter.grad.count_nonzero() > 0
+    assert smoke.check_auxiliary_gradients(model)
     assert sha256_file(checkpoint) == original
     for artifact in evidence:
         assert sha256_file(Path(artifact["path"])) == artifact["sha256"]
@@ -200,3 +197,43 @@ def test_smoke_future_reconstruction_does_not_bridge_missing_plies():
     decisions, _ = trajectory()
     rows = samples_from(decisions)
     assert smoke.reconstruct_observed_future_targets([rows[0], rows[2]]) == []
+
+
+def gradient_fixture():
+    _, config = tiny_profile()
+    model = GraphResTNet(config.model)
+    for name, parameter in model.named_parameters():
+        if smoke.is_auxiliary_parameter(name):
+            parameter.grad = (
+                torch.ones_like(parameter)
+                if parameter.ndim == 2
+                else torch.zeros_like(parameter)
+            )
+    return model
+
+
+def test_gradient_check_accepts_zero_shift_invariant_policy_bias():
+    model = gradient_fixture()
+    gradients = smoke.check_auxiliary_gradients(model)
+    assert gradients["second_stone_head.bias"] == 0.0
+    assert all(
+        value > 0 for name, value in gradients.items() if name.endswith(".weight")
+    )
+
+
+@pytest.mark.parametrize("invalid", ["missing", "nan", "infinite", "zero_weight"])
+def test_gradient_check_rejects_missing_nonfinite_or_disconnected_heads(invalid):
+    model = gradient_fixture()
+    parameter = (
+        model.second_stone_head.weight
+        if invalid == "zero_weight"
+        else model.second_stone_head.bias
+    )
+    if invalid == "missing":
+        parameter.grad = None
+    else:
+        parameter.grad.fill_(
+            {"nan": float("nan"), "infinite": float("inf"), "zero_weight": 0.0}[invalid]
+        )
+    with pytest.raises((FloatingPointError, AssertionError), match="auxiliary"):
+        smoke.check_auxiliary_gradients(model)
