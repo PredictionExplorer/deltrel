@@ -84,12 +84,26 @@ cache eviction can require another download; storage failure does not block play
 Refreshing a saved game asks the player to prepare the browser AI again, reusing
 the cached model rather than silently downloading it on page load.
 
-The browser default uses eight search simulations to keep the full champion
-responsive. More search costs more time, especially on phones. All board sizes,
+Browser AI strength is available in setup and during play: **Quick** uses eight
+search simulations, **Balanced** uses 32, and **Deep** uses 64. Each level uses
+the same trained model, within the published release's limits. Choices are saved
+for future games. Changing strength keeps the current search running with its
+original budget and applies the new setting to the next search.
+
+The default is Quick to keep the full champion responsive. More search costs
+more time, especially on phones. All board sizes,
 both variants, pie swaps, handicap games, and AI-versus-AI play are supported.
 Rules and learned weights match the published champion; the browser export uses
 FP16 numerical precision. New trained champions must be exported, validated, and
 published using the [model release instructions](training/docs/serving-and-distillation.md).
+
+Downloading or preparing the engine preserves an existing AI-versus-AI setup.
+Game status and scoring identify each controller explicitly; the automatic human
+label “You” is displayed as an AI name when that side is controlled by an engine.
+
+The browser reuses one root evaluation for search and inspection, avoiding a
+duplicate model pass. See the [measured performance comparison](training/docs/browser-search-performance-20260921.md)
+for timing results, exact-output checks, and a reproducible benchmark.
 
 ### Playing the full champion locally
 

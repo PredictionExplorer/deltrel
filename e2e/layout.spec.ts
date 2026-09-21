@@ -153,6 +153,7 @@ for (const viewport of viewports) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const ai = await mockServerAi(page);
     await openFreshSetup(page);
+    await expect(page.getByRole('button', { name: 'Quick browser AI strength', exact: true })).toBeEnabled();
 
     const setupOverflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

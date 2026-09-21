@@ -34,6 +34,7 @@ import {
 import { DeltrelBoard } from './DeltrelBoard';
 import { ChampionPanel } from './ChampionPanel';
 import { BrowserAiPreparation } from './BrowserAiPreparation';
+import { BrowserAiStrengthControl } from './BrowserAiStrengthControl';
 import { useBrowserAiPreparation } from './useBrowserAiPreparation';
 import {
   engineControllerLabel,
@@ -128,11 +129,12 @@ export function SetupScreen() {
   };
 
   const chooseBrowserChampion = () => {
+    if (controllers.includes('local')) return;
     setControllers(['human', 'local']);
-    setNames((previous) => [previous[0] === 'Player 1' ? 'You' : previous[0], 'Champion']);
-    if (capabilities.local.status === 'available' && capabilities.local.search) {
-      setAiSearchBudget('local', { ...capabilities.local.search.default });
-    }
+    setNames((previous) => [
+      previous[0] === 'Player 1' ? 'You' : previous[0],
+      previous[1] === 'Player 2' ? 'Champion' : previous[1],
+    ]);
   };
 
   const checkCapabilitiesAgain = () => {
@@ -244,7 +246,7 @@ export function SetupScreen() {
               setControllers(['human', 'server']);
               setNames((previous) => [
                 previous[0] === 'Player 1' ? 'You' : previous[0],
-                'Champion',
+                previous[1] === 'Player 2' ? 'Champion' : previous[1],
               ]);
             }}
           />}
@@ -256,11 +258,17 @@ export function SetupScreen() {
             notice={browserAi.notice}
             onSelect={chooseBrowserChampion}
             onPrepare={() => {
-              chooseBrowserChampion();
+              // Preparing weights must not turn an AI-vs-AI match into human-vs-AI.
+              if (controllers.every((controller) => controller === 'human')) chooseBrowserChampion();
               void browserAi.prepare();
             }}
             onCancel={browserAi.cancel}
             onCheck={checkCapabilitiesAgain}
+          />
+          <BrowserAiStrengthControl
+            budget={aiSearchSettings.local}
+            capability={capabilities.local}
+            onChange={(budget) => setAiSearchBudget('local', budget)}
           />
 
           {/* Mode */}

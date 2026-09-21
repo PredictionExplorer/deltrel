@@ -191,6 +191,54 @@ afterEach(() => {
 });
 
 describe('GameScreen AI lifecycle', () => {
+  it.each(['server', 'local'] as const)('keeps an active %s search when strength changes and uses the new budget next turn', async runtime => {
+    resetPlayingStore({ controllers: [runtime, runtime] });
+    const first = deferred<DeltrelAiDecision>();
+    const later = deferred<DeltrelAiDecision>();
+    const engine = vi.mocked(runtime === 'server' ? requestServerAiDecision : requestLocalAiDecision);
+    engine.mockReturnValue(later.promise).mockReturnValueOnce(first.promise);
+    render(<StrictMode><GameScreen /></StrictMode>);
+    await waitFor(() => expect(engine).toHaveBeenCalledOnce());
+    const [request, initialOptions] = engine.mock.calls[0];
+    const originalBudget = { ...initialOptions!.search! };
+    if (runtime === 'local') {
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: 'Deep browser AI strength' }));
+      await user.click(screen.getByRole('button', { name: 'Balanced browser AI strength' }));
+      expect(screen.getByRole('button', { name: 'Balanced browser AI strength' })).toHaveAttribute('aria-pressed', 'true');
+    } else {
+      act(() => useAppStore.getState().setAiSearchBudget(runtime, { simulations: 64, maxConsidered: 8 }));
+      act(() => useAppStore.getState().setAiSearchBudget(runtime, { simulations: 32, maxConsidered: 8 }));
+    }
+    await act(async () => { await Promise.resolve(); });
+    expect(engine).toHaveBeenCalledOnce();
+    expect(initialOptions?.signal?.aborted).toBe(false);
+    expect(initialOptions?.search).toEqual(originalBudget);
+    await act(async () => {
+      first.resolve(makeDecision(request, { type: 'place', node: 0 }));
+      await first.promise;
+    });
+    await waitFor(() => expect(engine).toHaveBeenCalledTimes(2));
+    expect(engine.mock.calls[1][1]?.search).toEqual({ simulations: 32, maxConsidered: 8 });
+    expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]);
+  });
+
+  it('presents both computer controllers accurately in saved AI matches without changing custom names or saved configuration', async () => {
+    resetPlayingStore({ config: { ...config, playerNames: ['You', 'Marina'] }, controllers: ['local', 'server'] });
+    vi.mocked(requestLocalAiDecision).mockReturnValue(deferred<DeltrelAiDecision>().promise);
+    render(<GameScreen />);
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
+    expect(screen.getByText('AI versus AI')).toBeVisible();
+    expect(screen.getByText('Choosing a move for AI 1.')).toBeVisible();
+    const scores = screen.getByRole('region', { name: 'Current player scores' });
+    expect(within(scores).getByRole('heading', { name: 'AI 1' })).toBeVisible();
+    expect(within(scores).getByRole('heading', { name: 'Marina' })).toBeVisible();
+    expect(within(scores).getByText('Browser AI')).toBeVisible();
+    expect(within(scores).getByText('Server AI')).toBeVisible();
+    expect(screen.queryByText('Human versus AI')).not.toBeInTheDocument();
+    expect(useAppStore.getState().config.playerNames).toEqual(['You', 'Marina']);
+    expect(useAppStore.getState().controllers).toEqual(['local', 'server']);
+  });
   it('does not download or request a restored browser turn until preparation is explicitly requested', async () => {
     publishLocalAiStatus({ phase: 'idle' });
     resetPlayingStore({ controllers: ['local', 'human'] });
@@ -391,6 +439,8 @@ describe('GameScreen AI lifecycle', () => {
       simulations: 64,
       maxConsidered: 8,
     });
+    expect(screen.getByText('Custom setting: 123 simulations, up to 9 candidate moves.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Deep browser AI strength' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('renders named estimates and top board labels from the accepted perspective', async () => {

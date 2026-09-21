@@ -13,7 +13,7 @@ import {
   Trophy,
   Undo2,
 } from 'lucide-react';
-import { controllerLabel, type ControllerType } from '@/lib/deltrel/ai/controllers';
+import { aiMatchLabel, controllerLabel, playerNamesForControllers, type ControllerType } from '@/lib/deltrel/ai/controllers';
 import { INITIAL_AI_CAPABILITIES, checkAiCapabilities, type AiCapabilities } from '@/lib/deltrel/ai/capabilities';
 import {
   DeltrelAiError,
@@ -50,6 +50,7 @@ import { BoardStage } from './BoardStage';
 import { DeltrelMark } from './DeltrelMark';
 import { EngineEstimatePanel } from './EngineEstimatePanel';
 import { BrowserAiPreparation, browserAiIsPreparing } from './BrowserAiPreparation';
+import { BrowserAiStrengthControl } from './BrowserAiStrengthControl';
 import { useBrowserAiPreparation } from './useBrowserAiPreparation';
 import {
   ClinchDialog,
@@ -100,8 +101,13 @@ function reducedSearchBudget(
 }
 
 export function GameScreen() {
-  const config = useAppStore((state) => state.config);
+  const storedConfig = useAppStore((state) => state.config);
   const controllers = useAppStore((state) => state.controllers);
+  const config = useMemo(() => {
+    const playerNames = playerNamesForControllers(storedConfig.playerNames, controllers);
+    return playerNames.every((name, player) => name === storedConfig.playerNames[player])
+      ? storedConfig : { ...storedConfig, playerNames };
+  }, [storedConfig, controllers]);
   const aiSearchSettings = useAppStore((state) => state.aiSearchSettings);
   const aiPaused = useAppStore((state) => state.aiPaused);
   const log = useAppStore((state) => state.log);
@@ -293,7 +299,9 @@ export function GameScreen() {
     if (!autoplayReady) return;
 
     const selectedSearch = { simulations: autoplaySimulations, maxConsidered: autoplayMaxConsidered };
-    const key = `${aiPositionKey}:${retryNonce}:${selectedSearch.simulations}:${selectedSearch.maxConsidered}`;
+    // Strength changes apply to the next request. Reattach to an in-flight
+    // search for this same position instead of discarding its completed work.
+    const key = `${aiPositionKey}:${retryNonce}`;
     const scheduleCancellation = (flight: AiFlight) => {
       if (flight.settled) return;
       flight.cancelScheduled = true;
@@ -941,6 +949,7 @@ export function GameScreen() {
             state={gameStatusState}
             playerName={config.playerNames[statusPlayer]}
             controllerName={currentControllerName}
+            matchLabel={aiMatchLabel(controllers)}
             mode={config.mode}
             movesLeft={shownGame.movesLeft}
             turnProgress={turnProgress}
@@ -1138,6 +1147,14 @@ export function GameScreen() {
                 }}
               />
             )}
+            {(controllers.includes('local') || inspectionRuntime === 'local') && (
+              <BrowserAiStrengthControl
+                budget={aiSearchSettings.local}
+                capability={runtimeCapabilities.local}
+                onChange={(budget) => setAiSearchBudget('local', budget)}
+                inGame
+              />
+            )}
             <EngineEstimatePanel
               analysis={analysisSelection?.entry.analysis ?? null}
               board={board}
@@ -1164,6 +1181,7 @@ export function GameScreen() {
 
           <ScorePanel
             game={shownGame}
+            controllers={controllers}
             score={displayedScore}
             completionBounds={completionBounds}
             view={scoreView}

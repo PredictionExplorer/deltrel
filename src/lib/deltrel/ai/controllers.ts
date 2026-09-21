@@ -58,3 +58,18 @@ export function controllerLabel(controller: ControllerType): string {
       return 'Browser AI';
   }
 }
+
+/** “You” is a human-oriented quick-start label, not an AI's display name. */
+export function playerNamesForControllers(
+  names: readonly [string, string],
+  controllers: PlayerControllers,
+): [string, string] {
+  return names.map((name, player) =>
+    controllers[player] !== 'human' && name.trim() === 'You' ? `AI ${player + 1}` : name,
+  ) as [string, string];
+}
+
+export function aiMatchLabel(controllers: PlayerControllers): string | undefined {
+  const computers = controllers.filter(controller => controller !== 'human').length;
+  return computers === 2 ? 'AI versus AI' : computers === 1 ? 'Human versus AI' : undefined;
+}

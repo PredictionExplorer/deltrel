@@ -44,7 +44,7 @@ deployment steps.
 | --- | --- |
 | Clean `npm ci` | Passed |
 | `npm run check` | Branding audit, typecheck, lint, coverage, production build passed |
-| TypeScript unit/component suite | 439 passed; 87.99% line coverage |
+| TypeScript unit/component suite | 465 passed; 88.18% line coverage |
 | Production Playwright suite | 110 passed across three browser engines and responsive layouts, including real browser champion inference; 2 native-touch injection cases skipped outside Chromium |
 | Updated screenshot baselines | All 8 reviewed; subsequent comparisons passed |
 | Native-enabled Python validation | 3,771 unique current cases passed; 17 hardware/soak skips |
@@ -207,3 +207,49 @@ reuse with model downloads blocked. The installed WebKit test browser evicts
 CacheStorage on reload even on a static SVG page without app JavaScript; its
 test verifies explicit retry and real inference after that eviction instead of
 assuming storage persistence that the browser does not provide.
+
+## Strength, browser efficiency, and AI-versus-AI follow-up
+
+Browser strength is now a normal setup and in-game control: Quick (8 simulations,
+4 candidates), Balanced (32, 8), and Deep (64, 8). Presets respect the published
+model limits, duplicate capped levels are removed, and custom saved budgets remain
+custom until explicitly changed. Preparing or reselecting the engine preserves
+the chosen strength. A setting changed during an active search applies to the
+next request; the current request is neither cancelled nor restarted.
+
+Preparing the browser model previously selected a human-versus-AI quick start
+unconditionally. It now preserves any existing AI controller selection, including
+two browser AIs, and keeps custom player names. AI games display their match type
+and each player's actual controller. The automatic human name “You” is presented
+as an AI name for a computer-controlled side without rewriting the saved game.
+
+The browser worker now obtains search values and all network outputs in one root
+forward pass. A single full root report is retained separately from the bounded
+compact leaf cache, so inspecting the same position again can reuse it. Model,
+state, feature history, legal actions, and auxiliary-head status identify cached
+reports. Existing cached leaf evaluations retain their exact numerical values;
+search budgets, game rules, model weights, and all eleven outputs are preserved.
+Regression tests cover both search implementations, tensor disposal, cancellation,
+cache isolation, and pie-swap applicability.
+
+The real-browser flow sets both players to browser AI and selects Balanced before
+downloading. It verifies that names, controllers, and strength survive preparation,
+that the engine really performs 32 simulations, and that selecting Quick survives
+reload and produces an eight-simulation resumed move. Manual production-browser
+inspection also verified Deep's 64 simulations on the Full board without placing
+a stone or changing its 71 occupied points.
+
+Three paired CPU/WASM repetitions per position showed fresh Quick searches about
+10% faster on the measured Mini and Full positions. Immediate identical-position
+reanalysis on Full improved from a median 321.9 ms to 1.9 ms. These are distinct
+workloads, measured after preparation on an Apple M4 Max. Complete decision
+digests, excluding only request ids and timing, matched exactly before and after.
+Headless WebGPU had no available adapter, so no GPU performance claim is made.
+The [performance report](../training/docs/browser-search-performance-20260921.md)
+contains the methodology, full evidence, higher-budget control, and reproduction
+commands.
+
+All 465 frontend tests passed. The three-browser regression run passed 109 cases
+and found one 320px turn-banner height change; reserving two lines for its detail
+fixed it. All ten layout tests then passed, followed by unchanged screenshot
+comparisons. Two native-touch injection cases remain intentionally Chromium-only.

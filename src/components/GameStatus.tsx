@@ -25,6 +25,7 @@ interface GameStatusProps {
   state: GameStatusState;
   playerName: string;
   controllerName: string;
+  matchLabel?: string;
   mode: Mode;
   movesLeft: number;
   /** Placement progress of the turn on display (for the pips). */
@@ -43,6 +44,7 @@ export function GameStatus({
   state,
   playerName,
   controllerName,
+  matchLabel,
   mode,
   movesLeft,
   turnProgress = null,
@@ -151,6 +153,7 @@ export function GameStatus({
         />
       </span>
       <div className="min-w-0 flex-1">
+        {matchLabel && <p className="mb-1 text-[0.65rem] font-medium uppercase tracking-wide text-muted">{matchLabel}</p>}
         <div className="flex items-center justify-between gap-2">
           <p
             className="min-w-0 truncate text-sm font-medium leading-tight"
@@ -179,7 +182,7 @@ export function GameStatus({
             </span>
           )}
         </div>
-        <p className="mt-0.5 text-xs leading-tight text-muted">{presentation.detail}</p>
+        <p className="mt-0.5 min-h-[1.875rem] text-xs leading-tight text-muted">{presentation.detail}</p>
       </div>
     </section>
   );

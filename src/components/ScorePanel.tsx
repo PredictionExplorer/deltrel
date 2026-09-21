@@ -3,11 +3,13 @@
 import type { GameState } from '@/lib/deltrel/game';
 import type { ScoreResult } from '@/lib/deltrel/scoring';
 import type { CompletionBounds } from '@/lib/deltrel/completion-bounds';
+import { controllerLabel, type PlayerControllers } from '@/lib/deltrel/ai/controllers';
 import { PLAYER_COLORS } from './theme';
 
 interface ScorePanelProps {
   game: GameState;
   score: ScoreResult;
+  controllers?: PlayerControllers;
   completionBounds?: CompletionBounds | null;
   view?:
     | { kind: 'live' }
@@ -132,6 +134,7 @@ function CompletionForecast({
 export function ScorePanel({
   game,
   score,
+  controllers,
   completionBounds,
   view = { kind: 'live' },
 }: ScorePanelProps) {
@@ -247,6 +250,11 @@ export function ScorePanel({
                 >
                   {config.playerNames[player]}
                 </h2>
+                {controllers?.some(controller => controller !== 'human') && (
+                  <span className="mt-0.5 block text-[0.6rem] leading-tight text-muted">
+                    {controllerLabel(controllers[player])}
+                  </span>
+                )}
                 <span className="font-display mt-0.5 block text-3xl leading-none text-ink tabular-nums">
                   {score.players[player].total}
                 </span>

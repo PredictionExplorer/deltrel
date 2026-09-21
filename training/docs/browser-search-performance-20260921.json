@@ -1,0 +1,2280 @@
+{
+  "schemaVersion": 1,
+  "baselineRevision": "f14f186",
+  "scope": "Candidate is the baseline checkout with only src/workers/deltrel-ai.worker.ts replaced by the optimized worker.",
+  "deploymentLikeRun": {
+    "schemaVersion": 1,
+    "createdAt": "2026-09-21T07:31:21.563Z",
+    "hardware": {
+      "platform": "darwin",
+      "architecture": "arm64",
+      "cpu": "Apple M4 Max",
+      "logicalCpus": 16
+    },
+    "isolation": "none",
+    "repetitions": 3,
+    "cases": [
+      {
+        "id": "rings-4-moves-15-visits-8",
+        "search": {
+          "simulations": 8,
+          "maxConsidered": 4
+        },
+        "stateHash": "zobrist64:c54c707ec53bb401",
+        "rings": 4,
+        "occupied": 15
+      },
+      {
+        "id": "rings-10-moves-82-visits-8",
+        "search": {
+          "simulations": 8,
+          "maxConsidered": 4
+        },
+        "stateHash": "zobrist64:2858e744ef03ea81",
+        "rings": 10,
+        "occupied": 82
+      }
+    ],
+    "builds": [
+      {
+        "label": "baseline",
+        "revision": "f14f186",
+        "sourceWorkerSha256": "c81a7ee1172783e5ff171915967d86638196d3a60b632144c7a26d659042cacc",
+        "worker": "deltrel-local-ai.e886aa150aba64d2.js",
+        "workerSha256": "c62ad43c4a65f121d76bba3f2a634286bc0234a40151ee5523e39c1244a416a4",
+        "modelSha256": "1aa623983d22f33844690b0ede5e5372743f893612ee0f92e9bd762b489e33f5",
+        "modelVersion": "deltrel-champion-478534-1aa623983d22"
+      },
+      {
+        "label": "candidate",
+        "revision": "f14f186+root-forward-cache",
+        "sourceWorkerSha256": "368cb47484c4ebb9fd8aae81937470c0d9a86b73a3e8c41dfef78a966b9c3d07",
+        "worker": "deltrel-local-ai.ab0ab66efc4a957a.js",
+        "workerSha256": "cd1cc7511ebf81ef6a3227539938f91e273e5de00de8fa733f48c39a5b796826",
+        "modelSha256": "1aa623983d22f33844690b0ede5e5372743f893612ee0f92e9bd762b489e33f5",
+        "modelVersion": "deltrel-champion-478534-1aa623983d22"
+      }
+    ],
+    "samples": [
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "repetition": 0,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": false
+        },
+        "preparationMs": 610.2999997138977,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 574.5,
+            "inferenceSearchMs": 571.0999999046326,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 56.10000038146973,
+            "inferenceSearchMs": 55.60000038146973,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "repetition": 0,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": false
+        },
+        "preparationMs": 607.9000000953674,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 522.7999997138977,
+            "inferenceSearchMs": 518.6999998092651,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 1,
+            "inferenceSearchMs": 0.40000009536743164,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "repetition": 1,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 522.5999999046326,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 520.2999997138977,
+            "inferenceSearchMs": 515.6000003814697,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 1,
+            "inferenceSearchMs": 0.40000009536743164,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "repetition": 1,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 532.7999997138977,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 575.5,
+            "inferenceSearchMs": 570.9000000953674,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 56.30000019073486,
+            "inferenceSearchMs": 55.80000019073486,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "repetition": 2,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 519.5999999046326,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 576.9000000953674,
+            "inferenceSearchMs": 572.1000003814697,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 57.39999961853027,
+            "inferenceSearchMs": 56.69999980926514,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "repetition": 2,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 528.3999996185303,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 520.9000000953674,
+            "inferenceSearchMs": 516,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 0.8000001907348633,
+            "inferenceSearchMs": 0.5,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "repetition": 0,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 532.0999999046326,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 3248.5,
+            "inferenceSearchMs": 3242.3999996185303,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 321.7000002861023,
+            "inferenceSearchMs": 320.90000009536743,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "repetition": 0,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 525,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 2922,
+            "inferenceSearchMs": 2915.800000190735,
+            "modelLoadMs": 0.09999990463256836,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 1.9000000953674316,
+            "inferenceSearchMs": 1.4000000953674316,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "repetition": 1,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 524.1999998092651,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 2920.9000000953674,
+            "inferenceSearchMs": 2915.199999809265,
+            "modelLoadMs": 0.10000038146972656,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 1.9000000953674316,
+            "inferenceSearchMs": 1.1999998092651367,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "repetition": 1,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 532.2000002861023,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 3238.699999809265,
+            "inferenceSearchMs": 3232.5999999046326,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 323.90000009536743,
+            "inferenceSearchMs": 323.09999990463257,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "repetition": 2,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 527.6999998092651,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 3248.300000190735,
+            "inferenceSearchMs": 3242.6000003814697,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 321.8999996185303,
+            "inferenceSearchMs": 321.09999990463257,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "repetition": 2,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 532.3000001907349,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 2921.2999997138977,
+            "inferenceSearchMs": 2915.8999996185303,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 2.0999999046325684,
+            "inferenceSearchMs": 1.5,
+            "modelLoadMs": 0,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          }
+        ]
+      }
+    ],
+    "summaries": [
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "workload": "fresh-runtime",
+        "samples": 3,
+        "medianWallMs": 575.5,
+        "medianInferenceSearchMs": 571.0999999046326,
+        "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+        "visits": 8
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "workload": "same-root-repeat",
+        "samples": 3,
+        "medianWallMs": 56.30000019073486,
+        "medianInferenceSearchMs": 55.80000019073486,
+        "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+        "visits": 8
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "workload": "fresh-runtime",
+        "samples": 3,
+        "medianWallMs": 3248.300000190735,
+        "medianInferenceSearchMs": 3242.3999996185303,
+        "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+        "visits": 8
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "workload": "same-root-repeat",
+        "samples": 3,
+        "medianWallMs": 321.8999996185303,
+        "medianInferenceSearchMs": 321.09999990463257,
+        "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+        "visits": 8
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "workload": "fresh-runtime",
+        "samples": 3,
+        "medianWallMs": 520.9000000953674,
+        "medianInferenceSearchMs": 516,
+        "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+        "visits": 8,
+        "speedup": 1.1048185830190753,
+        "reductionPercent": 9.487402242334063
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "workload": "same-root-repeat",
+        "samples": 3,
+        "medianWallMs": 1,
+        "medianInferenceSearchMs": 0.40000009536743164,
+        "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+        "visits": 8,
+        "speedup": 56.30000019073486,
+        "reductionPercent": 98.22380107173683
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "workload": "fresh-runtime",
+        "samples": 3,
+        "medianWallMs": 2921.2999997138977,
+        "medianInferenceSearchMs": 2915.800000190735,
+        "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+        "visits": 8,
+        "speedup": 1.111936466815754,
+        "reductionPercent": 10.06680418857976
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "workload": "same-root-repeat",
+        "samples": 3,
+        "medianWallMs": 1.9000000953674316,
+        "medianInferenceSearchMs": 1.4000000953674316,
+        "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+        "visits": 8,
+        "speedup": 169.4210439269897,
+        "reductionPercent": 99.40975455184248
+      }
+    ],
+    "providerNotes": [],
+    "browserVersion": "149.0.7827.55",
+    "complete": true
+  },
+  "isolatedControlRun": {
+    "schemaVersion": 1,
+    "createdAt": "2026-09-21T07:27:00.866Z",
+    "hardware": {
+      "platform": "darwin",
+      "architecture": "arm64",
+      "cpu": "Apple M4 Max",
+      "logicalCpus": 16
+    },
+    "repetitions": 3,
+    "cases": [
+      {
+        "id": "rings-4-moves-15-visits-8",
+        "search": {
+          "simulations": 8,
+          "maxConsidered": 4
+        },
+        "stateHash": "zobrist64:c54c707ec53bb401",
+        "rings": 4,
+        "occupied": 15
+      },
+      {
+        "id": "rings-4-moves-15-visits-32",
+        "search": {
+          "simulations": 32,
+          "maxConsidered": 8
+        },
+        "stateHash": "zobrist64:c54c707ec53bb401",
+        "rings": 4,
+        "occupied": 15
+      },
+      {
+        "id": "rings-10-moves-82-visits-8",
+        "search": {
+          "simulations": 8,
+          "maxConsidered": 4
+        },
+        "stateHash": "zobrist64:2858e744ef03ea81",
+        "rings": 10,
+        "occupied": 82
+      },
+      {
+        "id": "rings-10-moves-82-visits-32",
+        "search": {
+          "simulations": 32,
+          "maxConsidered": 8
+        },
+        "stateHash": "zobrist64:2858e744ef03ea81",
+        "rings": 10,
+        "occupied": 82
+      }
+    ],
+    "builds": [
+      {
+        "label": "baseline",
+        "revision": "f14f186",
+        "sourceWorkerSha256": "c81a7ee1172783e5ff171915967d86638196d3a60b632144c7a26d659042cacc",
+        "worker": "deltrel-local-ai.e886aa150aba64d2.js",
+        "workerSha256": "c62ad43c4a65f121d76bba3f2a634286bc0234a40151ee5523e39c1244a416a4",
+        "modelSha256": "1aa623983d22f33844690b0ede5e5372743f893612ee0f92e9bd762b489e33f5",
+        "modelVersion": "deltrel-champion-478534-1aa623983d22"
+      },
+      {
+        "label": "candidate",
+        "revision": "f14f186+root-forward-cache",
+        "sourceWorkerSha256": "368cb47484c4ebb9fd8aae81937470c0d9a86b73a3e8c41dfef78a966b9c3d07",
+        "worker": "deltrel-local-ai.ab0ab66efc4a957a.js",
+        "workerSha256": "cd1cc7511ebf81ef6a3227539938f91e273e5de00de8fa733f48c39a5b796826",
+        "modelSha256": "1aa623983d22f33844690b0ede5e5372743f893612ee0f92e9bd762b489e33f5",
+        "modelVersion": "deltrel-champion-478534-1aa623983d22"
+      }
+    ],
+    "samples": [
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "repetition": 0,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": false
+        },
+        "preparationMs": 625.8500003814697,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 593.5900001525879,
+            "inferenceSearchMs": 588.5900001525879,
+            "modelLoadMs": 0.010000228881835938,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 56.514999866485596,
+            "inferenceSearchMs": 55.97000026702881,
+            "modelLoadMs": 0.009999752044677734,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "repetition": 0,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": false
+        },
+        "preparationMs": 614.1750001907349,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 538.0199999809265,
+            "inferenceSearchMs": 533.3449997901917,
+            "modelLoadMs": 0.015000343322753906,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 1.054999828338623,
+            "inferenceSearchMs": 0.41499996185302734,
+            "modelLoadMs": 0.005000114440917969,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "repetition": 1,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 542.5250000953674,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 542.585000038147,
+            "inferenceSearchMs": 537.3800001144409,
+            "modelLoadMs": 0.014999866485595703,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 0.9149999618530273,
+            "inferenceSearchMs": 0.434999942779541,
+            "modelLoadMs": 0.009999752044677734,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "repetition": 1,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 547.3949999809265,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 586.7400002479553,
+            "inferenceSearchMs": 581.3900003433228,
+            "modelLoadMs": 0.019999980926513672,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 56.97500038146973,
+            "inferenceSearchMs": 56.38499975204468,
+            "modelLoadMs": 0.005000114440917969,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "repetition": 2,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 540.3450002670288,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 588.5099997520447,
+            "inferenceSearchMs": 583.9099998474121,
+            "modelLoadMs": 0.010000228881835938,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 57.545000076293945,
+            "inferenceSearchMs": 56.96999979019165,
+            "modelLoadMs": 0.05499982833862305,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "repetition": 2,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 543.7000002861023,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 532.1849999427795,
+            "inferenceSearchMs": 526.5350003242493,
+            "modelLoadMs": 0.024999618530273438,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 0.7950000762939453,
+            "inferenceSearchMs": 0.4050002098083496,
+            "modelLoadMs": 0.005000114440917969,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 27
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-32",
+        "repetition": 0,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 539.3650002479553,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 1885.6449999809265,
+            "inferenceSearchMs": 1880.3550000190735,
+            "modelLoadMs": 0.014999866485595703,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 26
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 56.239999771118164,
+            "inferenceSearchMs": 55.735000133514404,
+            "modelLoadMs": 0.010000228881835938,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 26
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-32",
+        "repetition": 0,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 535.8199996948242,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 1838.8650002479553,
+            "inferenceSearchMs": 1833.3649997711182,
+            "modelLoadMs": 0.019999980926513672,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 26
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 1.489999771118164,
+            "inferenceSearchMs": 1.0250000953674316,
+            "modelLoadMs": 0.009999752044677734,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 26
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-32",
+        "repetition": 1,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 537.6399998664856,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 1834.8200001716614,
+            "inferenceSearchMs": 1829.4050002098083,
+            "modelLoadMs": 0.019999980926513672,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 26
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 1.4049997329711914,
+            "inferenceSearchMs": 1.005000114440918,
+            "modelLoadMs": 0.005000114440917969,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 26
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-32",
+        "repetition": 1,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 540.960000038147,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 1889.670000076294,
+            "inferenceSearchMs": 1884.4699997901917,
+            "modelLoadMs": 0.015000343322753906,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 26
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 56.390000343322754,
+            "inferenceSearchMs": 55.90000009536743,
+            "modelLoadMs": 0.005000114440917969,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 26
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-32",
+        "repetition": 2,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 540.9649996757507,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 1884.9400000572205,
+            "inferenceSearchMs": 1880.465000152588,
+            "modelLoadMs": 0.009999752044677734,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 26
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 56.235000133514404,
+            "inferenceSearchMs": 55.65000009536743,
+            "modelLoadMs": 0.010000228881835938,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 26
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-32",
+        "repetition": 2,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 544.9000000953674,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 1839.215000152588,
+            "inferenceSearchMs": 1834.3050003051758,
+            "modelLoadMs": 0.014999866485595703,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 26
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 1.614999771118164,
+            "inferenceSearchMs": 1.1449999809265137,
+            "modelLoadMs": 0.009999752044677734,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 26
+            },
+            "outcome": {
+              "loss": 0.8705422498282119,
+              "win": 0.12945775017178804
+            },
+            "expectedMargin": -1.073710556104311,
+            "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "repetition": 0,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 542.8800001144409,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 3243.4349999427795,
+            "inferenceSearchMs": 3237.3950004577637,
+            "modelLoadMs": 0.014999866485595703,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 320.9299998283386,
+            "inferenceSearchMs": 320.0050001144409,
+            "modelLoadMs": 0.005000114440917969,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "repetition": 0,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 544.960000038147,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 2923.034999847412,
+            "inferenceSearchMs": 2916.25,
+            "modelLoadMs": 0.019999980926513672,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 1.869999885559082,
+            "inferenceSearchMs": 1.179999828338623,
+            "modelLoadMs": 0.005000114440917969,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "repetition": 1,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 540.3649997711182,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 2917.034999847412,
+            "inferenceSearchMs": 2911.135000228882,
+            "modelLoadMs": 0.014999866485595703,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 1.994999885559082,
+            "inferenceSearchMs": 1.2950000762939453,
+            "modelLoadMs": 0.014999866485595703,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "repetition": 1,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 545.6350002288818,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 3360.7999997138977,
+            "inferenceSearchMs": 3354.090000152588,
+            "modelLoadMs": 0.014999866485595703,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 338.15500020980835,
+            "inferenceSearchMs": 337.1950001716614,
+            "modelLoadMs": 0.005000114440917969,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "repetition": 2,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 543.6799998283386,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 3329.6399998664856,
+            "inferenceSearchMs": 3323.2300000190735,
+            "modelLoadMs": 0.014999866485595703,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 335.6800003051758,
+            "inferenceSearchMs": 334.82499980926514,
+            "modelLoadMs": 0.005000114440917969,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "repetition": 2,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 548.0599999427795,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 3008.300000190735,
+            "inferenceSearchMs": 3002.4000000953674,
+            "modelLoadMs": 0.02500009536743164,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 1.9800000190734863,
+            "inferenceSearchMs": 1.2300000190734863,
+            "modelLoadMs": 0.005000114440917969,
+            "visits": 8,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-32",
+        "repetition": 0,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 550.8600001335144,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 11307.525000095367,
+            "inferenceSearchMs": 11301.280000209808,
+            "modelLoadMs": 0.019999980926513672,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 339.0099997520447,
+            "inferenceSearchMs": 338.0649995803833,
+            "modelLoadMs": 0.005000114440917969,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-32",
+        "repetition": 0,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 538.4099998474121,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 10953.204999923706,
+            "inferenceSearchMs": 10947.150000095367,
+            "modelLoadMs": 0.009999752044677734,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 4.605000019073486,
+            "inferenceSearchMs": 3.8399996757507324,
+            "modelLoadMs": 0.010000228881835938,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-32",
+        "repetition": 1,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 547.585000038147,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 10864.090000152588,
+            "inferenceSearchMs": 10858.10000038147,
+            "modelLoadMs": 0.019999980926513672,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 3.8899998664855957,
+            "inferenceSearchMs": 3.1449999809265137,
+            "modelLoadMs": 0.010000228881835938,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-32",
+        "repetition": 1,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 549.335000038147,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 11219.139999866486,
+            "inferenceSearchMs": 11212.55999994278,
+            "modelLoadMs": 0.1100001335144043,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 340.7150001525879,
+            "inferenceSearchMs": 339.94999980926514,
+            "modelLoadMs": 0.005000114440917969,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-32",
+        "repetition": 2,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 543.7300000190735,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 11298.329999923706,
+            "inferenceSearchMs": 11292.844999790192,
+            "modelLoadMs": 0.014999866485595703,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 337.54500007629395,
+            "inferenceSearchMs": 336.7350001335144,
+            "modelLoadMs": 0.009999752044677734,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+            "heads": 11
+          }
+        ]
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-32",
+        "repetition": 2,
+        "ready": {
+          "modelVersion": "deltrel-champion-478534-1aa623983d22",
+          "bytes": 37577312,
+          "backend": "wasm",
+          "cached": true
+        },
+        "preparationMs": 552.0749998092651,
+        "measured": [
+          {
+            "workload": "fresh-runtime",
+            "wallMs": 10973.759999752045,
+            "inferenceSearchMs": 10967.099999904633,
+            "modelLoadMs": 0.009999752044677734,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+            "heads": 11
+          },
+          {
+            "workload": "same-root-repeat",
+            "wallMs": 4.03000020980835,
+            "inferenceSearchMs": 3.255000114440918,
+            "modelLoadMs": 0.014999866485595703,
+            "visits": 32,
+            "selectedAction": {
+              "type": "place",
+              "node": 92
+            },
+            "outcome": {
+              "loss": 0.37202026451661774,
+              "win": 0.6279797354833823
+            },
+            "expectedMargin": 0.691539607788136,
+            "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+            "heads": 11
+          }
+        ]
+      }
+    ],
+    "summaries": [
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "workload": "fresh-runtime",
+        "samples": 3,
+        "medianWallMs": 588.5099997520447,
+        "medianInferenceSearchMs": 583.9099998474121,
+        "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+        "visits": 8
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "workload": "same-root-repeat",
+        "samples": 3,
+        "medianWallMs": 56.97500038146973,
+        "medianInferenceSearchMs": 56.38499975204468,
+        "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+        "visits": 8
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-32",
+        "workload": "fresh-runtime",
+        "samples": 3,
+        "medianWallMs": 1885.6449999809265,
+        "medianInferenceSearchMs": 1880.465000152588,
+        "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+        "visits": 32
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-32",
+        "workload": "same-root-repeat",
+        "samples": 3,
+        "medianWallMs": 56.239999771118164,
+        "medianInferenceSearchMs": 55.735000133514404,
+        "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+        "visits": 32
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "workload": "fresh-runtime",
+        "samples": 3,
+        "medianWallMs": 3329.6399998664856,
+        "medianInferenceSearchMs": 3323.2300000190735,
+        "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+        "visits": 8
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "workload": "same-root-repeat",
+        "samples": 3,
+        "medianWallMs": 335.6800003051758,
+        "medianInferenceSearchMs": 334.82499980926514,
+        "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+        "visits": 8
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-32",
+        "workload": "fresh-runtime",
+        "samples": 3,
+        "medianWallMs": 11298.329999923706,
+        "medianInferenceSearchMs": 11292.844999790192,
+        "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+        "visits": 32
+      },
+      {
+        "build": "baseline",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-32",
+        "workload": "same-root-repeat",
+        "samples": 3,
+        "medianWallMs": 339.0099997520447,
+        "medianInferenceSearchMs": 338.0649995803833,
+        "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+        "visits": 32
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "workload": "fresh-runtime",
+        "samples": 3,
+        "medianWallMs": 538.0199999809265,
+        "medianInferenceSearchMs": 533.3449997901917,
+        "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+        "visits": 8,
+        "speedup": 1.093844094592967,
+        "reductionPercent": 8.579293434672476
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-8",
+        "workload": "same-root-repeat",
+        "samples": 3,
+        "medianWallMs": 0.9149999618530273,
+        "medianInferenceSearchMs": 0.41499996185302734,
+        "semanticSha256": "9be1e08c4540ae02416d6c326c2b39f793f18eebaf3438c2eee94b0e54103545",
+        "visits": 8,
+        "speedup": 62.26776257573373,
+        "reductionPercent": 98.3940325480882
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-32",
+        "workload": "fresh-runtime",
+        "samples": 3,
+        "medianWallMs": 1838.8650002479553,
+        "medianInferenceSearchMs": 1833.3649997711182,
+        "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+        "visits": 32,
+        "speedup": 1.025439605260127,
+        "reductionPercent": 2.4808487140179802
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-4-moves-15-visits-32",
+        "workload": "same-root-repeat",
+        "samples": 3,
+        "medianWallMs": 1.489999771118164,
+        "medianInferenceSearchMs": 1.0250000953674316,
+        "semanticSha256": "cfefed3e505b5d400230b518de8a833211d15ca7b4cd3d5291e9ed2e56dea3e0",
+        "visits": 32,
+        "speedup": 37.744972087420585,
+        "reductionPercent": 97.35064050998922
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "workload": "fresh-runtime",
+        "samples": 3,
+        "medianWallMs": 2923.034999847412,
+        "medianInferenceSearchMs": 2916.25,
+        "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+        "visits": 8,
+        "speedup": 1.1391037055800903,
+        "reductionPercent": 12.211680543103098
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-8",
+        "workload": "same-root-repeat",
+        "samples": 3,
+        "medianWallMs": 1.9800000190734863,
+        "medianInferenceSearchMs": 1.2300000190734863,
+        "semanticSha256": "b8939ba43c28b0c6e081de19c942bbc59c9bf22c18d0a15e2287495a52060fd1",
+        "visits": 8,
+        "speedup": 169.53535205633614,
+        "reductionPercent": 99.41015252106965
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-32",
+        "workload": "fresh-runtime",
+        "samples": 3,
+        "medianWallMs": 10953.204999923706,
+        "medianInferenceSearchMs": 10947.150000095367,
+        "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+        "visits": 32,
+        "speedup": 1.031509042330752,
+        "reductionPercent": 3.05465498000439
+      },
+      {
+        "build": "candidate",
+        "backend": "wasm",
+        "case": "rings-10-moves-82-visits-32",
+        "workload": "same-root-repeat",
+        "samples": 3,
+        "medianWallMs": 4.03000020980835,
+        "medianInferenceSearchMs": 3.255000114440918,
+        "semanticSha256": "fbdd8f46ef3ff97f8ffdfde6c2eb1a4255a32e569e1027fa979d1c94192e2810",
+        "visits": 32,
+        "speedup": 84.1215836482963,
+        "reductionPercent": 98.81124444330376
+      }
+    ],
+    "providerNotes": [
+      {
+        "backend": "webgpu",
+        "capability": {
+          "available": false,
+          "reason": "no WebGPU adapter"
+        }
+      }
+    ],
+    "browserVersion": "149.0.7827.55",
+    "isolation": "coi",
+    "complete": true
+  },
+  "complete": true
+}

@@ -39,7 +39,7 @@ function state(root: DeltrelAiRequest) {
   };
 }
 
-function fixture() {
+function fixture(auxiliary = false) {
   const tensors: Array<ReturnType<typeof vi.spyOn>> = [];
   const outputDisposals = vi.fn();
   const forwards: Array<Record<string, { dims: readonly number[]; data: ArrayLike<number | bigint> }>> = [];
@@ -65,13 +65,20 @@ function fixture() {
       const data = float32ToFloat16Array(values);
       return { data, dims, dispose: () => { data.fill(0); outputDisposals(); } };
     };
-    return {
+    const base = {
       policy_logits: output(policy, [batch, nodes]), outcome_logits: output(outcome, [batch, 2]),
       score_margin_logits: output(new Float32Array(batch * 303), [batch, 303]),
       ownership_logits: output(new Float32Array(batch * nodes * 3), [batch, nodes, 3]),
       alive_logits: output(new Float32Array(batch * nodes), [batch, nodes]),
       soft_policy_logits: output(policy.slice(), [batch, nodes]),
     };
+    return auxiliary ? { ...base,
+      opponent_reply_logits: output(new Float32Array(batch * (nodes + 1)), [batch, nodes + 1]),
+      second_stone_logits: output(new Float32Array(batch * nodes), [batch, nodes]),
+      final_shores_logits: output(new Float32Array(batch * 102), [batch, 2, 51]),
+      final_networks_logits: output(new Float32Array(batch * 52), [batch, 2, 26]),
+      final_capes_logits: output(new Float32Array(batch * 12), [batch, 2, 6]),
+    } : base;
   });
   const sessions: FakeSession[] = [];
   class FakeSession {
@@ -128,6 +135,7 @@ function fixture() {
   }
   const runtime = {
     manifest: { model: { sha256: 'model-a' }, featureSchemaHash: 'features-a',
+      auxiliaryStatus: (auxiliary ? 'ready' : 'absent') as 'ready' | 'untrained' | 'absent',
       search: { firstVisitBatchSize: 2, subtreeReuse: true, subtreeReuseMaxNodes: 4096,
         cVisit: 50, cScale: 1, swapDeadZone: 0.02 } },
     ort, session: { run }, predictions: new worker.PredictionCache(),
@@ -370,7 +378,7 @@ describe('root-only browser network reporting', () => {
     const get = vi.spyOn(f.runtime.predictions, 'get');
     const set = vi.spyOn(f.runtime.predictions, 'set');
     const report = await worker.captureRootNetworkOutput(f.runtime as never, root.state, () => {});
-    expect(get).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledOnce();
     expect(set).not.toHaveBeenCalled();
     expect(f.run).toHaveBeenCalledTimes(2);
     expect(report.heads.policy?.logits).toHaveLength(50);
@@ -390,7 +398,7 @@ describe('root-only browser network reporting', () => {
     expect(f.outputDisposals).not.toHaveBeenCalled();
   });
 
-  it('releases all root tensors when cancellation arrives during the additional forward', async () => {
+  it('releases all root tensors when cancellation arrives during the root forward', async () => {
     const f = fixture();
     const normal = f.run.getMockImplementation()!;
     let cancelled = false;
@@ -445,5 +453,140 @@ describe('root-only browser network reporting', () => {
     await expect(worker.captureRootNetworkOutput({ ...f.runtime, ort: { Tensor: FailingTensor } } as never,
       request().state, () => {})).rejects.toThrow('allocation failed');
     expect(dispose).toHaveBeenCalledTimes(2);
+  });
+});
+
+
+describe('single-pass root evaluation and bounded report reuse', () => {
+  it.each([false, true])('combines search evaluation and the full report in one forward (auxiliary=%s)', async auxiliary => {
+    const f = fixture(auxiliary);
+    const baseline = fixture(auxiliary);
+    const root = nextRequest(request(), 0);
+    const legal = Int32Array.from(root.legalActions);
+    const expectedEvaluation = await worker.evaluate(baseline.runtime as never, root.state, legal);
+    const expectedReport = await worker.captureRootNetworkOutput(baseline.runtime as never, root.state, () => {});
+    expect(baseline.run).toHaveBeenCalledTimes(2);
+
+    const result = await worker.evaluateRoot(f.runtime as never, root.state, legal, () => {});
+    expect(f.run).toHaveBeenCalledOnce();
+    expect(result.evaluation).toEqual(expectedEvaluation);
+    expect(result.networkOutput).toEqual(expectedReport);
+    expect(Object.values(result.networkOutput.heads).filter(Boolean)).toHaveLength(auxiliary ? 11 : 6);
+    expect(await worker.evaluate(f.runtime as never, root.state, legal)).toEqual(expectedEvaluation);
+    expect(f.run).toHaveBeenCalledOnce();
+    expect(f.tensors).toHaveLength(8);
+    f.tensors.forEach(dispose => expect(dispose).toHaveBeenCalledOnce());
+    expect(f.outputDisposals).toHaveBeenCalledTimes(auxiliary ? 11 : 6);
+  });
+
+  it('retains only one complete root and isolates caller mutations from both caches', async () => {
+    const f = fixture(true);
+    const root = nextRequest(request(), 0);
+    const legal = Int32Array.from(root.legalActions);
+    const first = await worker.evaluateRoot(f.runtime as never, root.state, legal, () => {});
+    const expected = structuredClone(first);
+    first.evaluation.logits.fill(-100);
+    first.evaluation.outcome.win = 0;
+    first.networkOutput.heads.policy!.probabilities.fill(0);
+    first.networkOutput.heads.finalShores!.logits.fill(100);
+    first.networkOutput.heads.ownership!.shape[0] = 1;
+    first.networkOutput.heads.secondStone!.applicable = false;
+    const repeated = await worker.evaluateRoot(f.runtime as never, root.state, legal, () => {});
+    expect(repeated).toEqual(expected);
+    expect(f.run).toHaveBeenCalledOnce();
+    const compact = await worker.evaluate(f.runtime as never, root.state, legal);
+    expect(Object.keys(compact).sort()).toEqual(['expectedMargin', 'logits', 'outcome', 'value']);
+    expect(compact).toEqual(expected.evaluation);
+
+    const other = nextRequest(request(), 1);
+    await worker.evaluateRoot(f.runtime as never, other.state, Int32Array.from(other.legalActions), () => {});
+    await worker.evaluateRoot(f.runtime as never, root.state, legal, () => {});
+    expect(f.run).toHaveBeenCalledTimes(3); // The prior full report was evicted.
+  });
+
+  it('preserves an existing leaf evaluation exactly while obtaining missing raw heads', async () => {
+    const f = fixture(true);
+    const root = request();
+    const legal = Int32Array.from(root.legalActions);
+    const cached = await worker.evaluate(f.runtime as never, root.state, legal);
+    const normal = f.run.getMockImplementation()!;
+    f.run.mockImplementationOnce(async feeds => {
+      const outputs = await normal(feeds);
+      // Model execution in a differently shaped batch can round differently.
+      outputs.outcome_logits.data[1] = float32ToFloat16Array(new Float32Array([1.01]))[0];
+      outputs.policy_logits.data[0] = float32ToFloat16Array(new Float32Array([10.01]))[0];
+      return outputs;
+    });
+    const result = await worker.evaluateRoot(f.runtime as never, root.state, legal, () => {});
+    expect(result.evaluation).toEqual(cached);
+    expect(result.networkOutput.heads.outcome!.probabilities[1]).not.toBe(cached.outcome.win);
+    expect((await worker.evaluate(f.runtime as never, root.state, legal))).toEqual(cached);
+    expect(f.run).toHaveBeenCalledTimes(2);
+  });
+
+  it('invalidates reports on model, features, auxiliary readiness, history, and action-order changes', async () => {
+    const f = fixture(true);
+    const root = request();
+    const legal = Int32Array.from(root.legalActions);
+    const evaluate = (semantic = root.state, actions = legal) => worker.evaluateRoot(f.runtime as never, semantic, actions, () => {});
+    await evaluate();
+    f.runtime.manifest.model.sha256 = 'model-b';
+    await evaluate();
+    f.runtime.manifest.featureSchemaHash = 'features-b';
+    await evaluate();
+    f.runtime.manifest.auxiliaryStatus = 'untrained';
+    expect((await evaluate()).networkOutput.auxiliaryStatus).toBe('untrained');
+    const differentHistory = { ...root.state, history: { ...root.state.history, previousTurn: [1] } };
+    await evaluate(differentHistory);
+    const reversed = await evaluate(differentHistory, legal.slice().reverse());
+    expect(reversed.evaluation.logits[0]).toBe(59);
+    expect(f.run).toHaveBeenCalledTimes(6);
+  });
+
+  it('changes swap applicability after search without modifying the reusable report', async () => {
+    const f = fixture(true);
+    const root = buildAiRequest({ ...config, pieRule: true }, [{ type: 'place', node: 0 }]);
+    const swap = await worker.captureRootNetworkOutput(f.runtime as never, root.state, () => {}, true);
+    expect(swap.heads.secondStone?.applicable).toBe(false);
+    const keep = await worker.captureRootNetworkOutput(f.runtime as never, root.state, () => {}, false);
+    expect(keep.heads.secondStone?.applicable).toBe(true);
+    expect(f.run).toHaveBeenCalledOnce();
+    expect(() => validateNetworkOutputState(swap, root, true)).not.toThrow();
+    expect(() => validateNetworkOutputState(keep, root, false)).not.toThrow();
+  });
+
+  it('publishes neither cache until every head is valid and cancellation checks pass', async () => {
+    const f = fixture(true);
+    const root = request();
+    const legal = Int32Array.from(root.legalActions);
+    const set = vi.spyOn(f.runtime.predictions, 'set');
+    let checks = 0;
+    await expect(worker.evaluateRoot(f.runtime as never, root.state, legal, () => {
+      if (++checks === 4) throw new Error('cancelled after decode');
+    })).rejects.toThrow('cancelled after decode');
+    expect(set).not.toHaveBeenCalled();
+    expect(f.runtime).not.toHaveProperty('rootPrediction');
+    expect(f.outputDisposals).toHaveBeenCalledTimes(11);
+    f.tensors.forEach(dispose => expect(dispose).toHaveBeenCalledOnce());
+    await worker.evaluateRoot(f.runtime as never, root.state, legal, () => {});
+    expect(f.run).toHaveBeenCalledTimes(2);
+    await expect(worker.evaluateRoot(f.runtime as never, root.state, legal, () => {
+      throw new Error('cancelled cache hit');
+    })).rejects.toThrow('cancelled cache hit');
+    expect(f.run).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns identical experimental search statistics while removing the reporting forward', async () => {
+    const f = fixture(true);
+    const root = request();
+    const first = await f.search(root);
+    expect(f.run).toHaveBeenCalledTimes(2); // One complete root plus one leaf batch.
+    expect(first.networkOutput.auxiliaryStatus).toBe('ready');
+    expect(first.rootVisits.reduce((sum, visits) => sum + visits, 0)).toBe(2);
+    const repeated = await f.search(root);
+    expect(repeated).toEqual(first);
+    expect(f.run).toHaveBeenCalledTimes(2); // Both prediction caches served the repeat.
+    expect(f.sessions).toHaveLength(1);
+    f.runtime.completedSearch!.session.free();
   });
 });

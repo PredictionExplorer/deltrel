@@ -23,6 +23,7 @@ import {
 import { SetupScreen } from '../SetupScreen';
 import { prepareLocalAi } from '@/lib/deltrel/ai/local-client';
 import { publishLocalAiStatus } from '@/lib/deltrel/ai/local-ai-status';
+import { GAME_STORAGE_KEY } from '@/lib/persistence';
 
 vi.mock('@/lib/deltrel/ai/local-client', async () => ({
   ...await vi.importActual<typeof import('@/lib/deltrel/ai/local-client')>('@/lib/deltrel/ai/local-client'),
@@ -127,6 +128,75 @@ afterEach(() => {
 });
 
 describe('SetupScreen', () => {
+  it('keeps both AI controllers and custom names when downloading an AI-vs-AI match', async () => {
+    vi.mocked(checkAiCapabilities).mockResolvedValue(developerCapabilities);
+    resetStore({
+      config: { ...DEFAULT_CONFIG, playerNames: ['Drift', 'Tide'] },
+      aiSearchSettings: { ...DEFAULT_AI_SEARCH_SETTINGS, local: { simulations: 24, maxConsidered: 6 } },
+    });
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    expect(prepareLocalAi).not.toHaveBeenCalled();
+    const download = await screen.findByRole('button', { name: 'Download browser AI' });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Player 1 controller' }), 'local');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Player 2 controller' }), 'local');
+    await user.click(download);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Begin the game' })).toBeEnabled());
+    expect(screen.getByRole('combobox', { name: 'Player 1 controller' })).toHaveValue('local');
+    expect(screen.getByRole('combobox', { name: 'Player 2 controller' })).toHaveValue('local');
+    expect(screen.getByRole('textbox', { name: 'Player 1 name' })).toHaveValue('Drift');
+    expect(screen.getByRole('textbox', { name: 'Player 2 name' })).toHaveValue('Tide');
+    await user.click(screen.getByRole('button', { name: 'Browser AI selected' }));
+    expect(screen.getByRole('combobox', { name: 'Player 1 controller' })).toHaveValue('local');
+    expect(useAppStore.getState().aiSearchSettings.local).toEqual({ simulations: 24, maxConsidered: 6 });
+    expect(within(screen.getByRole('region', { name: 'Browser AI strength' })).getByText('Custom')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Begin the game' }));
+    expect(useAppStore.getState().controllers).toEqual(['local', 'local']);
+    expect(useAppStore.getState().config.playerNames).toEqual(['Drift', 'Tide']);
+  });
+
+  it('preserves a visible strength choice through preparation, reselection and returning to setup', async () => {
+    vi.mocked(checkAiCapabilities).mockResolvedValue(developerCapabilities);
+    const user = userEvent.setup();
+    const view = render(<SetupScreen />);
+    const deep = await screen.findByRole('button', { name: 'Deep browser AI strength' });
+    await user.click(deep);
+    expect(deep).toHaveAttribute('aria-pressed', 'true');
+    expect(useAppStore.getState().aiSearchSettings.local).toEqual({ simulations: 64, maxConsidered: 8 });
+    await user.click(screen.getByRole('button', { name: 'Download browser AI' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Begin the game' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Browser AI selected' }));
+    expect(useAppStore.getState().aiSearchSettings.local).toEqual({ simulations: 64, maxConsidered: 8 });
+    const saved = JSON.parse(localStorage.getItem(GAME_STORAGE_KEY)!);
+    expect(saved.state.aiSearchSettings.local).toEqual({ simulations: 64, maxConsidered: 8 });
+    view.unmount();
+    render(<SetupScreen />);
+    expect(await screen.findByRole('button', { name: 'Deep browser AI strength' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('preserves mixed AI selections during browser preparation', async () => {
+    vi.mocked(checkAiCapabilities).mockResolvedValue(developerCapabilities);
+    resetStore({ controllers: ['server', 'local'], config: { ...DEFAULT_CONFIG, playerNames: ['Online', 'Device'] } });
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    await user.click(await screen.findByRole('button', { name: 'Download browser AI' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Begin the game' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: 'Begin the game' }));
+    expect(useAppStore.getState().controllers).toEqual(['server', 'local']);
+    expect(useAppStore.getState().config.playerNames).toEqual(['Online', 'Device']);
+  });
+
+  it('keeps custom player names when explicitly choosing the online champion', async () => {
+    vi.mocked(checkAiCapabilities).mockResolvedValue(championCapabilities);
+    resetStore({ config: { ...DEFAULT_CONFIG, playerNames: ['Drift', 'Tide'] } });
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    await user.click(await screen.findByRole('button', { name: 'Play against the champion' }));
+    await user.click(screen.getByRole('button', { name: 'Begin the game' }));
+    expect(useAppStore.getState().controllers).toEqual(['human', 'server']);
+    expect(useAppStore.getState().config.playerNames).toEqual(['Drift', 'Tide']);
+  });
+
   it('promotes browser AI on a public site and requires explicit preparation before beginning', async () => {
     vi.mocked(checkAiCapabilities).mockResolvedValue({
       server: { status: 'unavailable', label: 'Online AI', code: 'not_configured', reason: 'Online AI is not configured.', retryable: false },

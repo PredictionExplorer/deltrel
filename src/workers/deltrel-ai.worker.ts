@@ -209,6 +209,8 @@ interface LocalRuntime {
   predictions: PredictionCache;
   readyInfo: LocalAiReadyInfo;
   completedSearch?: { session: WasmSearchSession; context: string };
+  /** At most one full report; leaf cache entries remain compact evaluations. */
+  rootPrediction?: { key: string; evaluation: Evaluation; networkOutput: DeltrelNetworkOutput };
 }
 
 interface Evaluation {
@@ -969,59 +971,117 @@ function rootNetworkHead(
   return { shape, activation, logits, probabilities, mask, applicable: true };
 }
 
-/**
- * One root-only forward exposes every exported head, including cached roots.
- * Full vectors never enter the leaf prediction cache or retained search trees.
- */
-export async function captureRootNetworkOutput(
+function decodeRootNetworkOutput(
   runtime: LocalRuntime,
   semantic: DeltrelAiSemanticState,
+  outputs: Ort.InferenceSession.OnnxValueMapType,
+): DeltrelNetworkOutput {
+  const nodes = semantic.stones.length;
+  const legalMask = semantic.stones.map((stone) => stone === -1);
+  const hasAuxiliary = runtime.manifest.auxiliaryStatus === 'ready' || runtime.manifest.auxiliaryStatus === 'untrained';
+  const countMask = (bins: number, limit: number) => Array.from({ length: bins * 2 }, (_, i) => i % bins <= limit);
+  const opponentReply = hasAuxiliary
+    ? rootNetworkHead(outputs, 'opponent_reply_logits', [nodes + 1], 'softmax', [...legalMask, true]) : null;
+  const secondStone = hasAuxiliary
+    ? rootNetworkHead(outputs, 'second_stone_logits', [nodes], 'softmax', legalMask) : null;
+  if (opponentReply) opponentReply.applicable = legalMask.filter(Boolean).length > semantic.movesLeft;
+  if (secondStone) secondStone.applicable = semantic.mode === 'double' && !semantic.opening && semantic.movesLeft === 2;
+  const output = parseNetworkOutput({
+    schemaVersion: 1,
+    perspective: semantic.toMove,
+    nodeCount: nodes,
+    auxiliaryStatus: hasAuxiliary ? runtime.manifest.auxiliaryStatus : 'absent',
+    heads: {
+      policy: rootNetworkHead(outputs, 'policy_logits', [nodes], 'softmax', legalMask),
+      outcome: rootNetworkHead(outputs, 'outcome_logits', [2], 'softmax'),
+      scoreMargin: rootNetworkHead(outputs, 'score_margin_logits', [303], 'softmax'),
+      ownership: rootNetworkHead(outputs, 'ownership_logits', [nodes, 3], 'softmax'),
+      alive: rootNetworkHead(outputs, 'alive_logits', [nodes], 'sigmoid'),
+      softPolicy: rootNetworkHead(outputs, 'soft_policy_logits', [nodes], 'softmax', legalMask),
+      opponentReply,
+      secondStone,
+      finalShores: hasAuxiliary ? rootNetworkHead(outputs, 'final_shores_logits', [2, 51], 'softmax', countMask(51, 5 * semantic.rings)) : null,
+      finalNetworks: hasAuxiliary ? rootNetworkHead(outputs, 'final_networks_logits', [2, 26], 'softmax', countMask(26, Math.floor(5 * semantic.rings / 2))) : null,
+      finalCapes: hasAuxiliary ? rootNetworkHead(outputs, 'final_capes_logits', [2, 6], 'softmax') : null,
+    },
+  });
+  return output!;
+}
+
+function cloneNetworkOutput(output: DeltrelNetworkOutput): DeltrelNetworkOutput {
+  const heads = { ...output.heads };
+  for (const name of Object.keys(heads) as (keyof typeof heads)[]) {
+    const head = heads[name];
+    if (head) heads[name] = {
+      ...head,
+      shape: [...head.shape],
+      logits: [...head.logits],
+      probabilities: [...head.probabilities],
+      mask: [...head.mask],
+    };
+  }
+  return { ...output, heads };
+}
+
+function networkOutputForDecision(
+  output: DeltrelNetworkOutput,
+  swapRecommended: boolean,
+): DeltrelNetworkOutput {
+  if (!swapRecommended || !output.heads.secondStone) return output;
+  return { ...output, heads: { ...output.heads,
+    secondStone: { ...output.heads.secondStone, applicable: false },
+  } };
+}
+
+/**
+ * Evaluate the root and expose its complete report from one ONNX forward.
+ * Keep only one full root report, independently of the compact leaf cache.
+ */
+export async function evaluateRoot(
+  runtime: LocalRuntime,
+  semantic: DeltrelAiSemanticState,
+  legalActions: Int32Array,
   checkCancelled: () => void,
-  swapRecommended = false,
-): Promise<DeltrelNetworkOutput> {
+): Promise<{ evaluation: Evaluation; networkOutput: DeltrelNetworkOutput }> {
   checkCancelled();
-  // The batch builder also releases already-created inputs if allocation fails.
+  const key = predictionKey(runtime, semantic, legalActions);
+  const reportKey = JSON.stringify([key, runtime.manifest.auxiliaryStatus ?? 'absent']);
+  const previous = runtime.rootPrediction;
+  if (previous?.key === reportKey) {
+    return { evaluation: cloneEvaluation(previous.evaluation),
+      networkOutput: cloneNetworkOutput(previous.networkOutput) };
+  }
+  // A root may already have been evaluated as a batched leaf. Keep that exact
+  // search value/policy, including its original floating-point rounding.
+  const cachedEvaluation = runtime.predictions.get(key);
   const feeds = batchTensorFeeds(runtime, [semantic]);
   let outputs: Ort.InferenceSession.OnnxValueMapType | undefined;
   try {
     checkCancelled();
     outputs = await runtime.session.run(feeds);
     checkCancelled();
-    const nodes = semantic.stones.length;
-    const legalMask = semantic.stones.map((stone) => stone === -1);
-    const hasAuxiliary = runtime.manifest.auxiliaryStatus === 'ready' || runtime.manifest.auxiliaryStatus === 'untrained';
-    const countMask = (bins: number, limit: number) => Array.from({ length: bins * 2 }, (_, i) => i % bins <= limit);
-    const opponentReply = hasAuxiliary
-      ? rootNetworkHead(outputs, 'opponent_reply_logits', [nodes + 1], 'softmax', [...legalMask, true]) : null;
-    const secondStone = hasAuxiliary
-      ? rootNetworkHead(outputs, 'second_stone_logits', [nodes], 'softmax', legalMask) : null;
-    if (opponentReply) opponentReply.applicable = legalMask.filter(Boolean).length > semantic.movesLeft;
-    if (secondStone) secondStone.applicable = semantic.mode === 'double' && !semantic.opening && semantic.movesLeft === 2 && !swapRecommended;
-    const output = parseNetworkOutput({
-      schemaVersion: 1,
-      perspective: semantic.toMove,
-      nodeCount: nodes,
-      auxiliaryStatus: hasAuxiliary ? runtime.manifest.auxiliaryStatus : 'absent',
-      heads: {
-        policy: rootNetworkHead(outputs, 'policy_logits', [nodes], 'softmax', legalMask),
-        outcome: rootNetworkHead(outputs, 'outcome_logits', [2], 'softmax'),
-        scoreMargin: rootNetworkHead(outputs, 'score_margin_logits', [303], 'softmax'),
-        ownership: rootNetworkHead(outputs, 'ownership_logits', [nodes, 3], 'softmax'),
-        alive: rootNetworkHead(outputs, 'alive_logits', [nodes], 'sigmoid'),
-        softPolicy: rootNetworkHead(outputs, 'soft_policy_logits', [nodes], 'softmax', legalMask),
-        opponentReply,
-        secondStone,
-        finalShores: hasAuxiliary ? rootNetworkHead(outputs, 'final_shores_logits', [2, 51], 'softmax', countMask(51, 5 * semantic.rings)) : null,
-        finalNetworks: hasAuxiliary ? rootNetworkHead(outputs, 'final_networks_logits', [2, 26], 'softmax', countMask(26, Math.floor(5 * semantic.rings / 2))) : null,
-        finalCapes: hasAuxiliary ? rootNetworkHead(outputs, 'final_capes_logits', [2, 6], 'softmax') : null,
-      },
-    });
+    const evaluation = cachedEvaluation ?? decodeEvaluation(outputs, semantic.stones.length, legalActions);
+    const networkOutput = decodeRootNetworkOutput(runtime, semantic, outputs);
     checkCancelled();
-    return output!;
+    if (!cachedEvaluation) runtime.predictions.set(key, evaluation);
+    runtime.rootPrediction = { key: reportKey, evaluation: cloneEvaluation(evaluation), networkOutput };
+    return { evaluation, networkOutput: cloneNetworkOutput(networkOutput) };
   } finally {
     for (const tensor of Object.values(feeds)) tensor.dispose();
     if (outputs) for (const tensor of Object.values(outputs)) tensor.dispose();
   }
+}
+
+/** Inspect a root without rerunning inference when its complete report is retained. */
+export async function captureRootNetworkOutput(
+  runtime: LocalRuntime,
+  semantic: DeltrelAiSemanticState,
+  checkCancelled: () => void,
+  swapRecommended = false,
+): Promise<DeltrelNetworkOutput> {
+  const legalActions = Int32Array.from(semantic.stones.flatMap((stone, node) => stone === -1 ? [node] : []));
+  const result = await evaluateRoot(runtime, semantic, legalActions, checkCancelled);
+  return networkOutputForDecision(result.networkOutput, swapRecommended);
 }
 
 async function yieldToCancellation(taskId: string): Promise<void> {
@@ -1104,7 +1164,8 @@ export async function runSessionSearch(
       throw new DeltrelAiError('protocol', 'WASM session root actions are incompatible.');
     }
     const token = owned.root_token();
-    const rootEvaluation = await evaluate(runtime, semantic, rootActions);
+    const rootPrediction = await evaluateRoot(runtime, semantic, rootActions, checkCancelled);
+    const rootEvaluation = rootPrediction.evaluation;
     checkCancelled();
     if (owned.root_token() !== token) throw new DeltrelAiError('stale', 'WASM session root token changed.');
     owned.initialize_root(token, rootEvaluation.value, rootEvaluation.logits);
@@ -1176,7 +1237,9 @@ export async function runSessionSearch(
         !Number.isFinite(rootValue) || Math.abs(rootValue) > 1) {
       throw new DeltrelAiError('protocol', 'WASM session result is malformed.');
     }
-    const result = { actionCode, swapRecommended: semantic.swapAvailable && selectedValue < -options.swapDeadZone,
+    const swapRecommended = semantic.swapAvailable && selectedValue < -options.swapDeadZone;
+    const result = { actionCode, swapRecommended,
+      networkOutput: networkOutputForDecision(rootPrediction.networkOutput, swapRecommended),
       rootValue, rootActions: rootActionsResult, rootVisits, rootQ, rootPolicy, rootEvaluation,
       inheritedVisits, totalVisits, reusedNodes: owned.reused_nodes(), reusedVisits: owned.reused_visits() };
     checkCancelled();
@@ -1225,12 +1288,11 @@ async function chooseAction(
     if (usesExperimentalSearch(runtime.manifest)) {
       const result = await runSessionSearch(runtime, root, request.state, search,
         checkCancelled, () => yieldToCancellation(taskId));
-      const networkOutput = await captureRootNetworkOutput(runtime, request.state, checkCancelled, result.swapRecommended);
       return { ...result, outcome: result.rootEvaluation.outcome,
         modelValue: result.rootEvaluation.value, searchValue: result.rootEvaluation.value,
         expectedMargin: result.rootEvaluation.expectedMargin, modelVersion: runtime.manifest.modelVersion,
         modelStep: runtime.manifest.modelStep,
-        modelIdentity: runtime.manifest.modelVersion, networkOutput, search,
+        modelIdentity: runtime.manifest.modelVersion, search,
         timingMs: { modelLoad, inferenceSearch: nowMs() - searchStarted } };
     }
     tree = new runtime.wasm.WasmSearchTree(
@@ -1243,7 +1305,8 @@ async function chooseAction(
       throw new DeltrelAiError('protocol', 'WASM root action layout is incompatible.');
     }
     const rootToken = tree.root_token();
-    const rootEvaluation = await evaluate(runtime, request.state, rootActions);
+    const rootPrediction = await evaluateRoot(runtime, request.state, rootActions, checkCancelled);
+    const rootEvaluation = rootPrediction.evaluation;
     ensureNotCancelled(taskId);
     if (tree.root_token() !== rootToken) {
       throw new DeltrelAiError('stale', 'WASM root evaluation token changed.');
@@ -1298,7 +1361,7 @@ async function chooseAction(
         request.state.swapAvailable,
         runtime.manifest.search.swapDeadZone,
       );
-    const networkOutput = await captureRootNetworkOutput(runtime, request.state, checkCancelled, summary.swapRecommended);
+    const networkOutput = networkOutputForDecision(rootPrediction.networkOutput, summary.swapRecommended);
     return {
       ...summary,
       outcome: rootEvaluation.outcome,
