@@ -18,6 +18,59 @@ const configFor = (rings: number) => ({
 });
 
 describe('game properties', () => {
+  it('matches an independent turn schedule through complete randomized games in every variant', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...SUPPORTED_RINGS),
+        fc.constantFrom('classic' as const, 'double' as const),
+        fc.integer({ min: 1, max: 9 }),
+        fc.boolean(),
+        fc.boolean(),
+        fc.array(fc.nat(), { minLength: 275, maxLength: 275 }),
+        (rings, mode, handicap, pie, takeSwap, selectors) => {
+          const config = { ...configFor(rings), mode, handicap, pieRule: handicap === 1 && pie };
+          const turnSize = mode === 'classic' ? 1 : 2;
+          const swapped = config.pieRule && takeSwap;
+          let state = initialState(config);
+          const log: GameAction[] = [];
+          const remaining = Array.from({ length: state.board.n }, (_, node) => node);
+          const expectedStones = new Int8Array(state.board.n).fill(EMPTY);
+
+          for (let placed = 0; placed < state.board.n; placed++) {
+            if (placed === 1 && swapped) {
+              state = applyAction(state, { type: 'swap' });
+              log.push({ type: 'swap' });
+              expectedStones[(log[0] as { type: 'place'; node: number }).node] = 1;
+            }
+            const turn = placed < handicap ? 0 : 1 + Math.floor((placed - handicap) / turnSize);
+            const actor = placed < handicap ? 0 : (turn + Number(swapped)) % 2;
+            const movesLeft = placed < handicap ? handicap - placed : turnSize - ((placed - handicap) % turnSize);
+            expect(state.toMove).toBe(actor);
+            expect(state.movesLeft).toBe(movesLeft);
+            expect(state.turnCount).toBe(turn + Number(swapped && placed > 0));
+            const [node] = remaining.splice(selectors[placed] % remaining.length, 1);
+            const action: GameAction = { type: 'place', node };
+            const previousStones = state.stones.slice();
+            const previous = state;
+            state = applyAction(state, action);
+            log.push(action);
+            expectedStones[node] = actor;
+            expect(previous.stones).toEqual(previousStones);
+            expect(state.stones).toEqual(expectedStones);
+            expect(state.stonesPlaced).toBe(placed + 1);
+            expect(state.over).toBe(remaining.length === 0);
+            expect(state.canSwap).toBe(config.pieRule && placed === 0);
+          }
+          expect(state.over).toBe(true);
+          expect(replay(config, log)).toEqual(state);
+          expect(isLegalAction(state, { type: 'swap' })).toBe(false);
+          expect(validateTerminalWinner(state.board, state.stones).winner).toBeOneOf([0, 1]);
+        },
+      ),
+      { numRuns: 100 },
+    );
+  });
+
   it('incremental placement and replay agree for arbitrary legal traces', () => {
     fc.assert(
       fc.property(

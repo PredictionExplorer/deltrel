@@ -93,13 +93,18 @@ original budget and applies the new setting to the next search.
 The default is Quick to keep the full champion responsive. More search costs
 more time, especially on phones. All board sizes,
 both variants, pie swaps, handicap games, and AI-versus-AI play are supported.
+During browser search, progress reports actual completed simulations. Slow CPU
+searches can continue beyond 90 seconds while progressing; 90 seconds without
+progress still stops a stalled engine. Pause AI remains available throughout.
 Rules and learned weights match the published champion; the browser export uses
 FP16 numerical precision. New trained champions must be exported, validated, and
 published using the [model release instructions](training/docs/serving-and-distillation.md).
 
 Downloading or preparing the engine preserves an existing AI-versus-AI setup.
-Game status and scoring identify each controller explicitly; the automatic human
-label “You” is displayed as an AI name when that side is controlled by an engine.
+Players start with neutral **Player 1** and **Player 2** names, and custom names
+survive changes of controller. Game status and scoring identify each controller
+explicitly. Browser AI shows when it is waiting for preparation, and handicap
+instructions show the actual number of opening stones still to place.
 
 The browser reuses one root evaluation for search and inspection, avoiding a
 duplicate model pass. See the [measured performance comparison](training/docs/browser-search-performance-20260921.md)
@@ -168,6 +173,16 @@ npm run test:browser-assets # verify packaged ONNX runtime deployment assets
 node scripts/export-deltrel-conformance.mjs # regenerate conformance-v3.json
 python training/scripts/export_feature_fixture.py # regenerate features-v4.json
 ```
+
+Browser tests start their own production server and reject an occupied port;
+use `PORT=3218 npm run test:e2e` when port 3000 is in use. They include real-model
+Deep search and nine-stone AI-versus-AI openings in both variants. See the
+[September 2026 gameplay audit](docs/gameplay-audit-2026-09-21.md) for findings
+and validation scope.
+
+The expensive Full-board Deep-search regression on Firefox is opt-in:
+`DELTREL_SLOW_AI_TESTS=1 PORT=3218 npx playwright test e2e/slow-search.spec.ts --project=firefox`.
+It uses the real model and may take several minutes on the CPU fallback.
 
 CI also builds the native Python extension, runs pytest with per-module coverage
 floors, Rust property and WASM contract suites, mutation jobs, dependency audits,

@@ -302,13 +302,13 @@ export function EngineEstimatePanel({ analysis, board, playerNames, context, onA
         <Disclosure title="Search and model details" hint={`${analysis.simulations.toLocaleString('en-US')} simulations · ${latency(analysis.timingMs.total)}`}>
           <dl className={styles.metadata}>
             {([
-              ['Model value', signed(analysis.modelValue)], ['Search value', signed(analysis.searchValue)], ['Root value', signed(analysis.rootValue)],
+              ['Model value', signed(analysis.modelValue)], ['Search input value', signed(analysis.searchValue)], ['Searched root value', signed(analysis.rootValue)],
               ['Expected margin', signed(analysis.expectedMargin)], ['Simulations', analysis.simulations.toLocaleString('en-US')], ['Maximum considered', analysis.maxConsidered.toLocaleString('en-US')],
               ['Queue time', latency(analysis.timingMs.queue)], ['Model load', latency(analysis.timingMs.modelLoad)], ['Inference and search', latency(analysis.timingMs.inferenceSearch)], ['Total time', latency(analysis.timingMs.total)],
               ['Model version', analysis.modelVersion], ['Model step', analysis.modelStep?.toLocaleString('en-US') ?? 'Not reported'], ['Model identity', analysis.modelIdentity ?? 'Not reported'], ['Position identity', analysis.stateHash], ['Perspective', playerNames[analysis.perspective]], ['Swap selected', analysis.swapRecommended ? 'Yes' : 'No'],
             ] as const).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
           </dl>
-          <p className={styles.note}>Model value is win minus loss probability. Search and root values are evaluation utilities, not win percentages.</p>
+          <p className={styles.note}>Model value is win minus loss probability. Search input value is the evaluation before simulations and may equal model value. Searched root value combines the search results. These values are evaluation utilities, not win percentages.</p>
         </Disclosure>
         <Disclosure title="Raw engine output" hint="Full precision · view or download JSON"><RawOutput analysis={analysis} board={board} context={context} /></Disclosure>
       </div>}

@@ -38,11 +38,18 @@ export type DeltrelAiWorkerCommand =
   | { type: 'prepare'; taskId: string }
   | { type: 'cancel'; taskId: string };
 
-export const DELTREL_AI_WORKER_PROTOCOL_VERSION = 3 as const;
+export const DELTREL_AI_WORKER_PROTOCOL_VERSION = 4 as const;
+
+/** Completed search work, never an elapsed-time heartbeat or estimated effort. */
+export interface LocalAiSearchProgress {
+  completedSimulations: number;
+  totalSimulations: number;
+}
 
 export type DeltrelAiWorkerEvent =
   | { type: 'ready'; protocolVersion: typeof DELTREL_AI_WORKER_PROTOCOL_VERSION }
   | { type: 'progress'; taskId: string; progress: LocalAiProgress }
+  | { type: 'search-progress'; taskId: string; progress: LocalAiSearchProgress }
   | { type: 'prepared'; taskId: string; info: LocalAiReadyInfo }
   | { type: 'result'; taskId: string; decision: DeltrelAiDecision }
   | {
@@ -301,6 +308,19 @@ export function parseWorkerEvent(value: unknown): DeltrelAiWorkerEvent {
   }
   if (!isTaskId(value.taskId)) {
     throw new DeltrelAiError('protocol', 'Local AI worker returned an invalid message.');
+  }
+  if (value.type === 'search-progress' && hasExactKeys(value, ['type', 'taskId', 'progress'])) {
+    const progress = value.progress;
+    if (isRecord(progress) && hasExactKeys(progress, ['completedSimulations', 'totalSimulations']) &&
+        typeof progress.completedSimulations === 'number' && Number.isSafeInteger(progress.completedSimulations) &&
+        typeof progress.totalSimulations === 'number' && Number.isSafeInteger(progress.totalSimulations) &&
+        progress.completedSimulations > 0 && progress.completedSimulations <= progress.totalSimulations &&
+        progress.totalSimulations <= MAX_BROWSER_AI_SIMULATIONS) {
+      return { type: 'search-progress', taskId: value.taskId, progress: {
+        completedSimulations: progress.completedSimulations,
+        totalSimulations: progress.totalSimulations,
+      } };
+    }
   }
   if (value.type === 'progress' && hasExactKeys(value, ['type', 'taskId', 'progress'])) {
     const p = value.progress;

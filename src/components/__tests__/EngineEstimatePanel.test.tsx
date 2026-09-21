@@ -211,7 +211,8 @@ describe('EngineEstimatePanel', () => {
     const context: EngineEstimateContext = { ...liveContext, action: { type: 'place', node: 2 }, applied: true };
     const { container } = render(<EngineEstimatePanel analysis={analysis} board={estimateBoard} playerNames={playerNames} context={context} />);
     await user.click(screen.getByRole('button', { name: /^Search and model details/ }));
-    expect(screen.getByText('Search value')).toBeVisible();
+    expect(screen.getByText('Search input value')).toBeVisible();
+    expect(screen.getByText('Searched root value')).toBeVisible();
     expect(screen.getByText('-0.700')).toBeVisible();
     expect(screen.getByText('+0.320')).toBeVisible();
     expect(screen.getAllByText('1.23 s').length).toBeGreaterThan(0);

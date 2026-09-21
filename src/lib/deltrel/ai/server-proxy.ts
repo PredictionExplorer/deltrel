@@ -105,6 +105,7 @@ async function readLimitedBody(
   if (contentLength) {
     const declared = Number(contentLength);
     if (!Number.isSafeInteger(declared) || declared < 0 || declared > maximum) {
+      await body?.cancel();
       throw new BodyLimitError('body exceeds limit');
     }
   }
@@ -149,6 +150,9 @@ export async function proxyDeltrelAiRequest(
   },
 ): Promise<Response> {
   const requestId = requestIdFor(request);
+  if (request.signal.aborted) {
+    return proxyError(requestId, 499, 'deltrel_ai_cancelled', 'AI request cancelled.', false);
+  }
   if (!config.serverUrl?.trim()) {
     return proxyError(
       requestId,
@@ -191,6 +195,9 @@ export async function proxyDeltrelAiRequest(
       );
       JSON.parse(new TextDecoder().decode(body));
     } catch (error) {
+      if (request.signal.aborted) {
+        return proxyError(requestId, 499, 'deltrel_ai_cancelled', 'AI request cancelled.', false);
+      }
       return proxyError(
         requestId,
         error instanceof BodyLimitError ? 413 : 400,
@@ -209,12 +216,14 @@ export async function proxyDeltrelAiRequest(
   let timedOut = false;
   const abortFromClient = () => controller.abort(request.signal.reason);
   request.signal.addEventListener('abort', abortFromClient, { once: true });
+  if (request.signal.aborted) abortFromClient();
   const timeout = setTimeout(() => {
     timedOut = true;
     controller.abort();
   }, timeoutMs);
 
   try {
+    controller.signal.throwIfAborted();
     const headers = new Headers({
       Accept: 'application/json',
       'X-Request-ID': requestId,
@@ -228,9 +237,11 @@ export async function proxyDeltrelAiRequest(
       body: upstreamBody,
       headers,
       cache: 'no-store',
+      redirect: 'error',
       signal: controller.signal,
     });
     if (!isJsonContentType(upstream.headers.get('Content-Type'))) {
+      await upstream.body?.cancel();
       return proxyError(
         requestId,
         502,
@@ -248,7 +259,8 @@ export async function proxyDeltrelAiRequest(
         DELTREL_AI_PROXY_RESPONSE_BYTES,
       );
       payload = JSON.parse(new TextDecoder().decode(responseBody));
-    } catch {
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
       return proxyError(
         requestId,
         502,
@@ -275,6 +287,9 @@ export async function proxyDeltrelAiRequest(
       headers: noStoreHeaders(responseRequestId),
     });
   } catch {
+    if (request.signal.aborted) {
+      return proxyError(requestId, 499, 'deltrel_ai_cancelled', 'AI request cancelled.', false);
+    }
     return proxyError(
       requestId,
       503,

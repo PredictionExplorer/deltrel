@@ -53,6 +53,19 @@ describe('placement-only game protocol', () => {
     expect(() => applyAction(state, legacy)).toThrow(/illegal action/);
   });
 
+  it.each([null, undefined, { type: 'place', node: '0' }, { type: 'place', node: 0.5 }, { type: 'place', node: NaN }])(
+    'rejects malformed runtime action %j', (action) => {
+      const state = initialState(base);
+      expect(isLegalAction(state, action as GameAction)).toBe(false);
+      expect(() => applyAction(state, action as GameAction)).toThrow(/illegal action/);
+    },
+  );
+
+  it('rejects unknown modes and nonboolean pie flags at the reducer boundary', () => {
+    expect(() => initialState({ ...base, mode: 'triple' as GameConfig['mode'] })).toThrow(/mode/);
+    expect(() => initialState({ ...base, pieRule: 1 as unknown as boolean })).toThrow(/pieRule/);
+  });
+
   it('is terminal exactly when the board becomes full', () => {
     let state = initialState(base);
     state = fill(state, state.board.n - 1);
@@ -143,6 +156,23 @@ describe('web-only pie rule', () => {
 });
 
 describe('handicap openings', () => {
+  it.each(['classic', 'double'] as const)('plays all nine opening stones before the opponent in %s', (mode) => {
+    for (const rings of [4, 6, 8, 10]) {
+      let state = initialState({ ...base, mode, rings, handicap: 9 });
+      for (let node = 0; node < 9; node++) {
+        expect(state.toMove).toBe(0);
+        expect(state.movesLeft).toBe(9 - node);
+        state = play(state, node);
+      }
+      expect(Array.from(state.stones.slice(0, 9))).toEqual(Array(9).fill(0));
+      expect(state.toMove).toBe(1);
+      expect(state.movesLeft).toBe(mode === 'classic' ? 1 : 2);
+      expect(state.handicapStones).toEqual(Array.from({ length: 9 }, (_, node) => node));
+      expect(state.canSwap).toBe(false);
+      expect(replay(state.config, Array.from({ length: 9 }, (_, node) => ({ type: 'place' as const, node })))).toEqual(state);
+    }
+  });
+
   it('lets the first player place k stones before the second player moves', () => {
     let state = initialState({ ...base, mode: 'double', handicap: 3 });
     expect(state.movesLeft).toBe(3);

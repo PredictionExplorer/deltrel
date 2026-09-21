@@ -14,7 +14,9 @@ import {
   parseWorkerEvent,
   type DeltrelAiWorkerCommand,
   type DeltrelAiWorkerEvent,
+  type LocalAiSearchProgress,
 } from './worker-protocol';
+export type { LocalAiSearchProgress } from './worker-protocol';
 
 interface PendingRequest {
   request: DeltrelAiRequest;
@@ -23,6 +25,12 @@ interface PendingRequest {
   signal?: AbortSignal;
   abortListener?: () => void;
   timeout?: ReturnType<typeof setTimeout>;
+  timeoutMs: number;
+  inactivityTimeout: boolean;
+  completedSimulations: number;
+  totalSimulations: number | null;
+  requestedSearch: DeltrelAiSearchBudget | null;
+  onSearchProgress?: (progress: LocalAiSearchProgress) => void;
 }
 
 type WorkerFactory = () => Worker;
@@ -41,8 +49,10 @@ export interface LocalAiPreparationOptions {
 
 export interface LocalAiRequestOptions {
   signal?: AbortSignal;
+  /** Explicit absolute deadline. By default, only 90 seconds without search progress times out. */
   timeoutMs?: number;
   search?: DeltrelAiSearchBudget;
+  onSearchProgress?: (progress: LocalAiSearchProgress) => void;
 }
 
 export const DEFAULT_LOCAL_AI_TIMEOUT_MS = 90_000;
@@ -138,6 +148,12 @@ export class LocalDeltrelAiClient {
         resolve,
         reject: (error) => reject(error),
         signal,
+        timeoutMs,
+        inactivityTimeout: options.timeoutMs === undefined,
+        completedSimulations: 0,
+        totalSimulations: search?.simulations ?? null,
+        requestedSearch: search,
+        onSearchProgress: options.onSearchProgress,
       };
       if (signal) {
         pending.abortListener = () => {
@@ -146,11 +162,8 @@ export class LocalDeltrelAiClient {
         };
         signal.addEventListener('abort', pending.abortListener, { once: true });
       }
-      pending.timeout = setTimeout(() => {
-        if (!this.pending.has(request.requestId)) return;
-        this.resetWorker(new DeltrelAiError('timeout', 'Local AI timed out.', true));
-      }, timeoutMs);
       this.pending.set(request.requestId, pending);
+      this.armRequestTimeout(pending);
       this.clearIdleTimeout();
       let ready: Promise<Worker>;
       try {
@@ -243,6 +256,22 @@ export class LocalDeltrelAiClient {
       return;
     }
     if (!this.pending.has(message.taskId) && !this.preparations.has(message.taskId)) return;
+    if (message.type === 'search-progress') {
+      const pending = this.pending.get(message.taskId);
+      if (!pending || (pending.totalSimulations !== null &&
+          pending.totalSimulations !== message.progress.totalSimulations)) {
+        this.resetWorker(new DeltrelAiError('protocol', 'Local AI progress does not match its search budget.'));
+        return;
+      }
+      // A duplicate, regressing, stale, or arbitrary heartbeat cannot keep a
+      // stalled search alive. Strict protocol bounds also cap possible renewals.
+      if (message.progress.completedSimulations <= pending.completedSimulations) return;
+      pending.totalSimulations = message.progress.totalSimulations;
+      pending.completedSimulations = message.progress.completedSimulations;
+      if (pending.inactivityTimeout) this.armRequestTimeout(pending);
+      pending.onSearchProgress?.({ ...message.progress });
+      return;
+    }
     if (message.type === 'progress') {
       this.onStatus(message.progress);
       return;
@@ -288,7 +317,12 @@ export class LocalDeltrelAiClient {
       return;
     }
     try {
-      pending.resolve(parseDeltrelAiDecision(pending.request, message.decision));
+      const decision = parseDeltrelAiDecision(pending.request, message.decision);
+      if ((pending.totalSimulations !== null && decision.analysis.simulations !== pending.totalSimulations) ||
+          (pending.requestedSearch && decision.analysis.maxConsidered !== pending.requestedSearch.maxConsidered)) {
+        throw new DeltrelAiError('protocol', 'Local AI result does not match its search budget.');
+      }
+      pending.resolve(decision);
     } catch (error) {
       pending.reject(
         error instanceof DeltrelAiError
@@ -314,6 +348,16 @@ export class LocalDeltrelAiClient {
     if (pending.signal && pending.abortListener) {
       pending.signal.removeEventListener('abort', pending.abortListener);
     }
+  }
+
+  private armRequestTimeout(pending: PendingRequest): void {
+    if (pending.timeout) clearTimeout(pending.timeout);
+    pending.timeout = setTimeout(() => {
+      if (this.pending.get(pending.request.requestId) !== pending) return;
+      this.resetWorker(new DeltrelAiError('timeout', pending.inactivityTimeout
+        ? 'Local AI stopped making search progress. Please retry or use a lower strength.'
+        : 'Local AI timed out.', true));
+    }, pending.timeoutMs);
   }
 
   private cleanPending(pending: PendingPreparation | PendingRequest): void {

@@ -165,6 +165,7 @@ function linkedTimeout(signal?: AbortSignal): {
   let didTimeOut = false;
   const abort = () => controller.abort(signal?.reason);
   signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
   const timeout = setTimeout(() => {
     didTimeOut = true;
     controller.abort();
@@ -181,14 +182,35 @@ function linkedTimeout(signal?: AbortSignal): {
 
 async function readJsonResponse(response: Response): Promise<unknown> {
   const contentType = response.headers.get('Content-Type')?.split(';', 1)[0].trim().toLowerCase();
-  if (contentType !== 'application/json') throw new Error('response is not JSON');
+  if (contentType !== 'application/json') {
+    await response.body?.cancel();
+    throw new Error('response is not JSON');
+  }
   const declared = response.headers.get('Content-Length');
-  if (declared && Number(declared) > CAPABILITY_BODY_BYTES) {
+  if (declared !== null && (!Number.isSafeInteger(Number(declared)) ||
+      Number(declared) < 0 || Number(declared) > CAPABILITY_BODY_BYTES)) {
+    await response.body?.cancel();
     throw new Error('response is too large');
   }
-  const text = await response.text();
-  if (new TextEncoder().encode(text).byteLength > CAPABILITY_BODY_BYTES) {
-    throw new Error('response is too large');
+  if (!response.body) throw new Error('response is empty');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > CAPABILITY_BODY_BYTES) {
+        await reader.cancel();
+        throw new Error('response is too large');
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+  } finally {
+    reader.releaseLock();
   }
   return JSON.parse(text);
 }
@@ -237,6 +259,7 @@ export async function checkServerAiCapability(
   }
   const timeout = linkedTimeout(signal);
   try {
+    timeout.signal.throwIfAborted();
     const requestId =
       typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
@@ -338,6 +361,7 @@ export async function checkLocalAiCapability(
 
   const timeout = linkedTimeout(signal);
   try {
+    timeout.signal.throwIfAborted();
     const response = await fetch(LOCAL_MANIFEST_PATH, {
       cache: 'no-store',
       signal: timeout.signal,

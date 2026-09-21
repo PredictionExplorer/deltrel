@@ -30,6 +30,14 @@ describe('browser playing strength', () => {
     expect(custom).toEqual({ simulations: 24, maxConsidered: 6 });
   });
 
+  it('uses the entire published maximum when a later release permits deeper search', () => {
+    const maximum = { simulations: 1024, maxConsidered: 128 };
+    const deep = browserStrengthOptions(maximum).at(-1)!;
+    expect(deep).toMatchObject({ id: 'deep', budget: maximum });
+    expect(browserStrengthSelection(maximum, maximum)?.id).toBe('deep');
+    expect(browserStrengthSelection({ simulations: 64, maxConsidered: 8 }, maximum)).toBeNull();
+  });
+
   it('returns independent budget objects and rejects invalid capability limits', () => {
     const maximum = Object.freeze({ simulations: 64, maxConsidered: 8 });
     const options = browserStrengthOptions(maximum);

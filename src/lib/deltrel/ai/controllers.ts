@@ -59,11 +59,16 @@ export function controllerLabel(controller: ControllerType): string {
   }
 }
 
-/** “You” is a human-oriented quick-start label, not an AI's display name. */
+/** Migrate the old quick-start names without replacing players' custom names. */
 export function playerNamesForControllers(
   names: readonly [string, string],
   controllers: PlayerControllers,
 ): [string, string] {
+  // Earlier quick starts wrote this pair to preferences. Neutral names remain
+  // accurate when either seat changes between a human and a computer.
+  if (names[0].trim() === 'You' && names[1].trim() === 'Champion') {
+    return ['Player 1', 'Player 2'];
+  }
   return names.map((name, player) =>
     controllers[player] !== 'human' && name.trim() === 'You' ? `AI ${player + 1}` : name,
   ) as [string, string];

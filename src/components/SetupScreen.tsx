@@ -18,6 +18,7 @@ import {
   CONTROLLER_TYPES,
   controllerLabel,
   normalizeControllers,
+  playerNamesForControllers,
   supportsAiControllers,
   type ControllerType,
   type PlayerControllers,
@@ -61,7 +62,9 @@ export function SetupScreen() {
     configHandicap(normalizeNewGameConfig(lastConfig)),
   );
   const pieRule = handicap === 1;
-  const [names, setNames] = useState<[string, string]>([...lastConfig.playerNames]);
+  const [names, setNames] = useState<[string, string]>(() =>
+    playerNamesForControllers(lastConfig.playerNames, lastControllers),
+  );
   const [controllers, setControllers] = useState<PlayerControllers>(() =>
     normalizeControllers(lastConfig, lastControllers),
   );
@@ -131,10 +134,6 @@ export function SetupScreen() {
   const chooseBrowserChampion = () => {
     if (controllers.includes('local')) return;
     setControllers(['human', 'local']);
-    setNames((previous) => [
-      previous[0] === 'Player 1' ? 'You' : previous[0],
-      previous[1] === 'Player 2' ? 'Champion' : previous[1],
-    ]);
   };
 
   const checkCapabilitiesAgain = () => {
@@ -243,11 +242,8 @@ export function SetupScreen() {
             capability={capabilities.server}
             selected={controllers.includes('server')}
             onChoose={() => {
+              if (controllers.includes('server')) return;
               setControllers(['human', 'server']);
-              setNames((previous) => [
-                previous[0] === 'Player 1' ? 'You' : previous[0],
-                previous[1] === 'Player 2' ? 'Champion' : previous[1],
-              ]);
             }}
           />}
           <BrowserAiPreparation
@@ -357,7 +353,22 @@ export function SetupScreen() {
                       role="radio"
                       aria-checked={handicap === stones}
                       aria-label={`${stones} handicap stones`}
+                      tabIndex={handicap === stones ? 0 : -1}
+                      data-handicap={stones}
                       onClick={() => setHandicap(stones)}
+                      onKeyDown={(event) => {
+                        const next = event.key === 'Home' ? 2
+                          : event.key === 'End' ? DELTREL_MAX_HANDICAP
+                            : event.key === 'ArrowRight' || event.key === 'ArrowDown'
+                              ? stones === DELTREL_MAX_HANDICAP ? 2 : stones + 1
+                              : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+                                ? stones === 2 ? DELTREL_MAX_HANDICAP : stones - 1
+                                : null;
+                        if (next === null) return;
+                        event.preventDefault();
+                        setHandicap(next);
+                        event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`[data-handicap="${next}"]`)?.focus();
+                      }}
                       className={`min-h-10 rounded-lg border text-xs transition-[border-color,background-color] duration-200 disabled:cursor-not-allowed disabled:opacity-40 ${
                         handicap === stones
                           ? 'border-sand/70 bg-sand-faint text-ink'

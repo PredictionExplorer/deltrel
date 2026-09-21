@@ -191,6 +191,114 @@ afterEach(() => {
 });
 
 describe('GameScreen AI lifecycle', () => {
+  it('shows real browser search progress, retains the active budget, and discards progress from earlier turns', async () => {
+    resetPlayingStore({ controllers: ['local', 'local'] });
+    const first = deferred<DeltrelAiDecision>();
+    const second = deferred<DeltrelAiDecision>();
+    const engine = vi.mocked(requestLocalAiDecision);
+    engine.mockReturnValue(second.promise).mockReturnValueOnce(first.promise);
+    const user = userEvent.setup();
+    render(<StrictMode><GameScreen /></StrictMode>);
+    await waitFor(() => expect(engine).toHaveBeenCalledOnce());
+    const [request, firstOptions] = engine.mock.calls[0];
+    expect(screen.queryByRole('progressbar', { name: 'Browser AI search progress' })).not.toBeInTheDocument();
+    act(() => firstOptions!.onSearchProgress!({ completedSimulations: 2, totalSimulations: 8 }));
+    expect(screen.getByRole('progressbar', { name: 'Browser AI search progress' })).toHaveAttribute('value', '2');
+    expect(screen.getByText('25% · 2 of 8 simulations')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Deep browser AI strength' }));
+    expect(engine).toHaveBeenCalledOnce();
+    act(() => firstOptions!.onSearchProgress!({ completedSimulations: 6, totalSimulations: 8 }));
+    expect(screen.getByRole('progressbar', { name: 'Browser AI search progress' })).toHaveAttribute('max', '8');
+    expect(screen.getByText('75% · 6 of 8 simulations')).toBeVisible();
+    await act(async () => first.resolve(makeDecision(request)));
+    await waitFor(() => expect(engine).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole('progressbar', { name: 'Browser AI search progress' })).not.toBeInTheDocument();
+    act(() => firstOptions!.onSearchProgress!({ completedSimulations: 8, totalSimulations: 8 }));
+    expect(screen.queryByRole('progressbar', { name: 'Browser AI search progress' })).not.toBeInTheDocument();
+    const [, secondOptions] = engine.mock.calls[1];
+    expect(secondOptions!.search!.simulations).toBe(64);
+    act(() => secondOptions!.onSearchProgress!({ completedSimulations: 16, totalSimulations: 64 }));
+    expect(screen.getByRole('progressbar', { name: 'Browser AI search progress' })).toHaveAttribute('max', '64');
+    expect(screen.getByText('25% · 16 of 64 simulations')).toBeVisible();
+  });
+
+  it('clears browser progress when paused and ignores old callbacks after resuming the same position', async () => {
+    resetPlayingStore({ controllers: ['local', 'local'] });
+    const engine = vi.mocked(requestLocalAiDecision);
+    engine.mockImplementation(() => deferred<DeltrelAiDecision>().promise);
+    const user = userEvent.setup();
+    render(<GameScreen />);
+    await waitFor(() => expect(engine).toHaveBeenCalledOnce());
+    const [, options] = engine.mock.calls[0];
+    act(() => options!.onSearchProgress!({ completedSimulations: 4, totalSimulations: 8 }));
+    expect(screen.getByText('50% · 4 of 8 simulations')).toBeVisible();
+    act(() => {
+      useAppStore.getState().pauseAi();
+      options!.onSearchProgress!({ completedSimulations: 5, totalSimulations: 8 });
+    });
+    expect(screen.queryByRole('progressbar', { name: 'Browser AI search progress' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Resume AI' }));
+    await waitFor(() => expect(engine).toHaveBeenCalledTimes(2));
+    act(() => options!.onSearchProgress!({ completedSimulations: 8, totalSimulations: 8 }));
+    expect(screen.queryByRole('progressbar', { name: 'Browser AI search progress' })).not.toBeInTheDocument();
+    const [, resumedOptions] = engine.mock.calls[1];
+    act(() => resumedOptions!.onSearchProgress!({ completedSimulations: 1, totalSimulations: 8 }));
+    expect(screen.getByText('12% · 1 of 8 simulations')).toBeVisible();
+    expect(useAppStore.getState().log).toEqual([]);
+  });
+
+  it.each(['classic', 'double'] as const)('finishes all nine opening stones before alternating browser AI turns in %s', async (mode) => {
+    resetPlayingStore({ config: { ...config, playerNames: [...config.playerNames], rings: 10, mode, handicap: 9 }, controllers: ['local', 'local'] });
+    const pending = Array.from({ length: 12 }, () => deferred<DeltrelAiDecision>());
+    const engine = vi.mocked(requestLocalAiDecision);
+    engine.mockImplementation(() => pending[engine.mock.calls.length - 1].promise);
+    render(<StrictMode><GameScreen /></StrictMode>);
+    for (let index = 0; index < 11; index += 1) {
+      await waitFor(() => expect(engine).toHaveBeenCalledTimes(index + 1));
+      const [request, options] = engine.mock.calls[index];
+      const afterOpening = index - 9;
+      expect(request.state).toMatchObject({
+        handicap: 9, mode, opening: index < 9,
+        toMove: index < 9 ? 0 : mode === 'classic' ? (afterOpening + 1) % 2 : 1,
+        movesLeft: index < 9 ? 9 - index : mode === 'classic' ? 1 : 2 - afterOpening,
+      });
+      expect(options?.signal?.aborted).toBe(false);
+      await act(async () => { pending[index].resolve(makeDecision(request, { type: 'place', node: index })); });
+    }
+    await waitFor(() => expect(engine).toHaveBeenCalledTimes(12));
+    expect(useAppStore.getState().log).toHaveLength(11);
+    expect(engine.mock.calls[11][0].state.toMove).toBe(mode === 'classic' ? 1 : 0);
+  });
+
+  it('does not apply a completed decision after the game is paused externally', async () => {
+    const flight = deferred<DeltrelAiDecision>();
+    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    render(<GameScreen />);
+    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledOnce());
+    const [request] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    await act(async () => {
+      flight.resolve(makeDecision(request));
+      useAppStore.getState().pauseAi();
+      await flight.promise;
+    });
+    expect(useAppStore.getState().log).toEqual([]);
+    expect(screen.getByText('AI turn paused')).toBeVisible();
+  });
+
+  it.each(['classic', 'double'] as const)('does not let rapid human clicks play the next AI turn in %s', async (mode) => {
+    resetPlayingStore({ config: { ...config, playerNames: [...config.playerNames], mode }, controllers: ['human', 'server'] });
+    vi.mocked(requestServerAiDecision).mockReturnValue(deferred<DeltrelAiDecision>().promise);
+    render(<GameScreen />);
+    const nodes = screen.getAllByRole('button', { name: /^Node .*, empty/ });
+    act(() => {
+      nodes[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      nodes[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledOnce());
+    expect(useAppStore.getState().log).toHaveLength(1);
+    expect(vi.mocked(requestServerAiDecision).mock.calls[0][0].state.toMove).toBe(1);
+  });
+
   it.each(['server', 'local'] as const)('keeps an active %s search when strength changes and uses the new budget next turn', async runtime => {
     resetPlayingStore({ controllers: [runtime, runtime] });
     const first = deferred<DeltrelAiDecision>();
@@ -249,6 +357,8 @@ describe('GameScreen AI lifecycle', () => {
     const prepare = await screen.findByRole('button', { name: 'Prepare browser AI' });
     expect(prepareLocalAi).not.toHaveBeenCalled();
     expect(requestLocalAiDecision).not.toHaveBeenCalled();
+    expect(screen.getByText('Browser AI is waiting')).toBeVisible();
+    expect(screen.queryByText('Browser AI is thinking…')).not.toBeInTheDocument();
     await user.click(prepare);
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
     expect(prepareLocalAi).toHaveBeenCalledOnce();
@@ -316,7 +426,7 @@ describe('GameScreen AI lifecycle', () => {
     expect(
       screen.getByRole('region', { name: 'Engine estimate' }),
     ).toBeInTheDocument();
-    expect(screen.queryByText('Search value')).not.toBeInTheDocument();
+    expect(screen.queryByText('Search input value')).not.toBeInTheDocument();
   });
 
   it('aborts on exit and ignores a response that arrives after cancellation', async () => {
@@ -344,10 +454,12 @@ describe('GameScreen AI lifecycle', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('rejects a stale response without mutating the action log', async () => {
+  it('rejects a stale response without changing the game and offers a working retry', async () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    const retryFlight = deferred<DeltrelAiDecision>();
+    vi.mocked(requestServerAiDecision).mockReturnValue(retryFlight.promise).mockReturnValueOnce(flight.promise);
+    const user = userEvent.setup();
     render(<GameScreen />);
 
     await screen.findByText('Mac engine — current champion is thinking…');
@@ -360,9 +472,15 @@ describe('GameScreen AI lifecycle', () => {
 
     await waitFor(() => expect(acceptAiResponse).toHaveBeenCalledOnce());
     expect(useAppStore.getState().log).toEqual([]);
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('obsolete position');
+    expect(screen.getByText('AI needs attention')).toBeVisible();
     expect(screen.getByRole('region', { name: 'Engine estimate' })).toBeInTheDocument();
     expect(screen.queryByText(/Expected final points come from/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledTimes(2));
+    const [retryRequest] = vi.mocked(requestServerAiDecision).mock.calls[1];
+    await act(async () => retryFlight.resolve(makeDecision(retryRequest)));
+    expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]);
   });
 
   it('retries a recoverable error and applies the successful response', async () => {
@@ -530,7 +648,7 @@ describe('GameScreen AI lifecycle', () => {
     expect(within(panel).getByText('Grace · next reply')).toBeInTheDocument();
     expect(within(panel).getByText('E5 · 25.0%')).toBeInTheDocument();
     await user.click(within(panel).getByRole('button', { name: /^Search and model details/ }));
-    expect(within(panel).getByText('Search value')).toBeInTheDocument();
+    expect(within(panel).getByText('Search input value')).toBeInTheDocument();
     expect((await axe(container)).violations).toEqual([]);
   });
 

@@ -18,6 +18,7 @@ describe('same-origin deltrelserve proxy', () => {
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       expect(String(url)).toBe('https://private.example/base/v2/move');
       expect(init?.cache).toBe('no-store');
+      expect(init?.redirect).toBe('error');
       const headers = new Headers(init?.headers);
       expect(headers.get('X-Request-ID')).toBe('proxy-request');
       expect(headers.get('Authorization')).toBe('Bearer private-token');
@@ -148,5 +149,87 @@ describe('same-origin deltrelserve proxy', () => {
     expect(() =>
       resolveDeltrelAiUpstreamUrl('https://private.example/v1/move', '/v2/move'),
     ).toThrow(/v2 API/i);
+  });
+
+  it('does not dispatch a search after the caller has already cancelled', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new AbortController();
+    controller.abort();
+    const response = await proxyDeltrelAiRequest(
+      new Request('https://public.example/v2/health', { signal: controller.signal }),
+      DELTREL_AI_PROXY_HEALTH_PATH,
+      { serverUrl: 'https://private.example' },
+    );
+    expect(response.status).toBe(499);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: 'deltrel_ai_cancelled', retryable: false },
+    });
+  });
+
+  it.each(['timeout', 'cancel'] as const)('preserves %s while reading upstream response bytes', async (reason) => {
+    const caller = new AbortController();
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          init.signal!.addEventListener('abort', () => controller.error(init.signal!.reason), { once: true });
+          controller.enqueue(new TextEncoder().encode('{'));
+          if (reason === 'cancel') queueMicrotask(() => caller.abort());
+        },
+      });
+      return new Response(stream, { headers: { 'Content-Type': 'application/json' } });
+    }));
+    const response = await proxyDeltrelAiRequest(
+      new Request('https://public.example/v2/health', { signal: caller.signal }),
+      DELTREL_AI_PROXY_HEALTH_PATH,
+      { serverUrl: 'https://private.example', healthTimeoutMs: 10 },
+    );
+    expect(response.status).toBe(reason === 'timeout' ? 503 : 499);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: reason === 'timeout' ? 'deltrel_ai_timeout' : 'deltrel_ai_cancelled',
+        retryable: reason === 'timeout',
+      },
+    });
+  });
+
+  it('preserves cancellation while reading the incoming request body', async () => {
+    const caller = new AbortController();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const init: RequestInit & { duplex: 'half' } = {
+      method: 'POST', duplex: 'half', signal: caller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: new ReadableStream({
+        start(controller) {
+          caller.signal.addEventListener('abort', () => controller.error(caller.signal.reason));
+          queueMicrotask(() => caller.abort());
+        },
+      }),
+    };
+    const response = await proxyDeltrelAiRequest(
+      new Request('https://public.example/v2/move', init),
+      DELTREL_AI_PROXY_MOVE_PATH,
+      { serverUrl: 'https://private.example' },
+    );
+    expect(response.status).toBe(499);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({ error: { code: 'deltrel_ai_cancelled' } });
+  });
+
+  it.each([
+    new Headers({ 'Content-Type': 'text/html' }),
+    new Headers({ 'Content-Type': 'application/json', 'Content-Length': String(2 * 1024 * 1024) }),
+  ])('cancels a rejected upstream body instead of leaving the connection open', async (headers) => {
+    const cancel = vi.fn();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({ cancel }), { headers })));
+    const response = await proxyDeltrelAiRequest(
+      new Request('https://public.example/v2/health'),
+      DELTREL_AI_PROXY_HEALTH_PATH,
+      { serverUrl: 'https://private.example' },
+    );
+    expect(response.status).toBe(502);
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });

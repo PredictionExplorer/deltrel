@@ -13,6 +13,17 @@ const ready = { modelVersion: 'champion-v3', bytes: 37_577_312, backend: 'wasm' 
 afterEach(cleanup);
 
 describe('BrowserAiPreparation', () => {
+  it('reports failed availability even when an earlier model was prepared', async () => {
+    const user = userEvent.setup();
+    const check = vi.fn();
+    render(<BrowserAiPreparation status={{ phase: 'ready', info: ready }} authorized capability={{ status: 'unavailable', label: 'Browser AI', code: 'offline', reason: 'The model is temporarily unavailable.', retryable: true }} onPrepare={vi.fn()} onCancel={vi.fn()} onCheck={check} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Not available');
+    expect(screen.getByText('The model is temporarily unavailable.')).toBeVisible();
+    expect(screen.queryByText('Ready on this device')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Check browser AI availability' }));
+    expect(check).toHaveBeenCalledOnce();
+  });
+
   it('explains the download size and only prepares after an explicit click', async () => {
     const user = userEvent.setup();
     const prepare = vi.fn();

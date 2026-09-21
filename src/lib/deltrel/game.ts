@@ -85,6 +85,12 @@ function turnSize(config: GameConfig, turnIndex: number): number {
 }
 
 function validateConfig(config: GameConfig): void {
+  if (config.mode !== 'classic' && config.mode !== 'double') {
+    throw new Error('mode must be classic or double');
+  }
+  if (typeof config.pieRule !== 'boolean') {
+    throw new Error('pieRule must be a boolean');
+  }
   const handicap = configHandicap(config);
   if (
     !Number.isInteger(handicap) ||
@@ -136,10 +142,11 @@ function endTurn(state: GameState): void {
 }
 
 export function isLegalAction(state: GameState, action: GameAction): boolean {
-  if (state.over) return false;
+  if (state.over || !action || typeof action !== 'object') return false;
   switch (action.type) {
     case 'place':
       return (
+        Number.isInteger(action.node) &&
         action.node >= 0 &&
         action.node < state.board.n &&
         state.stones[action.node] === EMPTY

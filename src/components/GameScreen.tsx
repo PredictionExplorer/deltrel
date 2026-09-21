@@ -37,8 +37,9 @@ import {
   type DeltrelAiRequest,
 } from '@/lib/deltrel/ai/protocol';
 import { requestServerAiDecision } from '@/lib/deltrel/ai/server-client';
+import type { LocalAiSearchProgress } from '@/lib/deltrel/ai/local-client';
 import { scoreCompletionBounds } from '@/lib/deltrel/completion-bounds';
-import { configHandicap, replay } from '@/lib/deltrel/game';
+import { configHandicap, replay, type GameAction } from '@/lib/deltrel/game';
 import {
   EMPTY,
   scorePosition,
@@ -71,7 +72,12 @@ import { PLAYER_COLORS } from './theme';
 
 type AiStatus =
   | { kind: 'idle' }
-  | { kind: 'thinking'; controller: Exclude<ControllerType, 'human'> }
+  | {
+      kind: 'thinking';
+      controller: Exclude<ControllerType, 'human'>;
+      positionKey: string;
+      searchProgress?: LocalAiSearchProgress;
+    }
   | {
       kind: 'error';
       controller: Exclude<ControllerType, 'human'>;
@@ -117,7 +123,6 @@ export function GameScreen() {
   const clinchAcknowledgement = useAppStore(
     (state) => state.clinchAcknowledgement,
   );
-  const act = useAppStore((state) => state.act);
   const undo = useAppStore((state) => state.undo);
   const redo = useAppStore((state) => state.redo);
   const rewindTo = useAppStore((state) => state.rewindTo);
@@ -310,6 +315,7 @@ export function GameScreen() {
         flight.cancelled = true;
         flightRef.current = null;
         flight.abortController.abort();
+        setAiStatus({ kind: 'idle' });
       });
     };
 
@@ -353,9 +359,10 @@ export function GameScreen() {
       settled: false,
     };
     flightRef.current = flight;
+    const positionConfig = useAppStore.getState().config;
     queueMicrotask(() => {
       if (flightRef.current === flight && !flight.cancelled) {
-        setAiStatus({ kind: 'thinking', controller });
+        setAiStatus({ kind: 'thinking', controller, positionKey: aiPositionKey });
       }
     });
 
@@ -368,15 +375,29 @@ export function GameScreen() {
       controller === 'server'
         ? requestServerAiDecision(request, options)
         : import('@/lib/deltrel/ai/local-client').then(({ requestLocalAiDecision }) =>
-            requestLocalAiDecision(request, options),
+            requestLocalAiDecision(request, {
+              ...options,
+              onSearchProgress: (progress) => {
+                if (flight.cancelled || flight.settled || flightRef.current !== flight) return;
+                const current = useAppStore.getState();
+                if (current.phase !== 'playing' || current.aiPaused || current.earlyOutcome ||
+                    current.config !== positionConfig || current.log !== log ||
+                    current.controllers[request.state.toMove] !== controller) return;
+                setAiStatus({
+                  kind: 'thinking', controller, positionKey: aiPositionKey,
+                  searchProgress: { ...progress },
+                });
+              },
+            }),
           );
 
     void response
       .then((decision) => {
         if (flight.cancelled || flightRef.current !== flight) return;
         const current = useAppStore.getState();
-        if (current.phase !== 'playing') {
+        if (current.phase !== 'playing' || current.aiPaused) {
           flight.settled = true;
+          setAiStatus({ kind: 'idle' });
           return;
         }
         const accepted = acceptAiResponse(
@@ -386,12 +407,7 @@ export function GameScreen() {
           current.log,
         );
         if (!accepted.ok) {
-          if (accepted.code === 'stale') {
-            flight.settled = true;
-            setAiStatus({ kind: 'idle' });
-            return;
-          }
-          throw new DeltrelAiError(accepted.code, accepted.message, false);
+          throw new DeltrelAiError(accepted.code, accepted.message, accepted.code === 'stale');
         }
         const currentGame = replay(current.config, current.log);
         if (
@@ -419,16 +435,14 @@ export function GameScreen() {
         if (flight.cancelled || flightRef.current !== flight) return;
         flight.settled = true;
         const aiError = asDeltrelAiError(error);
-        if (aiError.code === 'cancelled' || aiError.code === 'stale') {
-          setAiStatus({ kind: 'idle' });
-          return;
-        }
         setAiStatus({
           kind: 'error',
           controller: flight.controller,
           code: aiError.code,
           message: aiError.message,
-          retryable: aiError.retryable,
+          // Deliberate cancellations already returned above. An interrupted
+          // active request must offer recovery instead of waiting forever.
+          retryable: aiError.retryable || aiError.code === 'cancelled' || aiError.code === 'stale',
         });
       })
       .finally(() => {
@@ -537,7 +551,8 @@ export function GameScreen() {
     Boolean(game) &&
     currentController !== 'human' &&
     aiStatus.kind === 'thinking' &&
-    aiStatus.controller === currentController;
+    aiStatus.controller === currentController &&
+    aiStatus.positionKey === aiPositionKey;
   const activeAiError =
     currentController !== 'human' &&
     aiStatus.kind === 'error' &&
@@ -558,14 +573,21 @@ export function GameScreen() {
     !thinking &&
     !uiBlocksPlay &&
     !viewingHistory;
-  const placeStone = useCallback(
-    (node: number) => {
+  const applyHumanAction = useCallback(
+    (action: GameAction) => {
       if (!humanCanAct) return;
+      const current = useAppStore.getState();
+      if (current.phase !== 'playing' || current.earlyOutcome || current.config !== storedConfig) return;
+      // Several clicks can arrive before React renders the next turn. Always
+      // check the latest position so a human cannot place the computer's stone.
+      const latestGame = replay(current.config, current.log);
+      if (latestGame.over || current.controllers[latestGame.toMove] !== 'human') return;
       cancelInspection();
-      act({ type: 'place', node });
+      current.act(action);
     },
-    [act, cancelInspection, humanCanAct],
+    [cancelInspection, humanCanAct, storedConfig],
   );
+  const placeStone = useCallback((node: number) => applyHumanAction({ type: 'place', node }), [applyHumanAction]);
 
   const shownPositionHash = useMemo(() => {
     if (!shownGame || typeof BigInt !== 'function') return null;
@@ -777,7 +799,16 @@ export function GameScreen() {
                 ? 'paused'
                 : activeAiError
                   ? 'error'
+                  : !autoplayReady
+                    ? 'waiting'
                   : 'thinking';
+  const aiWaitingReason = runtimeCapabilities.local.status === 'checking'
+    ? 'Checking browser AI availability.'
+    : runtimeCapabilities.local.status === 'unavailable'
+      ? runtimeCapabilities.local.reason
+      : browserAiIsPreparing(browserStatus)
+        ? 'Preparing browser AI before play can begin.'
+        : 'Prepare browser AI to begin this turn.';
   const shownTurnCapacity = shownGame.over
     ? Math.max(shownGame.currentTurnMoves.length, 1)
     : shownGame.currentTurnMoves.length + shownGame.movesLeft;
@@ -950,6 +981,9 @@ export function GameScreen() {
             playerName={config.playerNames[statusPlayer]}
             controllerName={currentControllerName}
             matchLabel={aiMatchLabel(controllers)}
+            waitingReason={aiWaitingReason}
+            searchProgress={thinking && aiStatus.kind === 'thinking' && currentController === 'local'
+              ? aiStatus.searchProgress : undefined}
             mode={config.mode}
             movesLeft={shownGame.movesLeft}
             turnProgress={turnProgress}
@@ -1035,12 +1069,7 @@ export function GameScreen() {
               <button
                 type="button"
                 disabled={!humanCanAct}
-                onClick={() => {
-                  if (humanCanAct) {
-                    cancelInspection();
-                    act({ type: 'swap' });
-                  }
-                }}
+                onClick={() => applyHumanAction({ type: 'swap' })}
                 className="mt-2 flex min-h-10 items-center gap-2 rounded-lg border border-sand/60 px-3 py-1.5 text-xs font-medium text-sand-strong transition-colors hover:bg-sand/20"
               >
                 <Replace className="h-3.5 w-3.5" aria-hidden /> Steal it (swap sides)
@@ -1120,7 +1149,7 @@ export function GameScreen() {
             )}
 
             {(controllers.includes('local') || inspectionRuntime === 'local') &&
-              (!browserAuthorized || browserAiIsPreparing(browserStatus) || browserStatus.phase === 'error') && (
+              (!browserAuthorized || runtimeCapabilities.local.status !== 'available' || browserAiIsPreparing(browserStatus) || browserStatus.phase === 'error') && (
               <BrowserAiPreparation
                 status={browserStatus}
                 authorized={browserAuthorized}

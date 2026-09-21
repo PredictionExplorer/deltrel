@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as rules from './deltrel/rules';
-import { GAME_STORAGE_KEY, migrateStorageNamespace } from './persistence';
+import { createResilientStorage, GAME_STORAGE_KEY, migrateStorageNamespace } from './persistence';
 
 function memoryStorage(entries: Record<string, string>): Storage {
   const values = new Map(Object.entries(entries));
@@ -17,6 +17,32 @@ function memoryStorage(entries: Record<string, string>): Storage {
 const save = JSON.stringify({ state: { log: [{ type: 'place', node: 23 }] }, version: 6 });
 
 afterEach(() => vi.restoreAllMocks());
+
+describe('resilient game storage', () => {
+  it('preserves normal reads, writes, and removal', () => {
+    const storage = memoryStorage({});
+    const resilient = createResilientStorage(storage);
+    resilient.setItem(GAME_STORAGE_KEY, save);
+    expect(resilient.getItem(GAME_STORAGE_KEY)).toBe(save);
+    resilient.removeItem(GAME_STORAGE_KEY);
+    expect(resilient.getItem(GAME_STORAGE_KEY)).toBeNull();
+  });
+
+  it('tolerates blocked reads, quota errors, and blocked removal, then recovers', () => {
+    const storage = memoryStorage({ [GAME_STORAGE_KEY]: save });
+    const resilient = createResilientStorage(storage);
+    vi.spyOn(storage, 'getItem').mockImplementationOnce(() => { throw new Error('Blocked'); });
+    expect(resilient.getItem(GAME_STORAGE_KEY)).toBeNull();
+    vi.spyOn(storage, 'setItem').mockImplementationOnce(() => { throw new Error('Quota'); });
+    expect(() => resilient.setItem(GAME_STORAGE_KEY, 'updated')).not.toThrow();
+    expect(resilient.getItem(GAME_STORAGE_KEY)).toBe(save);
+    vi.spyOn(storage, 'removeItem').mockImplementationOnce(() => { throw new Error('Blocked'); });
+    expect(() => resilient.removeItem(GAME_STORAGE_KEY)).not.toThrow();
+    expect(resilient.getItem(GAME_STORAGE_KEY)).toBe(save);
+    resilient.setItem(GAME_STORAGE_KEY, 'updated');
+    expect(resilient.getItem(GAME_STORAGE_KEY)).toBe('updated');
+  });
+});
 
 describe('Deltrel save namespace migration', () => {
   function identifyPreviousSave() {

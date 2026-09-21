@@ -9,6 +9,8 @@ import {
   float32ToFloat16Array,
 } from '../features';
 import { buildAiRequest } from '../protocol';
+import publishedManifest from '../../../../../public/models/deltrel/manifest.json';
+import { parseDeltrelBrowserModelManifest } from '../manifest';
 
 let registeredHandler: ((event: MessageEvent<unknown>) => void) | undefined;
 let readyEvent: unknown;
@@ -29,9 +31,25 @@ beforeAll(async () => {
 });
 
 describe('local worker runtime contract', () => {
+  it('invalidates a prepared runtime when release settings change without new weights', () => {
+    const manifest = parseDeltrelBrowserModelManifest(publishedManifest);
+    expect(runtime.sameRuntimeManifest(manifest, structuredClone(manifest))).toBe(true);
+    for (const update of [
+      { search: { ...manifest.search, maximumSimulations: 32 } },
+      { search: { ...manifest.search, simulations: 16 } },
+      { search: { ...manifest.search, firstVisitBatchSize: 2 } },
+      { search: { ...manifest.search, subtreeReuse: true } },
+      { search: { ...manifest.search, swapDeadZone: 0.1 } },
+      { auxiliaryStatus: 'untrained' as const },
+      { modelStep: (manifest.modelStep ?? 0) + 1 },
+    ]) {
+      expect(runtime.sameRuntimeManifest(manifest, { ...manifest, ...update })).toBe(false);
+    }
+  });
+
   it('registers exactly one message handler and announces readiness', () => {
     expect(registeredHandler).toEqual(expect.any(Function));
-    expect(readyEvent).toEqual({ type: 'ready', protocolVersion: 3 });
+    expect(readyEvent).toEqual({ type: 'ready', protocolVersion: 4 });
   });
 
   it('rejects older WASM search behavior and versions both cached assets', () => {
@@ -318,6 +336,20 @@ describe('local prediction reuse', () => {
     await runtime.evaluate(localRuntime as never, semantic, legal);
     expect(run).toHaveBeenCalledTimes(2);
     expect(feedsDisposed).toHaveBeenCalledTimes(16);
+  });
+
+  it('releases partially allocated leaf inputs when a tensor cannot be created', async () => {
+    const { localRuntime, semantic, run } = makeRuntime();
+    const dispose = vi.fn();
+    let allocations = 0;
+    class FailingTensor {
+      dispose = dispose;
+      constructor() { if (++allocations === 3) throw new Error('allocation failed'); }
+    }
+    await expect(runtime.evaluate({ ...localRuntime, ort: { Tensor: FailingTensor } } as never,
+      semantic, Int32Array.from([1, 2]))).rejects.toThrow('allocation failed');
+    expect(dispose).toHaveBeenCalledTimes(2);
+    expect(run).not.toHaveBeenCalled();
   });
 
   it('releases rejected model outputs without retaining an invalid prediction', async () => {

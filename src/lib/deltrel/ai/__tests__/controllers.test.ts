@@ -16,6 +16,14 @@ const double: GameConfig = {
 };
 
 describe('AI controller validation', () => {
+  it.each([
+    ['human', 'human'], ['human', 'local'], ['local', 'local'], ['server', 'local'],
+  ] as const)('migrates the old quick-start pair to neutral names for %s versus %s', (first, second) => {
+    const names = ['You', 'Champion'] as const;
+    expect(playerNamesForControllers(names, [first, second])).toEqual(['Player 1', 'Player 2']);
+    expect(names).toEqual(['You', 'Champion']);
+  });
+
   it('labels AI matches explicitly and reserves the quick-start You label for human players', () => {
     const names = ['You', 'Marina'] as const;
     expect(playerNamesForControllers(names, ['local', 'server'])).toEqual(['AI 1', 'Marina']);

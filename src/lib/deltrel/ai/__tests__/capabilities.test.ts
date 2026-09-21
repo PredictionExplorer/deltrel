@@ -11,6 +11,38 @@ afterEach(() => {
 });
 
 describe('AI capability preflight', () => {
+  it('does not send an already-cancelled health check', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const signal = AbortSignal.abort();
+    await expect(checkServerAiCapability(signal)).resolves.toMatchObject({ status: 'unavailable' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('stops an unbounded chunked capability response at the byte limit', async () => {
+    const cancel = vi.fn();
+    let chunks = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({
+      pull(controller) {
+        chunks++;
+        controller.enqueue(new Uint8Array(64 * 1024));
+      },
+      cancel,
+    }), { headers: { 'Content-Type': 'application/json' } })));
+    await expect(checkServerAiCapability()).resolves.toMatchObject({ status: 'unavailable' });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(chunks).toBeLessThanOrEqual(6);
+  });
+
+  it.each(['-1', 'NaN', '262145'])('rejects an invalid declared response length %s without reading it', async (length) => {
+    const cancel = vi.fn();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({ cancel }), {
+      headers: { 'Content-Type': 'application/json', 'Content-Length': length },
+    })));
+    await expect(checkServerAiCapability()).resolves.toMatchObject({ status: 'unavailable' });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it('validates the server health contract through the same-origin route', async () => {
     const fetchMock = vi.fn(async (url: string | URL | Request) => {
       expect(String(url)).toBe('/v2/health');

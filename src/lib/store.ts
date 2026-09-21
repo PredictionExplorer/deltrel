@@ -3,8 +3,12 @@
 import { useSyncExternalStore } from 'react';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { GAME_STORAGE_KEY, migrateStorageNamespace } from './persistence';
-import { isSupportedRings } from './deltrel/board';
+import {
+  createResilientStorage,
+  GAME_STORAGE_KEY,
+  migrateStorageNamespace,
+} from './persistence';
+import { getBoard, isSupportedRings } from './deltrel/board';
 import {
   HUMAN_CONTROLLERS,
   isControllerType,
@@ -22,7 +26,12 @@ import {
   MAX_SERVER_AI_SIMULATIONS,
 } from './deltrel/ai/server-client';
 import { scoreCompletionBounds } from './deltrel/completion-bounds';
-import { replay, type GameAction, type GameConfig } from './deltrel/game';
+import {
+  isLegalAction,
+  replay,
+  type GameAction,
+  type GameConfig,
+} from './deltrel/game';
 import { normalizeNewGameConfig } from './deltrel/new-game-policy';
 import { DELTREL_MAX_HANDICAP } from './deltrel/rules';
 
@@ -334,6 +343,12 @@ export function sanitizePersistedState(value: unknown): PersistedAppState {
   if (!Array.isArray(value.log) || !Array.isArray(value.redoStack)) {
     return setupSnapshot(config, controllers, aiSearchSettings);
   }
+  // A game can contain one placement per node and at most one pie swap.
+  // Bound untrusted saved history before allocating or replaying it.
+  const maximumActions = getBoard(config.rings).n + Number(config.pieRule);
+  if (value.log.length + value.redoStack.length > maximumActions) {
+    return setupSnapshot(config, controllers, aiSearchSettings);
+  }
   const log = value.log.map(parseGameAction);
   const redoStack = value.redoStack.map(parseGameAction);
   if (!allGameActions(log) || !allGameActions(redoStack)) {
@@ -454,13 +469,15 @@ export const useAppStore = create<AppState>()(
       },
       act: (action) =>
         set((s) => {
-          if (s.earlyOutcome) return s;
+          if (s.phase !== 'playing' || s.earlyOutcome) return s;
+          const validAction = parseGameAction(action);
+          if (!validAction || !isLegalAction(replay(s.config, s.log), validAction)) return s;
           const branchedBeforeAcknowledgement =
             s.redoStack.length > 0 &&
             s.clinchAcknowledgement !== null &&
             s.log.length < s.clinchAcknowledgement.atLogLength;
           return {
-            log: [...s.log, action],
+            log: [...s.log, validAction],
             redoStack: [],
             aiPaused: false,
             reviewing: false,
@@ -489,6 +506,7 @@ export const useAppStore = create<AppState>()(
                 log: [...s.log, s.redoStack[s.redoStack.length - 1]],
                 redoStack: s.redoStack.slice(0, -1),
                 aiPaused: true,
+                reviewing: false,
                 earlyOutcome: null,
               },
         ),
@@ -509,6 +527,7 @@ export const useAppStore = create<AppState>()(
         }),
       rematch: () =>
         set((state) => ({
+          phase: 'playing',
           config: normalizeNewGameConfig(state.config),
           log: [],
           redoStack: [],
@@ -553,7 +572,11 @@ export const useAppStore = create<AppState>()(
       setReviewing: (reviewing) => set({ reviewing }),
       acknowledgeClinch: (winner) =>
         set((state) => {
-          if (winner !== 0 && winner !== 1) return state;
+          if (
+            state.phase !== 'playing' ||
+            state.earlyOutcome ||
+            (winner !== 0 && winner !== 1)
+          ) return state;
           const game = replay(state.config, state.log);
           if (
             game.over ||
@@ -572,7 +595,11 @@ export const useAppStore = create<AppState>()(
         }),
       endClinchedGame: (winner) =>
         set((state) => {
-          if (winner !== 0 && winner !== 1) return state;
+          if (
+            state.phase !== 'playing' ||
+            state.earlyOutcome ||
+            (winner !== 0 && winner !== 1)
+          ) return state;
           const game = replay(state.config, state.log);
           if (game.over || game.canSwap) return state;
           const bounds = scoreCompletionBounds(game.board, game.stones);
@@ -593,7 +620,7 @@ export const useAppStore = create<AppState>()(
         }),
       resign: (loser) =>
         set((state) => {
-          if (loser !== 0 && loser !== 1) return state;
+          if (state.phase !== 'playing' || (loser !== 0 && loser !== 1)) return state;
           const game = replay(state.config, state.log);
           if (game.over || state.earlyOutcome) return state;
           return {
@@ -611,7 +638,7 @@ export const useAppStore = create<AppState>()(
       storage: createJSONStorage(() => {
         const storage = window.localStorage;
         migrateStorageNamespace(storage);
-        return storage;
+        return createResilientStorage(storage);
       }),
       version: APP_STORE_VERSION,
       migrate: migratePersistedState,

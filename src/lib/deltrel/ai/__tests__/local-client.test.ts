@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GameConfig } from '../../game';
-import { LocalDeltrelAiClient } from '../local-client';
+import { DEFAULT_LOCAL_AI_TIMEOUT_MS, LocalDeltrelAiClient, type LocalAiRequestOptions } from '../local-client';
 import {
   buildAiRequest,
   makeAiResponse,
@@ -70,6 +70,131 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('local search progress watchdog', () => {
+  async function start(options: LocalAiRequestOptions = { search: { simulations: 64, maxConsidered: 8 } }) {
+    vi.useFakeTimers();
+    vi.stubGlobal('Worker', class {});
+    const worker = new FakeWorker();
+    const client = new LocalDeltrelAiClient(() => worker as unknown as Worker);
+    const request = buildAiRequest(config, [], 'progress-search');
+    const onSearchProgress = vi.fn();
+    const result = client.request(request, { ...options, onSearchProgress });
+    const rejected = result.catch(error => error);
+    worker.emit({ type: 'ready', protocolVersion: 4 });
+    await Promise.resolve();
+    const progress = (completedSimulations: number, totalSimulations = 64, taskId = request.requestId) =>
+      worker.emit({ type: 'search-progress', taskId, progress: { completedSimulations, totalSimulations } });
+    return { worker, client, request, result, rejected, progress, onSearchProgress };
+  }
+
+  it('allows a real search to exceed the old deadline while completed simulations keep increasing', async () => {
+    const f = await start();
+    for (const completed of [1, 2, 63, 64]) {
+      await vi.advanceTimersByTimeAsync(DEFAULT_LOCAL_AI_TIMEOUT_MS - 1);
+      expect(f.worker.terminated).toBe(false);
+      f.progress(completed);
+    }
+    f.worker.emit({ type: 'result', taskId: f.request.requestId,
+      decision: decisionFor(f.request, { simulations: 64, maxConsidered: 8 }) });
+    await expect(f.result).resolves.toMatchObject({ analysis: { simulations: 64 } });
+    expect(f.onSearchProgress.mock.calls.map(([progress]) => progress.completedSimulations)).toEqual([1, 2, 63, 64]);
+    f.client.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('still expires a stalled search despite duplicate, regressing, and unrelated progress', async () => {
+    const f = await start();
+    await vi.advanceTimersByTimeAsync(80_000);
+    f.progress(2);
+    await vi.advanceTimersByTimeAsync(80_000);
+    f.progress(2);
+    f.progress(1);
+    f.progress(3, 64, 'some-other-request');
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(f.worker.terminated).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(f.rejected).resolves.toMatchObject({ code: 'timeout', retryable: true });
+    expect(f.worker.terminated).toBe(true);
+    expect(f.onSearchProgress).toHaveBeenCalledExactlyOnceWith({ completedSimulations: 2, totalSimulations: 64 });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not let preparation messages prolong a move without any completed simulation', async () => {
+    const f = await start();
+    await vi.advanceTimersByTimeAsync(89_000);
+    f.worker.emit({ type: 'progress', taskId: f.request.requestId,
+      progress: { phase: 'initializing', loadedBytes: 128, totalBytes: 128, modelVersion: 'test-model', cached: true } });
+    f.worker.emit({ type: 'prepared', taskId: f.request.requestId,
+      info: { modelVersion: 'test-model', bytes: 128, backend: 'wasm', cached: true } });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(f.rejected).resolves.toMatchObject({ code: 'timeout' });
+    expect(f.onSearchProgress).not.toHaveBeenCalled();
+    expect(f.worker.terminated).toBe(true);
+  });
+
+  it('preserves an explicit absolute deadline even while progress is advancing', async () => {
+    const f = await start({ timeoutMs: 100, search: { simulations: 64, maxConsidered: 8 } });
+    await vi.advanceTimersByTimeAsync(50);
+    f.progress(1);
+    await vi.advanceTimersByTimeAsync(49);
+    f.progress(2);
+    expect(f.worker.terminated).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(f.rejected).resolves.toMatchObject({ code: 'timeout' });
+    expect(f.onSearchProgress).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('requires one stable total and binds it to an explicitly requested budget', async () => {
+    const explicit = await start();
+    explicit.progress(1, 32);
+    await expect(explicit.rejected).resolves.toMatchObject({ code: 'protocol' });
+    expect(explicit.onSearchProgress).not.toHaveBeenCalled();
+    expect(explicit.worker.terminated).toBe(true);
+
+    const implicit = await start({});
+    implicit.progress(1, 8);
+    implicit.progress(2, 16);
+    await expect(implicit.rejected).resolves.toMatchObject({ code: 'protocol' });
+    expect(implicit.onSearchProgress).toHaveBeenCalledExactlyOnceWith({ completedSimulations: 1, totalSimulations: 8 });
+    expect(implicit.worker.terminated).toBe(true);
+  });
+
+  it('rejects a final result whose effort disagrees with the progress or requested candidate budget', async () => {
+    for (const search of [{ simulations: 32, maxConsidered: 8 }, { simulations: 64, maxConsidered: 4 }]) {
+      const f = await start();
+      f.progress(1);
+      f.worker.emit({ type: 'result', taskId: f.request.requestId, decision: decisionFor(f.request, search) });
+      await expect(f.rejected).resolves.toMatchObject({ code: 'protocol' });
+      f.client.dispose();
+    }
+  });
+
+  it('requires a final result after full progress and cannot be kept alive by repeated completion messages', async () => {
+    const f = await start();
+    f.progress(64);
+    await vi.advanceTimersByTimeAsync(89_000);
+    f.progress(64);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(f.rejected).resolves.toMatchObject({ code: 'timeout' });
+    expect(f.onSearchProgress).toHaveBeenCalledTimes(1);
+    expect(f.worker.terminated).toBe(true);
+  });
+
+  it('terminates promptly on cancellation after progress and discards late events', async () => {
+    const controller = new AbortController();
+    const f = await start({ signal: controller.signal, search: { simulations: 64, maxConsidered: 8 } });
+    await vi.advanceTimersByTimeAsync(80_000);
+    f.progress(1);
+    controller.abort();
+    await expect(f.rejected).resolves.toMatchObject({ code: 'cancelled' });
+    f.progress(2);
+    expect(f.onSearchProgress).toHaveBeenCalledTimes(1);
+    expect(f.worker.terminated).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
 describe('local worker construction lifecycle', () => {
   const readyInfo = { modelVersion: 'champion-browser', bytes: 128, backend: 'wasm', cached: false } as const;
 
@@ -81,7 +206,7 @@ describe('local worker construction lifecycle', () => {
     const result = client.prepare();
     const resolved = vi.fn();
     void result.then(resolved);
-    worker.emit({ type: 'ready', protocolVersion: 3 });
+    worker.emit({ type: 'ready', protocolVersion: 4 });
     await Promise.resolve();
     expect(worker.messages).toEqual([{ type: 'prepare', taskId: 'prepare-1' }]);
     const progress = { phase: 'downloading', loadedBytes: 64, totalBytes: 128, modelVersion: 'champion-browser', cached: false };
@@ -104,7 +229,7 @@ describe('local worker construction lifecycle', () => {
     const controller = new AbortController();
     const first = client.prepare({ signal: controller.signal });
     const cancelled = expect(first).rejects.toMatchObject({ code: 'cancelled' });
-    workers[0].emit({ type: 'ready', protocolVersion: 3 });
+    workers[0].emit({ type: 'ready', protocolVersion: 4 });
     await Promise.resolve();
     controller.abort();
     await cancelled;
@@ -113,7 +238,7 @@ describe('local worker construction lifecycle', () => {
     workers[0].emit({ type: 'prepared', taskId: 'prepare-1', info: readyInfo });
     expect(status).toHaveBeenLastCalledWith({ phase: 'idle' });
     const retry = client.prepare();
-    workers[1].emit({ type: 'ready', protocolVersion: 3 });
+    workers[1].emit({ type: 'ready', protocolVersion: 4 });
     await Promise.resolve();
     workers[1].emit({ type: 'prepared', taskId: 'prepare-2', info: { ...readyInfo, cached: true } });
     await expect(retry).resolves.toMatchObject({ cached: true });
@@ -126,7 +251,7 @@ describe('local worker construction lifecycle', () => {
     const client = new LocalDeltrelAiClient(() => worker as unknown as Worker);
     const request = buildAiRequest(config, [], 'playing-while-loading');
     const result = client.request(request);
-    worker.emit({ type: 'ready', protocolVersion: 3 });
+    worker.emit({ type: 'ready', protocolVersion: 4 });
     await Promise.resolve();
     worker.emit({ type: 'prepared', taskId: request.requestId, info: readyInfo });
     worker.emit({ type: 'result', taskId: request.requestId, decision: decisionFor(request) });
@@ -141,7 +266,7 @@ describe('local worker construction lifecycle', () => {
     const status = vi.fn();
     const client = new LocalDeltrelAiClient(() => worker as unknown as Worker, status);
     const first = client.prepare();
-    worker.emit({ type: 'ready', protocolVersion: 3 });
+    worker.emit({ type: 'ready', protocolVersion: 4 });
     await Promise.resolve();
     worker.emit({ type: 'error', taskId: 'prepare-1', error: { code: 'network', message: 'Disconnected', retryable: true } });
     await expect(first).rejects.toMatchObject({ code: 'network' });
@@ -162,7 +287,7 @@ describe('local worker construction lifecycle', () => {
 
     const result = client.request(request);
     expect(worker.messages).toEqual([]);
-    worker.emit({ type: 'ready', protocolVersion: 3 });
+    worker.emit({ type: 'ready', protocolVersion: 4 });
     await Promise.resolve();
     expect(worker.messages).toEqual([
       { type: 'choose', taskId: request.requestId, request, search: null },
@@ -189,7 +314,7 @@ describe('local worker construction lifecycle', () => {
     const firstRequest = buildAiRequest(config, [], 'local-cancel');
     const first = client.request(firstRequest, { signal: abort.signal });
     const active = workers[0];
-    active.emit({ type: 'ready', protocolVersion: 3 });
+    active.emit({ type: 'ready', protocolVersion: 4 });
     await Promise.resolve();
     abort.abort();
     await expect(first).rejects.toMatchObject({ code: 'cancelled' });
@@ -199,7 +324,7 @@ describe('local worker construction lifecycle', () => {
     const second = client.request(secondRequest);
     const replacement = workers[1];
     expect(replacement).not.toBe(active);
-    replacement.emit({ type: 'ready', protocolVersion: 3 });
+    replacement.emit({ type: 'ready', protocolVersion: 4 });
     await Promise.resolve();
     replacement.emit({
       type: 'result',
@@ -217,7 +342,7 @@ describe('local worker construction lifecycle', () => {
     const client = new LocalDeltrelAiClient(() => worker as unknown as Worker);
     const request = buildAiRequest(config, [], 'local-timeout');
     const result = client.request(request, { timeoutMs: 100 });
-    worker.emit({ type: 'ready', protocolVersion: 3 });
+    worker.emit({ type: 'ready', protocolVersion: 4 });
     await Promise.resolve();
 
     const rejection = expect(result).rejects.toMatchObject({
@@ -236,7 +361,7 @@ describe('local worker construction lifecycle', () => {
     const request = buildAiRequest(config, [], 'local-budget');
     const search = { simulations: 32, maxConsidered: 8 };
     const result = client.request(request, { search });
-    worker.emit({ type: 'ready', protocolVersion: 3 });
+    worker.emit({ type: 'ready', protocolVersion: 4 });
     await Promise.resolve();
     expect(worker.messages).toEqual([
       { type: 'choose', taskId: request.requestId, request, search },
@@ -267,7 +392,7 @@ describe('local worker construction lifecycle', () => {
     const client = new LocalDeltrelAiClient(() => worker as unknown as Worker);
     const request = buildAiRequest(config, [], 'local-stale');
     const result = client.request(request);
-    worker.emit({ type: 'ready', protocolVersion: 3 });
+    worker.emit({ type: 'ready', protocolVersion: 4 });
     await Promise.resolve();
     const stale = decisionFor(request);
     stale.response.stateHash = 'zobrist64:0000000000000000';

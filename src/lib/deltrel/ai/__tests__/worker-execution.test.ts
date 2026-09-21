@@ -3,6 +3,7 @@ import * as ort from 'onnxruntime-web';
 import { buildAiRequest, codeToAction, type DeltrelAiRequest } from '../protocol';
 import { encodeDeltrelFeatures, float16ToFloat32Array, float32ToFloat16Array } from '../features';
 import { validateNetworkOutputState } from '../network-output';
+import type { LocalAiSearchProgress } from '../worker-protocol';
 
 let worker: typeof import('@/workers/deltrel-ai.worker');
 beforeAll(async () => {
@@ -142,8 +143,8 @@ function fixture(auxiliary = false) {
     wasm: { search_execution_version: () => 1, WasmSearchSession: FakeSession },
     completedSearch: undefined as { session: FakeSession; context: string } | undefined,
   };
-  const search = (root: DeltrelAiRequest, check = () => {}) => worker.runSessionSearch(
-    runtime as never, state(root), root.state, { simulations: 2, maxConsidered: 2 }, check, async () => {},
+  const search = (root: DeltrelAiRequest, check = () => {}, onProgress?: (progress: LocalAiSearchProgress) => void) => worker.runSessionSearch(
+    runtime as never, state(root), root.state, { simulations: 2, maxConsidered: 2 }, check, async () => {}, onProgress,
   );
   return { runtime, run, forwards, tensors, outputDisposals, sessions, search };
 }
@@ -226,11 +227,13 @@ describe('completed browser session ownership', () => {
     const cached = f.runtime.completedSearch!.session;
     expect(first.rootVisits.reduce((a, b) => a + b)).toBe(2);
     cached.restarts.mockImplementation(() => expect(f.runtime.completedSearch).toBeUndefined());
-    const second = await f.search(nextRequest(request(), first.actionCode));
+    const progress = vi.fn();
+    const second = await f.search(nextRequest(request(), first.actionCode), () => {}, progress);
     expect(f.sessions).toHaveLength(1);
     expect(second.reusedVisits).toBe(3);
     expect(second.rootVisits.reduce((a, b) => a + b)).toBe(2);
     expect(second.totalVisits.reduce((a, b) => a + b)).toBe(5);
+    expect(progress).toHaveBeenCalledExactlyOnceWith({ completedSimulations: 2, totalSimulations: 2 });
     expect(cached.free).not.toHaveBeenCalled();
     cached.pendingStates.forEach((pending) => expect(pending.free).toHaveBeenCalledOnce());
     f.runtime.completedSearch!.session.free();

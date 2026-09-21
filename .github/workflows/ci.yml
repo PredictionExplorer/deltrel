@@ -153,7 +153,8 @@ jobs:
   e2e:
     name: Browser end-to-end
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Includes real-model Full-board handicap games on the CPU-only browsers.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import fc from 'fast-check';
 import {
   APP_STORE_VERSION,
   DEFAULT_AI_SEARCH_SETTINGS,
@@ -11,7 +12,7 @@ import {
   sanitizePersistedState,
   useAppStore,
 } from '../../store';
-import type { GameConfig } from '../game';
+import { replay, type GameAction, type GameConfig } from '../game';
 
 const double: GameConfig = {
   rings: 6,
@@ -48,6 +49,22 @@ afterEach(() => {
 });
 
 describe('persisted app-state validation', () => {
+  it('rejects saved histories longer than any legal game', () => {
+    expect(sanitizePersistedState({
+      phase: 'playing', config: mini, controllers: ['local', 'local'],
+      log: Array.from({ length: 51 }, (_, node) => ({ type: 'place', node })), redoStack: [],
+    })).toMatchObject({ phase: 'setup', log: [], redoStack: [] });
+  });
+
+  it.each(['log', 'redoStack'] as const)('rejects sparse and null-filled saved %s arrays', (field) => {
+    for (const history of [new Array(3), [null], [undefined]]) {
+      expect(sanitizePersistedState({
+        phase: 'playing', config: mini, controllers: ['local', 'local'],
+        log: [], redoStack: [], [field]: history,
+      })).toMatchObject({ phase: 'setup', log: [], redoStack: [] });
+    }
+  });
+
   it('rehydrates only replayable strict action logs and redo history', () => {
     expect(
       sanitizePersistedState({
@@ -344,6 +361,60 @@ describe('persisted app-state validation', () => {
 });
 
 describe('history navigation AI pause', () => {
+  it('keeps randomized branching, undo, redo, and saved histories consistent', () => {
+    fc.assert(fc.property(
+      fc.constantFrom('classic' as const, 'double' as const),
+      fc.integer({ min: 1, max: 9 }),
+      fc.array(fc.record({
+        operation: fc.constantFrom('place', 'swap', 'undo', 'redo', 'rewind'),
+        selector: fc.nat(),
+      }), { minLength: 20, maxLength: 120 }),
+      (mode, handicap, commands) => {
+        useAppStore.getState().startGame({ ...double, rings: 10, mode, handicap }, ['local', 'local']);
+        const config = useAppStore.getState().config;
+        let log: GameAction[] = [];
+        let redoStack: GameAction[] = [];
+        for (const { operation, selector } of commands) {
+          const game = replay(config, log);
+          const store = useAppStore.getState();
+          if (operation === 'place' || operation === 'swap') {
+            const node = selector % game.board.n;
+            const action: GameAction = operation === 'place' ? { type: 'place', node } : { type: 'swap' };
+            store.act(action);
+            if (!game.over && (operation === 'place' ? game.stones[node] === -1 : game.canSwap)) {
+              log = [...log, action];
+              redoStack = [];
+            }
+          } else if (operation === 'undo') {
+            store.undo();
+            if (log.length) {
+              redoStack.push(log[log.length - 1]);
+              log = log.slice(0, -1);
+            }
+          } else if (operation === 'redo') {
+            store.redo();
+            if (redoStack.length) log.push(redoStack.pop()!);
+          } else {
+            const ply = selector % (log.length + 2);
+            store.rewindTo(ply);
+            if (ply < log.length) {
+              redoStack = [...redoStack, ...log.slice(ply).reverse()];
+              log = log.slice(0, ply);
+            }
+          }
+          const current = useAppStore.getState();
+          expect(current.log).toEqual(log);
+          expect(current.redoStack).toEqual(redoStack);
+          const restored = sanitizePersistedState(JSON.parse(JSON.stringify(current)));
+          expect(restored.phase).toBe('playing');
+          expect(restored.log).toEqual(log);
+          expect(restored.redoStack).toEqual(redoStack);
+          expect(replay(restored.config, restored.log)).toEqual(replay(config, log));
+        }
+      },
+    ), { numRuns: 80 });
+  });
+
   it('rewinds several actions at once exactly like repeated undo', () => {
     const log = [
       { type: 'place' as const, node: 0 },
@@ -431,6 +502,55 @@ describe('history navigation AI pause', () => {
 });
 
 describe('gameplay store actions', () => {
+  it('ignores stale, malformed, duplicate, and terminal actions without corrupting the game', () => {
+    useAppStore.getState().toSetup();
+    useAppStore.getState().act({ type: 'place', node: 0 });
+    expect(useAppStore.getState().log).toEqual([]);
+    useAppStore.getState().startGame(mini, ['human', 'human']);
+    for (const action of [null, { type: 'swap' }, { type: 'place', node: -1 }, { type: 'place', node: '0' }, { type: 'place', node: 50 }]) {
+      useAppStore.getState().act(action as GameAction);
+      expect(useAppStore.getState().log).toEqual([]);
+    }
+    const action: GameAction = { type: 'place', node: 0 };
+    useAppStore.getState().act(action);
+    action.node = 1;
+    expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]);
+    useAppStore.getState().act({ type: 'place', node: 0 });
+    expect(useAppStore.getState().log).toHaveLength(1);
+    for (let node = 1; node < 50; node++) useAppStore.getState().act({ type: 'place', node });
+    const completed = useAppStore.getState();
+    expect(replay(completed.config, completed.log).over).toBe(true);
+    completed.act({ type: 'place', node: 0 });
+    completed.act({ type: 'swap' });
+    expect(useAppStore.getState().log).toEqual(completed.log);
+  });
+
+  it('cannot create results in setup or replace a resignation with a clinch', () => {
+    useAppStore.getState().toSetup();
+    useAppStore.getState().resign(0);
+    useAppStore.getState().acknowledgeClinch(0);
+    useAppStore.getState().endClinchedGame(0);
+    expect(useAppStore.getState().earlyOutcome).toBeNull();
+    expect(useAppStore.getState().clinchAcknowledgement).toBeNull();
+    useAppStore.setState({ phase: 'playing', config: mini, log: clinchedLog });
+    useAppStore.getState().resign(1);
+    useAppStore.getState().endClinchedGame(1);
+    useAppStore.getState().acknowledgeClinch(1);
+    expect(useAppStore.getState().earlyOutcome).toEqual({ reason: 'resignation', winner: 0, loser: 1 });
+    expect(useAppStore.getState().clinchAcknowledgement).toBeNull();
+  });
+
+  it('reopens play for a rematch and clears review mode on redo', () => {
+    useAppStore.getState().toSetup();
+    useAppStore.getState().rematch();
+    expect(useAppStore.getState().phase).toBe('playing');
+    useAppStore.getState().act({ type: 'place', node: 0 });
+    useAppStore.getState().undo();
+    useAppStore.getState().setReviewing(true);
+    useAppStore.getState().redo();
+    expect(useAppStore.getState().reviewing).toBe(false);
+  });
+
   it.each(['classic', 'double'] as const)(
     'enforces new-game openings on direct %s starts and rematches, preserving old active games',
     (mode) => {

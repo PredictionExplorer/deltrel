@@ -50,8 +50,9 @@ export default defineConfig({
   webServer: {
     command: `npm run start -- --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    // Tests must exercise the production build they just created. An unrelated
+    // or stale server on this port must never silently satisfy the test run.
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });
-

@@ -41,6 +41,8 @@ export interface DeltrelAiAnalysis {
   stateHash: string;
   outcome: DeltrelAiOutcomeBelief;
   modelValue: number;
+  /** Root neural utility supplied to search, before simulations. Browser AI uses
+   * modelValue; server engines may also incorporate score utility. */
   searchValue: number;
   /** Visit-weighted search value of the root (optimal-swap payoff while pie is pending). */
   rootValue: number;

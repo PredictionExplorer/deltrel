@@ -172,6 +172,26 @@ const manifest = {
 };
 
 describe('local worker protocol', () => {
+  it('accepts only bounded, completed simulation progress with no arbitrary heartbeat fields', () => {
+    const event = { type: 'search-progress', taskId: request.requestId,
+      progress: { completedSimulations: 1, totalSimulations: 64 } };
+    expect(parseWorkerEvent(event)).toEqual(event);
+    expect(parseWorkerEvent({ ...event, progress: { completedSimulations: 64, totalSimulations: 64 } })).toMatchObject({
+      progress: { completedSimulations: 64, totalSimulations: 64 },
+    });
+    for (const changes of [
+      { completedSimulations: 0 }, { completedSimulations: -1 }, { completedSimulations: 65 },
+      { completedSimulations: 0.5 }, { completedSimulations: NaN }, { completedSimulations: '1' },
+      { totalSimulations: 0 }, { totalSimulations: 1025 }, { totalSimulations: Infinity },
+      { totalSimulations: 64.5 }, { totalSimulations: '64' }, { elapsedMs: 10 },
+    ]) {
+      expect(() => parseWorkerEvent({ ...event, progress: { ...event.progress, ...changes } })).toThrow(/invalid event/);
+    }
+    expect(() => parseWorkerEvent({ ...event, heartbeat: true })).toThrow(/invalid event/);
+    expect(() => parseWorkerEvent({ ...event, taskId: '' })).toThrow(/invalid message/);
+    expect(() => parseWorkerEvent({ type: 'ready', protocolVersion: 3 })).toThrow(/invalid message/);
+  });
+
   it('round-trips a typed choose command and cancellation', () => {
     expect(
       parseWorkerCommand({
@@ -243,9 +263,9 @@ describe('local worker protocol', () => {
   });
 
   it('parses structured worker errors without trusting arbitrary codes', () => {
-    expect(parseWorkerEvent({ type: 'ready', protocolVersion: 3 })).toEqual({
+    expect(parseWorkerEvent({ type: 'ready', protocolVersion: 4 })).toEqual({
       type: 'ready',
-      protocolVersion: 3,
+      protocolVersion: 4,
     });
     expect(() => parseWorkerEvent({ type: 'ready', protocolVersion: 2 })).toThrow(
       /invalid message/,

@@ -9,10 +9,12 @@ import {
   Trophy,
 } from 'lucide-react';
 import type { Mode } from '@/lib/deltrel/game';
+import type { LocalAiSearchProgress } from '@/lib/deltrel/ai/local-client';
 
 export type GameStatusState =
   | 'human'
   | 'thinking'
+  | 'waiting'
   | 'paused'
   | 'error'
   | 'clinch'
@@ -26,6 +28,9 @@ interface GameStatusProps {
   playerName: string;
   controllerName: string;
   matchLabel?: string;
+  waitingReason?: string;
+  /** Actual completed simulations reported by the current browser search. */
+  searchProgress?: LocalAiSearchProgress;
   mode: Mode;
   movesLeft: number;
   /** Placement progress of the turn on display (for the pips). */
@@ -45,6 +50,8 @@ export function GameStatus({
   playerName,
   controllerName,
   matchLabel,
+  waitingReason,
+  searchProgress,
   mode,
   movesLeft,
   turnProgress = null,
@@ -87,6 +94,12 @@ export function GameStatus({
                 title: 'Play paused for confirmation',
                 detail: 'Confirm the choice or return to the game.',
               }
+      : state === 'waiting'
+        ? {
+            icon: PauseCircle,
+            title: `${controllerName} is waiting`,
+            detail: waitingReason ?? 'Waiting for the engine to become ready.',
+          }
       : state === 'thinking'
         ? {
             icon: LoaderCircle,
@@ -109,7 +122,9 @@ export function GameStatus({
                 icon: Waves,
                 title: `${playerName} to play`,
                 detail:
-                  mode === 'double'
+                  turnProgress && turnProgress.total > (mode === 'double' ? 2 : 1)
+                    ? `${turnProgress.total}-stone opening — ${movesLeft} stone${movesLeft === 1 ? '' : 's'} left to place.`
+                    : mode === 'double'
                     ? turnProgress && turnProgress.total > 1
                       ? turnProgress.placed === 0
                         ? 'Two stones this turn — place the first.'
@@ -183,6 +198,21 @@ export function GameStatus({
           )}
         </div>
         <p className="mt-0.5 min-h-[1.875rem] text-xs leading-tight text-muted">{presentation.detail}</p>
+        {state === 'thinking' && searchProgress && (
+          <div className="mt-1.5 text-xs text-muted">
+            <progress
+              aria-label="Browser AI search progress"
+              max={searchProgress.totalSimulations}
+              value={searchProgress.completedSimulations}
+              className="block h-1.5 w-full accent-[#e4c9a1]"
+            />
+            <p className="mt-1 tabular-nums">
+              {Math.floor(searchProgress.completedSimulations / searchProgress.totalSimulations * 100)}% ·{' '}
+              {searchProgress.completedSimulations.toLocaleString('en-US')} of{' '}
+              {searchProgress.totalSimulations.toLocaleString('en-US')} simulations
+            </p>
+          </div>
+        )}
       </div>
     </section>
   );

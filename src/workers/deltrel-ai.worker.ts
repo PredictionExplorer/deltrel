@@ -52,6 +52,7 @@ import {
   workerErrorEvent,
   type DeltrelAiWorkerCommand,
   type DeltrelAiWorkerEvent,
+  type LocalAiSearchProgress,
 } from '@/lib/deltrel/ai/worker-protocol';
 
 interface WorkerScope {
@@ -505,12 +506,20 @@ async function loadRuntime(signal: AbortSignal, onProgress: (progress: LocalAiPr
     readyInfo: { modelVersion: manifest.modelVersion, bytes: manifest.model.bytes, backend, cached: downloaded.cached } };
 }
 
+/** Parsed manifests include execution limits and output readiness as well as weights. */
+export function sameRuntimeManifest(
+  current: DeltrelBrowserModelManifest,
+  latest: DeltrelBrowserModelManifest,
+): boolean {
+  return JSON.stringify(current) === JSON.stringify(latest);
+}
+
 async function getRuntime(signal: AbortSignal, taskId: string, revalidate = false): Promise<LocalRuntime> {
   if (runtimePromise && revalidate) {
     const current = await runtimePromise;
     const latest = parseDeltrelBrowserModelManifest(await fetchJson(DELTREL_BROWSER_MODEL_MANIFEST_PATH, signal));
     signal.throwIfAborted();
-    if (current.manifest.model.sha256 !== latest.model.sha256 || current.manifest.modelVersion !== latest.modelVersion) {
+    if (!sameRuntimeManifest(current.manifest, latest)) {
       runtimePromise = null;
       current.completedSearch?.session.free?.();
       await current.session.release();
@@ -638,45 +647,6 @@ export function replayAndVerify(request: DeltrelAiRequest, wasm: DeltrelWasmModu
   }
 }
 
-function tensorFeeds(runtime: LocalRuntime, semantic: DeltrelAiSemanticState) {
-  const encoded = encodeDeltrelFeatures(semantic);
-  const { Tensor } = runtime.ort;
-  return {
-    node_features: new Tensor(
-      'float16',
-      float32ToFloat16Array(encoded.nodeFeatures),
-      [1, encoded.nodeCount, DELTREL_NODE_FEATURE_DIM],
-    ),
-    global_features: new Tensor(
-      'float16',
-      float32ToFloat16Array(encoded.globalFeatures),
-      [1, DELTREL_GLOBAL_FEATURE_DIM],
-    ),
-    neighbor_index: new Tensor(
-      'int64',
-      encoded.neighborIndex,
-      [1, encoded.nodeCount, encoded.maxDegree],
-    ),
-    neighbor_mask: new Tensor(
-      'bool',
-      encoded.neighborMask,
-      [1, encoded.nodeCount, encoded.maxDegree],
-    ),
-    neighbor_edge_type: new Tensor(
-      'int64',
-      encoded.neighborEdgeType,
-      [1, encoded.nodeCount, encoded.maxDegree],
-    ),
-    node_mask: new Tensor('bool', encoded.nodeMask, [1, encoded.nodeCount]),
-    legal_action_mask: new Tensor(
-      'bool',
-      encoded.legalActionMask,
-      [1, encoded.nodeCount],
-    ),
-    rings: new Tensor('int64', encoded.rings, [1]),
-  };
-}
-
 export function finiteFloatData(
   value: Ort.OnnxValue | undefined,
   name: string,
@@ -769,7 +739,7 @@ export async function evaluate(
   const cached = runtime.predictions.get(key);
   if (cached) return cached;
 
-  const feeds = tensorFeeds(runtime, semantic);
+  const feeds = batchTensorFeeds(runtime, [semantic]);
   let outputs: Ort.InferenceSession.OnnxValueMapType | undefined;
   try {
     outputs = await runtime.session.run(feeds, [...DELTREL_MODEL_OUTPUT_NAMES]);
@@ -1134,6 +1104,7 @@ export async function runSessionSearch(
   runtime: LocalRuntime, root: WasmState, semantic: DeltrelAiSemanticState,
   search: DeltrelAiSearchBudget, checkCancelled: () => void,
   yieldControl: () => Promise<void>,
+  onProgress: (progress: LocalAiSearchProgress) => void = () => {},
 ) {
   const previous = runtime.completedSearch;
   delete runtime.completedSearch;
@@ -1171,6 +1142,7 @@ export async function runSessionSearch(
     owned.initialize_root(token, rootEvaluation.value, rootEvaluation.logits);
     let iterations = 0;
     let lastYield = 0;
+    let lastProgress = 0;
     while (!owned.done()) {
       checkCancelled();
       if (++iterations > search.simulations * 4 + 16) {
@@ -1202,6 +1174,13 @@ export async function runSessionSearch(
         owned.submit(tokens, Float32Array.from(evaluations, (evaluation) => evaluation.value), offsets, logits);
       }
       const completed = owned.simulations();
+      if (!Number.isSafeInteger(completed) || completed < lastProgress || completed > search.simulations) {
+        throw new DeltrelAiError('protocol', 'WASM session reported invalid simulation progress.');
+      }
+      if (completed > lastProgress) {
+        onProgress({ completedSimulations: completed, totalSimulations: search.simulations });
+        lastProgress = completed;
+      }
       if (completed - lastYield >= 8 || !count) {
         await yieldControl();
         checkCancelled();
@@ -1251,6 +1230,96 @@ export async function runSessionSearch(
   } finally { owned?.free?.(); }
 }
 
+/** Run fresh tree statistics for every request, even when predictions are cached. */
+export async function runTreeSearch(
+  runtime: LocalRuntime, root: WasmState, semantic: DeltrelAiSemanticState,
+  search: DeltrelAiSearchBudget, checkCancelled: () => void,
+  yieldControl: () => Promise<void>,
+  onProgress: (progress: LocalAiSearchProgress) => void = () => {},
+) {
+  let tree: WasmSearchTree | null = null;
+  let scheduler: WasmGumbel | null = null;
+  try {
+    checkCancelled();
+    tree = new runtime.wasm.WasmSearchTree(
+      root,
+      runtime.manifest.search.cVisit,
+      runtime.manifest.search.cScale,
+    );
+    const rootActions = tree.root_actions();
+    if (!arraysEqual(rootActions, root.legal_actions())) {
+      throw new DeltrelAiError('protocol', 'WASM root action layout is incompatible.');
+    }
+    const rootToken = tree.root_token();
+    const rootPrediction = await evaluateRoot(runtime, semantic, rootActions, checkCancelled);
+    const rootEvaluation = rootPrediction.evaluation;
+    checkCancelled();
+    if (tree.root_token() !== rootToken) {
+      throw new DeltrelAiError('stale', 'WASM root evaluation token changed.');
+    }
+    tree.initialize_root(rootToken, rootEvaluation.value, rootEvaluation.logits);
+
+    scheduler = new runtime.wasm.WasmGumbel(
+      rootEvaluation.logits,
+      search.simulations,
+      search.maxConsidered,
+      runtime.manifest.search.cVisit,
+      runtime.manifest.search.cScale,
+      root.hash64(),
+    );
+    let simulations = 0;
+    const actions = tree.actions();
+    while (!scheduler.done()) {
+      checkCancelled();
+      const candidate = scheduler.next_scheduled?.()
+        ?? scheduler.next(tree.completed_q(), tree.visits());
+      if (!Number.isInteger(candidate) || candidate < 0 || candidate >= actions.length) {
+        throw new DeltrelAiError('protocol', 'WASM Gumbel scheduler returned an invalid edge.');
+      }
+      const needsEvaluation = tree.start(actions[candidate]);
+      if (needsEvaluation) {
+        const token = tree.pending_token();
+        const leaf = tree.pending_state();
+        try {
+          const leafActions = tree.pending_actions();
+          const leafSemantic = semanticFromWasm(semantic.rings, leaf);
+          const leafEvaluation = await evaluate(runtime, leafSemantic, leafActions);
+          checkCancelled();
+          if (tree.pending_token() !== token) {
+            throw new DeltrelAiError('stale', 'WASM leaf evaluation token changed.');
+          }
+          tree.finish(token, leafEvaluation.value, leafEvaluation.logits);
+        } finally {
+          leaf.free?.();
+        }
+      }
+      scheduler.record(candidate);
+      simulations += 1;
+      if (simulations > search.simulations) {
+        throw new DeltrelAiError('protocol', 'WASM search exceeded its simulation budget.');
+      }
+      onProgress({ completedSimulations: simulations, totalSimulations: search.simulations });
+      if (simulations % 8 === 0) await yieldControl();
+    }
+    if (simulations !== search.simulations) {
+      throw new DeltrelAiError('protocol', 'WASM search did not consume its exact budget.');
+    }
+    const summary = summarizeSearch(
+        tree,
+        scheduler,
+        rootEvaluation.value,
+        semantic.swapAvailable,
+        runtime.manifest.search.swapDeadZone,
+      );
+    checkCancelled();
+    return { ...summary, rootEvaluation,
+      networkOutput: networkOutputForDecision(rootPrediction.networkOutput, summary.swapRecommended) };
+  } finally {
+    scheduler?.free?.();
+    tree?.free?.();
+  }
+}
+
 async function chooseAction(
   taskId: string,
   request: DeltrelAiRequest,
@@ -1282,12 +1351,14 @@ async function chooseAction(
   }
   const searchStarted = nowMs();
   const root = replayAndVerify(request, runtime.wasm);
-  let tree: WasmSearchTree | null = null;
-  let scheduler: WasmGumbel | null = null;
+  const onProgress = (progress: LocalAiSearchProgress) => {
+    checkCancelled();
+    scope.postMessage({ type: 'search-progress', taskId, progress });
+  };
   try {
     if (usesExperimentalSearch(runtime.manifest)) {
       const result = await runSessionSearch(runtime, root, request.state, search,
-        checkCancelled, () => yieldToCancellation(taskId));
+        checkCancelled, () => yieldToCancellation(taskId), onProgress);
       return { ...result, outcome: result.rootEvaluation.outcome,
         modelValue: result.rootEvaluation.value, searchValue: result.rootEvaluation.value,
         expectedMargin: result.rootEvaluation.expectedMargin, modelVersion: runtime.manifest.modelVersion,
@@ -1295,75 +1366,11 @@ async function chooseAction(
         modelIdentity: runtime.manifest.modelVersion, search,
         timingMs: { modelLoad, inferenceSearch: nowMs() - searchStarted } };
     }
-    tree = new runtime.wasm.WasmSearchTree(
-      root,
-      runtime.manifest.search.cVisit,
-      runtime.manifest.search.cScale,
-    );
-    const rootActions = tree.root_actions();
-    if (!arraysEqual(rootActions, request.legalActions)) {
-      throw new DeltrelAiError('protocol', 'WASM root action layout is incompatible.');
-    }
-    const rootToken = tree.root_token();
-    const rootPrediction = await evaluateRoot(runtime, request.state, rootActions, checkCancelled);
-    const rootEvaluation = rootPrediction.evaluation;
-    ensureNotCancelled(taskId);
-    if (tree.root_token() !== rootToken) {
-      throw new DeltrelAiError('stale', 'WASM root evaluation token changed.');
-    }
-    tree.initialize_root(rootToken, rootEvaluation.value, rootEvaluation.logits);
-
-    scheduler = new runtime.wasm.WasmGumbel(
-      rootEvaluation.logits,
-      search.simulations,
-      search.maxConsidered,
-      runtime.manifest.search.cVisit,
-      runtime.manifest.search.cScale,
-      root.hash64(),
-    );
-    let simulations = 0;
-    const actions = tree.actions();
-    while (!scheduler.done()) {
-      ensureNotCancelled(taskId);
-      const candidate = scheduler.next_scheduled?.()
-        ?? scheduler.next(tree.completed_q(), tree.visits());
-      if (candidate < 0 || candidate >= actions.length) {
-        throw new DeltrelAiError('protocol', 'WASM Gumbel scheduler returned an invalid edge.');
-      }
-      const needsEvaluation = tree.start(actions[candidate]);
-      if (needsEvaluation) {
-        const token = tree.pending_token();
-        const leaf = tree.pending_state();
-        try {
-          const leafActions = tree.pending_actions();
-          const leafSemantic = semanticFromWasm(request.state.rings, leaf);
-          const leafEvaluation = await evaluate(runtime, leafSemantic, leafActions);
-          ensureNotCancelled(taskId);
-          if (tree.pending_token() !== token) {
-            throw new DeltrelAiError('stale', 'WASM leaf evaluation token changed.');
-          }
-          tree.finish(token, leafEvaluation.value, leafEvaluation.logits);
-        } finally {
-          leaf.free?.();
-        }
-      }
-      scheduler.record(candidate);
-      simulations += 1;
-      if (simulations % 8 === 0) await yieldToCancellation(taskId);
-    }
-    if (simulations !== search.simulations) {
-      throw new DeltrelAiError('protocol', 'WASM search did not consume its exact budget.');
-    }
-    const summary = summarizeSearch(
-        tree,
-        scheduler,
-        rootEvaluation.value,
-        request.state.swapAvailable,
-        runtime.manifest.search.swapDeadZone,
-      );
-    const networkOutput = networkOutputForDecision(rootPrediction.networkOutput, summary.swapRecommended);
+    const result = await runTreeSearch(runtime, root, request.state, search,
+      checkCancelled, () => yieldToCancellation(taskId), onProgress);
+    const { rootEvaluation } = result;
     return {
-      ...summary,
+      ...result,
       outcome: rootEvaluation.outcome,
       modelValue: rootEvaluation.value,
       searchValue: rootEvaluation.value,
@@ -1371,7 +1378,6 @@ async function chooseAction(
       modelVersion: runtime.manifest.modelVersion,
       modelStep: runtime.manifest.modelStep,
       modelIdentity: runtime.manifest.modelVersion,
-      networkOutput,
       search,
       timingMs: {
         modelLoad,
@@ -1379,8 +1385,6 @@ async function chooseAction(
       },
     };
   } finally {
-    scheduler?.free?.();
-    tree?.free?.();
     root.free?.();
   }
 }

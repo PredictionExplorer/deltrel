@@ -26,8 +26,11 @@ export function browserStrengthOptions(maximum: DeltrelAiSearchBudget): BrowserS
   const seen = new Set<string>();
   const options: BrowserStrengthOption[] = [];
   for (const level of LEVELS) {
-    const simulations = Math.min(level.budget.simulations, maximum.simulations);
-    const maxConsidered = Math.min(level.budget.maxConsidered, maximum.maxConsidered, simulations);
+    // Deep always uses the release's actual maximum; its label must remain true
+    // when a later model publishes limits above the original 64/8 release.
+    const budget = level.id === 'deep' ? maximum : level.budget;
+    const simulations = Math.min(budget.simulations, maximum.simulations);
+    const maxConsidered = Math.min(budget.maxConsidered, maximum.maxConsidered, simulations);
     const key = `${simulations}:${maxConsidered}`;
     if (seen.has(key)) continue;
     seen.add(key);

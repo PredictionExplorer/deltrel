@@ -37,7 +37,7 @@ export function BrowserAiPreparation({ status, authorized, capability, selected 
   const modelBytes = status.phase === 'ready' ? status.info.bytes : 'totalBytes' in status ? status.totalBytes ?? published?.bytes : published?.bytes;
   const modelVersion = status.phase === 'ready' ? status.info.modelVersion : 'modelVersion' in status ? status.modelVersion ?? published?.modelVersion : published?.modelVersion;
   const available = capability?.status !== 'unavailable' && capability?.status !== 'checking';
-  const ready = status.phase === 'ready' && authorized;
+  const ready = status.phase === 'ready' && authorized && available;
   const progress = status.phase === 'downloading' && status.totalBytes !== null && status.totalBytes > 0
     ? Math.min(100, Math.max(0, status.loadedBytes / status.totalBytes * 100)) : null;
   const stage = status.phase === 'checking' ? 'Checking the latest model…'

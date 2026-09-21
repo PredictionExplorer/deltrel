@@ -128,6 +128,68 @@ afterEach(() => {
 });
 
 describe('SetupScreen', () => {
+  it.each([
+    ['human', 'human'], ['local', 'local'], ['server', 'local'],
+  ] as const)('uses neutral names for legacy quick-start preferences with %s and %s players', async (first, second) => {
+    resetStore({ config: { ...DEFAULT_CONFIG, playerNames: ['You', 'Champion'] }, controllers: [first, second] });
+    render(<SetupScreen />);
+    await waitFor(() => expect(checkAiCapabilities).toHaveBeenCalledOnce());
+    expect(screen.getByRole('textbox', { name: 'Player 1 name' })).toHaveValue('Player 1');
+    expect(screen.getByRole('textbox', { name: 'Player 2 name' })).toHaveValue('Player 2');
+    expect(useAppStore.getState().config.playerNames).toEqual(['You', 'Champion']);
+  });
+
+  it('keeps neutral names when switching a prepared quick start to two humans or two computers', async () => {
+    publishLocalAiStatus({ phase: 'ready', info: browserReady });
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    await user.click(await screen.findByRole('button', { name: 'Play against browser AI' }));
+    for (const controller of ['human', 'local']) {
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Player 1 controller' }), controller);
+      await user.selectOptions(screen.getByRole('combobox', { name: 'Player 2 controller' }), controller);
+      expect(screen.getByRole('textbox', { name: 'Player 1 name' })).toHaveValue('Player 1');
+      expect(screen.getByRole('textbox', { name: 'Player 2 name' })).toHaveValue('Player 2');
+    }
+    await user.click(screen.getByRole('button', { name: 'Begin the game' }));
+    expect(useAppStore.getState().config.playerNames).toEqual(['Player 1', 'Player 2']);
+    expect(useAppStore.getState().controllers).toEqual(['local', 'local']);
+  });
+
+  it('keeps both seats when reselecting an online champion already in an AI match', async () => {
+    vi.mocked(checkAiCapabilities).mockResolvedValue(championCapabilities);
+    publishLocalAiStatus({ phase: 'ready', info: browserReady });
+    resetStore({ controllers: ['server', 'local'] });
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    await user.click(await screen.findByRole('button', { name: 'Play against the champion' }));
+    await user.click(screen.getByRole('button', { name: 'Maximum champion search' }));
+    await user.click(screen.getByRole('button', { name: 'Begin the game' }));
+    expect(useAppStore.getState().controllers).toEqual(['server', 'local']);
+    expect(useAppStore.getState().aiSearchSettings.server).toEqual({ simulations: 4096, maxConsidered: 64 });
+    expect(useAppStore.getState().aiSearchSettings.local).toEqual(DEFAULT_AI_SEARCH_SETTINGS.local);
+  });
+
+  it('supports the complete radio keyboard pattern for handicap selection', async () => {
+    resetStore({ config: { ...DEFAULT_CONFIG, rings: 10, pieRule: false, handicap: 2 } });
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    const two = screen.getByRole('radio', { name: '2 handicap stones' });
+    two.focus();
+    await user.keyboard('{End}');
+    const nine = screen.getByRole('radio', { name: '9 handicap stones' });
+    expect(nine).toHaveFocus();
+    expect(nine).toHaveAttribute('aria-checked', 'true');
+    expect(nine).toHaveAttribute('tabindex', '0');
+    expect(two).toHaveAttribute('tabindex', '-1');
+    await user.keyboard('{ArrowRight}');
+    expect(two).toHaveFocus();
+    await user.keyboard('{ArrowUp}');
+    expect(nine).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(two).toHaveFocus();
+    expect(two).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('keeps both AI controllers and custom names when downloading an AI-vs-AI match', async () => {
     vi.mocked(checkAiCapabilities).mockResolvedValue(developerCapabilities);
     resetStore({
@@ -162,13 +224,13 @@ describe('SetupScreen', () => {
     const deep = await screen.findByRole('button', { name: 'Deep browser AI strength' });
     await user.click(deep);
     expect(deep).toHaveAttribute('aria-pressed', 'true');
-    expect(useAppStore.getState().aiSearchSettings.local).toEqual({ simulations: 64, maxConsidered: 8 });
+    expect(useAppStore.getState().aiSearchSettings.local).toEqual({ simulations: 1024, maxConsidered: 128 });
     await user.click(screen.getByRole('button', { name: 'Download browser AI' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Begin the game' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: 'Browser AI selected' }));
-    expect(useAppStore.getState().aiSearchSettings.local).toEqual({ simulations: 64, maxConsidered: 8 });
+    expect(useAppStore.getState().aiSearchSettings.local).toEqual({ simulations: 1024, maxConsidered: 128 });
     const saved = JSON.parse(localStorage.getItem(GAME_STORAGE_KEY)!);
-    expect(saved.state.aiSearchSettings.local).toEqual({ simulations: 64, maxConsidered: 8 });
+    expect(saved.state.aiSearchSettings.local).toEqual({ simulations: 1024, maxConsidered: 128 });
     view.unmount();
     render(<SetupScreen />);
     expect(await screen.findByRole('button', { name: 'Deep browser AI strength' })).toHaveAttribute('aria-pressed', 'true');
@@ -257,7 +319,7 @@ describe('SetupScreen', () => {
     publishLocalAiStatus({ phase: 'ready', info: { ...browserReady, cached: true } });
     const user = userEvent.setup();
     render(<SetupScreen />);
-    await user.click(screen.getByRole('button', { name: 'Play against browser AI' }));
+    await user.click(await screen.findByRole('button', { name: 'Play against browser AI' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Begin the game' })).toBeEnabled());
     expect(prepareLocalAi).not.toHaveBeenCalled();
     expect(screen.getByText('Loaded from this browser’s saved model.')).toBeInTheDocument();
@@ -336,7 +398,7 @@ describe('SetupScreen', () => {
     expect(useAppStore.getState()).toMatchObject({
       phase: 'playing',
       controllers: ['human', 'server'],
-      config: { mode, rings, pieRule, handicap, playerNames: ['You', 'Champion'] },
+      config: { mode, rings, pieRule, handicap, playerNames: ['Player 1', 'Player 2'] },
     });
   });
 

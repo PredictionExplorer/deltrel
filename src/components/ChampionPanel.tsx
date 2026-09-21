@@ -42,7 +42,7 @@ export function ChampionPanel({
         <>
           <p className="mt-2 text-xs leading-relaxed text-muted">
             Full trained model · step {champion.modelStep.toLocaleString('en-US')}.
-            {' '}Choose any of the six game modes below.
+            {' '}Choose a variant and opening below.
           </p>
           <button
             type="button"
@@ -78,7 +78,7 @@ export function ChampionPanel({
                 })}
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-muted">
-                Every setting uses the same champion. More search takes longer.
+                Every setting uses the same online champion. More search takes longer.
               </p>
             </div>
           )}
