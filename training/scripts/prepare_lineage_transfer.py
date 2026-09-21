@@ -22,7 +22,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from startrain.lineage import (  # noqa: E402
+from deltreltrain.lineage import (  # noqa: E402
     LineageTransferError,
     list_legacy_shards,
     load_legacy_teacher,

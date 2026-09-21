@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from startrain.actor_publication import PublicationProgress
-from startrain.replay import read_replay_shard
+from deltreltrain.actor_publication import PublicationProgress
+from deltreltrain.replay import read_replay_shard
 from test_live_policy_publication import MODEL, credit, setup
 
 

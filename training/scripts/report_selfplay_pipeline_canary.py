@@ -16,7 +16,7 @@ from pathlib import Path
 import re
 import time
 
-FORMAT = "startrain.selfplay-pipeline-canary"
+FORMAT = "deltreltrain.selfplay-pipeline-canary"
 MAX_JSON_BYTES = 2 * 1024**2
 MAX_TAIL_BYTES = 8 * 1024**2
 
@@ -137,8 +137,8 @@ def build_report(
     min_refills: int = 1,
     now_ns: int | None = None,
 ) -> dict:
-    from startrain.config import load_config
-    from startrain.model import model_parameter_count
+    from deltreltrain.config import load_config
+    from deltreltrain.model import model_parameter_count
 
     if any(
         type(value) is not int or value < 0
@@ -581,7 +581,7 @@ def build_report(
 
 
 def write_report(path: Path, report: dict) -> None:
-    from startrain.runtime import atomic_json
+    from deltreltrain.runtime import atomic_json
 
     destination = path.resolve()
     root = Path(report["run_root"])

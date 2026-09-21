@@ -1,0 +1,20 @@
+[package]
+name = "deltrel-search"
+description = "Batch-friendly Gumbel MCTS for atomic Double Deltrel actions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+deltrel-engine = { path = "../deltrel-engine" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+proptest = "1.11.0"
+

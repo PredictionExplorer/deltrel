@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts.preflight_run_state import run_state_preflight, state_apply_guard
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     ModelManifest,
     ResumeCheckpoint,
@@ -26,21 +26,21 @@ from startrain.checkpoint import (
     write_model_pointer,
     write_resume_cutover,
 )
-from startrain.config import load_config
-from startrain.learner import UTDSegmentState
-from startrain.lr_governor import (
+from deltreltrain.config import load_config
+from deltreltrain.learner import UTDSegmentState
+from deltreltrain.lr_governor import (
     LEARNING_RATE_GOVERNOR_KEY,
     LearningRateGovernorState,
 )
-from startrain.manifest_selection import (
+from deltreltrain.manifest_selection import (
     ManifestEvidence,
     ManifestSelectionError,
     selected_manifest_in_copy,
     verify_selection_snapshot,
 )
-from startrain.model import GraphResTNet
-from startrain.optim import build_optimizer
-from startrain.runtime import (
+from deltreltrain.model import GraphResTNet
+from deltreltrain.optim import build_optimizer
+from deltreltrain.runtime import (
     CHAMPION_WARM_START_FORMAT,
     CHAMPION_WARM_START_SCHEMA_VERSION,
     CUTOVER_STAGING_FORMAT,
@@ -50,7 +50,7 @@ from startrain.runtime import (
     atomic_json,
     load_run_identity,
 )
-from startrain.training import build_scheduler
+from deltreltrain.training import build_scheduler
 
 WARM_START_FORMAT = CHAMPION_WARM_START_FORMAT
 WARM_START_SCHEMA_VERSION = CHAMPION_WARM_START_SCHEMA_VERSION

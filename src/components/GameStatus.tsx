@@ -5,10 +5,10 @@ import {
   LoaderCircle,
   PauseCircle,
   ShieldCheck,
-  Sparkles,
+  Waves,
   Trophy,
 } from 'lucide-react';
-import type { Mode } from '@/lib/star/game';
+import type { Mode } from '@/lib/deltrel/game';
 
 export type GameStatusState =
   | 'human'
@@ -64,7 +64,7 @@ export function GameStatus({
       : state === 'over'
       ? {
           icon: Trophy,
-          title: 'The sky is settled',
+          title: 'The shoreline is settled',
           detail: 'Review the result or start another game.',
         }
       : state === 'clinch'
@@ -104,7 +104,7 @@ export function GameStatus({
                 detail: `${playerName}’s turn is waiting for recovery.`,
               }
             : {
-                icon: Sparkles,
+                icon: Waves,
                 title: `${playerName} to play`,
                 detail:
                   mode === 'double'
@@ -133,12 +133,12 @@ export function GameStatus({
       style={{
         borderColor:
           state === 'over' || state === 'clinch' || state === 'proof' || state === 'review'
-            ? 'rgba(232,196,139,0.5)'
+            ? 'rgba(225,208,169,0.5)'
             : `${color.base}66`,
         background:
           state === 'over' || state === 'clinch' || state === 'proof' || state === 'review'
-            ? 'linear-gradient(145deg, rgba(232,196,139,0.14), rgba(16,21,42,0.9))'
-            : `linear-gradient(145deg, ${color.soft}, rgba(16,21,42,0.9))`,
+            ? 'linear-gradient(145deg, rgba(225,208,169,0.14), var(--estuary-surface-strong))'
+            : `linear-gradient(145deg, ${color.soft}, var(--estuary-surface-strong))`,
       }}
     >
       <span

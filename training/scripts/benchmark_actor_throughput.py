@@ -262,7 +262,7 @@ class _NoReplay:
 
 def _prefix_actor_type():
     # Lazy import leaves the parent harness free of Torch/native initialization.
-    from startrain.selfplay import SelfPlayActor
+    from deltreltrain.selfplay import SelfPlayActor
 
     class PrefixActor(SelfPlayActor):
         def __init__(self, *args: Any, plies: int, **kwargs: Any) -> None:
@@ -377,7 +377,7 @@ def run_tasks(
     variants: list[str],
     cohorts: int,
 ):
-    from startrain.selfplay import GameVariant, SelfPlayIdentity
+    from deltreltrain.selfplay import GameVariant, SelfPlayIdentity
 
     actor_type = _prefix_actor_type()
 
@@ -410,7 +410,7 @@ def run_tasks(
 def _warmup_inference(
     native, evaluator, *, ring: int, max_rows: int, variants: list[str]
 ) -> list[dict[str, object]]:
-    from startrain.selfplay import GameVariant
+    from deltreltrain.selfplay import GameVariant
 
     physical_limit = 1 << (max_rows - 1).bit_length()
     warmed = []
@@ -453,17 +453,17 @@ def _warmup_inference(
 
 def _child(args, arm: Arm) -> dict[str, object]:
     started = time.monotonic()
-    from startrain.config import load_config, parse_cpu_affinity
+    from deltreltrain.config import load_config, parse_cpu_affinity
 
     getattr(os, "sched_setaffinity")(0, set(parse_cpu_affinity(args.cpu_affinity)))
     import torch
-    from startrain.actor import ManifestModelProvider
-    from startrain.checkpoint import load_model_manifest
-    from startrain.inference_batching import BoundedInferenceBroker
-    from startrain.inference import GraphInferenceAdapter
-    from startrain.model import model_parameter_count
-    from startrain.native import load_star_native
-    from startrain.runtime import RunIdentity
+    from deltreltrain.actor import ManifestModelProvider
+    from deltreltrain.checkpoint import load_model_manifest
+    from deltreltrain.inference_batching import BoundedInferenceBroker
+    from deltreltrain.inference import GraphInferenceAdapter
+    from deltreltrain.model import model_parameter_count
+    from deltreltrain.native import load_deltrel_native
+    from deltreltrain.runtime import RunIdentity
 
     torch.set_num_threads(args.blas_threads)
     if not torch.cuda.is_available() or not args.device.startswith("cuda:"):
@@ -477,7 +477,7 @@ def _child(args, arm: Arm) -> dict[str, object]:
     manifest = load_model_manifest(args.checkpoint)
     if manifest.manifest_sha256 != args.manifest_sha256:
         raise ValueError("pinned immutable checkpoint manifest changed")
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     assert native is not None
     if native.rayon_num_threads() != arm.native_threads:
         raise ValueError("native thread pool does not match requested arm")
@@ -747,8 +747,8 @@ def _parser():
 def _main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
-    from startrain.config import parse_cpu_affinity
-    from startrain.selfplay import GameVariant
+    from deltreltrain.config import parse_cpu_affinity
+    from deltreltrain.selfplay import GameVariant
 
     cpus = parse_cpu_affinity(args.cpu_affinity)
     if (args.start_barrier is None) != (args.ready_marker is None):
@@ -796,7 +796,7 @@ def _main(argv: list[str] | None = None) -> int:
     if not args.execute:
         print(json.dumps(plan))
         return 0
-    from startrain.checkpoint import load_model_manifest
+    from deltreltrain.checkpoint import load_model_manifest
 
     manifest = load_model_manifest(args.checkpoint)
     checkpoint = manifest.artifact_manifest or manifest.path

@@ -10,8 +10,8 @@ import yaml
 
 from scripts.prepare_pie_policy_gate import prepare_policy_gate
 from scripts.validate_continuous_profile import validate_continuous_config
-from startrain import search_allocation_gate as gate
-from startrain.pie_policy import pie_training_config
+from deltreltrain import search_allocation_gate as gate
+from deltreltrain.pie_policy import pie_training_config
 from test_graph_cache_controlled_activation import controlled_admission_fixture
 from test_search_allocation_gate import fixture, reference, write_json
 

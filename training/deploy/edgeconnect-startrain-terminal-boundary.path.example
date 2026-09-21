@@ -1,9 +1,0 @@
-[Unit]
-Description=Watch EdgeConnect promotion status for a terminal boundary
-
-[Path]
-PathChanged=@PROMOTION_STATUS@
-Unit=@TERMINAL_BOUNDARY_SERVICE@
-
-[Install]
-WantedBy=multi-user.target

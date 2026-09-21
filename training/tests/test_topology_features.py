@@ -3,7 +3,7 @@ from dataclasses import fields
 import pytest
 import torch
 
-from startrain.contracts import (
+from deltreltrain.contracts import (
     FEATURE_SCHEMA_HASH,
     FEATURE_SCHEMA_VERSION,
     LEGACY_FEATURE_SCHEMA_HASH,
@@ -11,22 +11,22 @@ from startrain.contracts import (
     RULES_HASH,
     fnv1a64,
 )
-from startrain.features import (
+from deltreltrain.features import (
     GLOBAL_FEATURE_DIM,
     GLOBAL_FEATURE_NAMES,
     NODE_FEATURE_DIM,
     NODE_FEATURE_NAMES,
-    DoubleStarPosition,
+    DoubleDeltrelPosition,
     encode_position,
     history_sets_from_flags,
 )
-from startrain.features_v3 import (
+from deltreltrain.features_v3 import (
     LEGACY_GLOBAL_FEATURE_DIM,
     LEGACY_NODE_FEATURE_DIM,
     encode_legacy_position,
 )
-from startrain.symmetry import D5Transform, permute_nodes, transform_position
-from startrain.topology import (
+from deltreltrain.symmetry import D5Transform, permute_nodes, transform_position
+from deltreltrain.topology import (
     ANGULAR_BUCKETS,
     EDGE_BRIDGE,
     EDGE_CLASS_COUNT,
@@ -47,12 +47,12 @@ from startrain.topology import (
 )
 
 
-def live_position(rings: int) -> DoubleStarPosition:
+def live_position(rings: int) -> DoubleDeltrelPosition:
     topology = get_topology(rings)
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
     stones[0] = 0
     stones[topology.n - 1] = 1
-    return DoubleStarPosition(
+    return DoubleDeltrelPosition(
         rings=rings,
         stones=stones,
         to_move=0,
@@ -62,7 +62,7 @@ def live_position(rings: int) -> DoubleStarPosition:
     )
 
 
-def history_position(rings: int) -> DoubleStarPosition:
+def history_position(rings: int) -> DoubleDeltrelPosition:
     """Player 0 mid-turn after a three-stone handicap opening and one reply."""
 
     topology = get_topology(rings)
@@ -77,7 +77,7 @@ def history_position(rings: int) -> DoubleStarPosition:
     own_previous = torch.zeros(topology.n, dtype=torch.bool)
     own_previous[[0, 1, 2]] = True
     handicap = own_previous.clone()
-    return DoubleStarPosition(
+    return DoubleDeltrelPosition(
         rings=rings,
         stones=stones,
         to_move=0,
@@ -108,8 +108,8 @@ def test_schema_v4_is_exactly_the_semantic_key_plus_context() -> None:
         "owner_unclaimed",
         "alive_current",
         "alive_opponent",
-        "is_peri",
-        "is_quark",
+        "is_shore",
+        "is_cape",
         "ring_fraction",
         "arm_distance_fraction",
         "degree_fraction",
@@ -118,7 +118,7 @@ def test_schema_v4_is_exactly_the_semantic_key_plus_context() -> None:
     )
     assert all("pass" not in name for name in GLOBAL_FEATURE_NAMES)
     assert RULES_HASH == fnv1a64(RULES_CONTRACT)
-    assert [field.name for field in fields(DoubleStarPosition)] == [
+    assert [field.name for field in fields(DoubleDeltrelPosition)] == [
         "rings",
         "stones",
         "to_move",
@@ -292,7 +292,7 @@ def test_opening_derives_history_and_rejects_inconsistent_sets() -> None:
     topology = get_topology(4)
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
     stones[[3, 4]] = 0
-    opening = DoubleStarPosition(
+    opening = DoubleDeltrelPosition(
         rings=4,
         stones=stones,
         to_move=0,
@@ -311,7 +311,7 @@ def test_opening_derives_history_and_rejects_inconsistent_sets() -> None:
     assert opening.pie_pending is False
 
     with pytest.raises(ValueError, match="opening"):
-        DoubleStarPosition(
+        DoubleDeltrelPosition(
             rings=4,
             stones=stones,
             to_move=0,
@@ -322,7 +322,7 @@ def test_opening_derives_history_and_rejects_inconsistent_sets() -> None:
     bogus = torch.zeros(topology.n, dtype=torch.bool)
     bogus[40] = True
     with pytest.raises(ValueError, match="history"):
-        DoubleStarPosition(
+        DoubleDeltrelPosition(
             rings=4,
             stones=stones,
             to_move=0,
@@ -333,7 +333,7 @@ def test_opening_derives_history_and_rejects_inconsistent_sets() -> None:
             current_turn=bogus,
         )
     with pytest.raises(ValueError, match="pie"):
-        DoubleStarPosition(
+        DoubleDeltrelPosition(
             rings=4,
             stones=torch.full((topology.n,), -1, dtype=torch.int8),
             to_move=0,
@@ -344,7 +344,7 @@ def test_opening_derives_history_and_rejects_inconsistent_sets() -> None:
             pie=True,
         )
     with pytest.raises(ValueError, match="pda"):
-        DoubleStarPosition(
+        DoubleDeltrelPosition(
             rings=4,
             stones=torch.full((topology.n,), -1, dtype=torch.int8),
             to_move=0,
@@ -358,7 +358,7 @@ def test_opening_derives_history_and_rejects_inconsistent_sets() -> None:
 def test_pie_pending_and_swap_available_positions() -> None:
     topology = get_topology(4)
     empty = torch.full((topology.n,), -1, dtype=torch.int8)
-    pending = DoubleStarPosition(
+    pending = DoubleDeltrelPosition(
         rings=4,
         stones=empty,
         to_move=0,
@@ -378,7 +378,7 @@ def test_pie_pending_and_swap_available_positions() -> None:
     stones[7] = 0
     previous = torch.zeros(topology.n, dtype=torch.bool)
     previous[7] = True
-    kept = DoubleStarPosition(
+    kept = DoubleDeltrelPosition(
         rings=4,
         stones=stones,
         to_move=1,
@@ -392,7 +392,7 @@ def test_pie_pending_and_swap_available_positions() -> None:
     )
     swapped_stones = empty.clone()
     swapped_stones[7] = 1
-    swapped = DoubleStarPosition(
+    swapped = DoubleDeltrelPosition(
         rings=4,
         stones=swapped_stones,
         to_move=0,
@@ -411,7 +411,7 @@ def test_pie_pending_and_swap_available_positions() -> None:
     expected[22] = 0.0
     torch.testing.assert_close(right.global_features, expected)
     with pytest.raises(ValueError, match="swap"):
-        DoubleStarPosition(
+        DoubleDeltrelPosition(
             rings=4,
             stones=stones,
             to_move=1,
@@ -424,7 +424,7 @@ def test_pie_pending_and_swap_available_positions() -> None:
 
 def test_terminal_semantics_are_full_board_only() -> None:
     topology = get_topology(4)
-    full = DoubleStarPosition(
+    full = DoubleDeltrelPosition(
         rings=4,
         stones=torch.arange(topology.n, dtype=torch.int8) % 2,
         to_move=0,
@@ -437,7 +437,7 @@ def test_terminal_semantics_are_full_board_only() -> None:
     assert not bool(encoded.legal_node_mask.any())
 
     with pytest.raises(ValueError, match="board-full"):
-        DoubleStarPosition(
+        DoubleDeltrelPosition(
             rings=4,
             stones=torch.full((topology.n,), -1, dtype=torch.int8),
             to_move=1,
@@ -446,7 +446,7 @@ def test_terminal_semantics_are_full_board_only() -> None:
             terminal=True,
         )
     with pytest.raises(ValueError, match="turn"):
-        DoubleStarPosition(
+        DoubleDeltrelPosition(
             rings=4,
             stones=torch.arange(topology.n, dtype=torch.int8) % 2,
             to_move=0,
@@ -462,7 +462,7 @@ def test_color_swap_is_current_player_canonical() -> None:
     swapped_stones = source.stones.clone()
     occupied = swapped_stones >= 0
     swapped_stones[occupied] = 1 - swapped_stones[occupied]
-    swapped = DoubleStarPosition(
+    swapped = DoubleDeltrelPosition(
         rings=4,
         stones=swapped_stones,
         to_move=1,

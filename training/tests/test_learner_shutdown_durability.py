@@ -4,9 +4,9 @@ from contextlib import contextmanager
 import pytest
 import torch
 
-import startrain.learner as learner_module
-from startrain.config import LearnerConfig
-from startrain.replay_store import ReplayStore
+import deltreltrain.learner as learner_module
+from deltreltrain.config import LearnerConfig
+from deltreltrain.replay_store import ReplayStore
 from test_pipeline_core import (
     append_replay,
     make_replay_sample,

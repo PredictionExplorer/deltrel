@@ -6,21 +6,21 @@ import torch
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from starserve.app import create_app
-from starserve.runtime import (
+from deltrelserve.app import create_app
+from deltrelserve.runtime import (
     AnalysisError,
     NativeAnalysisService,
     _auxiliary_heads_ready,
     _auxiliary_payload,
 )
-from starserve.schemas import AnalyzeRequest, AuxiliaryPredictions
-from startrain.auxiliary_inference import AuxiliaryPrediction
-from startrain.auxiliary_upgrade import AUXILIARY_LOSSES
-from startrain.features import encode_batch
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.model import GraphResTNet, ModelConfig
+from deltrelserve.schemas import AnalyzeRequest, AuxiliaryPredictions
+from deltreltrain.auxiliary_inference import AuxiliaryPrediction
+from deltreltrain.auxiliary_upgrade import AUXILIARY_LOSSES
+from deltreltrain.features import encode_batch
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.model import GraphResTNet, ModelConfig
 from test_inference_efficiency import encoded_requests, position
-from test_starserve import (
+from test_deltrelserve import (
     FakeEvaluator,
     FakeSearchBatch,
     FakeService,
@@ -32,7 +32,7 @@ from test_starserve import (
 @pytest.fixture
 def adapter(monkeypatch):
     monkeypatch.setattr(
-        "startrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
+        "deltreltrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
     )
     model = GraphResTNet(
         ModelConfig(
@@ -68,17 +68,17 @@ def test_root_heads_are_cached_and_leaves_skip_them(adapter):
     assert detailed.auxiliary_predictions is not None
     assert len(detailed.auxiliary_predictions) == 1
     prediction = detailed.auxiliary_predictions[0]
-    assert all(0 <= value <= 20 for value in prediction.final_peries)
-    assert all(0 <= value <= 10 for value in prediction.final_stars)
+    assert all(0 <= value <= 20 for value in prediction.final_shores)
+    assert all(0 <= value <= 10 for value in prediction.final_networks)
     assert sum(prediction.opponent_reply_probabilities) == pytest.approx(1)
     assert sum(prediction.second_stone_probabilities) == pytest.approx(1)
     assert adapter.evaluate_detailed(request) == detailed
     assert adapter.evaluate(request) == leaf
     assert calls == [False, True]
     # Returned mutable summaries cannot contaminate immutable cache records.
-    prediction.final_peries[0] = 999
+    prediction.final_shores[0] = 999
     assert (
-        adapter.evaluate_detailed(request).auxiliary_predictions[0].final_peries[0]
+        adapter.evaluate_detailed(request).auxiliary_predictions[0].final_shores[0]
         <= 20
     )
 
@@ -115,17 +115,17 @@ def test_direct_details_agree_with_cached_details(adapter):
 def test_invalid_auxiliary_output_is_rejected(adapter):
     request = encoded_requests(encode_batch([position()]))
     with torch.no_grad():
-        adapter.model.final_stars_head.bias[0] = float("nan")
+        adapter.model.final_networks_head.bias[0] = float("nan")
     with pytest.raises(ValueError, match="non-finite auxiliary"):
         adapter.evaluate_detailed(request)
 
 
 def prediction() -> AuxiliaryPrediction:
     return AuxiliaryPrediction(
-        final_peries=[12.0, 8.0],
-        final_stars=[2.0, 3.0],
-        final_quarks=[3.5, 1.5],
-        quark_bonus_probability=[0.8, 0.2],
+        final_shores=[12.0, 8.0],
+        final_networks=[2.0, 3.0],
+        final_capes=[3.5, 1.5],
+        cape_bonus_probability=[0.8, 0.2],
         opponent_reply_probabilities=[0.0] * 50 + [1.0],
         second_stone_probabilities=[0.0, 1.0] + [0.0] * 48,
     )
@@ -149,8 +149,8 @@ def test_final_player_mapping_and_future_move_applicability():
     request = AnalyzeRequest.model_validate(payload)
     result = _auxiliary_payload(prediction(), request)
     AuxiliaryPredictions.model_validate(result)
-    assert result["final_counts"][0]["peries"] == 8
-    assert result["final_counts"][1]["peries"] == 12
+    assert result["final_counts"][0]["shores"] == 8
+    assert result["final_counts"][1]["shores"] == 12
     assert result["second_stone"] == {
         "player": 1,
         "kind": "place",
@@ -164,7 +164,7 @@ def test_final_player_mapping_and_future_move_applicability():
 def test_invalid_final_counts_are_rejected(values):
     with pytest.raises(AnalysisError, match="invalid final component"):
         _auxiliary_payload(
-            replace(prediction(), final_peries=values),
+            replace(prediction(), final_shores=values),
             AnalyzeRequest.model_validate(request_payload()),
         )
 

@@ -11,16 +11,16 @@ import torch
 import yaml
 
 from scripts import run_gradient_clipping_trial as trial
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     save_checkpoint,
     sha256_file,
     write_recovery_checkpoint,
 )
-from startrain.config import load_config
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.optim import build_optimizer
-from startrain.training import build_scheduler
+from deltreltrain.config import load_config
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.optim import build_optimizer
+from deltreltrain.training import build_scheduler
 
 
 def tiny_config():
@@ -181,12 +181,12 @@ def test_output_protection_and_tampered_copy(tmp_path):
 def test_preparation_copies_game_disjoint_all_cell_replay_and_survives_source_gc(
     tmp_path, monkeypatch
 ):
-    from startrain.native import positions_from_native
-    from startrain.replay import ReplaySample
-    from startrain.replay_store import ReplayStore
-    from startrain.runtime import RunIdentity
+    from deltreltrain.native import positions_from_native
+    from deltreltrain.replay import ReplaySample
+    from deltreltrain.replay_store import ReplayStore
+    from deltreltrain.runtime import RunIdentity
 
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     config = tiny_config()
     model, opt, scheduler, ema = state(config)
     production = tmp_path / "production"
@@ -300,13 +300,13 @@ def test_preparation_copies_game_disjoint_all_cell_replay_and_survives_source_gc
 
 
 def test_diagnostic_backward_preserves_model_and_optimizer_state():
-    from startrain.features import DoubleStarPosition
-    from startrain.replay import ReplaySample, collate_replay_samples
-    from startrain.topology import get_topology
+    from deltreltrain.features import DoubleDeltrelPosition
+    from deltreltrain.replay import ReplaySample, collate_replay_samples
+    from deltreltrain.topology import get_topology
 
     config = tiny_config()
     model, opt, scheduler, ema = state(config)
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=4,
         stones=torch.full((get_topology(4).n,), -1, dtype=torch.int8),
         to_move=0,
@@ -343,7 +343,7 @@ def trial_result(tmp_path, arm):
         cell: {"policy": 1.0, "value": 2.0, "composite": 3.0} for cell in trial.CELLS
     }
     result = {
-        "format": "startrain.gradient-clipping-trial",
+        "format": "deltreltrain.gradient-clipping-trial",
         "schema_version": 1,
         "status": "complete",
         "arm": arm,
@@ -494,7 +494,7 @@ def test_trial_rng_seeding_does_not_touch_other_cuda_generators(monkeypatch):
 def test_owned_timeout_is_reported_and_other_arm_does_not_start(tmp_path, monkeypatch):
     import subprocess
     from contextlib import contextmanager
-    from startrain import training
+    from deltreltrain import training
 
     frozen = tmp_path / "frozen.json"
     frozen.write_text(

@@ -3,9 +3,9 @@ import threading
 
 import pytest
 
-from startrain.features import encode_batch
-from startrain.inference import DetailedInferenceResponse, GraphInferenceAdapter
-from startrain.inference_batching import BoundedInferenceBroker
+from deltreltrain.features import encode_batch
+from deltreltrain.inference import DetailedInferenceResponse, GraphInferenceAdapter
+from deltreltrain.inference_batching import BoundedInferenceBroker
 from test_inference_efficiency import (
     ObservedNetwork,
     cached_adapter,
@@ -17,7 +17,7 @@ from test_inference_efficiency import (
 @pytest.fixture
 def feature_requests(monkeypatch):
     monkeypatch.setattr(
-        "startrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
+        "deltreltrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
     )
     return encoded_requests
 
@@ -53,7 +53,7 @@ def test_broker_combines_compatible_cohorts_and_preserves_local_utility(
             abs=1e-7,
         )
         assert base.model.rows == [2]
-        assert base.model.threads == ["star-inference-owner"]
+        assert base.model.threads == ["deltrel-inference-owner"]
     metrics = broker.metrics_snapshot()
     assert metrics["neural_batches"] == 1 and metrics["batched_requests"] == 2
 
@@ -80,7 +80,7 @@ def test_complete_cache_keys_are_built_on_the_cpu_producer(
             )
             assert response_future.result(timeout=2).tokens == [1]
     assert key_threads == ["cpu-cohort_0"]
-    assert base.model.threads == ["star-inference-owner"]
+    assert base.model.threads == ["deltrel-inference-owner"]
 
 
 def test_broker_never_merges_different_rings_or_adapters(feature_requests):

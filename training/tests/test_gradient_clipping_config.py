@@ -8,14 +8,14 @@ import pytest
 import yaml
 
 from scripts import migrate_continuous_profile as migration
-from startrain.balanced_evaluation import evaluation_contract
-from startrain.config import ConfigError, TrainConfig, load_config
-from startrain.config_compatibility import (
+from deltreltrain.balanced_evaluation import evaluation_contract
+from deltreltrain.config import ConfigError, TrainConfig, load_config
+from deltreltrain.config_compatibility import (
     compatible_config_epoch_payloads,
     without_gradient_clipping_defaults,
 )
-from startrain.gradient_clipping import GradientClippingConfig
-from startrain.orchestration import _compatible_autonomous_config_sha256s
+from deltreltrain.gradient_clipping import GradientClippingConfig
+from deltreltrain.orchestration import _compatible_autonomous_config_sha256s
 from test_continuous_profile_migration import (
     _fixture,
     _with_update_to_data,

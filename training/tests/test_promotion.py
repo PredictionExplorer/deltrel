@@ -9,34 +9,34 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-import startrain.arena as arena_module
-import startrain.promotion as promotion_module
-from startrain.checkpoint import (
+import deltreltrain.arena as arena_module
+import deltreltrain.promotion as promotion_module
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     collect_model_garbage,
     load_model_manifest,
     write_model_pointer,
     write_resume_cutover,
 )
-from startrain.arena import ARENA_RESULT_SCHEMA_VERSION, ArenaPair
-from startrain.config import (
+from deltreltrain.arena import ARENA_RESULT_SCHEMA_VERSION, ArenaPair
+from deltreltrain.config import (
     ArenaConfig,
     HistoricalEvaluationConfig,
     PromotionConfig,
     SchedulerConfig,
     load_config,
 )
-from startrain.learner import ImmutableModelPublisher
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.optim import OptimizerConfig, build_optimizer
-from startrain.orchestration import gpu_pause_ack_path
-from startrain.promotion import (
+from deltreltrain.learner import ImmutableModelPublisher
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.optim import OptimizerConfig, build_optimizer
+from deltreltrain.orchestration import gpu_pause_ack_path
+from deltreltrain.promotion import (
     CoordinatorPauseLease,
     PromotionSupervisor,
     load_manifest_evaluator,
 )
-from startrain.runtime import RunIdentity, atomic_json
-from startrain.training import build_scheduler
+from deltreltrain.runtime import RunIdentity, atomic_json
+from deltreltrain.training import build_scheduler
 
 
 def test_arena_manifest_evaluator_uses_compiled_inference_model(
@@ -410,7 +410,7 @@ def test_promotion_supervisor_bootstraps_and_only_promotes_arena_pass(
     )
 
     monkeypatch.setattr(
-        "startrain.promotion.load_manifest_evaluator",
+        "deltreltrain.promotion.load_manifest_evaluator",
         lambda _experiment, manifest, device: SimpleNamespace(
             model_version=manifest.model_version,
             model_identity=manifest.model_identity,
@@ -446,7 +446,7 @@ def test_promotion_supervisor_bootstraps_and_only_promotes_arena_pass(
                 "games": [],
             }
 
-    monkeypatch.setattr("startrain.promotion.ArenaRunner", FakeArenaRunner)
+    monkeypatch.setattr("deltreltrain.promotion.ArenaRunner", FakeArenaRunner)
     supervisor = PromotionSupervisor(
         experiment=experiment,
         run_identity=identity,
@@ -591,7 +591,7 @@ def test_old_arena_schema_is_rejected_before_new_candidate_evaluation(
         config=experiment.as_dict(),
     )
     monkeypatch.setattr(
-        "startrain.promotion.load_manifest_evaluator",
+        "deltreltrain.promotion.load_manifest_evaluator",
         lambda _experiment, manifest, device: SimpleNamespace(
             model_version=manifest.model_version,
             model_identity=manifest.model_identity,
@@ -625,7 +625,7 @@ def test_old_arena_schema_is_rejected_before_new_candidate_evaluation(
                 "promotion": {"decision": "continue"},
             }
 
-    monkeypatch.setattr("startrain.promotion.ArenaRunner", BalancedArena)
+    monkeypatch.setattr("deltreltrain.promotion.ArenaRunner", BalancedArena)
     supervisor = PromotionSupervisor(
         experiment=experiment,
         run_identity=identity,

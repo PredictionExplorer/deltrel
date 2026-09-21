@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 import torch
 
-from startrain.actions import extract_sample_actions, relocate_sample_actions
-from startrain.contracts import (
+from deltreltrain.actions import extract_sample_actions, relocate_sample_actions
+from deltreltrain.contracts import (
     ACTION_LAYOUT_SCHEMA_ID,
     CONFORMANCE_SCHEMA_ID,
     EXTERNAL_FEATURE_SCHEMA_ID,
@@ -19,13 +19,13 @@ from startrain.contracts import (
     RULES_SCHEMA_ID,
     fnv1a64,
 )
-from startrain.features import DoubleStarPosition, encode_position
-from startrain.scoring import ScoreResult, score_position
-from startrain.symmetry import D5Transform, transform_position
-from startrain.topology import MAX_NODES, SUPPORTED_RINGS, get_topology
+from deltreltrain.features import DoubleDeltrelPosition, encode_position
+from deltreltrain.scoring import ScoreResult, score_position
+from deltreltrain.symmetry import D5Transform, transform_position
+from deltreltrain.topology import MAX_NODES, SUPPORTED_RINGS, get_topology
 
 FIXTURE_PATH = (
-    Path(__file__).resolve().parents[2] / "testdata" / "star" / "conformance-v3.json"
+    Path(__file__).resolve().parents[2] / "testdata" / "deltrel" / "conformance-v3.json"
 )
 VARIANT_GAME_IDS = (
     "rings-4-classic-board-full",
@@ -46,10 +46,10 @@ def conformance() -> dict:
 def assert_score_matches(expected: dict, actual: ScoreResult) -> None:
     assert [
         {
-            "peries": player.peries,
-            "quarks": player.quarks,
-            "stars": player.stars,
-            "quarkPeri": player.quark_peri,
+            "shores": player.shores,
+            "capes": player.capes,
+            "networks": player.networks,
+            "capeBonus": player.cape_bonus,
             "award": player.award,
             "total": player.total,
         }
@@ -57,7 +57,7 @@ def assert_score_matches(expected: dict, actual: ScoreResult) -> None:
     ] == expected["players"]
     assert actual.node_owner.tolist() == expected["nodeOwner"]
     assert actual.alive_stone.to(torch.uint8).tolist() == expected["aliveStone"]
-    assert actual.contested_peries == expected["contestedPeries"]
+    assert actual.contested_shores == expected["contestedShores"]
     assert actual.leader == expected["leader"]
 
 
@@ -67,11 +67,11 @@ def node_mask(nodes: list[int], size: int) -> torch.Tensor:
     return mask
 
 
-def position_from_fixture(state: dict, config: dict) -> DoubleStarPosition:
+def position_from_fixture(state: dict, config: dict) -> DoubleDeltrelPosition:
     """Rebuild the semantic key of one fixture state, including its history."""
 
     size = len(state["stones"])
-    return DoubleStarPosition.from_sequence(
+    return DoubleDeltrelPosition.from_sequence(
         rings=config["rings"],
         stones=state["stones"],
         to_move=state["toMove"],
@@ -103,11 +103,11 @@ def position_from_fixture(state: dict, config: dict) -> DoubleStarPosition:
 
 
 def test_v3_rules_identifiers_and_exact_canonical_hash() -> None:
-    assert RULES_SCHEMA_ID == "edgeconnect.star.rules.v3"
-    assert CONFORMANCE_SCHEMA_ID == "edgeconnect.star.conformance.v3"
-    assert EXTERNAL_FEATURE_SCHEMA_ID == "edgeconnect.star.model-features.external.v3"
-    assert ACTION_LAYOUT_SCHEMA_ID == "edgeconnect.star.action-layout.nodes-only.v1"
-    assert RULES_HASH_WIRE == "fnv1a64:a5d932b0ef8354e8"
+    assert RULES_SCHEMA_ID == "deltrel.rules.v3"
+    assert CONFORMANCE_SCHEMA_ID == "deltrel.conformance.v3"
+    assert EXTERNAL_FEATURE_SCHEMA_ID == "deltrel.model-features.external.v3"
+    assert ACTION_LAYOUT_SCHEMA_ID == "deltrel.action-layout.nodes-only.v1"
+    assert RULES_HASH_WIRE == "fnv1a64:46e4fbcff4e17fd3"
     assert LEGACY_RULES_HASH_WIRE == "fnv1a64:2da3783519381453"
     assert f"{fnv1a64(RULES_CANONICAL):016x}" == RULES_HASH_HEX
     assert RULES_HASH == int(RULES_HASH_HEX, 16)
@@ -126,9 +126,9 @@ def test_all_supported_topologies_follow_canonical_node_and_d5_layout() -> None:
         topology = get_topology(rings)
         assert topology.n == 5 * rings * (rings + 1) // 2
         assert topology.n <= MAX_NODES
-        assert topology.peri_count == 5 * rings
-        assert topology.labels[0] == "*10"
-        assert topology.labels[-1].startswith("R")
+        assert topology.shore_count == 5 * rings
+        assert topology.labels[0] == "A"
+        assert topology.labels[-1].isalpha()
         for index in range(10):
             transform = D5Transform.from_index(index)
             mapping = topology.d5_permutation(transform.rotation, transform.reflected)
@@ -136,7 +136,7 @@ def test_all_supported_topologies_follow_canonical_node_and_d5_layout() -> None:
 
 
 def test_semantic_key_and_action_layout_have_no_reserved_action() -> None:
-    names = [field.name for field in fields(DoubleStarPosition)]
+    names = [field.name for field in fields(DoubleDeltrelPosition)]
     assert names[:6] == [
         "rings",
         "stones",
@@ -171,7 +171,7 @@ def test_ab_ba_pair_equivalence_has_identical_features() -> None:
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
     stones[7] = 0
     stones[11] = 0
-    ab = DoubleStarPosition(
+    ab = DoubleDeltrelPosition(
         rings=4,
         stones=stones,
         to_move=1,
@@ -179,7 +179,7 @@ def test_ab_ba_pair_equivalence_has_identical_features() -> None:
         opening=False,
         terminal=False,
     )
-    ba = DoubleStarPosition.from_sequence(
+    ba = DoubleDeltrelPosition.from_sequence(
         rings=4,
         stones=stones.tolist(),
         to_move=1,
@@ -229,14 +229,14 @@ def test_fixture_topology_csr_and_every_d5_vector(conformance: dict) -> None:
     for expected in conformance["boards"]:
         topology = get_topology(expected["rings"])
         assert topology.n == expected["nodeCount"]
-        assert topology.peri_count == expected["perimeterCount"]
+        assert topology.shore_count == expected["perimeterCount"]
         assert topology.edge_index.shape[1] // 2 == expected["edgeCount"]
         assert topology.max_degree == expected["maximumDegree"]
         assert topology.sector_of.tolist() == expected["sectorOf"]
         assert topology.ring_of.tolist() == expected["ringOf"]
         assert topology.pos_of.tolist() == expected["positionOf"]
-        assert topology.is_peri.to(torch.uint8).tolist() == expected["perimeterMask"]
-        assert topology.is_quark.to(torch.uint8).tolist() == expected["quarkMask"]
+        assert topology.is_shore.to(torch.uint8).tolist() == expected["perimeterMask"]
+        assert topology.is_cape.to(torch.uint8).tolist() == expected["capeMask"]
         assert list(topology.labels) == expected["labels"]
         assert topology.adjacency_offsets.tolist() == expected["adjacencyOffsets"]
         assert topology.adjacency.tolist() == expected["adjacency"]

@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
 
 
 def _planner(*, graphs: bool, device: str) -> GraphInferenceAdapter:

@@ -1,0 +1,2742 @@
+"""Immutable candidate evaluation and atomic champion promotion."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import threading
+import time
+import uuid
+from collections.abc import Callable, Mapping
+from contextlib import contextmanager
+from dataclasses import asdict, replace
+from pathlib import Path
+from types import TracebackType
+
+import torch
+
+from .arena import (
+    ARENA_RESULT_SCHEMA_VERSION,
+    ArenaGame,
+    ArenaPair,
+    ArenaRunner,
+    summarize_completed_arena_pairs,
+)
+from .adaptive_promotion import (
+    allocation_contract,
+    allocation_metrics,
+    cell_pair_prefixes,
+    next_allocation,
+    pending_suspected_review,
+    plan_complete,
+    plan_targets,
+)
+from .checkpoint import (
+    ModelManifest,
+    collect_model_garbage,
+    extract_verified_manifest_config,
+    inference_model_config,
+    load_ema_checkpoint,
+    load_model_manifest,
+)
+from .checkpoint import write_model_pointer
+from .config import ArenaConfig, ExperimentConfig, load_config
+from .config_compatibility import without_search_execution_defaults
+from .device import (
+    empty_device_cache,
+    peak_memory_stats,
+    reset_peak_memory_stats,
+    resolve_device_string,
+    synchronize_device,
+)
+from .inference import GraphInferenceAdapter, InferenceConfig
+from .historical_evaluation import (
+    HISTORICAL_CROSSPLAY_RESULT_KIND,
+    load_arena_results,
+    load_historical_manifests,
+    select_historical_evaluation,
+)
+from .model import GraphResTNet
+from .balanced_evaluation import completed_counts_by_ring
+from .native import load_deltrel_native
+from .orchestration import gpu_pause_ack_path
+from .runtime import (
+    HeartbeatReporter,
+    RunIdentity,
+    SignalLatch,
+    append_jsonl,
+    atomic_json,
+    load_run_identity,
+)
+from .training import maybe_compile_model
+
+REJECTION_DECISIONS = frozenset(
+    {"reject", "reject_ring_regression", "reject_max_pairs"}
+)
+_MAX_ADAPTIVE_ALLOCATION_BYTES = 8 * 1024 * 1024
+
+
+def _persisted_pair_key(pair: ArenaPair) -> tuple[int, str, int]:
+    # Segment/cell identity is part of a pair: every cell reuses the same
+    # absolute index so a standard pair cannot overwrite a handicap/pie pair.
+    from .balanced_evaluation import pair_key
+
+    return pair_key(pair)
+
+
+def _balanced_round_plan(
+    accumulated: list[ArenaPair], config: ArenaConfig
+) -> tuple[dict[int, int], dict[int, int]]:
+    """Finish one fixed round across every cell before extending its budget.
+
+    A prefix counts indices completed in every configured cell on one board.
+    Choosing the next boundary from the slowest prefix keeps partial sessions from
+    extending faster boards on each restart. The runner skips already complete
+    cell/index pairs inside these ranges, including sparse or frontloaded work.
+    """
+    starts = completed_counts_by_ring(accumulated, config)
+    slowest = min(starts.values())
+    if slowest < config.minimum_pairs_per_ring:
+        target = min(
+            config.minimum_pairs_per_ring,
+            (slowest // config.pairs_per_ring + 1) * config.pairs_per_ring,
+        )
+    else:
+        continuation = config.continuation_pairs_per_ring or config.pairs_per_ring
+        completed_rounds = (slowest - config.minimum_pairs_per_ring) // continuation
+        target = config.minimum_pairs_per_ring + (completed_rounds + 1) * continuation
+    target = min(target, config.max_pairs_per_ring)
+    return starts, {ring: max(0, target - count) for ring, count in starts.items()}
+
+
+def _merge_game_records(previous: object, current: object) -> list[object]:
+    if not isinstance(previous, list) or not isinstance(current, list):
+        raise ValueError("persisted arena games are invalid")
+    unique: dict[tuple[int, str, int, int], object] = {}
+    for game in (*previous, *current):
+        if not isinstance(game, Mapping):
+            raise ValueError("persisted arena game must be a mapping")
+        key = (
+            int(game["ring"]),
+            str(game.get("variant", "double")),
+            int(game["pair"]),
+            int(game["candidate_player"]),
+        )
+        if key in unique and unique[key] != game:
+            raise ValueError("resumed evaluation changed a completed game")
+        unique[key] = game
+    return [unique[key] for key in sorted(unique)]
+
+
+# Exhausting the pair budget is terminal but carries no evidence either way.
+INCONCLUSIVE_DECISIONS = frozenset({"reject_max_pairs"})
+
+
+def decision_is_conclusive(decision: str, *, terminal: bool) -> bool:
+    """Return whether a terminal arena decision rests on sequential evidence."""
+
+    return bool(terminal) and decision not in INCONCLUSIVE_DECISIONS
+
+
+def _status_counter(status: Mapping[str, object], key: str) -> int:
+    value = status.get(key, 0)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
+
+
+def load_manifest_evaluator(
+    experiment: ExperimentConfig,
+    manifest: ModelManifest,
+    *,
+    device: str,
+    allow_heterogeneous_model: bool = False,
+) -> GraphInferenceAdapter:
+    model_config = (
+        inference_model_config(
+            manifest,
+            expected_model=experiment.model,
+            expected_game_config=asdict(experiment.game),
+        )
+        if not allow_heterogeneous_model
+        else experiment.model
+    )
+    if allow_heterogeneous_model:
+        verified = extract_verified_manifest_config(
+            manifest,
+            expected_game_config=asdict(experiment.game),
+        )
+        model_config = verified.model
+    model = GraphResTNet(model_config).to(device)
+    metadata = load_ema_checkpoint(
+        manifest.checkpoint,
+        model=model,
+        expected_model_config=asdict(model_config),
+        expected_game_config=asdict(experiment.game),
+        expected_run_id=manifest.run_id,
+        expected_generation_family=manifest.generation_family,
+        expected_sha256=manifest.checkpoint_sha256,
+        expected_bytes=manifest.checkpoint_bytes,
+        map_location=device,
+    )
+    if int(metadata["step"]) != manifest.model_step:
+        raise ValueError("manifest and checkpoint step disagree")
+    model.eval()
+    refresh = experiment.orchestration.model_refresh
+    inference_model = maybe_compile_model(
+        model,
+        enabled=experiment.train.compile,
+        dynamic=refresh.inference_compile_dynamic,
+        fullgraph=True,
+        mode=refresh.inference_compile_mode,
+        recompile_limit=(
+            None if refresh.inference_compile_dynamic else len(experiment.game.rings)
+        ),
+        isolate_recompiles=not refresh.inference_compile_dynamic,
+    )
+    return GraphInferenceAdapter(
+        inference_model,
+        device=device,
+        config=InferenceConfig(
+            precision=experiment.train.precision,
+            score_utility_weight=experiment.selfplay.score_utility_weight,
+            cache_max_entries=refresh.inference.cache_max_entries,
+            cache_max_bytes=refresh.inference.cache_max_bytes,
+            deduplicate=refresh.inference.deduplicate,
+            pinned_transfers=refresh.inference.pinned_transfers,
+            pinned_buffer_slots=refresh.inference.pinned_buffer_slots,
+            preserve_broadcast_topology=refresh.inference.preserve_broadcast_topology,
+            cuda_graphs=refresh.inference.cuda_graphs,
+            cuda_graph_max_entries=refresh.inference.cuda_graph_max_entries,
+            cuda_graph_max_bytes=refresh.inference.cuda_graph_max_bytes,
+            compact_inference_gather=refresh.inference.compact_inference_gather,
+            small_batch_graph_buckets=refresh.inference.small_batch_graph_buckets,
+        ),
+        model_version=manifest.model_version,
+        model_step=manifest.model_step,
+        model_identity=manifest.model_identity,
+        homogeneous_relational_bias=refresh.inference.homogeneous_relational_bias,
+    )
+
+
+class PauseLeaseError(RuntimeError):
+    pass
+
+
+class PauseLeaseInterrupted(PauseLeaseError):
+    pass
+
+
+class CoordinatorPauseLease:
+    """Tokenized two-phase lease acquired before any shared-GPU allocation."""
+
+    def __init__(
+        self,
+        *,
+        request_path: str | Path,
+        gpu_id: int,
+        candidate_identity: str,
+        ready_timeout_seconds: float,
+        release_timeout_seconds: float,
+        heartbeat_interval_seconds: float,
+        poll_seconds: float,
+        stop_requested: Callable[[], bool],
+        progress: Callable[..., None] | None,
+        events_path: str | Path,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self.request_path = Path(request_path)
+        self.ack_path = gpu_pause_ack_path(self.request_path)
+        self.gpu_id = gpu_id
+        self.candidate_identity = candidate_identity
+        self.ready_timeout_seconds = ready_timeout_seconds
+        self.release_timeout_seconds = release_timeout_seconds
+        self.heartbeat_interval_seconds = heartbeat_interval_seconds
+        self.poll_seconds = poll_seconds
+        self.stop_requested = stop_requested
+        self.progress = progress
+        self.events_path = Path(events_path)
+        self.clock = clock
+        self.sleep = sleep
+        self.token = uuid.uuid4().hex
+        self.owner_pid = os.getpid()
+        self.requested_ns = 0
+        self.state = "new"
+        self._outcome: str | None = None
+        self._lock = threading.Lock()
+        self._heartbeat_stop = threading.Event()
+        self._heartbeat_error: OSError | None = None
+        self._heartbeat_thread: threading.Thread | None = None
+
+    def __enter__(self) -> "CoordinatorPauseLease":
+        self.requested_ns = time.time_ns()
+        self.state = "requested"
+        self._write_request()
+        self._event("requested")
+        if self.progress is not None:
+            self.progress(
+                phase="waiting_for_gpu_pause",
+                lease_token=self.token,
+                gpu_id=self.gpu_id,
+            )
+        self._start_heartbeat()
+        try:
+            self._wait_until_ready()
+        except BaseException:
+            self._cancel()
+            raise
+        self.state = "active"
+        self._write_request()
+        self._event("ready")
+        if self.progress is not None:
+            self.progress(
+                phase="arena_gpu_lease_ready",
+                lease_token=self.token,
+                gpu_id=self.gpu_id,
+            )
+        return self
+
+    def __exit__(
+        self,
+        exception_type: type[BaseException] | None,
+        exception: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool:
+        del traceback
+        self._stop_heartbeat()
+        self.state = "released"
+        self._outcome = (
+            "completed"
+            if exception_type is None
+            else f"error:{exception_type.__name__}"
+        )
+        release_error: BaseException | None = None
+        try:
+            self._write_request()
+            self._event("release_requested", outcome=self._outcome)
+            acknowledgement = self._wait_until_released()
+            self._event("released", acknowledgement=acknowledgement)
+            if self.progress is not None:
+                self.progress(
+                    phase="arena_gpu_lease_released",
+                    lease_token=self.token,
+                    acknowledgement=acknowledgement,
+                )
+        except BaseException as error:
+            release_error = error
+            self._event("release_failed", error=str(error))
+        if exception is None and release_error is not None:
+            raise release_error
+        return False
+
+    def _start_heartbeat(self) -> None:
+        self._heartbeat_thread = threading.Thread(
+            target=self._heartbeat_loop,
+            name=f"gpu-pause-lease-{self.token[:8]}",
+            daemon=True,
+        )
+        self._heartbeat_thread.start()
+
+    def _stop_heartbeat(self) -> None:
+        self._heartbeat_stop.set()
+        thread = self._heartbeat_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=max(1.0, self.heartbeat_interval_seconds + 0.5))
+
+    def _heartbeat_loop(self) -> None:
+        while not self._heartbeat_stop.wait(self.heartbeat_interval_seconds):
+            try:
+                self._write_request()
+            except OSError as error:
+                self._heartbeat_error = error
+                return
+
+    def _write_request(self) -> None:
+        with self._lock:
+            payload: dict[str, object] = {
+                "schema_version": 1,
+                "protocol": "coordinator-pause-v1",
+                "token": self.token,
+                "pid": self.owner_pid,
+                "gpu_id": self.gpu_id,
+                "candidate_identity": self.candidate_identity,
+                "state": self.state,
+                "requested_ns": self.requested_ns,
+                "heartbeat_ns": time.time_ns(),
+            }
+            if self._outcome is not None:
+                payload["outcome"] = self._outcome
+            atomic_json(self.request_path, payload)
+
+    def _wait_until_ready(self) -> None:
+        deadline = self.clock() + self.ready_timeout_seconds
+        while self.clock() < deadline:
+            self._raise_heartbeat_error()
+            if self.stop_requested():
+                raise PauseLeaseInterrupted(
+                    "shutdown requested while awaiting GPU lease"
+                )
+            acknowledgement = self._read_ack()
+            if acknowledgement is not None:
+                state = acknowledgement.get("state")
+                if state == "ready":
+                    return
+                if state in ("failed", "stopping", "draining", "recovered"):
+                    reason = acknowledgement.get("reason")
+                    raise PauseLeaseError(
+                        f"coordinator rejected GPU pause lease: {state}: {reason}"
+                    )
+            self.sleep(self.poll_seconds)
+        raise TimeoutError(
+            "timed out before token-matched coordinator GPU-ready acknowledgement"
+        )
+
+    def _wait_until_released(self) -> str:
+        deadline = self.clock() + self.release_timeout_seconds
+        while self.clock() < deadline:
+            if self.stop_requested():
+                return "stopping"
+            acknowledgement = self._read_ack()
+            if acknowledgement is not None:
+                state = acknowledgement.get("state")
+                if state in ("released", "recovered", "draining", "stopping"):
+                    return str(state)
+                if state == "failed":
+                    raise PauseLeaseError(
+                        "coordinator could not safely restore pause-shared worker: "
+                        f"{acknowledgement.get('reason')}"
+                    )
+            self.sleep(self.poll_seconds)
+        raise TimeoutError(
+            "timed out awaiting token-matched pause-worker release acknowledgement"
+        )
+
+    def _cancel(self) -> None:
+        self._stop_heartbeat()
+        self.state = "cancelled"
+        self._outcome = "cancelled"
+        try:
+            self._write_request()
+            self._event("cancelled")
+            self._wait_until_released()
+        except (OSError, PauseLeaseError, TimeoutError) as error:
+            self._event("cancel_cleanup_failed", error=str(error))
+
+    def _read_ack(self) -> dict[str, object] | None:
+        try:
+            with self.ack_path.open("r", encoding="utf-8") as stream:
+                payload = json.load(stream)
+        except (OSError, json.JSONDecodeError):
+            return None
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema_version") != 1
+            or payload.get("protocol") != "coordinator-pause-v1"
+            or payload.get("token") != self.token
+            or payload.get("gpu_id") != self.gpu_id
+        ):
+            return None
+        return payload
+
+    def _raise_heartbeat_error(self) -> None:
+        if self._heartbeat_error is not None:
+            raise PauseLeaseError(
+                f"GPU pause lease heartbeat failed: {self._heartbeat_error}"
+            )
+
+    def _event(self, state: str, **details: object) -> None:
+        append_jsonl(
+            self.events_path,
+            {
+                "schema_version": 1,
+                "timestamp_ns": time.time_ns(),
+                "event": f"pause_lease_{state}",
+                "token": self.token,
+                "pid": self.owner_pid,
+                "gpu_id": self.gpu_id,
+                "candidate_identity": self.candidate_identity,
+                **details,
+            },
+            durable=True,
+        )
+
+
+class PromotionSupervisor:
+    def __init__(
+        self,
+        *,
+        experiment: ExperimentConfig,
+        run_identity: RunIdentity,
+        candidate_path: str | Path,
+        champion_path: str | Path,
+        results_directory: str | Path,
+        native_module: object,
+        device: str,
+        gpu_pause_path: str | Path | None = None,
+        clock: Callable[[], float] = time.monotonic,
+        wall_clock_ns: Callable[[], int] = time.time_ns,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self.experiment = experiment
+        self.run_identity = run_identity
+        self.candidate_path = Path(candidate_path)
+        self.champion_path = Path(champion_path)
+        self.manifest_directory = self.candidate_path.parent / "manifests"
+        self.results_directory = Path(results_directory)
+        self.status_path = self.results_directory / "promotion-status.json"
+        self.native = native_module
+        self.device = device
+        self.gpu_pause_path = (
+            Path(gpu_pause_path) if gpu_pause_path is not None else None
+        )
+        self.pause_events_path = self.results_directory / "pause-lease-events.jsonl"
+        self.cooldown_path = (
+            self.gpu_pause_path.parent / "arena-inter-wave-cooldown.json"
+            if self.gpu_pause_path is not None
+            else self.results_directory / ".inter-wave-cooldown.json"
+        )
+        self.historical_cooldown_path = (
+            self.results_directory / ".historical-cooldown.json"
+        )
+        self.session_events_path = (
+            self.results_directory / "evaluation-session-events.jsonl"
+        )
+        self._resume_lock = threading.Lock()
+        self.clock = clock
+        self.wall_clock_ns = wall_clock_ns
+        self.sleep = sleep
+        self._manifest_cache: dict[Path, ModelManifest] = {}
+
+    def run(
+        self,
+        *,
+        stop_requested: Callable[[], bool],
+        progress: Callable[..., None] | None = None,
+        once: bool = False,
+    ) -> int:
+        evaluated = 0
+        promotion = self.experiment.orchestration.promotion
+        self.results_directory.mkdir(parents=True, exist_ok=True)
+        while not stop_requested():
+            candidates = self._candidate_manifests()
+            if not candidates:
+                if progress is not None:
+                    progress(phase="waiting_for_candidate")
+                if once:
+                    return evaluated
+                self.sleep(promotion.poll_seconds)
+                continue
+            champion = (
+                load_model_manifest(self.champion_path)
+                if self.champion_path.is_file()
+                else None
+            )
+            if champion is None:
+                if not promotion.bootstrap_initial_champion:
+                    raise RuntimeError(
+                        "champion is absent and explicit bootstrap is disabled"
+                    )
+                champion = candidates[0]
+                write_model_pointer(
+                    self.champion_path,
+                    champion,
+                    role="champion",
+                    promotion_result="bootstrap",
+                )
+                self._write_status(
+                    candidate=champion,
+                    champion=champion,
+                    decision="bootstrap",
+                    terminal=True,
+                )
+                if progress is not None:
+                    progress(
+                        phase="bootstrapped_champion",
+                        model_identity=champion.model_identity,
+                        model_step=champion.model_step,
+                    )
+            for stale in candidates:
+                if (
+                    stale.model_identity != champion.model_identity
+                    and stale.model_step < champion.model_step
+                ):
+                    if (
+                        self._mark_superseded(stale, champion, superseded_by=champion)
+                        and progress is not None
+                    ):
+                        progress(
+                            phase="candidate_superseded",
+                            candidate_step=stale.model_step,
+                            superseded_by_step=champion.model_step,
+                        )
+            viable = [
+                item
+                for item in candidates
+                if item.model_identity != champion.model_identity
+                and item.model_step >= champion.model_step
+            ]
+            had_candidates = bool(viable)
+            # Ready promotion work always precedes background strength links.
+            # Terminal candidates must not prevent idle historical work forever.
+            viable = [
+                item
+                for item in viable
+                if not bool((self._read_result(item, champion) or {}).get("terminal"))
+            ]
+            started: list[tuple[ModelManifest, dict[str, object]]] = []
+            for item in viable:
+                item_result = self._read_result(item, champion)
+                if (
+                    item_result is not None
+                    and not bool(item_result.get("terminal"))
+                    and self._evaluation_started(item, champion, item_result)
+                ):
+                    started.append((item, item_result))
+                elif item_result is None and self._evaluation_started(
+                    item, champion, None
+                ):
+                    started.append((item, {}))
+            if started:
+                candidate, previous = min(
+                    started,
+                    key=lambda item: (
+                        item[0].model_step,
+                        item[0].model_identity,
+                    ),
+                )
+                previous = previous or None
+            else:
+                candidate = max(
+                    viable,
+                    key=lambda item: (item.model_step, item.model_identity),
+                    default=None,
+                )
+                previous = (
+                    self._read_result(candidate, champion)
+                    if candidate is not None
+                    else None
+                )
+            if candidate is None:
+                try:
+                    historical_waves = self._evaluate_historical_if_due(
+                        champion=champion,
+                        stop_requested=stop_requested,
+                        progress=progress,
+                        once=once,
+                    )
+                except PauseLeaseInterrupted:
+                    return evaluated
+                evaluated += historical_waves
+                if historical_waves:
+                    if once:
+                        return evaluated
+                    continue
+                if progress is not None:
+                    progress(
+                        phase=(
+                            "awaiting_new_candidate"
+                            if had_candidates
+                            else "waiting_for_candidate"
+                        ),
+                        champion_step=champion.model_step,
+                    )
+                if once:
+                    return evaluated
+                self.sleep(promotion.poll_seconds)
+                continue
+            if not started:
+                for skipped in viable:
+                    if skipped.model_identity != candidate.model_identity:
+                        marked = self._mark_superseded(
+                            skipped,
+                            champion,
+                            superseded_by=candidate,
+                        )
+                        if marked and progress is not None:
+                            progress(
+                                phase="candidate_superseded",
+                                candidate_step=skipped.model_step,
+                                superseded_by_step=candidate.model_step,
+                            )
+            try:
+                session_evaluated, session_state = self._evaluate_candidate_session(
+                    candidate=candidate,
+                    champion=champion,
+                    previous=previous,
+                    stop_requested=stop_requested,
+                    progress=progress,
+                    once=once,
+                )
+                evaluated += session_evaluated
+            except PauseLeaseInterrupted:
+                return evaluated
+            if stop_requested():
+                return evaluated
+            if once and session_state != "superseded":
+                return evaluated
+            if session_state == "lease_yield":
+                if not self._wait_between_leases(
+                    candidate=candidate,
+                    champion=champion,
+                    stop_requested=stop_requested,
+                    progress=progress,
+                ):
+                    return evaluated
+        return evaluated
+
+    def _wait_between_leases(
+        self,
+        *,
+        candidate: ModelManifest,
+        champion: ModelManifest,
+        stop_requested: Callable[[], bool],
+        progress: Callable[..., None] | None,
+    ) -> bool:
+        promotion = self.experiment.orchestration.promotion
+        if not self.cooldown_path.is_file():
+            return True
+        try:
+            payload = json.loads(self.cooldown_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cannot read arena inter-wave cooldown: {exc}") from exc
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema_version") != 1
+            or payload.get("run_id") != self.run_identity.run_id
+            or payload.get("generation_family") != self.run_identity.generation_family
+            or isinstance(payload.get("not_before_ns"), bool)
+            or not isinstance(payload.get("not_before_ns"), int)
+        ):
+            raise ValueError("arena inter-wave cooldown is incompatible")
+        not_before_ns = int(payload["not_before_ns"])
+        while self.wall_clock_ns() < not_before_ns:
+            if stop_requested():
+                return False
+            remaining = max(0.0, (not_before_ns - self.wall_clock_ns()) / 1e9)
+            if progress is not None:
+                progress(
+                    phase="arena_inter_wave_cooldown",
+                    candidate_step=candidate.model_step,
+                    champion_step=champion.model_step,
+                    remaining_seconds=remaining,
+                )
+            interval = min(promotion.poll_seconds, remaining)
+            self.sleep(interval)
+        self.cooldown_path.unlink(missing_ok=True)
+        return True
+
+    def _record_inter_wave_cooldown(self, candidate: ModelManifest) -> None:
+        seconds = self.experiment.orchestration.promotion.inter_wave_cooldown_seconds
+        if seconds <= 0:
+            return
+        created_ns = self.wall_clock_ns()
+        atomic_json(
+            self.cooldown_path,
+            {
+                "schema_version": 1,
+                "run_id": self.run_identity.run_id,
+                "generation_family": self.run_identity.generation_family,
+                "candidate_identity": candidate.model_identity,
+                "candidate_step": candidate.model_step,
+                "created_ns": created_ns,
+                "not_before_ns": created_ns + int(seconds * 1_000_000_000),
+            },
+        )
+
+    @staticmethod
+    def _resume_path(result_path: Path) -> Path:
+        return result_path.with_name(f"{result_path.stem}.resume.json")
+
+    def _adaptive_allocation(
+        self,
+        candidate: ModelManifest,
+        champion: ModelManifest,
+        accumulated: list[ArenaPair],
+        *,
+        review_only: bool = False,
+    ) -> dict[str, object] | None:
+        """Persist exact cell targets before dispatch, retaining interrupted work."""
+        from .balanced_evaluation import (
+            balanced_opening_seed,
+            category as variant_category,
+            cell_variant,
+            evaluation_contract,
+        )
+        from .selfplay import GameVariant
+
+        config = self._arena_config(candidate, champion)
+        result_path = self._result_path(candidate, champion)
+        path = result_path.with_name(f"{result_path.stem}.allocation.json")
+        identity = {
+            "schema_version": 1,
+            "run_id": self.run_identity.run_id,
+            "generation_family": self.run_identity.generation_family,
+            "candidate_identity": candidate.model_identity,
+            "baseline_identity": champion.model_identity,
+            "candidate_manifest": str(
+                (candidate.artifact_manifest or candidate.path).resolve()
+            ),
+            "baseline_manifest": str(
+                (champion.artifact_manifest or champion.path).resolve()
+            ),
+            "evaluation_contract": evaluation_contract(config),
+            "allocation_contract": allocation_contract(config),
+        }
+        evidence = {_persisted_pair_key(pair): pair for pair in accumulated}
+        state = self._load_resume_state(result_path, candidate, champion)
+        if state is not None:
+            expected_config = without_search_execution_defaults(
+                {"arena": asdict(config)}
+            )["arena"]
+            supplied_config = without_search_execution_defaults(
+                {"arena": state.get("config")}
+            )["arena"]
+            if isinstance(expected_config, dict) and isinstance(supplied_config, dict):
+                expected_config.pop("exact_clinch_termination", None)
+                supplied_config.pop("exact_clinch_termination", None)
+            if (
+                state.get("candidate") != candidate.model_version
+                or state.get("baseline") != champion.model_version
+                or json.dumps(expected_config, sort_keys=True)
+                != json.dumps(supplied_config, sort_keys=True)
+            ):
+                raise ValueError("adaptive allocation resume contract is incompatible")
+            grouped_games: dict[tuple[int, str, int], dict[int, ArenaGame]] = {}
+            entries = state.get("game_states")
+            if not isinstance(entries, list):
+                raise ValueError("adaptive allocation resume games are invalid")
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    raise ValueError("adaptive allocation resume game is invalid")
+                result = entry.get("result")
+                if result is None:
+                    continue
+                if not isinstance(result, dict):
+                    raise ValueError("adaptive allocation completed game is invalid")
+                game = ArenaGame(**result)
+                if any(
+                    entry.get(key) != getattr(game, key)
+                    for key in ("ring", "variant", "pair", "candidate_player")
+                ):
+                    raise ValueError("adaptive allocation resume game identity changed")
+                key = (game.ring, game.variant, game.pair)
+                seats = grouped_games.setdefault(key, {})
+                if game.candidate_player in seats:
+                    raise ValueError("adaptive allocation resume duplicates a seat")
+                seats[game.candidate_player] = game
+            for seats in grouped_games.values():
+                if set(seats) != {0, 1}:
+                    continue
+                first, second = seats[0], seats[1]
+                if any(
+                    getattr(first, key) != getattr(second, key)
+                    for key in ("opening_seed", "opening_action", "forced_opening")
+                ):
+                    raise ValueError("adaptive allocation resumed seats disagree")
+                pair = ArenaPair(
+                    ring=first.ring,
+                    pair=first.pair,
+                    opening_seed=first.opening_seed,
+                    opening_action=first.opening_action,
+                    forced_opening=first.forced_opening,
+                    outcomes=(first.outcome, second.outcome),
+                    variant=first.variant,
+                    segment=first.segment,
+                )
+                key = _persisted_pair_key(pair)
+                if key in evidence and evidence[key] != pair:
+                    raise ValueError(
+                        "adaptive allocation has conflicting durable pairs"
+                    )
+                evidence[key] = pair
+        history: list[dict[str, object]] = []
+        if path.exists():
+            if path.stat().st_size > _MAX_ADAPTIVE_ALLOCATION_BYTES:
+                raise ValueError("adaptive allocation history exceeds its size limit")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if (
+                not isinstance(payload, dict)
+                or set(payload) != {*identity, "plan_history"}
+                or any(payload.get(key) != value for key, value in identity.items())
+                or type(payload.get("schema_version")) is not int
+            ):
+                raise ValueError("adaptive allocation identity is incompatible")
+            records = payload.get("plan_history")
+            if not isinstance(records, list) or not records:
+                raise ValueError("adaptive allocation history is invalid")
+            prior = None
+            for index, record in enumerate(records):
+                if (
+                    not isinstance(record, dict)
+                    or type(record.get("plan_index")) is not int
+                    or record.get("plan_index") != index
+                    or not isinstance(record.get("decision_summary"), dict)
+                    or type(record.get("extra_handicap_pairs_total")) is not int
+                ):
+                    raise ValueError("adaptive allocation plan is invalid")
+                decision_pairs = self._pairs_from_result(
+                    {"pairs": record.get("decision_pairs")}
+                )
+                if (prior is None and decision_pairs) or (
+                    prior is not None
+                    and (
+                        not plan_complete(prior, decision_pairs, config)
+                        or len(decision_pairs)
+                        != sum(plan_targets(prior, config).values())
+                    )
+                ):
+                    raise ValueError(
+                        "adaptive allocation decision predates its completed plan"
+                    )
+                material = json.dumps(
+                    [asdict(pair) for pair in decision_pairs],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+                if record.get("decision_pairs_sha256") != hashlib.sha256(
+                    material
+                ).hexdigest() or any(
+                    evidence.get(_persisted_pair_key(pair)) != pair
+                    for pair in decision_pairs
+                ):
+                    raise ValueError(
+                        "adaptive allocation decision evidence is incompatible"
+                    )
+                recomputed_summary = summarize_completed_arena_pairs(
+                    decision_pairs,
+                    config,
+                    completed_allocation_targets=plan_targets(prior, config)
+                    if prior is not None
+                    else None,
+                )
+                if json.dumps(recomputed_summary, sort_keys=True) != json.dumps(
+                    record["decision_summary"], sort_keys=True
+                ):
+                    raise ValueError("adaptive allocation decision summary changed")
+                sticky_review = (
+                    prior is not None and prior.get("phase") == "handicap_review"
+                )
+                requested_review = record.get("phase") == "handicap_review"
+                prior_promotion = recomputed_summary.get("promotion")
+                if (
+                    requested_review
+                    and not sticky_review
+                    and (
+                        not isinstance(prior_promotion, dict)
+                        or prior_promotion.get("decision") != "promote"
+                    )
+                ):
+                    raise ValueError("adaptive review lacks its promotion trigger")
+                expected = next_allocation(
+                    config,
+                    previous_plan=prior,
+                    summary=record["decision_summary"],
+                    review_only=requested_review or sticky_review,
+                )
+                if expected is None and sticky_review and not requested_review:
+                    expected = next_allocation(
+                        config, previous_plan=prior, summary=record["decision_summary"]
+                    )
+                actual = {
+                    key: value
+                    for key, value in record.items()
+                    if key
+                    not in {
+                        "plan_index",
+                        "decision_summary",
+                        "decision_pairs",
+                        "decision_pairs_sha256",
+                    }
+                }
+                if expected != actual:
+                    raise ValueError(
+                        "adaptive allocation plan disagrees with its policy"
+                    )
+                plan_targets(record, config)
+                history.append(record)
+                prior = record
+        elif accumulated or (state is not None and state.get("game_states")):
+            raise ValueError("adaptive evidence is missing its durable allocation plan")
+        active = history[-1] if history else None
+        if active is not None:
+            targets = plan_targets(active, config)
+            for ring, category, index in evidence:
+                cell = f"r{ring}/{category}"
+                if cell not in targets or index >= targets[cell]:
+                    raise ValueError(
+                        "adaptive evidence exceeds its committed allocation"
+                    )
+            if state is not None:
+                entries = state.get("game_states")
+                assert isinstance(entries, list)
+                for entry in entries:
+                    if (
+                        type(entry.get("ring")) is not int
+                        or type(entry.get("pair")) is not int
+                        or entry["pair"] < 0
+                        or type(entry.get("candidate_player")) is not int
+                        or entry["candidate_player"] not in (0, 1)
+                    ):
+                        raise ValueError("adaptive resume allocation index is invalid")
+                    variant = GameVariant.parse(entry["variant"])
+                    name = variant_category(variant)
+                    cell = f"r{entry['ring']}/{name}"
+                    if cell not in targets or entry["pair"] >= targets[cell]:
+                        raise ValueError(
+                            "adaptive resume exceeds its committed allocation"
+                        )
+                    if (
+                        cell_variant(name, entry["pair"], config) != variant
+                        or type(entry.get("opening_seed")) is not int
+                        or entry["opening_seed"]
+                        != balanced_opening_seed(
+                            config.seed, entry["ring"], variant, entry["pair"]
+                        )
+                    ):
+                        raise ValueError(
+                            "adaptive resume disagrees with its seed schedule"
+                        )
+            if review_only and pending_suspected_review(active, accumulated, config):
+                return active
+            if review_only and not plan_complete(active, accumulated, config):
+                return None
+            if not review_only and not plan_complete(active, accumulated, config):
+                return active
+        decision_pairs = [
+            asdict(pair) for pair in sorted(accumulated, key=_persisted_pair_key)
+        ]
+        summary = summarize_completed_arena_pairs(
+            accumulated,
+            config,
+            completed_allocation_targets=plan_targets(active, config)
+            if active is not None
+            else None,
+        )
+        continue_review = (
+            active is not None and active.get("phase") == "handicap_review"
+        )
+        promotion_summary = summary.get("promotion")
+        if (
+            review_only
+            and not continue_review
+            and (
+                not isinstance(promotion_summary, dict)
+                or promotion_summary.get("decision") != "promote"
+            )
+        ):
+            return None
+        planned = next_allocation(
+            config,
+            previous_plan=active,
+            summary=summary,
+            review_only=review_only or continue_review,
+        )
+        if planned is None and continue_review and not review_only:
+            planned = next_allocation(
+                config, previous_plan=active, summary=summary, review_only=False
+            )
+        if planned is None:
+            return None
+        record = {
+            **planned,
+            "plan_index": len(history),
+            "decision_summary": summary,
+            "decision_pairs": decision_pairs,
+            "decision_pairs_sha256": hashlib.sha256(
+                json.dumps(
+                    decision_pairs, sort_keys=True, separators=(",", ":")
+                ).encode()
+            ).hexdigest(),
+        }
+        record = json.loads(json.dumps(record))
+        payload = {**identity, "plan_history": [*history, record]}
+        if (
+            len(
+                (
+                    json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+                ).encode()
+            )
+            > _MAX_ADAPTIVE_ALLOCATION_BYTES
+        ):
+            raise ValueError("adaptive allocation history exceeds its size limit")
+        atomic_json(path, payload)
+        return record
+
+    def _load_resume_state(
+        self,
+        result_path: Path,
+        candidate: ModelManifest,
+        baseline: ModelManifest,
+    ) -> dict[str, object] | None:
+        path = self._resume_path(result_path)
+        if not path.exists():
+            return None
+        if path.stat().st_size > 64 * 1024 * 1024:
+            raise ValueError("arena resume snapshot exceeds its size limit")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema_version") != 1
+            or payload.get("run_id") != self.run_identity.run_id
+            or payload.get("generation_family") != self.run_identity.generation_family
+            or payload.get("candidate_identity") != candidate.model_identity
+            or payload.get("baseline_identity") != baseline.model_identity
+            or not isinstance(payload.get("arena_state"), dict)
+        ):
+            raise ValueError("arena resume snapshot identity is incompatible")
+        return payload["arena_state"]
+
+    def _resume_writer(
+        self,
+        result_path: Path,
+        candidate: ModelManifest,
+        baseline: ModelManifest,
+    ) -> Callable[[dict[str, object]], None]:
+        def persist(state: dict[str, object]) -> None:
+            # ArenaRunner serializes callbacks under its snapshot lock. This
+            # lock also protects callers that checkpoint at session completion.
+            with self._resume_lock:
+                atomic_json(
+                    self._resume_path(result_path),
+                    {
+                        "schema_version": 1,
+                        "run_id": self.run_identity.run_id,
+                        "generation_family": self.run_identity.generation_family,
+                        "candidate_identity": candidate.model_identity,
+                        "baseline_identity": baseline.model_identity,
+                        "candidate_manifest": str(
+                            (candidate.artifact_manifest or candidate.path).resolve()
+                        ),
+                        "baseline_manifest": str(
+                            (baseline.artifact_manifest or baseline.path).resolve()
+                        ),
+                        "updated_ns": self.wall_clock_ns(),
+                        "arena_state": state,
+                    },
+                )
+
+        return persist
+
+    def _evaluation_started(
+        self,
+        candidate: ModelManifest,
+        champion: ModelManifest,
+        previous: dict[str, object] | None,
+    ) -> bool:
+        if self._pairs_from_result(previous):
+            return True
+        state = self._load_resume_state(
+            self._result_path(candidate, champion), candidate, champion
+        )
+        if state is None:
+            return False
+        progress = state.get("progress")
+        return isinstance(progress, Mapping) and any(
+            isinstance(progress.get(name), int) and int(progress[name]) > 0
+            for name in ("completed_games", "completed_pairs", "completed_moves")
+        )
+
+    def _has_ready_candidate(self) -> bool:
+        if not self.champion_path.is_file():
+            return False
+        champion = load_model_manifest(self.champion_path)
+        return any(
+            item.model_identity != champion.model_identity
+            and item.model_step >= champion.model_step
+            and not bool((self._read_result(item, champion) or {}).get("terminal"))
+            for item in self._candidate_manifests()
+        )
+
+    def _historical_cooldown_ready(self) -> bool:
+        if not self.historical_cooldown_path.is_file():
+            return True
+        payload = json.loads(self.historical_cooldown_path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema_version") != 1
+            or payload.get("run_id") != self.run_identity.run_id
+            or payload.get("generation_family") != self.run_identity.generation_family
+            or type(payload.get("not_before_ns")) is not int
+        ):
+            raise ValueError("historical cooldown is incompatible")
+        return self.wall_clock_ns() >= payload["not_before_ns"]
+
+    def _record_historical_cooldown(self, candidate: ModelManifest) -> None:
+        created = self.wall_clock_ns()
+        seconds = self.experiment.orchestration.historical_evaluation.cooldown_seconds
+        atomic_json(
+            self.historical_cooldown_path,
+            {
+                "schema_version": 1,
+                "run_id": self.run_identity.run_id,
+                "generation_family": self.run_identity.generation_family,
+                "candidate_identity": candidate.model_identity,
+                "created_ns": created,
+                "not_before_ns": created + int(seconds * 1_000_000_000),
+            },
+        )
+
+    def _session_event(
+        self,
+        *,
+        kind: str,
+        candidate: ModelManifest,
+        baseline: ModelManifest,
+        started: float,
+        reason: str,
+        result_path: Path,
+    ) -> None:
+        state = self._load_resume_state(result_path, candidate, baseline) or {}
+        append_jsonl(
+            self.session_events_path,
+            {
+                "schema_version": 1,
+                "timestamp_ns": self.wall_clock_ns(),
+                "event": "evaluation_session_finished",
+                "kind": kind,
+                "candidate_identity": candidate.model_identity,
+                "baseline_identity": baseline.model_identity,
+                "wall_seconds": max(0.0, self.clock() - started),
+                "reason": reason,
+                "progress": state.get("progress"),
+                "resume_path": str(self._resume_path(result_path)),
+            },
+            durable=True,
+        )
+
+    def _evaluate_historical_if_due(
+        self,
+        *,
+        champion: ModelManifest,
+        stop_requested: Callable[[], bool],
+        progress: Callable[..., None] | None,
+        once: bool,
+        kinds: frozenset[str] = frozenset({"measurement", "anchor"}),
+    ) -> int:
+        """Run one due crossplay plan whose kind is in ``kinds``.
+
+        Both measurement and anchor links are background work. Cooldown checks
+        never block the caller; newly ready candidates preempt a running slice.
+        """
+
+        configured = self.experiment.orchestration.historical_evaluation
+        if (
+            not configured.enabled
+            or stop_requested()
+            or self._has_ready_candidate()
+            or not self._historical_cooldown_ready()
+        ):
+            return 0
+        manifests = load_historical_manifests(
+            self.manifest_directory,
+            run_identity=self.run_identity,
+        )
+        manifests[champion.model_identity] = champion
+        arena_results = load_arena_results(self.results_directory)
+        strength_contract: dict[str, object] = {}
+        if self.experiment.arena.balanced_cells:
+            from .balanced_evaluation import evaluation_contract
+
+            strength_contract = evaluation_contract(self._historical_arena_config())
+            # Screen evidence can establish champion transitions, but only
+            # matching strength-budget crossplay can resume a ladder edge.
+            arena_results = [
+                (path, result)
+                for path, result in arena_results
+                if result.get("result_kind") != HISTORICAL_CROSSPLAY_RESULT_KIND
+                or result.get("evaluation_contract") == strength_contract
+            ]
+        plan = select_historical_evaluation(
+            config=configured,
+            champion=champion,
+            manifests=manifests,
+            arena_results=arena_results,
+            results_directory=self.results_directory,
+        )
+        if plan is None or plan.kind not in kinds:
+            return 0
+        if self.experiment.arena.balanced_cells and plan.previous is None:
+            identity = str(strength_contract["identity"]).removeprefix("sha256-")[:16]
+            plan = replace(
+                plan,
+                result_path=plan.result_path.with_name(
+                    f"{plan.result_path.stem}-{identity}.json"
+                ),
+            )
+        with self._gpu_pause(
+            stop_requested=stop_requested,
+            progress=progress,
+            candidate_identity=plan.candidate.model_identity,
+        ):
+            started = self.clock()
+            deadline = started + configured.session_seconds
+            reason = "completed"
+            next_candidate_check = started
+
+            def stop_slice() -> bool:
+                nonlocal reason, next_candidate_check
+                if reason != "completed":
+                    return True
+                if stop_requested():
+                    reason = "shutdown"
+                    return True
+                now = self.clock()
+                if self.experiment.arena.balanced_cells and now >= deadline:
+                    reason = "time_budget"
+                    return True
+                if now >= next_candidate_check:
+                    next_candidate_check = now + min(
+                        10.0, self.experiment.orchestration.promotion.poll_seconds
+                    )
+                    if self._has_ready_candidate():
+                        reason = "candidate_ready"
+                        return True
+                return False
+
+            try:
+                return self._evaluate_historical_waves(
+                    candidate=plan.candidate,
+                    baseline=plan.baseline,
+                    result_path=plan.result_path,
+                    previous=plan.previous,
+                    stop_requested=stop_slice,
+                    progress=progress,
+                    once=True,
+                    yield_to_candidates=True,
+                    crossplay_kind=plan.kind,
+                )
+            finally:
+                self._record_historical_cooldown(plan.candidate)
+                self._session_event(
+                    kind=plan.kind,
+                    candidate=plan.candidate,
+                    baseline=plan.baseline,
+                    started=started,
+                    reason=reason,
+                    result_path=plan.result_path,
+                )
+
+    def _historical_arena_config(self) -> ArenaConfig:
+        configured = self.experiment.orchestration.historical_evaluation
+        simulations, max_considered = configured.search_budget(self.experiment.arena)
+        if self.experiment.arena.balanced_cells:
+            simulations = self.experiment.arena.strength_simulations
+        return replace(
+            self.experiment.arena,
+            allocation_policy="equal_cells",
+            pairs_per_ring=configured.pairs_per_ring,
+            minimum_pairs_per_ring=configured.max_pairs_per_ring,
+            max_pairs_per_ring=configured.max_pairs_per_ring,
+            simulations=simulations,
+            max_considered=max_considered,
+            promotion_pair_ratios={},
+            required_regression_rings=None,
+            weighted_initial_blocks=0,
+            weighted_continuation_blocks=0,
+            weighted_max_blocks=0,
+        )
+
+    def _evaluate_historical_waves(
+        self,
+        *,
+        candidate: ModelManifest,
+        baseline: ModelManifest,
+        result_path: Path,
+        previous: dict[str, object] | None,
+        stop_requested: Callable[[], bool],
+        progress: Callable[..., None] | None,
+        once: bool,
+        yield_to_candidates: bool = True,
+        crossplay_kind: str = "anchor",
+    ) -> int:
+        configured = self.experiment.orchestration.historical_evaluation
+        material = (
+            f"historical-crossplay-v1\0{self.experiment.arena.seed}\0"
+            f"{candidate.model_identity}\0{baseline.model_identity}"
+        ).encode("utf-8")
+        seed = int.from_bytes(hashlib.sha256(material).digest()[:8], "big")
+        arena_config = replace(self._historical_arena_config(), seed=seed)
+        if previous is not None and arena_config.balanced_cells:
+            from .balanced_evaluation import evaluation_contract
+
+            if previous.get("evaluation_contract") != evaluation_contract(arena_config):
+                raise ValueError(
+                    "historical evaluation contract changed across continuation"
+                )
+        accumulated = self._pairs_from_result(previous)
+        resume_state = self._load_resume_state(result_path, candidate, baseline)
+        checkpoint = self._resume_writer(result_path, candidate, baseline)
+        candidate_evaluator = load_manifest_evaluator(
+            self.experiment, candidate, device=self.device
+        )
+        try:
+            baseline_evaluator = load_manifest_evaluator(
+                self.experiment, baseline, device=self.device
+            )
+            try:
+                runner = ArenaRunner(
+                    native_module=self.native,
+                    candidate=candidate_evaluator,
+                    baseline=baseline_evaluator,
+                    config=arena_config,
+                    stable_pair_seeds=arena_config.balanced_cells,
+                )
+                waves = 0
+                previous_result = previous
+                while not stop_requested():
+                    if yield_to_candidates and self._has_ready_candidate():
+                        return waves
+                    starts = {
+                        ring: (
+                            max(
+                                (
+                                    pair.pair
+                                    for pair in accumulated
+                                    if pair.ring == ring
+                                ),
+                                default=-1,
+                            )
+                            + 1
+                        )
+                        for ring in arena_config.rings
+                    }
+                    if arena_config.balanced_cells:
+                        starts, counts = _balanced_round_plan(accumulated, arena_config)
+                    else:
+                        counts = {
+                            ring: min(
+                                configured.pairs_per_ring,
+                                configured.max_pairs_per_ring
+                                - sum(pair.ring == ring for pair in accumulated),
+                            )
+                            for ring in arena_config.rings
+                        }
+                    if all(count <= 0 for count in counts.values()):
+                        return waves
+                    if progress is not None:
+                        progress(
+                            phase="historical_crossplay",
+                            crossplay_kind=crossplay_kind,
+                            candidate_step=candidate.model_step,
+                            baseline_step=baseline.model_step,
+                            pairs=len(accumulated),
+                            simulations=arena_config.simulations,
+                        )
+                    started = time.perf_counter()
+                    result = runner.run(
+                        progress=progress,
+                        pair_starts=starts,
+                        pair_counts=counts,
+                        stop_requested=stop_requested,
+                        **(
+                            {
+                                "previous_pairs": accumulated,
+                                "resume_state": resume_state,
+                                "checkpoint": checkpoint,
+                            }
+                            if arena_config.balanced_cells
+                            else {}
+                        ),
+                    )
+                    saved = result.pop("resume_state", None)
+                    if isinstance(saved, dict):
+                        resume_state = saved
+                        checkpoint(saved)
+                    completed = self._pairs_from_result(result)
+                    if not completed:
+                        if not stop_requested():
+                            raise RuntimeError(
+                                "historical arena completed no role-reversed pairs"
+                            )
+                    unique = {_persisted_pair_key(pair): pair for pair in accumulated}
+                    for pair in completed:
+                        key = _persisted_pair_key(pair)
+                        existing = unique.get(key)
+                        if existing is not None and existing != pair:
+                            raise ValueError(
+                                "historical evaluation changed a persisted pair"
+                            )
+                        unique[key] = pair
+                    accumulated[:] = [unique[key] for key in sorted(unique)]
+                    result["schema_version"] = ARENA_RESULT_SCHEMA_VERSION
+                    result["pairs"] = [asdict(pair) for pair in accumulated]
+                    if accumulated or arena_config.balanced_cells:
+                        result.update(
+                            summarize_completed_arena_pairs(accumulated, arena_config)
+                        )
+                    if previous_result is not None:
+                        old_games = previous_result.get("games", [])
+                        new_games = result.get("games", [])
+                        if not isinstance(old_games, list) or not isinstance(
+                            new_games, list
+                        ):
+                            raise ValueError(
+                                "persisted historical arena games are invalid"
+                            )
+                        result["games"] = _merge_game_records(old_games, new_games)
+                    result["result_kind"] = HISTORICAL_CROSSPLAY_RESULT_KIND
+                    result["crossplay_kind"] = crossplay_kind
+                    result["candidate_manifest"] = str(
+                        (candidate.artifact_manifest or candidate.path).resolve()
+                    )
+                    result["baseline_manifest"] = str(
+                        (baseline.artifact_manifest or baseline.path).resolve()
+                    )
+                    result["arena_seed_block"] = arena_config.seed
+                    metrics = result.get("evaluation_metrics")
+                    if not isinstance(metrics, dict):
+                        metrics = {}
+                        result["evaluation_metrics"] = metrics
+                    metrics["round_wall_seconds"] = time.perf_counter() - started
+                    terminal = all(
+                        (
+                            completed_counts_by_ring(accumulated, arena_config)[ring]
+                            if arena_config.balanced_cells
+                            else sum(pair.ring == ring for pair in accumulated)
+                        )
+                        >= configured.max_pairs_per_ring
+                        for ring in arena_config.rings
+                    )
+                    assessment = result.get("promotion")
+                    if isinstance(assessment, dict):
+                        assessment["decision"] = "evaluation"
+                    result["terminal"] = terminal
+                    atomic_json(result_path, result)
+                    previous_result = result
+                    waves += 1
+                    if terminal or once or stop_requested():
+                        return waves
+                return waves
+            finally:
+                del baseline_evaluator
+        finally:
+            del candidate_evaluator
+            synchronize_device(self.device)
+            empty_device_cache(self.device)
+
+    def _evaluate_candidate_session(
+        self,
+        *,
+        candidate: ModelManifest,
+        champion: ModelManifest,
+        previous: dict[str, object] | None,
+        stop_requested: Callable[[], bool],
+        progress: Callable[..., None] | None,
+        once: bool,
+    ) -> tuple[int, str]:
+        if not self._wait_between_leases(
+            candidate=candidate,
+            champion=champion,
+            stop_requested=stop_requested,
+            progress=progress,
+        ):
+            return 0, "stopped"
+        accumulated = self._pairs_from_result(previous)
+        newer = self._newer_candidate(candidate, champion)
+        if newer is not None and not (
+            self.experiment.orchestration.promotion.finish_inflight_candidate
+            and self._evaluation_started(candidate, champion, previous)
+        ):
+            marked = self._mark_superseded(
+                candidate,
+                champion,
+                superseded_by=newer,
+            )
+            if marked and progress is not None:
+                progress(
+                    phase="candidate_superseded",
+                    candidate_step=candidate.model_step,
+                    superseded_by_step=newer.model_step,
+                )
+            return 0, "superseded"
+
+        if self.experiment.arena.allocation_policy == "adaptive_pie":
+            exhausted = (
+                self._adaptive_allocation(candidate, champion, accumulated) is None
+            )
+        else:
+            _, counts = self._wave_plan(accumulated)
+            exhausted = all(count <= 0 for count in counts.values())
+        if exhausted:
+            if previous is None:
+                raise ValueError("max-pair promotion result is missing")
+            self._reject_max_pairs(
+                candidate=candidate,
+                champion=champion,
+                result=previous,
+                progress=progress,
+            )
+            return 0, "terminal"
+        if stop_requested():
+            return 0, "stopped"
+
+        with self._gpu_pause(
+            stop_requested=stop_requested,
+            progress=progress,
+            candidate_identity=candidate.model_identity,
+        ):
+            started = self.clock()
+            deadline = started + self.experiment.orchestration.promotion.session_seconds
+            expired = False
+
+            def stop_slice() -> bool:
+                nonlocal expired
+                if stop_requested():
+                    return True
+                # Legacy arenas use wave-dependent seeds and can only resume
+                # complete pairs. Keep their existing wave lease boundary.
+                expired = (
+                    self.experiment.arena.balanced_cells and self.clock() >= deadline
+                )
+                return expired
+
+            result = (0, "failed")
+            try:
+                result = self._evaluate_waves(
+                    candidate=candidate,
+                    champion=champion,
+                    previous=previous,
+                    accumulated=accumulated,
+                    stop_requested=stop_slice,
+                    progress=progress,
+                    once=once,
+                )
+                if expired and not stop_requested() and result[1] == "stopped":
+                    result = (result[0], "lease_yield")
+            finally:
+                self._session_event(
+                    kind="promotion",
+                    candidate=candidate,
+                    baseline=champion,
+                    started=started,
+                    reason="time_budget" if expired else result[1],
+                    result_path=self._result_path(candidate, champion),
+                )
+        if result[1] == "lease_yield":
+            self._record_inter_wave_cooldown(candidate)
+        return result
+
+    def _evaluate_waves(
+        self,
+        *,
+        candidate: ModelManifest,
+        champion: ModelManifest,
+        previous: dict[str, object] | None,
+        accumulated: list[ArenaPair],
+        stop_requested: Callable[[], bool],
+        progress: Callable[..., None] | None,
+        once: bool,
+    ) -> tuple[int, str]:
+        session_started = time.perf_counter()
+        metric_device = torch.device(self.device)
+        collect_cuda_metrics = (
+            metric_device.type == "cuda" and torch.cuda.is_available()
+        )
+        reset_peak_memory_stats(metric_device)
+        arena_config = self._arena_config(candidate, champion)
+        result_path = self._result_path(candidate, champion)
+        resume_state = self._load_resume_state(result_path, candidate, champion)
+        checkpoint = self._resume_writer(result_path, candidate, champion)
+        if progress is not None:
+            progress(
+                phase="arena",
+                candidate_step=candidate.model_step,
+                champion_step=champion.model_step,
+            )
+            progress(
+                phase="arena_loading_candidate",
+                candidate_step=candidate.model_step,
+                champion_step=champion.model_step,
+            )
+        candidate_evaluator = load_manifest_evaluator(
+            self.experiment, candidate, device=self.device
+        )
+        try:
+            if stop_requested():
+                return 0, "stopped"
+            if progress is not None:
+                progress(
+                    phase="arena_loading_champion",
+                    candidate_step=candidate.model_step,
+                    champion_step=champion.model_step,
+                )
+            champion_evaluator = load_manifest_evaluator(
+                self.experiment, champion, device=self.device
+            )
+            runner: ArenaRunner | None = None
+            try:
+                runner = ArenaRunner(
+                    native_module=self.native,
+                    candidate=candidate_evaluator,
+                    baseline=champion_evaluator,
+                    config=arena_config,
+                    stable_pair_seeds=arena_config.balanced_cells,
+                )
+                waves = 0
+                previous_result = previous
+                while True:
+                    if stop_requested():
+                        return waves, "stopped"
+                    newer = self._newer_candidate(candidate, champion)
+                    if newer is not None and not (
+                        self.experiment.orchestration.promotion.finish_inflight_candidate
+                        and self._evaluation_started(
+                            candidate, champion, previous_result
+                        )
+                    ):
+                        marked = self._mark_superseded(
+                            candidate,
+                            champion,
+                            superseded_by=newer,
+                        )
+                        if marked and progress is not None:
+                            progress(
+                                phase="candidate_superseded",
+                                candidate_step=candidate.model_step,
+                                superseded_by_step=newer.model_step,
+                            )
+                        return waves, "superseded"
+                    allocation = None
+                    cell_targets = None
+                    if arena_config.allocation_policy == "adaptive_pie":
+                        allocation = self._adaptive_allocation(
+                            candidate, champion, accumulated
+                        )
+                        if allocation is not None:
+                            cell_targets = plan_targets(allocation, arena_config)
+                        starts = dict.fromkeys(arena_config.rings, 0)
+                        counts = {
+                            ring: max(
+                                (
+                                    target
+                                    for cell, target in (cell_targets or {}).items()
+                                    if cell.startswith(f"r{ring}/")
+                                ),
+                                default=0,
+                            )
+                            for ring in arena_config.rings
+                        }
+                    else:
+                        starts, counts = self._wave_plan(accumulated)
+                    if all(count <= 0 for count in counts.values()):
+                        if previous_result is None:
+                            raise ValueError("max-pair promotion result is missing")
+                        self._reject_max_pairs(
+                            candidate=candidate,
+                            champion=champion,
+                            result=previous_result,
+                            progress=progress,
+                        )
+                        return waves, "terminal"
+                    if progress is not None:
+                        progress(
+                            phase="arena_search_start",
+                            candidate_step=candidate.model_step,
+                            champion_step=champion.model_step,
+                        )
+                    wave_started = (
+                        session_started if waves == 0 else time.perf_counter()
+                    )
+                    persisted_chunk = False
+                    pair_ratios = arena_config.promotion_pair_ratios
+                    chunks = (
+                        [(starts, counts)]
+                        if cell_targets is not None
+                        else self._pair_chunks(
+                            starts,
+                            counts,
+                            chunk_size=(
+                                arena_config.pair_chunk_size
+                                or max(counts.values(), default=1)
+                            ),
+                            pair_ratios=pair_ratios,
+                            existing_counts=self._ring_pair_counts(accumulated),
+                        )
+                    )
+                    for chunk_starts, chunk_counts in chunks:
+                        if stop_requested():
+                            return waves + int(persisted_chunk), "stopped"
+                        chunk_started = (
+                            wave_started if not persisted_chunk else time.perf_counter()
+                        )
+                        result = runner.run(
+                            progress=progress,
+                            **(
+                                {"cell_pair_targets": cell_targets}
+                                if cell_targets is not None
+                                else {
+                                    "pair_starts": chunk_starts,
+                                    "pair_counts": chunk_counts,
+                                }
+                            ),
+                            stop_requested=stop_requested,
+                            **(
+                                {
+                                    "previous_pairs": accumulated,
+                                    "resume_state": resume_state,
+                                    "checkpoint": checkpoint,
+                                }
+                                if arena_config.balanced_cells
+                                else {}
+                            ),
+                        )
+                        saved = result.pop("resume_state", None)
+                        if isinstance(saved, dict):
+                            resume_state = saved
+                            checkpoint(saved)
+                        completed = self._pairs_from_result(result)
+                        if not completed:
+                            if not stop_requested():
+                                raise RuntimeError(
+                                    "promotion arena completed no role-reversed pairs"
+                                )
+                        decision, terminal = self._persist_wave(
+                            candidate=candidate,
+                            champion=champion,
+                            previous=previous_result,
+                            accumulated=accumulated,
+                            result=result,
+                            arena_config=arena_config,
+                            round_started=chunk_started,
+                            metric_device=metric_device,
+                            collect_cuda_metrics=collect_cuda_metrics,
+                            progress=progress,
+                            wave_index=waves,
+                            pair_starts=chunk_starts,
+                            pair_counts=chunk_counts,
+                            cell_pair_targets=cell_targets,
+                            allocation_plan=allocation,
+                        )
+                        persisted_chunk = True
+                        previous_result = result
+                        if terminal:
+                            return waves + 1, "terminal"
+                        if stop_requested():
+                            return waves + 1, "stopped"
+                    waves += 1
+                    if once:
+                        return waves, "once"
+                    max_waves = (
+                        self.experiment.orchestration.promotion.max_waves_per_lease
+                    )
+                    if max_waves is not None and waves >= max_waves:
+                        return waves, "lease_yield"
+            finally:
+                del runner
+                del champion_evaluator
+        finally:
+            del candidate_evaluator
+            if collect_cuda_metrics:
+                torch.cuda.synchronize(metric_device)
+                torch.cuda.empty_cache()
+
+    def _persist_wave(
+        self,
+        *,
+        candidate: ModelManifest,
+        champion: ModelManifest,
+        previous: dict[str, object] | None,
+        accumulated: list[ArenaPair],
+        result: dict[str, object],
+        arena_config: ArenaConfig,
+        round_started: float,
+        metric_device: torch.device,
+        collect_cuda_metrics: bool,
+        progress: Callable[..., None] | None,
+        wave_index: int,
+        pair_starts: Mapping[int, int],
+        pair_counts: Mapping[int, int],
+        cell_pair_targets: Mapping[str, int] | None = None,
+        allocation_plan: Mapping[str, object] | None = None,
+    ) -> tuple[str, bool]:
+        if arena_config.balanced_cells:
+            from .balanced_evaluation import evaluation_contract
+
+            expected_contract = evaluation_contract(arena_config)
+            if result.get("evaluation_contract") != expected_contract or (
+                previous is not None
+                and previous.get("evaluation_contract") != expected_contract
+            ):
+                raise ValueError("cannot merge different balanced evaluation contracts")
+        synchronize_device(metric_device)
+        completed_pairs = self._pairs_from_result(result)
+        evaluation_metrics = result.get("evaluation_metrics")
+        if evaluation_metrics is None:
+            evaluation_metrics = {}
+            result["evaluation_metrics"] = evaluation_metrics
+        elif not isinstance(evaluation_metrics, dict):
+            raise ValueError("arena result evaluator metrics are invalid")
+        evaluation_metrics["round_wall_seconds"] = time.perf_counter() - round_started
+        peak_allocated, peak_reserved = peak_memory_stats(metric_device)
+        evaluation_metrics["peak_cuda_allocated_bytes"] = (
+            peak_allocated if collect_cuda_metrics else None
+        )
+        evaluation_metrics["peak_cuda_reserved_bytes"] = (
+            peak_reserved if collect_cuda_metrics else None
+        )
+        finished = {_persisted_pair_key(pair) for pair in accumulated}
+        if cell_pair_targets is not None:
+            evaluation_metrics["requested_pairs"] = sum(
+                (int(cell.split("/", 1)[0][1:]), cell.split("/", 1)[1], index)
+                not in finished
+                for cell, target in cell_pair_targets.items()
+                for index in range(target)
+            )
+        elif arena_config.balanced_cells:
+            from .balanced_evaluation import balanced_categories
+
+            evaluation_metrics["requested_pairs"] = sum(
+                (ring, name, index) not in finished
+                for ring in arena_config.rings
+                for index in range(
+                    int(pair_starts.get(ring, 0)),
+                    int(pair_starts.get(ring, 0)) + int(pair_counts.get(ring, 0)),
+                )
+                for name in balanced_categories(arena_config, ring)
+            )
+        else:
+            evaluation_metrics["requested_pairs"] = sum(pair_counts.values())
+        evaluation_metrics["completed_pairs"] = len(completed_pairs)
+        previous_history = (
+            previous.get("wave_history", []) if previous is not None else []
+        )
+        if not isinstance(previous_history, list) or not all(
+            isinstance(item, dict) for item in previous_history
+        ):
+            raise ValueError("persisted arena wave history is invalid")
+        if previous is not None and not previous_history:
+            legacy_pairs = self._pairs_from_result(previous)
+            if legacy_pairs:
+                previous_history = [
+                    {
+                        "schema_version": 0,
+                        "wave_index": 0,
+                        "phase": "legacy",
+                        "pair_counts": {
+                            str(ring): sum(pair.ring == ring for pair in legacy_pairs)
+                            for ring in self.experiment.arena.rings
+                        },
+                    }
+                ]
+        pair_ratios = arena_config.promotion_pair_ratios
+        existing_pair_counts = self._ring_pair_counts(accumulated)
+        weighted_metadata: dict[str, object] = {}
+        if pair_ratios:
+            complete_blocks_before = self._complete_blocks(
+                existing_pair_counts,
+                pair_ratios,
+            )
+            requested_pair_counts = {
+                ring: existing_pair_counts[ring] + int(pair_counts.get(ring, 0))
+                for ring in arena_config.rings
+            }
+            complete_blocks_target = self._complete_blocks(
+                requested_pair_counts,
+                pair_ratios,
+            )
+            phase = (
+                "initial"
+                if complete_blocks_before < arena_config.weighted_initial_blocks
+                else "continuation"
+            )
+            weighted_metadata = {
+                "allocation_mode": "weighted_complete_blocks",
+                "pair_ratios": {
+                    str(ring): int(pair_ratios[ring]) for ring in arena_config.rings
+                },
+                "complete_blocks_before": complete_blocks_before,
+                "target_complete_blocks": complete_blocks_target,
+                "pair_counts_before": {
+                    str(ring): existing_pair_counts[ring] for ring in arena_config.rings
+                },
+                "pair_count_targets": {
+                    str(ring): complete_blocks_target * int(pair_ratios[ring])
+                    for ring in arena_config.rings
+                },
+                "pair_deficits": {
+                    str(ring): int(pair_counts.get(ring, 0))
+                    for ring in arena_config.rings
+                },
+                "pair_counts_completed": {
+                    str(ring): sum(pair.ring == ring for pair in completed_pairs)
+                    for ring in arena_config.rings
+                },
+            }
+        else:
+            phase = (
+                "initial"
+                if any(
+                    pair_starts.get(ring, 0)
+                    < self.experiment.arena.minimum_pairs_per_ring
+                    for ring in self.experiment.arena.rings
+                )
+                else "continuation"
+            )
+        wave_plan = {
+            "schema_version": 1,
+            "wave_index": len(previous_history),
+            "lease_wave_index": wave_index,
+            "phase": phase,
+            "pair_starts": {
+                str(ring): int(pair_starts.get(ring, 0))
+                for ring in self.experiment.arena.rings
+            },
+            "pair_counts": {
+                str(ring): int(pair_counts.get(ring, 0))
+                for ring in self.experiment.arena.rings
+            },
+            **weighted_metadata,
+        }
+        if cell_pair_targets is not None:
+            prefixes = cell_pair_prefixes(accumulated, arena_config)
+            wave_plan.update(
+                {
+                    "allocation_policy": "adaptive_pie",
+                    "phase": (allocation_plan or {}).get("phase", "continuation"),
+                    "allocation_plan_index": (allocation_plan or {}).get("plan_index"),
+                    "cell_pair_starts": prefixes,
+                    "cell_pair_targets": dict(cell_pair_targets),
+                    "cell_pair_deficits": {
+                        cell: sum(
+                            (
+                                int(cell.split("/", 1)[0][1:]),
+                                cell.split("/", 1)[1],
+                                index,
+                            )
+                            not in finished
+                            for index in range(target)
+                        )
+                        for cell, target in cell_pair_targets.items()
+                    },
+                    "extra_handicap_check": (allocation_plan or {}).get(
+                        "extra_handicap_check"
+                    ),
+                    "extra_handicap_pairs_total": (allocation_plan or {}).get(
+                        "extra_handicap_pairs_total", 0
+                    ),
+                }
+            )
+        result["wave_plan"] = wave_plan
+        result["wave_history"] = [*previous_history, wave_plan]
+        result["arena_seed_block"] = arena_config.seed
+        unique = {_persisted_pair_key(pair): pair for pair in accumulated}
+        for pair in completed_pairs:
+            key = _persisted_pair_key(pair)
+            existing = unique.get(key)
+            if existing is not None and existing != pair:
+                raise ValueError("arena wave changed a persisted pair")
+            unique[key] = pair
+        accumulated[:] = [unique[key] for key in sorted(unique)]
+        if pair_ratios:
+            pair_counts_after = self._ring_pair_counts(accumulated)
+            wave_plan["complete_blocks_after"] = self._complete_blocks(
+                pair_counts_after,
+                pair_ratios,
+            )
+            wave_plan["pair_counts_after"] = {
+                str(ring): pair_counts_after[ring] for ring in arena_config.rings
+            }
+        result["schema_version"] = ARENA_RESULT_SCHEMA_VERSION
+        result["pairs"] = [asdict(pair) for pair in accumulated]
+        if accumulated or arena_config.balanced_cells:
+            if arena_config.allocation_policy == "adaptive_pie":
+                if allocation_plan is None:
+                    raise ValueError(
+                        "adaptive promotion is missing its committed allocation"
+                    )
+                if plan_complete(allocation_plan, accumulated, arena_config):
+                    completed_targets = plan_targets(allocation_plan, arena_config)
+                else:
+                    previous_boundary = self._pairs_from_result(
+                        {"pairs": allocation_plan.get("decision_pairs")}
+                    )
+                    completed_targets = (
+                        cell_pair_prefixes(previous_boundary, arena_config)
+                        if previous_boundary
+                        else None
+                    )
+                result.update(
+                    summarize_completed_arena_pairs(
+                        accumulated,
+                        arena_config,
+                        completed_allocation_targets=completed_targets,
+                    )
+                )
+            else:
+                result.update(
+                    summarize_completed_arena_pairs(accumulated, arena_config)
+                )
+        if previous is not None:
+            previous_games = previous.get("games", [])
+            result_games = result.get("games", [])
+            if not isinstance(previous_games, list) or not isinstance(
+                result_games, list
+            ):
+                raise ValueError("persisted arena games are invalid")
+            result["games"] = _merge_game_records(previous_games, result_games)
+        self._annotate_result(result, candidate, champion)
+        max_reached = self._max_allocation_reached(accumulated)
+        promotion_result = result.get("promotion")
+        if not isinstance(promotion_result, dict) or not isinstance(
+            promotion_result.get("decision"), str
+        ):
+            raise ValueError("arena result promotion is invalid")
+        decision = promotion_result["decision"]
+        if arena_config.allocation_policy == "adaptive_pie":
+            result["sampling_allocation"] = allocation_metrics(
+                accumulated, arena_config
+            )
+            if allocation_plan is None:
+                raise ValueError(
+                    "adaptive promotion is missing its committed allocation"
+                )
+            allocation_complete = plan_complete(
+                allocation_plan, accumulated, arena_config
+            )
+            promotion_result["allocation_boundary_complete"] = allocation_complete
+            if decision in {"promote", "reject"} and not allocation_complete:
+                promotion_result["provisional_global_decision"] = decision
+                promotion_result["decision"] = "continue"
+                promotion_result["deferred_until_allocation_complete"] = True
+                decision = "continue"
+            if decision == "promote" and allocation_complete:
+                review = self._adaptive_allocation(
+                    candidate, champion, accumulated, review_only=True
+                )
+                if review is not None:
+                    decision = "continue"
+                    promotion_result["decision"] = decision
+                    promotion_result["deferred_for_handicap_review"] = {
+                        "allocation_plan_index": review["plan_index"],
+                        "cell_pair_targets": review["cell_pair_targets"],
+                        "extra_handicap_check": review["extra_handicap_check"],
+                    }
+        if decision == "continue" and max_reached:
+            decision = "reject_max_pairs"
+            promotion_result["decision"] = decision
+        terminal = decision != "continue"
+        result["terminal"] = terminal
+        result["conclusive"] = decision_is_conclusive(decision, terminal=terminal)
+        result_path = self._result_path(candidate, champion)
+        atomic_json(result_path, result)
+        if decision == "promote":
+            write_model_pointer(
+                self.champion_path,
+                candidate,
+                role="champion",
+                promotion_result=str(result_path.resolve()),
+            )
+            if progress is not None:
+                progress(
+                    phase="promoted",
+                    model_identity=candidate.model_identity,
+                    model_step=candidate.model_step,
+                )
+        elif progress is not None:
+            progress(
+                phase="arena_terminal" if terminal else "arena_continue",
+                model_identity=candidate.model_identity,
+                decision=decision,
+                pairs=len(accumulated),
+            )
+        self._write_status(
+            candidate=candidate,
+            champion=(candidate if decision == "promote" else champion),
+            decision=decision,
+            terminal=terminal,
+        )
+        retention = self.experiment.orchestration.retention
+        if terminal and retention.enabled:
+            gc_metrics = collect_model_garbage(
+                self.candidate_path.parent,
+                retain_candidate_manifests=(retention.candidate_manifests),
+                dry_run=retention.dry_run,
+                referenced_result_directory=self.results_directory,
+            )
+            result["gc"] = gc_metrics
+            atomic_json(result_path, result)
+            if progress is not None:
+                progress(phase="model_gc", **gc_metrics)
+        return decision, terminal
+
+    @staticmethod
+    def _pair_chunks(
+        starts: Mapping[int, int],
+        counts: Mapping[int, int],
+        *,
+        chunk_size: int,
+        pair_ratios: Mapping[int, int] | None = None,
+        existing_counts: Mapping[int, int] | None = None,
+    ) -> list[tuple[dict[int, int], dict[int, int]]]:
+        maximum = max(counts.values(), default=0)
+        legacy_chunks = [
+            (
+                {ring: int(start) + offset for ring, start in starts.items()},
+                {
+                    ring: min(chunk_size, max(0, int(count) - offset))
+                    for ring, count in counts.items()
+                },
+            )
+            for offset in range(0, maximum, chunk_size)
+        ]
+        if not pair_ratios or maximum <= chunk_size:
+            return legacy_chunks
+
+        current_counts = {
+            ring: int((existing_counts or {}).get(ring, 0)) for ring in starts
+        }
+        complete_blocks_before = PromotionSupervisor._complete_blocks(
+            current_counts,
+            pair_ratios,
+        )
+        final_counts = {
+            ring: current_counts[ring] + max(0, int(counts.get(ring, 0)))
+            for ring in starts
+        }
+        complete_blocks_target = PromotionSupervisor._complete_blocks(
+            final_counts,
+            pair_ratios,
+        )
+        if complete_blocks_target <= complete_blocks_before:
+            return legacy_chunks
+
+        # A weighted persistence boundary must finish whole macro blocks. Treat
+        # a single ratio block as atomic even when it exceeds pair_chunk_size.
+        blocks_per_chunk = max(1, chunk_size // max(pair_ratios.values()))
+        scheduled = {ring: 0 for ring in starts}
+        chunks: list[tuple[dict[int, int], dict[int, int]]] = []
+        chunk_target = complete_blocks_before
+        while chunk_target < complete_blocks_target:
+            chunk_target = min(
+                complete_blocks_target,
+                chunk_target + blocks_per_chunk,
+            )
+            chunk_counts = {}
+            for ring in starts:
+                running = current_counts[ring] + scheduled[ring]
+                remaining = max(0, int(counts.get(ring, 0)) - scheduled[ring])
+                needed = max(0, chunk_target * int(pair_ratios[ring]) - running)
+                chunk_counts[ring] = min(remaining, needed)
+            if not any(chunk_counts.values()):
+                break
+            chunks.append(
+                (
+                    {ring: int(starts[ring]) + scheduled[ring] for ring in starts},
+                    chunk_counts,
+                )
+            )
+            for ring, count in chunk_counts.items():
+                scheduled[ring] += count
+
+        remaining_counts = {
+            ring: max(0, int(counts.get(ring, 0)) - scheduled[ring]) for ring in starts
+        }
+        if any(remaining_counts.values()):
+            chunks.append(
+                (
+                    {ring: int(starts[ring]) + scheduled[ring] for ring in starts},
+                    remaining_counts,
+                )
+            )
+        return chunks
+
+    def _ring_pair_counts(
+        self,
+        accumulated: list[ArenaPair],
+    ) -> dict[int, int]:
+        if self.experiment.arena.balanced_cells:
+            return completed_counts_by_ring(accumulated, self.experiment.arena)
+        return {
+            ring: sum(
+                pair.ring == ring and pair.segment == "standard" for pair in accumulated
+            )
+            for ring in self.experiment.arena.rings
+        }
+
+    @staticmethod
+    def _complete_blocks(
+        pair_counts: Mapping[int, int],
+        pair_ratios: Mapping[int, int],
+    ) -> int:
+        return min(
+            (
+                int(pair_counts.get(ring, 0)) // int(ratio)
+                for ring, ratio in pair_ratios.items()
+            ),
+            default=0,
+        )
+
+    def _max_allocation_reached(
+        self,
+        accumulated: list[ArenaPair],
+    ) -> bool:
+        if self.experiment.arena.allocation_policy == "adaptive_pie":
+            return len(accumulated) >= 4 * self.experiment.arena.max_pairs_per_ring
+        if self.experiment.arena.balanced_cells:
+            return all(
+                count >= self.experiment.arena.max_pairs_per_ring
+                for count in self._ring_pair_counts(accumulated).values()
+            )
+        pair_ratios = self.experiment.arena.promotion_pair_ratios
+        if pair_ratios:
+            return (
+                self._complete_blocks(
+                    self._ring_pair_counts(accumulated),
+                    pair_ratios,
+                )
+                >= self.experiment.arena.weighted_max_blocks
+            )
+        return all(
+            sum(
+                pair.ring == ring and pair.segment == "standard" for pair in accumulated
+            )
+            >= self.experiment.arena.max_pairs_per_ring
+            for ring in self.experiment.arena.rings
+        )
+
+    def _wave_plan(
+        self,
+        accumulated: list[ArenaPair],
+    ) -> tuple[dict[int, int], dict[int, int]]:
+        if self.experiment.arena.balanced_cells:
+            return _balanced_round_plan(accumulated, self.experiment.arena)
+        existing_counts = self._ring_pair_counts(accumulated)
+        starts = {
+            ring: (
+                max(
+                    (
+                        pair.pair
+                        for pair in accumulated
+                        if pair.ring == ring and pair.segment == "standard"
+                    ),
+                    default=-1,
+                )
+                + 1
+            )
+            for ring in self.experiment.arena.rings
+        }
+        pair_ratios = self.experiment.arena.promotion_pair_ratios
+        if pair_ratios:
+            complete_blocks = self._complete_blocks(existing_counts, pair_ratios)
+            if complete_blocks >= self.experiment.arena.weighted_max_blocks:
+                target_blocks = self.experiment.arena.weighted_max_blocks
+            elif complete_blocks < self.experiment.arena.weighted_initial_blocks:
+                target_blocks = self.experiment.arena.weighted_initial_blocks
+            else:
+                target_blocks = min(
+                    self.experiment.arena.weighted_max_blocks,
+                    complete_blocks
+                    + self.experiment.arena.weighted_continuation_blocks,
+                )
+            return starts, {
+                ring: max(
+                    0,
+                    target_blocks * int(pair_ratios[ring]) - existing_counts[ring],
+                )
+                for ring in self.experiment.arena.rings
+            }
+
+        counts = {}
+        for ring, existing in existing_counts.items():
+            remaining = self.experiment.arena.max_pairs_per_ring - existing
+            required_for_minimum = max(
+                0,
+                self.experiment.arena.minimum_pairs_per_ring - existing,
+            )
+            wave = (
+                min(self.experiment.arena.pairs_per_ring, required_for_minimum)
+                if required_for_minimum
+                else (
+                    self.experiment.arena.continuation_pairs_per_ring
+                    or self.experiment.arena.pairs_per_ring
+                )
+            )
+            counts[ring] = min(wave, remaining)
+        return starts, counts
+
+    def _reject_max_pairs(
+        self,
+        *,
+        candidate: ModelManifest,
+        champion: ModelManifest,
+        result: dict[str, object],
+        progress: Callable[..., None] | None,
+    ) -> None:
+        result["schema_version"] = ARENA_RESULT_SCHEMA_VERSION
+        promotion_result = result.get("promotion")
+        if not isinstance(promotion_result, dict):
+            raise ValueError("persisted arena promotion is invalid")
+        promotion_result["decision"] = "reject_max_pairs"
+        result["terminal"] = True
+        result["conclusive"] = False
+        self._annotate_result(result, candidate, champion)
+        atomic_json(self._result_path(candidate, champion), result)
+        self._write_status(
+            candidate=candidate,
+            champion=champion,
+            decision="reject_max_pairs",
+            terminal=True,
+        )
+        if progress is not None:
+            progress(
+                phase="candidate_terminal",
+                champion_step=champion.model_step,
+                candidate_step=candidate.model_step,
+                decision="reject_max_pairs",
+            )
+
+    @staticmethod
+    def _annotate_result(
+        result: dict[str, object],
+        candidate: ModelManifest,
+        champion: ModelManifest,
+    ) -> None:
+        result["result_kind"] = "promotion"
+        result["candidate_manifest"] = str(
+            (candidate.artifact_manifest or candidate.path).resolve()
+        )
+        result["champion_manifest"] = str(
+            (champion.artifact_manifest or champion.path).resolve()
+        )
+
+    def _arena_config(
+        self,
+        candidate: ModelManifest,
+        champion: ModelManifest,
+    ) -> ArenaConfig:
+        material = (
+            f"promotion-arena-v1\0{self.experiment.arena.seed}\0"
+            f"{candidate.model_identity}\0{champion.model_identity}"
+        ).encode("utf-8")
+        seed = int.from_bytes(hashlib.sha256(material).digest()[:8], "big")
+        return replace(self.experiment.arena, seed=seed)
+
+    def _resume_cutover(self) -> tuple[int, str] | None:
+        cutover_path = self.candidate_path.parent / "resume-cutover.json"
+        if not cutover_path.is_file():
+            return None
+        try:
+            payload = json.loads(cutover_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cannot read resume cutover: {exc}") from exc
+        if (
+            not isinstance(payload, dict)
+            or payload.get("format") != "deltreltrain.resume-cutover"
+            or payload.get("schema_version") != 1
+            or payload.get("run_id") != self.run_identity.run_id
+            or payload.get("generation_family") != self.run_identity.generation_family
+            or isinstance(payload.get("created_ns"), bool)
+            or not isinstance(payload.get("created_ns"), int)
+            or not isinstance(payload.get("checkpoint_sha256"), str)
+        ):
+            raise ValueError("resume cutover is invalid for promotion")
+        return int(payload["created_ns"]), str(payload["checkpoint_sha256"])
+
+    def _candidate_manifests(self) -> list[ModelManifest]:
+        output: list[ModelManifest] = []
+        cutover = self._resume_cutover()
+        cutover_ns = cutover[0] if cutover is not None else 0
+        cutover_sha256 = cutover[1] if cutover is not None else None
+        for path in self.manifest_directory.glob("manifest-*.json"):
+            manifest = self._manifest_cache.get(path)
+            if manifest is None:
+                manifest = load_model_manifest(path)
+                self._manifest_cache[path] = manifest
+            if (
+                manifest.run_id == self.run_identity.run_id
+                and manifest.generation_family == self.run_identity.generation_family
+                and (
+                    cutover_sha256 is None
+                    or manifest.checkpoint_sha256 == cutover_sha256
+                    or manifest.published_ns >= cutover_ns
+                )
+            ):
+                output.append(manifest)
+        return sorted(output, key=lambda item: (item.model_step, item.model_identity))
+
+    def _newer_candidate(
+        self,
+        candidate: ModelManifest,
+        champion: ModelManifest,
+    ) -> ModelManifest | None:
+        candidate_key = (candidate.model_step, candidate.model_identity)
+        return max(
+            (
+                item
+                for item in self._candidate_manifests()
+                if item.model_identity != champion.model_identity
+                and (item.model_step, item.model_identity) > candidate_key
+            ),
+            key=lambda item: (item.model_step, item.model_identity),
+            default=None,
+        )
+
+    @contextmanager
+    def _gpu_pause(
+        self,
+        *,
+        stop_requested: Callable[[], bool],
+        progress: Callable[..., None] | None,
+        candidate_identity: str,
+    ):
+        if self.gpu_pause_path is None:
+            yield
+            return
+        promotion = self.experiment.orchestration.promotion
+        lease = CoordinatorPauseLease(
+            request_path=self.gpu_pause_path,
+            gpu_id=promotion.gpu_id,
+            candidate_identity=candidate_identity,
+            ready_timeout_seconds=promotion.pause_ready_timeout_seconds,
+            release_timeout_seconds=promotion.pause_release_timeout_seconds,
+            heartbeat_interval_seconds=(
+                self.experiment.orchestration.shutdown.heartbeat_interval_seconds
+            ),
+            poll_seconds=max(
+                0.01,
+                min(
+                    0.25,
+                    self.experiment.orchestration.shutdown.monitor_interval_seconds,
+                ),
+            ),
+            stop_requested=stop_requested,
+            progress=progress,
+            events_path=self.pause_events_path,
+            clock=self.clock,
+            sleep=self.sleep,
+        )
+        with lease:
+            yield
+
+    def _result_path(self, candidate: ModelManifest, champion: ModelManifest) -> Path:
+        if self.experiment.arena.balanced_cells:
+            from .balanced_evaluation import evaluation_contract
+
+            contract = evaluation_contract(self._arena_config(candidate, champion))
+            identity = str(contract["identity"]).removeprefix("sha256-")[:16]
+            return self.results_directory / (
+                f"balanced-{identity}-{candidate.model_identity}-vs-{champion.model_identity}.json"
+            )
+        return self.results_directory / (
+            f"{candidate.model_identity}-vs-{champion.model_identity}.json"
+        )
+
+    def _read_result(
+        self, candidate: ModelManifest, champion: ModelManifest
+    ) -> dict[str, object] | None:
+        path = self._result_path(candidate, champion)
+        if not path.is_file():
+            return None
+        try:
+            with path.open("r", encoding="utf-8") as stream:
+                payload = json.load(stream)
+        except (OSError, json.JSONDecodeError):
+            return None
+        result_kind = payload.get("result_kind") if isinstance(payload, dict) else None
+        valid = (
+            isinstance(payload, dict)
+            and payload.get("schema_version") == ARENA_RESULT_SCHEMA_VERSION
+            and payload.get("candidate") == candidate.model_identity
+            and payload.get("baseline") == champion.model_identity
+            and isinstance(payload.get("promotion"), dict)
+            and (not isinstance(result_kind, str) or result_kind == "promotion")
+        )
+        if valid and self.experiment.arena.balanced_cells:
+            from .balanced_evaluation import evaluation_contract
+
+            if payload.get("evaluation_contract") != evaluation_contract(
+                self._arena_config(candidate, champion)
+            ):
+                raise ValueError(
+                    "promotion evaluation contract changed across continuation"
+                )
+        return payload if valid else None
+
+    @staticmethod
+    def _pairs_from_result(
+        result: dict[str, object] | None,
+    ) -> list[ArenaPair]:
+        if result is None:
+            return []
+        payload = result.get("pairs", [])
+        if not isinstance(payload, list):
+            raise ValueError("persisted arena pairs are invalid")
+        output = []
+        for item in payload:
+            if not isinstance(item, dict):
+                raise ValueError("persisted arena pair is invalid")
+            values = dict(item)
+            outcomes = values.get("outcomes")
+            if not isinstance(outcomes, (list, tuple)) or len(outcomes) != 2:
+                raise ValueError("persisted arena pair outcomes are invalid")
+            values["outcomes"] = (int(outcomes[0]), int(outcomes[1]))
+            output.append(ArenaPair(**values))
+        return output
+
+    def _mark_superseded(
+        self,
+        candidate: ModelManifest,
+        champion: ModelManifest,
+        *,
+        superseded_by: ModelManifest,
+    ) -> bool:
+        previous = self._read_result(candidate, champion)
+        if previous is not None and bool(previous.get("terminal")):
+            return False
+        payload: dict[str, object] = previous or {
+            "schema_version": ARENA_RESULT_SCHEMA_VERSION,
+            "candidate": candidate.model_identity,
+            "baseline": champion.model_identity,
+            "pairs": [],
+            "games": [],
+            "promotion": {},
+        }
+        if self.experiment.arena.balanced_cells:
+            from .balanced_evaluation import evaluation_contract
+
+            payload["evaluation_contract"] = evaluation_contract(
+                self._arena_config(candidate, champion)
+            )
+        payload["schema_version"] = ARENA_RESULT_SCHEMA_VERSION
+        payload["terminal"] = True
+        payload["conclusive"] = False
+        payload["promotion"] = {
+            "decision": "superseded",
+            "superseded_by": superseded_by.model_identity,
+        }
+        self._annotate_result(payload, candidate, champion)
+        atomic_json(self._result_path(candidate, champion), payload)
+        return True
+
+    def _write_status(
+        self,
+        *,
+        candidate: ModelManifest,
+        champion: ModelManifest,
+        decision: str,
+        terminal: bool,
+    ) -> None:
+        prior: dict[str, object] = {}
+        if self.status_path.is_file():
+            try:
+                with self.status_path.open("r", encoding="utf-8") as stream:
+                    loaded = json.load(stream)
+                if isinstance(loaded, dict):
+                    prior = loaded
+            except (OSError, json.JSONDecodeError):
+                prior = {}
+        contract_identity = None
+        if self.experiment.arena.balanced_cells:
+            from .balanced_evaluation import evaluation_contract
+
+            contract_identity = evaluation_contract(self.experiment.arena)["identity"]
+        if prior.get("evaluation_contract_identity") != contract_identity:
+            # A different objective/budget starts a new rejection streak even
+            # for the same candidate; an old verdict is not a duplicate of it.
+            prior = {}
+        streak = _status_counter(prior, "consecutive_terminal_rejections")
+        conclusive_streak = _status_counter(
+            prior,
+            "consecutive_conclusive_rejections",
+        )
+        cutover = self._resume_cutover()
+        cutover_created_ns = cutover[0] if cutover is not None else None
+        if prior.get("cutover_created_ns") != cutover_created_ns:
+            streak = 0
+            conclusive_streak = 0
+        prior_candidate = prior.get("candidate_identity")
+        prior_terminal = bool(prior.get("terminal"))
+        prior_decision = prior.get("decision")
+        rejection = decision in REJECTION_DECISIONS
+        conclusive = decision_is_conclusive(decision, terminal=terminal)
+        already_counted = (
+            prior_candidate == candidate.model_identity
+            and prior_terminal
+            and prior_decision in REJECTION_DECISIONS
+        )
+        if decision in ("promote", "bootstrap"):
+            streak = 0
+            conclusive_streak = 0
+        elif terminal and rejection and not already_counted:
+            streak += 1
+            if conclusive:
+                conclusive_streak += 1
+        atomic_json(
+            self.status_path,
+            {
+                "schema_version": 1,
+                **(
+                    {"evaluation_contract_identity": contract_identity}
+                    if contract_identity is not None
+                    else {}
+                ),
+                "candidate_identity": candidate.model_identity,
+                "candidate_step": candidate.model_step,
+                "champion_identity": champion.model_identity,
+                "champion_step": champion.model_step,
+                "decision": decision,
+                "terminal": terminal,
+                "conclusive": conclusive,
+                "consecutive_terminal_rejections": streak,
+                "consecutive_conclusive_rejections": conclusive_streak,
+                "cutover_created_ns": cutover_created_ns,
+                "updated_ns": time.time_ns(),
+            },
+        )
+
+
+def promotion_main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Evaluate immutable candidates and atomically promote champions"
+    )
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--run-identity", required=True)
+    parser.add_argument("--candidate", required=True)
+    parser.add_argument("--champion", required=True)
+    parser.add_argument("--results", required=True)
+    parser.add_argument("--heartbeat", required=True)
+    parser.add_argument("--device")
+    parser.add_argument("--gpu-pause")
+    parser.add_argument("--once", action="store_true")
+    arguments = parser.parse_args(argv)
+
+    experiment = load_config(arguments.config)
+    run_identity = load_run_identity(arguments.run_identity)
+    device = resolve_device_string(
+        arguments.device or experiment.orchestration.promotion.device
+    )
+    native = load_deltrel_native(required=True)
+    assert native is not None
+    stop = SignalLatch()
+    stop.install()
+    heartbeat = HeartbeatReporter(
+        arguments.heartbeat,
+        worker="arena-promotion",
+        interval_seconds=(experiment.orchestration.shutdown.heartbeat_interval_seconds),
+    )
+    heartbeat.start()
+    try:
+        evaluated = PromotionSupervisor(
+            experiment=experiment,
+            run_identity=run_identity,
+            candidate_path=arguments.candidate,
+            champion_path=arguments.champion,
+            results_directory=arguments.results,
+            native_module=native,
+            device=device,
+            gpu_pause_path=arguments.gpu_pause,
+        ).run(
+            stop_requested=stop.is_set,
+            progress=heartbeat.advance,
+            once=arguments.once,
+        )
+    finally:
+        heartbeat.close(final_phase="stopped" if stop.is_set() else "completed")
+    print(json.dumps({"evaluated": evaluated}, sort_keys=True))
+
+
+if __name__ == "__main__":
+    promotion_main()

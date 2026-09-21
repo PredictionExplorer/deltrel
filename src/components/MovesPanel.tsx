@@ -9,7 +9,7 @@ import {
   CornerUpLeft,
   Replace,
 } from 'lucide-react';
-import type { Timeline, TimelineTurn } from '@/lib/star/timeline';
+import type { Timeline, TimelineTurn } from '@/lib/deltrel/timeline';
 import { PLAYER_COLORS } from './theme';
 
 interface MovesPanelProps {
@@ -144,7 +144,7 @@ export function MovesPanel({
             aria-label="Jump to the empty board"
             disabled={currentPly === 0 || total === 0}
             onClick={() => onSeek(0)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-ink transition-colors enabled:hover:border-gold/50 disabled:opacity-30"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-ink transition-colors enabled:hover:border-sand/50 disabled:opacity-30"
           >
             <ChevronFirst className="h-4 w-4" aria-hidden />
           </button>
@@ -153,7 +153,7 @@ export function MovesPanel({
             aria-label="Step one move back"
             disabled={currentPly === 0 || total === 0}
             onClick={() => onSeek(currentPly - 1)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-ink transition-colors enabled:hover:border-gold/50 disabled:opacity-30"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-ink transition-colors enabled:hover:border-sand/50 disabled:opacity-30"
           >
             <ChevronLeft className="h-4 w-4" aria-hidden />
           </button>
@@ -162,7 +162,7 @@ export function MovesPanel({
             aria-label="Step one move forward"
             disabled={live}
             onClick={() => onSeek(currentPly + 1)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-ink transition-colors enabled:hover:border-gold/50 disabled:opacity-30"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-ink transition-colors enabled:hover:border-sand/50 disabled:opacity-30"
           >
             <ChevronRight className="h-4 w-4" aria-hidden />
           </button>
@@ -171,7 +171,7 @@ export function MovesPanel({
             aria-label="Jump to the live position"
             disabled={live}
             onClick={() => onSeek(total)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-ink transition-colors enabled:hover:border-gold/50 disabled:opacity-30"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-ink transition-colors enabled:hover:border-sand/50 disabled:opacity-30"
           >
             <ChevronLast className="h-4 w-4" aria-hidden />
           </button>
@@ -205,7 +205,7 @@ export function MovesPanel({
             <>
               <span
                 aria-hidden
-                className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-gold align-middle"
+                className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-sand align-middle"
               />
               Live position
             </>
@@ -219,7 +219,7 @@ export function MovesPanel({
           <button
             type="button"
             onClick={onRewind}
-            className="flex min-h-8 items-center gap-1.5 rounded-lg border border-gold/50 px-2.5 py-1 text-xs text-gold-strong transition-colors hover:bg-gold/15"
+            className="flex min-h-8 items-center gap-1.5 rounded-lg border border-sand/50 px-2.5 py-1 text-xs text-sand-strong transition-colors hover:bg-sand/15"
           >
             <CornerUpLeft className="h-3.5 w-3.5" aria-hidden /> Play from here
           </button>

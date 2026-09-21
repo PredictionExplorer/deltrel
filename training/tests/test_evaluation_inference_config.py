@@ -5,15 +5,15 @@ from types import SimpleNamespace
 import torch
 
 from scripts.run_lineage_arena import _profile_inference_config, load_candidate
-from startrain.checkpoint import ExponentialMovingAverage, save_checkpoint
-from startrain.config import ActorInferenceConfig, GameConfig, load_config
-from startrain.contracts import FEATURE_SCHEMA_VERSION, LEGACY_FEATURE_SCHEMA_VERSION
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.promotion import load_manifest_evaluator
+from deltreltrain.checkpoint import ExponentialMovingAverage, save_checkpoint
+from deltreltrain.config import ActorInferenceConfig, GameConfig, load_config
+from deltreltrain.contracts import FEATURE_SCHEMA_VERSION, LEGACY_FEATURE_SCHEMA_VERSION
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.promotion import load_manifest_evaluator
 
 
 def test_promotion_evaluator_receives_explicit_inference_flags(tmp_path, monkeypatch):
-    import startrain.promotion as promotion
+    import deltreltrain.promotion as promotion
 
     experiment = load_config(Path(__file__).parents[1] / "configs/small.yaml")
     flags = ActorInferenceConfig(

@@ -1,21 +1,21 @@
 {
-  "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+  "run_root": "/home/ubuntu/deltrel-runs/variant-network",
   "attempts": [
     {
-      "rollout": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914",
+      "rollout": "/home/ubuntu/deltrel-rollouts/adaptive-promotion-20260914",
       "plan": {
-        "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
-        "evidence_root": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914/cutover",
-        "source_release": "/home/ubuntu/edgeconnect-releases/variant-pie-even-20260913",
-        "target_release": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914",
-        "source_profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+        "run_root": "/home/ubuntu/deltrel-runs/variant-network",
+        "evidence_root": "/home/ubuntu/deltrel-rollouts/adaptive-promotion-20260914/cutover",
+        "source_release": "/home/ubuntu/deltrel-releases/variant-pie-even-20260913",
+        "target_release": "/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914",
+        "source_profile": "/home/ubuntu/deltrel-runs/variant-network/profile-pie-even-20260913.yaml",
         "source_profile_sha256": "1717a724307c5e90d59631bad51961800646003d76e838b6bef989aba38df277",
-        "candidate_profile": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914/profile-adaptive-candidate.yaml",
+        "candidate_profile": "/home/ubuntu/deltrel-rollouts/adaptive-promotion-20260914/profile-adaptive-candidate.yaml",
         "candidate_profile_sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
         "target_profile_name": "profile-adaptive-promotion-20260914.yaml",
         "source_commit": "c2904f933109909695a8b8da179426a18ccdd252",
         "target_commit": "8351e39b8195dcd71f15d36e26177dc9de39fd9f",
-        "main_unit": "edgeconnect-startrain-variant-network.service",
+        "main_unit": "deltrel-deltreltrain-variant-network.service",
         "expected_workers": [
           "actor-cpu-ring4",
           "actor-gpu-1",
@@ -28,11 +28,11 @@
           "arena-promotion",
           "learner"
         ],
-        "smoke_script": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914/training/scripts/smoke_adaptive_promotion_cuda.py",
+        "smoke_script": "/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914/training/scripts/smoke_adaptive_promotion_cuda.py",
         "smoke_script_sha256": "9553d272fce2391c70226e8bae4c97b632eebb46336341646840051b4e5aa856",
-        "preserved_snapshot": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914",
+        "preserved_snapshot": "/home/ubuntu/deltrel-preserved/variant-network/adaptive-promotion-cutover-20260914",
         "unit_source_releases": {
-          "edgeconnect-startrain-variant-network-disaster-backup.service": "/home/ubuntu/edgeconnect-releases/backup-cache-20260914-v2"
+          "deltrel-deltreltrain-variant-network-disaster-backup.service": "/home/ubuntu/deltrel-releases/backup-cache-20260914-v2"
         },
         "migration_reason": "Adaptive pie-heavy promotion allocation; preserve learner, replay, credit, and strength history"
       },
@@ -84,7 +84,7 @@
           "checkpoint_sha256": "d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc",
           "epoch": 5684,
           "examples_consumed": 152967168,
-          "format": "startrain.recovery-pointer",
+          "format": "deltreltrain.recovery-pointer",
           "generation_family": "variant-network-a",
           "run_id": "variant-network",
           "schema_version": 1,
@@ -105,10 +105,10 @@
       "gpu_smoke": null,
       "recovered": {
         "status": "recovered",
-        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+        "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-pie-even-20260913.yaml",
         "readiness": {
-          "actual_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc.pt",
-          "expected_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc.pt",
+          "actual_resume": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc.pt",
+          "expected_resume": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc.pt",
           "observed_ns": 1789429865139228810,
           "ready": true,
           "step": 298870
@@ -122,7 +122,7 @@
           "checkpoint_sha256": "d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc",
           "epoch": 5684,
           "examples_consumed": 152967168,
-          "format": "startrain.recovery-pointer",
+          "format": "deltreltrain.recovery-pointer",
           "generation_family": "variant-network-a",
           "run_id": "variant-network",
           "schema_version": 1,
@@ -130,7 +130,7 @@
           "updated_ns": 1789428734168003962
         },
         "launched_ns": 1789429357509116707,
-        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml"
+        "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-pie-even-20260913.yaml"
       },
       "complete": null,
       "archive": {
@@ -140,7 +140,7 @@
           "checkpoint_sha256": "d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc",
           "epoch": 5684,
           "examples_consumed": 152967168,
-          "format": "startrain.recovery-pointer",
+          "format": "deltreltrain.recovery-pointer",
           "generation_family": "variant-network-a",
           "run_id": "variant-network",
           "schema_version": 1,
@@ -150,18 +150,18 @@
         "checkpoint_sha256": "d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc",
         "checkpoint_step": 298764,
         "created_ns": 1789429306964192350,
-        "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914",
+        "destination": "/home/ubuntu/deltrel-preserved/variant-network/adaptive-promotion-cutover-20260914",
         "files": 49288,
-        "format": "startrain.preserved-stopped-run",
+        "format": "deltreltrain.preserved-stopped-run",
         "inventory_sha256": "76fc4929ad54acd7bc9937b908edcac8799b5dd74523f608d29e27cce188251e",
         "payload_checksum_verification": "deferred-to-offline-verify",
         "replay_shards": 48900,
         "schema_version": 1,
-        "source_run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+        "source_run_root": "/home/ubuntu/deltrel-runs/variant-network",
         "status": "preserved"
       },
       "manual_telemetry_reconciliation": {
-        "proof": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914/cutover/telemetry-reconciliation-proof.json",
+        "proof": "/home/ubuntu/deltrel-rollouts/adaptive-promotion-20260914/cutover/telemetry-reconciliation-proof.json",
         "sha256": "c3fd22b3753b4c2deaeb5c0572c622b45b5362f2aee1696fa14a77f717e0c610",
         "before_examples": 152966656,
         "checkpoint_examples": 152967168,
@@ -171,20 +171,20 @@
       }
     },
     {
-      "rollout": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914-v2",
+      "rollout": "/home/ubuntu/deltrel-rollouts/adaptive-promotion-20260914-v2",
       "plan": {
-        "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
-        "evidence_root": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914-v2/cutover",
-        "source_release": "/home/ubuntu/edgeconnect-releases/variant-pie-even-20260913",
-        "target_release": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2",
-        "source_profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+        "run_root": "/home/ubuntu/deltrel-runs/variant-network",
+        "evidence_root": "/home/ubuntu/deltrel-rollouts/adaptive-promotion-20260914-v2/cutover",
+        "source_release": "/home/ubuntu/deltrel-releases/variant-pie-even-20260913",
+        "target_release": "/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v2",
+        "source_profile": "/home/ubuntu/deltrel-runs/variant-network/profile-pie-even-20260913.yaml",
         "source_profile_sha256": "1717a724307c5e90d59631bad51961800646003d76e838b6bef989aba38df277",
-        "candidate_profile": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914-v2/profile-adaptive-candidate.yaml",
+        "candidate_profile": "/home/ubuntu/deltrel-rollouts/adaptive-promotion-20260914-v2/profile-adaptive-candidate.yaml",
         "candidate_profile_sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
         "target_profile_name": "profile-adaptive-promotion-20260914-v2.yaml",
         "source_commit": "c2904f933109909695a8b8da179426a18ccdd252",
         "target_commit": "789598ce9e91b58d795433a8ea176fa54f0d727d",
-        "main_unit": "edgeconnect-startrain-variant-network.service",
+        "main_unit": "deltrel-deltreltrain-variant-network.service",
         "expected_workers": [
           "actor-cpu-ring4",
           "actor-gpu-1",
@@ -197,11 +197,11 @@
           "arena-promotion",
           "learner"
         ],
-        "smoke_script": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py",
+        "smoke_script": "/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py",
         "smoke_script_sha256": "9553d272fce2391c70226e8bae4c97b632eebb46336341646840051b4e5aa856",
-        "preserved_snapshot": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v2",
+        "preserved_snapshot": "/home/ubuntu/deltrel-preserved/variant-network/adaptive-promotion-cutover-20260914-v2",
         "unit_source_releases": {
-          "edgeconnect-startrain-variant-network-disaster-backup.service": "/home/ubuntu/edgeconnect-releases/backup-cache-20260914-v2"
+          "deltrel-deltreltrain-variant-network-disaster-backup.service": "/home/ubuntu/deltrel-releases/backup-cache-20260914-v2"
         },
         "migration_reason": "Adaptive pie-heavy promotion allocation; preserve learner, replay, credit, and strength history"
       },
@@ -219,15 +219,15 @@
         "changed_source_files": [
           "training/docs/adaptive-pie-promotion.md",
           "training/scripts/graceful_training_deploy.py",
-          "training/startrain/cli.py",
-          "training/startrain/learner.py",
+          "training/deltreltrain/cli.py",
+          "training/deltreltrain/learner.py",
           "training/tests/test_learner_final_heartbeat.py",
           "training/tests/test_stopped_heartbeat_reconciliation.py",
           "training/tests/test_stopped_heartbeat_reconciliation_faults.py"
         ]
       },
       "admission": {
-        "reused_verified_gate": "/home/ubuntu/edgeconnect-runs/variant-network/status/search-allocation-gates/3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af.json",
+        "reused_verified_gate": "/home/ubuntu/deltrel-runs/variant-network/status/search-allocation-gates/3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af.json",
         "sha256": "eb263ee0d41d34afbe150ae2943526e09dbfbc84b4061aba9782a27f190ae6b8",
         "new_objective_performance_qualified": false
       },
@@ -250,7 +250,7 @@
           "checkpoint_sha256": "1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0",
           "epoch": 5699,
           "examples_consumed": 153179648,
-          "format": "startrain.recovery-pointer",
+          "format": "deltreltrain.recovery-pointer",
           "generation_family": "variant-network-a",
           "run_id": "variant-network",
           "schema_version": 1,
@@ -270,16 +270,16 @@
       },
       "gpu_smoke": {
         "child_timeout_seconds": 180,
-        "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py\", line 479, in <module>\n    main()\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py\", line 442, in main\n    print(json.dumps(run_smoke(args)))\n                     ^^^^^^^^^^^^^^^\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py\", line 344, in run_smoke\n    graph.evaluate(probe.root_requests())\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/startrain/inference.py\", line 605, in evaluate\n    response, _ = self._evaluate(requests, include_details=False)\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/startrain/inference.py\", line 1194, in _evaluate\n    return self.evaluate_prepared(\n           ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py\", line 150, in evaluate_prepared\n    compare_predictions(before, after)\n  File \"/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v2/training/scripts/validate_cuda_graph_runtime.py\", line 204, in compare_predictions\n    raise ValueError(\nValueError: graph policy_logits differs from same-shape regular inference; max_abs=0.125\n",
+        "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py\", line 479, in <module>\n    main()\n  File \"/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py\", line 442, in main\n    print(json.dumps(run_smoke(args)))\n                     ^^^^^^^^^^^^^^^\n  File \"/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py\", line 344, in run_smoke\n    graph.evaluate(probe.root_requests())\n  File \"/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v2/training/deltreltrain/inference.py\", line 605, in evaluate\n    response, _ = self._evaluate(requests, include_details=False)\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v2/training/deltreltrain/inference.py\", line 1194, in _evaluate\n    return self.evaluate_prepared(\n           ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v2/training/scripts/smoke_adaptive_promotion_cuda.py\", line 150, in evaluate_prepared\n    compare_predictions(before, after)\n  File \"/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v2/training/scripts/validate_cuda_graph_runtime.py\", line 204, in compare_predictions\n    raise ValueError(\nValueError: graph policy_logits differs from same-shape regular inference; max_abs=0.125\n",
         "status": "failed",
         "training_artifacts_written": false
       },
       "recovered": {
         "status": "recovered",
-        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+        "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-pie-even-20260913.yaml",
         "readiness": {
-          "actual_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0.pt",
-          "expected_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0.pt",
+          "actual_resume": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0.pt",
+          "expected_resume": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0.pt",
           "observed_ns": 1789431313200865299,
           "ready": true,
           "step": 299314
@@ -293,7 +293,7 @@
           "checkpoint_sha256": "1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0",
           "epoch": 5699,
           "examples_consumed": 153179648,
-          "format": "startrain.recovery-pointer",
+          "format": "deltreltrain.recovery-pointer",
           "generation_family": "variant-network-a",
           "run_id": "variant-network",
           "schema_version": 1,
@@ -301,7 +301,7 @@
           "updated_ns": 1789430611443775842
         },
         "launched_ns": 1789430795961771568,
-        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml"
+        "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-pie-even-20260913.yaml"
       },
       "complete": null,
       "archive": {
@@ -311,7 +311,7 @@
           "checkpoint_sha256": "1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0",
           "epoch": 5699,
           "examples_consumed": 153179648,
-          "format": "startrain.recovery-pointer",
+          "format": "deltreltrain.recovery-pointer",
           "generation_family": "variant-network-a",
           "run_id": "variant-network",
           "schema_version": 1,
@@ -321,32 +321,32 @@
         "checkpoint_sha256": "1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0",
         "checkpoint_step": 299179,
         "created_ns": 1789430723115144430,
-        "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v2",
+        "destination": "/home/ubuntu/deltrel-preserved/variant-network/adaptive-promotion-cutover-20260914-v2",
         "files": 52856,
-        "format": "startrain.preserved-stopped-run",
+        "format": "deltreltrain.preserved-stopped-run",
         "inventory_sha256": "8acbd1213287484f5b32d33af0c7260ca9420f949d3f0cb03c099f7743bb102c",
         "payload_checksum_verification": "deferred-to-offline-verify",
         "replay_shards": 52467,
         "schema_version": 1,
-        "source_run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+        "source_run_root": "/home/ubuntu/deltrel-runs/variant-network",
         "status": "preserved"
       }
     },
     {
-      "rollout": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914-v3",
+      "rollout": "/home/ubuntu/deltrel-rollouts/adaptive-promotion-20260914-v3",
       "plan": {
-        "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
-        "evidence_root": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914-v3/cutover",
-        "source_release": "/home/ubuntu/edgeconnect-releases/variant-pie-even-20260913",
-        "target_release": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3",
-        "source_profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-pie-even-20260913.yaml",
+        "run_root": "/home/ubuntu/deltrel-runs/variant-network",
+        "evidence_root": "/home/ubuntu/deltrel-rollouts/adaptive-promotion-20260914-v3/cutover",
+        "source_release": "/home/ubuntu/deltrel-releases/variant-pie-even-20260913",
+        "target_release": "/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3",
+        "source_profile": "/home/ubuntu/deltrel-runs/variant-network/profile-pie-even-20260913.yaml",
         "source_profile_sha256": "1717a724307c5e90d59631bad51961800646003d76e838b6bef989aba38df277",
-        "candidate_profile": "/home/ubuntu/edgeconnect-rollouts/adaptive-promotion-20260914-v3/profile-adaptive-candidate.yaml",
+        "candidate_profile": "/home/ubuntu/deltrel-rollouts/adaptive-promotion-20260914-v3/profile-adaptive-candidate.yaml",
         "candidate_profile_sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
         "target_profile_name": "profile-adaptive-promotion-20260914-v3.yaml",
         "source_commit": "c2904f933109909695a8b8da179426a18ccdd252",
         "target_commit": "4f6027c50117eee8b66b59dfebbef7257d47fe12",
-        "main_unit": "edgeconnect-startrain-variant-network.service",
+        "main_unit": "deltrel-deltreltrain-variant-network.service",
         "expected_workers": [
           "actor-cpu-ring4",
           "actor-gpu-1",
@@ -359,11 +359,11 @@
           "arena-promotion",
           "learner"
         ],
-        "smoke_script": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/smoke_adaptive_promotion_cuda.py",
+        "smoke_script": "/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/scripts/smoke_adaptive_promotion_cuda.py",
         "smoke_script_sha256": "f8c470957f5802adf5c1e7f7558645c202429cb490fa4b6a777529c33ef60c4d",
-        "preserved_snapshot": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v3",
+        "preserved_snapshot": "/home/ubuntu/deltrel-preserved/variant-network/adaptive-promotion-cutover-20260914-v3",
         "unit_source_releases": {
-          "edgeconnect-startrain-variant-network-disaster-backup.service": "/home/ubuntu/edgeconnect-releases/backup-cache-20260914-v2"
+          "deltrel-deltreltrain-variant-network-disaster-backup.service": "/home/ubuntu/deltrel-releases/backup-cache-20260914-v2"
         },
         "migration_reason": "Adaptive pie-heavy promotion allocation; preserve learner, replay, credit, and strength history"
       },
@@ -385,7 +385,7 @@
         ]
       },
       "admission": {
-        "reused_verified_gate": "/home/ubuntu/edgeconnect-runs/variant-network/status/search-allocation-gates/3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af.json",
+        "reused_verified_gate": "/home/ubuntu/deltrel-runs/variant-network/status/search-allocation-gates/3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af.json",
         "sha256": "eb263ee0d41d34afbe150ae2943526e09dbfbc84b4061aba9782a27f190ae6b8",
         "new_objective_performance_qualified": false
       },
@@ -408,7 +408,7 @@
           "checkpoint_sha256": "d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15",
           "epoch": 5714,
           "examples_consumed": 153392640,
-          "format": "startrain.recovery-pointer",
+          "format": "deltreltrain.recovery-pointer",
           "generation_family": "variant-network-a",
           "run_id": "variant-network",
           "schema_version": 1,
@@ -431,7 +431,7 @@
         "completed_ns": 1789432171973384180,
         "coordinator_lock": "absent",
         "coordinator_status_sha256": "24db2131c7d41abeea5f641507acc3fde35d8284222301a45b12d32650743c6e",
-        "format": "startrain.adaptive-promotion-cuda-smoke",
+        "format": "deltreltrain.adaptive-promotion-cuda-smoke",
         "generation_family": "variant-network-a",
         "gpu_ownership_after": {
           "gpu_uuid": "GPU-ae118622-5e0c-da99-3a41-2df94f7d9f60",
@@ -457,9 +457,9 @@
         },
         "model_copies": 1,
         "native": {
-          "native_path": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+          "native_path": "/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
           "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
-          "native_wrapper_path": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/lib/python3.11/site-packages/star_native/__init__.py",
+          "native_wrapper_path": "/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/lib/python3.11/site-packages/deltrel_native/__init__.py",
           "native_wrapper_sha256": "854ee2f2696eb047389cd5576fbb1e113cd9b307ec6eef8c2926cc241af7e0af"
         },
         "parent_boundary_revalidated": true,
@@ -826,7 +826,7 @@
           "completed_ns": 1789432206611380753,
           "coordinator_lock": "absent",
           "coordinator_status_sha256": "24db2131c7d41abeea5f641507acc3fde35d8284222301a45b12d32650743c6e",
-          "format": "startrain.adaptive-promotion-cuda-smoke",
+          "format": "deltreltrain.adaptive-promotion-cuda-smoke",
           "generation_family": "variant-network-a",
           "gpu_ownership_after": {
             "gpu_uuid": "GPU-ae118622-5e0c-da99-3a41-2df94f7d9f60",
@@ -852,9 +852,9 @@
           },
           "model_copies": 1,
           "native": {
-            "native_path": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+            "native_path": "/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
             "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
-            "native_wrapper_path": "/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/lib/python3.11/site-packages/star_native/__init__.py",
+            "native_wrapper_path": "/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/lib/python3.11/site-packages/deltrel_native/__init__.py",
             "native_wrapper_sha256": "854ee2f2696eb047389cd5576fbb1e113cd9b307ec6eef8c2926cc241af7e0af"
           },
           "peak_cuda_allocated_bytes": 296745472,
@@ -1830,7 +1830,7 @@
           "checkpoint_sha256": "d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15",
           "epoch": 5714,
           "examples_consumed": 153392640,
-          "format": "startrain.recovery-pointer",
+          "format": "deltreltrain.recovery-pointer",
           "generation_family": "variant-network-a",
           "run_id": "variant-network",
           "schema_version": 1,
@@ -1838,14 +1838,14 @@
           "updated_ns": 1789432022514368460
         },
         "launched_ns": 1789432231658743629,
-        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml"
+        "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml"
       },
       "complete": {
         "completed_ns": 1789433009770062304,
-        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml",
+        "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml",
         "readiness": {
-          "actual_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15.pt",
-          "expected_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15.pt",
+          "actual_resume": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15.pt",
+          "expected_resume": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15.pt",
           "observed_ns": 1789433009664113794,
           "ready": true,
           "step": 299869
@@ -1860,7 +1860,7 @@
           "checkpoint_sha256": "d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15",
           "epoch": 5714,
           "examples_consumed": 153392640,
-          "format": "startrain.recovery-pointer",
+          "format": "deltreltrain.recovery-pointer",
           "generation_family": "variant-network-a",
           "run_id": "variant-network",
           "schema_version": 1,
@@ -1870,14 +1870,14 @@
         "checkpoint_sha256": "d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15",
         "checkpoint_step": 299595,
         "created_ns": 1789432126203420941,
-        "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v3",
+        "destination": "/home/ubuntu/deltrel-preserved/variant-network/adaptive-promotion-cutover-20260914-v3",
         "files": 52270,
-        "format": "startrain.preserved-stopped-run",
+        "format": "deltreltrain.preserved-stopped-run",
         "inventory_sha256": "e7e947c327b709db5d8f7a6b17a7a020c2bbed6b9847c70d20c8e75cf814f274",
         "payload_checksum_verification": "deferred-to-offline-verify",
         "replay_shards": 51880,
         "schema_version": 1,
-        "source_run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+        "source_run_root": "/home/ubuntu/deltrel-runs/variant-network",
         "status": "preserved"
       }
     }
@@ -1888,19 +1888,19 @@
     "source_commit": "4f6027c50117eee8b66b59dfebbef7257d47fe12",
     "profile": [
       "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a",
-      "/home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml"
+      "/home/ubuntu/deltrel-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml"
     ],
     "learner_step": 300174,
     "examples_consumed": 153689088,
     "stopped_step": 299595,
-    "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15.pt",
+    "resumed_from": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15.pt",
     "workers": {
       "actor-cpu-ring4": {
         "failure_class": null,
         "failure_exit_code": null,
         "failure_reason": null,
         "gpu_ids": [],
-        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-cpu-ring4.heartbeat.json",
+        "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-cpu-ring4.heartbeat.json",
         "heartbeat_grace_until_ns": null,
         "last_exit_code": null,
         "last_progress": 54,
@@ -1916,7 +1916,7 @@
         "gpu_ids": [
           1
         ],
-        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-1.heartbeat.json",
+        "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-1.heartbeat.json",
         "heartbeat_grace_until_ns": null,
         "last_exit_code": null,
         "last_progress": 128,
@@ -1932,7 +1932,7 @@
         "gpu_ids": [
           2
         ],
-        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-2.heartbeat.json",
+        "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-2.heartbeat.json",
         "heartbeat_grace_until_ns": null,
         "last_exit_code": null,
         "last_progress": 32,
@@ -1948,7 +1948,7 @@
         "gpu_ids": [
           3
         ],
-        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-3.heartbeat.json",
+        "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-3.heartbeat.json",
         "heartbeat_grace_until_ns": null,
         "last_exit_code": null,
         "last_progress": 29,
@@ -1964,7 +1964,7 @@
         "gpu_ids": [
           4
         ],
-        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-4.heartbeat.json",
+        "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-4.heartbeat.json",
         "heartbeat_grace_until_ns": null,
         "last_exit_code": null,
         "last_progress": 88,
@@ -1980,7 +1980,7 @@
         "gpu_ids": [
           5
         ],
-        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-5.heartbeat.json",
+        "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-5.heartbeat.json",
         "heartbeat_grace_until_ns": null,
         "last_exit_code": null,
         "last_progress": 58,
@@ -1996,7 +1996,7 @@
         "gpu_ids": [
           6
         ],
-        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-6.heartbeat.json",
+        "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-6.heartbeat.json",
         "heartbeat_grace_until_ns": null,
         "last_exit_code": null,
         "last_progress": 33,
@@ -2012,7 +2012,7 @@
         "gpu_ids": [
           7
         ],
-        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-7.heartbeat.json",
+        "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-7.heartbeat.json",
         "heartbeat_grace_until_ns": null,
         "last_exit_code": null,
         "last_progress": 23,
@@ -2028,7 +2028,7 @@
         "gpu_ids": [
           7
         ],
-        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/arena-promotion.heartbeat.json",
+        "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/arena-promotion.heartbeat.json",
         "heartbeat_grace_until_ns": null,
         "last_exit_code": null,
         "last_progress": 117,
@@ -2044,7 +2044,7 @@
         "gpu_ids": [
           0
         ],
-        "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/learner.heartbeat.json",
+        "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/learner.heartbeat.json",
         "heartbeat_grace_until_ns": null,
         "last_exit_code": null,
         "last_progress": 1194,
@@ -2061,7 +2061,7 @@
     "evaluation_contract": {
       "schema_version": 3,
       "objective": "adaptive-allocation-stratified-paired-hoeffding-v3",
-      "rules_schema": "edgeconnect.star.rules.v3",
+      "rules_schema": "deltrel.rules.v3",
       "rules_hash": "fnv1a64:a5d932b0ef8354e8",
       "search_algorithm": "gumbel-completed-q-v2-finite-noise-selected-keep",
       "cells": [
@@ -2154,14 +2154,14 @@
       "identity": "sha256-400dc692f581a442f033b24d3edf709be6aec3e57941db30c854f77a84fcd820"
     },
     "units": {
-      "edgeconnect-startrain-variant-network.service": "Result=success\nExecStart={ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/startrain-orchestrate ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/startrain-orchestrate --config /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:31:16 UTC] ; stop_time=[n/a] ; pid=2918356 ; code=(null) ; status=0/0 }\nEnvironment=PYTHONUNBUFFERED=1 TORCHINDUCTOR_COMPILE_THREADS=2 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training TORCH_NCCL_ASYNC_ERROR_HANDLING=1 PATH=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nWorkingDirectory=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=active\n",
-      "edgeconnect-startrain-variant-network-monitor.service": "Result=success\nExecStart={ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python -u /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/monitor_run.py --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --unit edgeconnect-startrain-variant-network.service --disaster-backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --interval 5 --format jsonl --telemetry-output /home/ubuntu/edgeconnect-runs/variant-network/status/monitor-5s.jsonl --telemetry-max-bytes 52428800 --telemetry-retain-files 7 ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:43:29 UTC] ; stop_time=[n/a] ; pid=2920770 ; code=(null) ; status=0/0 }\nEnvironment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training:/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts\nWorkingDirectory=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=active\n",
-      "edgeconnect-startrain-variant-network-report.service": "Result=success\nExecStart={ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/strength_efficiency_report.py --run-root /home/ubuntu/edgeconnect-runs/variant-network --provisioned-gpus 8 --output /home/ubuntu/edgeconnect-runs/variant-network/strength-efficiency.json --quiet ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:43:29 UTC] ; stop_time=[Tue 2026-09-15 00:43:57 UTC] ; pid=2920771 ; code=exited ; status=0 }\nEnvironment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nWorkingDirectory=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=inactive\n",
-      "edgeconnect-startrain-variant-network-backup.service": "Result=success\nExecStart={ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/replay_manifest_backup.py backup --run-root /home/ubuntu/edgeconnect-runs/variant-network --retain 3 ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nEnvironment=PYTHONDONTWRITEBYTECODE=1\nWorkingDirectory=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=inactive\n",
-      "edgeconnect-startrain-variant-network-disaster-backup.service": "Result=success\nExecStart={ path=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training/scripts/training_disaster_recovery.py snapshot --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --expected-backup-mount /lambda/nfs/texas-north-fs ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:43:29 UTC] ; stop_time=[Tue 2026-09-15 00:52:49 UTC] ; pid=2920772 ; code=exited ; status=0 }\nEnvironment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nWorkingDirectory=/home/ubuntu/edgeconnect-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=inactive\n"
+      "deltrel-deltreltrain-variant-network.service": "Result=success\nExecStart={ path=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/deltreltrain-orchestrate ; argv[]=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/deltreltrain-orchestrate --config /home/ubuntu/deltrel-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:31:16 UTC] ; stop_time=[n/a] ; pid=2918356 ; code=(null) ; status=0/0 }\nEnvironment=PYTHONUNBUFFERED=1 TORCHINDUCTOR_COMPILE_THREADS=2 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training TORCH_NCCL_ASYNC_ERROR_HANDLING=1 PATH=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nWorkingDirectory=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=active\n",
+      "deltrel-deltreltrain-variant-network-monitor.service": "Result=success\nExecStart={ path=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python -u /home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/scripts/monitor_run.py --run-root /home/ubuntu/deltrel-runs/variant-network --profile /home/ubuntu/deltrel-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --unit deltrel-deltreltrain-variant-network.service --disaster-backup-root /lambda/nfs/texas-north-fs/deltrel-dr/variant-network --interval 5 --format jsonl --telemetry-output /home/ubuntu/deltrel-runs/variant-network/status/monitor-5s.jsonl --telemetry-max-bytes 52428800 --telemetry-retain-files 7 ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:43:29 UTC] ; stop_time=[n/a] ; pid=2920770 ; code=(null) ; status=0/0 }\nEnvironment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training:/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/scripts\nWorkingDirectory=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=active\n",
+      "deltrel-deltreltrain-variant-network-report.service": "Result=success\nExecStart={ path=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/scripts/strength_efficiency_report.py --run-root /home/ubuntu/deltrel-runs/variant-network --provisioned-gpus 8 --output /home/ubuntu/deltrel-runs/variant-network/strength-efficiency.json --quiet ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:43:29 UTC] ; stop_time=[Tue 2026-09-15 00:43:57 UTC] ; pid=2920771 ; code=exited ; status=0 }\nEnvironment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training\nWorkingDirectory=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=inactive\n",
+      "deltrel-deltreltrain-variant-network-backup.service": "Result=success\nExecStart={ path=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/scripts/replay_manifest_backup.py backup --run-root /home/ubuntu/deltrel-runs/variant-network --retain 3 ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }\nEnvironment=PYTHONDONTWRITEBYTECODE=1\nWorkingDirectory=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=inactive\n",
+      "deltrel-deltreltrain-variant-network-disaster-backup.service": "Result=success\nExecStart={ path=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/.venv/bin/python /home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training/scripts/training_disaster_recovery.py snapshot --run-root /home/ubuntu/deltrel-runs/variant-network --profile /home/ubuntu/deltrel-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml --backup-root /lambda/nfs/texas-north-fs/deltrel-dr/variant-network --expected-backup-mount /lambda/nfs/texas-north-fs ; ignore_errors=no ; start_time=[Tue 2026-09-15 00:43:29 UTC] ; stop_time=[Tue 2026-09-15 00:52:49 UTC] ; pid=2920772 ; code=exited ; status=0 }\nEnvironment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training\nWorkingDirectory=/home/ubuntu/deltrel-releases/variant-adaptive-promotion-20260914-v3/training\nActiveState=inactive\n"
     },
     "champion": {
-      "format": "startrain.model-pointer",
+      "format": "deltreltrain.model-pointer",
       "generation_family": "variant-network-a",
       "manifest": "manifests/manifest-4e4de1abf995fd98679c83b0561894fae614d40d307f790735c417888c578b55.json",
       "manifest_bytes": 701,
@@ -2175,7 +2175,7 @@
       "updated_ns": 1789292753083549112
     },
     "candidate": {
-      "format": "startrain.model-pointer",
+      "format": "deltreltrain.model-pointer",
       "generation_family": "variant-network-a",
       "manifest": "manifests/manifest-bb06a6c9fcb52ad353b6f29af9857bb41ef75083f3d42ab53954db5c3b8eb6de.json",
       "manifest_bytes": 701,
@@ -2227,7 +2227,7 @@
     },
     "last_decision_contract_matches_active": true,
     "active_allocation_files": [
-      "/home/ubuntu/edgeconnect-runs/variant-network/arena/balanced-400dc692f581a442-sha256-1f4daf2dd394b4d1ac8937bd5e84391f25b6eaf294df7a3f8917f1a77bfb74cd-vs-sha256-30aa86efbb093e41e9db0b0a9b93fb586d26e257a598946409527e1f343d7628.allocation.json"
+      "/home/ubuntu/deltrel-runs/variant-network/arena/balanced-400dc692f581a442-sha256-1f4daf2dd394b4d1ac8937bd5e84391f25b6eaf294df7a3f8917f1a77bfb74cd-vs-sha256-30aa86efbb093e41e9db0b0a9b93fb586d26e257a598946409527e1f343d7628.allocation.json"
     ]
   },
   "preserved_metadata_before": {
@@ -2239,31 +2239,31 @@
     "strength-epoch.json": "6586b9c9ca392d4569d3bc1ef279186f81cc31f67614aa42d842cc642a39ca82"
   },
   "archive_verification_units": {
-    "edgeconnect-adaptive-archive-verify-20260914.service": "Result=success\nExecMainExitTimestamp=\nActiveState=inactive\n",
-    "edgeconnect-adaptive-archive-verify-20260914-v2.service": "Result=success\nExecMainExitTimestamp=\nActiveState=inactive\n",
-    "edgeconnect-adaptive-archive-verify-20260914-v3.service": "Result=success\nExecMainExitTimestamp=\nActiveState=inactive\n"
+    "deltrel-adaptive-archive-verify-20260914.service": "Result=success\nExecMainExitTimestamp=\nActiveState=inactive\n",
+    "deltrel-adaptive-archive-verify-20260914-v2.service": "Result=success\nExecMainExitTimestamp=\nActiveState=inactive\n",
+    "deltrel-adaptive-archive-verify-20260914-v3.service": "Result=success\nExecMainExitTimestamp=\nActiveState=inactive\n"
   },
   "archive_verification_results": {
-    "edgeconnect-adaptive-archive-verify-20260914.service": {
+    "deltrel-adaptive-archive-verify-20260914.service": {
       "checkpoint_sha256": "d874a775d13744e0ce56764a2c6effde5c9fac7ece8abc29c2649c3b563ee3dc",
       "checkpoint_step": 298764,
-      "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914",
+      "destination": "/home/ubuntu/deltrel-preserved/variant-network/adaptive-promotion-cutover-20260914",
       "files": 49288,
       "replay_shards": 48900,
       "status": "verified"
     },
-    "edgeconnect-adaptive-archive-verify-20260914-v2.service": {
+    "deltrel-adaptive-archive-verify-20260914-v2.service": {
       "checkpoint_sha256": "1b536c98322cd5326b00747db0552361e03d37dee575ac44415941f0fb7b25d0",
       "checkpoint_step": 299179,
-      "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v2",
+      "destination": "/home/ubuntu/deltrel-preserved/variant-network/adaptive-promotion-cutover-20260914-v2",
       "files": 52856,
       "replay_shards": 52467,
       "status": "verified"
     },
-    "edgeconnect-adaptive-archive-verify-20260914-v3.service": {
+    "deltrel-adaptive-archive-verify-20260914-v3.service": {
       "checkpoint_sha256": "d24164b4e85da177213b5ec02516c745a0749af85d2b8f7f2c6e6a9fc1508b15",
       "checkpoint_step": 299595,
-      "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v3",
+      "destination": "/home/ubuntu/deltrel-preserved/variant-network/adaptive-promotion-cutover-20260914-v3",
       "files": 52270,
       "replay_shards": 51880,
       "status": "verified"
@@ -2272,19 +2272,19 @@
   "preservation_union": {
     "snapshots": [
       {
-        "path": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914",
+        "path": "/home/ubuntu/deltrel-preserved/variant-network/adaptive-promotion-cutover-20260914",
         "checkpoint_step": 298764,
         "shards": 48900,
         "ready_samples_at_snapshot": 4066132
       },
       {
-        "path": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v2",
+        "path": "/home/ubuntu/deltrel-preserved/variant-network/adaptive-promotion-cutover-20260914-v2",
         "checkpoint_step": 299179,
         "shards": 52467,
         "ready_samples_at_snapshot": 4127475
       },
       {
-        "path": "/home/ubuntu/edgeconnect-preserved/variant-network/adaptive-promotion-cutover-20260914-v3",
+        "path": "/home/ubuntu/deltrel-preserved/variant-network/adaptive-promotion-cutover-20260914-v3",
         "checkpoint_step": 299595,
         "shards": 51880,
         "ready_samples_at_snapshot": 4098815
@@ -2294,13 +2294,13 @@
     "logical_positions_not_summed_across_revisions": true
   },
   "first_new_backup": {
-    "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789433465241036061-67dafbecc9811896fc9046f030a988513bd3ba1567087598f841f4ffa4a0e3da.json",
+    "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789433465241036061-67dafbecc9811896fc9046f030a988513bd3ba1567087598f841f4ffa4a0e3da.json",
     "pointer": {
       "bytes": 9613328,
       "created_ns": 1789433465241036061,
       "generation_family": "variant-network-a",
       "path": "1789433465241036061-67dafbecc9811896fc9046f030a988513bd3ba1567087598f841f4ffa4a0e3da.json",
-      "report": "startrain-disaster-recovery-latest",
+      "report": "deltreltrain-disaster-recovery-latest",
       "run_id": "variant-network",
       "schema_version": 1,
       "sha256": "67dafbecc9811896fc9046f030a988513bd3ba1567087598f841f4ffa4a0e3da"
@@ -2310,7 +2310,7 @@
       "created_ns": 1789433465241036061,
       "generation_family": "variant-network-a",
       "path": "1789433465241036061-67dafbecc9811896fc9046f030a988513bd3ba1567087598f841f4ffa4a0e3da.json",
-      "report": "startrain-disaster-recovery-snapshot-commit",
+      "report": "deltreltrain-disaster-recovery-snapshot-commit",
       "run_id": "variant-network",
       "schema_version": 1,
       "sha256": "67dafbecc9811896fc9046f030a988513bd3ba1567087598f841f4ffa4a0e3da"
@@ -2340,7 +2340,7 @@
     },
     "source": {
       "legacy_initialized_missing": false,
-      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml",
+      "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-adaptive-promotion-20260914-v3.yaml",
       "profile_logical_path": "profile-adaptive-promotion-20260914-v3.yaml",
       "replay_backup": {
         "bytes": 706580480,
@@ -2348,7 +2348,7 @@
         "cutoff_started_ns": 1789433014730044331,
         "sha256": "579df2f8691525787745abd885e5110d5784cdd1279ba2eed27cc2939e4112c7"
       },
-      "run_root": "/home/ubuntu/edgeconnect-runs/variant-network"
+      "run_root": "/home/ubuntu/deltrel-runs/variant-network"
     }
   },
   "final_health": {

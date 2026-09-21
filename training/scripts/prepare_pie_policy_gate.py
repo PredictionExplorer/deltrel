@@ -15,9 +15,9 @@ from pathlib import Path
 import tempfile
 from typing import Sequence
 
-from startrain.config import load_config
-from startrain.pie_policy import validate_pie_policy_transition
-from startrain import search_allocation_gate as admission
+from deltreltrain.config import load_config
+from deltreltrain.pie_policy import validate_pie_policy_transition
+from deltreltrain import search_allocation_gate as admission
 
 
 def _reference(root: Path, path: Path) -> dict[str, str]:

@@ -1,9 +1,9 @@
 {
-  "format": "startrain.cpu-efficiency-deployment",
+  "format": "deltreltrain.cpu-efficiency-deployment",
   "schema_version": 1,
   "status": "complete_healthy",
   "release": {
-    "release": "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912",
+    "release": "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912",
     "commit": "8d0d643d30430afd9cd7c662fe4648aedecfca3e",
     "source_files": 575,
     "archive": "source-corrected.tar.gz",
@@ -13,27 +13,27 @@
     "qualification_note": "Source-only CPU efficiency release; identical profile, existing graph32 evidence and learner clocks. Linux qualification narrowed parallel submission to multirow batches. H100 gates remain mandatory before migration."
   },
   "source_authority": {
-    "release": "/home/ubuntu/edgeconnect-releases/variant-cache-activation-20260912",
-    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.yaml",
+    "release": "/home/ubuntu/deltrel-releases/variant-cache-activation-20260912",
+    "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-cache-activation-20260912.yaml",
     "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a",
     "config_sha256": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3",
     "source_commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14"
   },
   "candidate": {
     "source": {
-      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.yaml",
+      "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-cache-activation-20260912.yaml",
       "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a",
       "config_sha256": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3",
       "source_commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14"
     },
     "target": {
-      "profile": "/home/ubuntu/edgeconnect-rollouts/cpu-efficiency-20260912/profile-efficiency-candidate.yaml",
+      "profile": "/home/ubuntu/deltrel-rollouts/cpu-efficiency-20260912/profile-efficiency-candidate.yaml",
       "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a",
       "config_sha256": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3"
     },
     "changes": [],
     "gate": {
-      "path": "/home/ubuntu/edgeconnect-runs/variant-network/status/search-allocation-gates/7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3.json",
+      "path": "/home/ubuntu/deltrel-runs/variant-network/status/search-allocation-gates/7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3.json",
       "sha256": "1133b04604a8f6a93804064aece054450c1764f32c09cbad824e031d1a8569b3"
     },
     "record_strength_epoch": false
@@ -90,11 +90,11 @@
       },
       "binaries": {
         "baseline": {
-          "path": "/home/ubuntu/edgeconnect-releases/variant-cache-activation-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+          "path": "/home/ubuntu/deltrel-releases/variant-cache-activation-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
           "sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b"
         },
         "candidate": {
-          "path": "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+          "path": "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
           "sha256": "38e552c582b8674137fdf61cf1d8945b3d476b7d7ae8cd6cc145823f8cd84da7"
         }
       },
@@ -614,11 +614,11 @@
       },
       "binaries": {
         "baseline": {
-          "path": "/home/ubuntu/edgeconnect-releases/variant-cache-activation-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+          "path": "/home/ubuntu/deltrel-releases/variant-cache-activation-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
           "sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b"
         },
         "candidate": {
-          "path": "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+          "path": "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
           "sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33"
         }
       },
@@ -1462,7 +1462,7 @@
           "2.4.0"
         ],
         [
-          "star-native",
+          "deltrel-native",
           "0.1.0"
         ],
         [
@@ -1470,7 +1470,7 @@
           "1.3.1"
         ],
         [
-          "startrain",
+          "deltreltrain",
           "0.3.0"
         ],
         [
@@ -1530,8 +1530,8 @@
           "16.1"
         ]
       ],
-      "source": "/home/ubuntu/edgeconnect-releases/variant-cache-activation-20260912/training/startrain/__init__.py",
-      "native": "/home/ubuntu/edgeconnect-releases/variant-cache-activation-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+      "source": "/home/ubuntu/deltrel-releases/variant-cache-activation-20260912/training/deltreltrain/__init__.py",
+      "native": "/home/ubuntu/deltrel-releases/variant-cache-activation-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
       "native_sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b"
     },
     "new": {
@@ -1881,7 +1881,7 @@
           "2.4.0"
         ],
         [
-          "star-native",
+          "deltrel-native",
           "0.1.0"
         ],
         [
@@ -1889,7 +1889,7 @@
           "1.3.1"
         ],
         [
-          "startrain",
+          "deltreltrain",
           "0.3.0"
         ],
         [
@@ -1949,8 +1949,8 @@
           "16.1"
         ]
       ],
-      "source": "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/startrain/__init__.py",
-      "native": "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+      "source": "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/deltreltrain/__init__.py",
+      "native": "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
       "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33"
     }
   },
@@ -2185,7 +2185,7 @@
           "failure_exit_code": null,
           "failure_reason": null,
           "gpu_ids": [],
-          "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-cpu-ring4.heartbeat.json",
+          "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-cpu-ring4.heartbeat.json",
           "heartbeat_grace_until_ns": null,
           "last_exit_code": 0,
           "last_progress": 624,
@@ -2201,7 +2201,7 @@
           "gpu_ids": [
             1
           ],
-          "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-1.heartbeat.json",
+          "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-1.heartbeat.json",
           "heartbeat_grace_until_ns": null,
           "last_exit_code": 0,
           "last_progress": 1829,
@@ -2217,7 +2217,7 @@
           "gpu_ids": [
             2
           ],
-          "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-2.heartbeat.json",
+          "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-2.heartbeat.json",
           "heartbeat_grace_until_ns": null,
           "last_exit_code": 0,
           "last_progress": 2276,
@@ -2233,7 +2233,7 @@
           "gpu_ids": [
             3
           ],
-          "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-3.heartbeat.json",
+          "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-3.heartbeat.json",
           "heartbeat_grace_until_ns": null,
           "last_exit_code": 0,
           "last_progress": 1922,
@@ -2249,7 +2249,7 @@
           "gpu_ids": [
             4
           ],
-          "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-4.heartbeat.json",
+          "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-4.heartbeat.json",
           "heartbeat_grace_until_ns": null,
           "last_exit_code": 0,
           "last_progress": 2323,
@@ -2265,7 +2265,7 @@
           "gpu_ids": [
             5
           ],
-          "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-5.heartbeat.json",
+          "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-5.heartbeat.json",
           "heartbeat_grace_until_ns": null,
           "last_exit_code": 0,
           "last_progress": 2198,
@@ -2281,7 +2281,7 @@
           "gpu_ids": [
             6
           ],
-          "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-6.heartbeat.json",
+          "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-6.heartbeat.json",
           "heartbeat_grace_until_ns": null,
           "last_exit_code": 0,
           "last_progress": 2189,
@@ -2297,7 +2297,7 @@
           "gpu_ids": [
             7
           ],
-          "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/actor-gpu-7.heartbeat.json",
+          "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/actor-gpu-7.heartbeat.json",
           "heartbeat_grace_until_ns": null,
           "last_exit_code": 0,
           "last_progress": 1370,
@@ -2313,7 +2313,7 @@
           "gpu_ids": [
             7
           ],
-          "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/arena-promotion.heartbeat.json",
+          "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/arena-promotion.heartbeat.json",
           "heartbeat_grace_until_ns": null,
           "last_exit_code": 0,
           "last_progress": 984,
@@ -2329,7 +2329,7 @@
           "gpu_ids": [
             0
           ],
-          "heartbeat": "/home/ubuntu/edgeconnect-runs/variant-network/status/learner.heartbeat.json",
+          "heartbeat": "/home/ubuntu/deltrel-runs/variant-network/status/learner.heartbeat.json",
           "heartbeat_grace_until_ns": null,
           "last_exit_code": 0,
           "last_progress": 11051,
@@ -2353,7 +2353,7 @@
       "progress_ns": 1789212821498288282,
       "rank": 0,
       "replay_samples": 81254155,
-      "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01.pt",
+      "resumed_from": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01.pt",
       "schema_version": 1,
       "step": 218423,
       "target_updates_per_new_sample": 1.5,
@@ -2372,7 +2372,7 @@
       "checkpoint_sha256": "f808d0e5f61e219489127ceeabab88c929bcc8fadfae6ecc8f6274496bebba42",
       "epoch": 2353,
       "examples_consumed": 111832576,
-      "format": "startrain.recovery-pointer",
+      "format": "deltreltrain.recovery-pointer",
       "generation_family": "variant-network-a",
       "run_id": "variant-network",
       "schema_version": 1,
@@ -2431,10 +2431,10 @@
   "h100_smoke": {
     "status": "passed",
     "execution": "eager BF16 interface smoke, not a benchmark",
-    "release": "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912",
+    "release": "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912",
     "source_commit": "8d0d643d30430afd9cd7c662fe4648aedecfca3e",
     "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a",
-    "native_binary": "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+    "native_binary": "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
     "native_binary_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
     "model_identity": "sha256-d256c35fb2bde42043cc2e2f48b35eb171faef108e864914143f82bee12afffc",
     "manifest_sha256": "5c9626f9b6c853b9a0f59d5722149ec6047fd1329c012a22a5ab16a5221f0647",
@@ -2502,7 +2502,7 @@
     "peak_cuda_allocated_bytes": 488418304,
     "elapsed_seconds": 10.657822033856064,
     "neural_smoke_report": {
-      "path": "/home/ubuntu/edgeconnect-rollouts/cpu-efficiency-20260912/single-cutover/h100-smoke-neural.json",
+      "path": "/home/ubuntu/deltrel-rollouts/cpu-efficiency-20260912/single-cutover/h100-smoke-neural.json",
       "bytes": 2666,
       "sha256": "3b8f0094e0a008f3ce07a6f2ce64240d152a9ac745e7995c24cac6ad50c164b5"
     },
@@ -2514,12 +2514,12 @@
       "verified_test_executed": true,
       "junit_parse_error": null,
       "junit": {
-        "path": "/home/ubuntu/edgeconnect-rollouts/cpu-efficiency-20260912/single-cutover/h100-smoke-pinned-loader.xml",
+        "path": "/home/ubuntu/deltrel-rollouts/cpu-efficiency-20260912/single-cutover/h100-smoke-pinned-loader.xml",
         "bytes": 395,
         "sha256": "891cca3102d23d37cdb3cceaa21cc76869c6957d0dd2926e7668ec4cea0238b4"
       },
       "log": {
-        "path": "/home/ubuntu/edgeconnect-rollouts/cpu-efficiency-20260912/single-cutover/h100-smoke-pinned-loader.log",
+        "path": "/home/ubuntu/deltrel-rollouts/cpu-efficiency-20260912/single-cutover/h100-smoke-pinned-loader.log",
         "bytes": 80,
         "sha256": "423b1d0e014eb1eab96f4420f7b344c2615be505dd574b756ac884826ca74f2d"
       }
@@ -2584,7 +2584,7 @@
     "differences": [],
     "children": {
       "old": {
-        "release": "/home/ubuntu/edgeconnect-releases/variant-cache-activation-20260912",
+        "release": "/home/ubuntu/deltrel-releases/variant-cache-activation-20260912",
         "source_commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14",
         "model_identity": "sha256-d256c35fb2bde42043cc2e2f48b35eb171faef108e864914143f82bee12afffc",
         "checkpoint_sha256": "d256c35fb2bde42043cc2e2f48b35eb171faef108e864914143f82bee12afffc",
@@ -11350,7 +11350,7 @@
         "peak_cuda_allocated_bytes": 4032058880
       },
       "new": {
-        "release": "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912",
+        "release": "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912",
         "source_commit": "8d0d643d30430afd9cd7c662fe4648aedecfca3e",
         "model_identity": "sha256-d256c35fb2bde42043cc2e2f48b35eb171faef108e864914143f82bee12afffc",
         "checkpoint_sha256": "d256c35fb2bde42043cc2e2f48b35eb171faef108e864914143f82bee12afffc",
@@ -20117,15 +20117,15 @@
       }
     },
     "elapsed_seconds": 22.871976151131094,
-    "temporary_artifacts": "/home/ubuntu/edgeconnect-rollouts/cpu-efficiency-20260912/single-cutover/h100-source-differential-f2cjn5me"
+    "temporary_artifacts": "/home/ubuntu/deltrel-rollouts/cpu-efficiency-20260912/single-cutover/h100-source-differential-f2cjn5me"
   },
   "h100_acceptance_scope_note": "The differential uses torch.equal (exact numerical tensor equality), not a signed-zero-sensitive byte comparison, despite its raw acceptance label. All reported maximum absolute differences were zero; no tolerance was used.",
   "complete": {
     "status": "complete",
     "source": "8d0d643d30430afd9cd7c662fe4648aedecfca3e",
-    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-cpu-efficiency-20260912.yaml",
+    "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-cpu-efficiency-20260912.yaml",
     "migration": {
-      "backup_bundle": "/home/ubuntu/edgeconnect-runs/variant-network/migration-backups/1789213955545289674-profile-cpu-efficiency-20260912",
+      "backup_bundle": "/home/ubuntu/deltrel-runs/variant-network/migration-backups/1789213955545289674-profile-cpu-efficiency-20260912",
       "boundary": {
         "champion_model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
         "committed_replay_samples": 81278024,
@@ -20156,11 +20156,11 @@
       },
       "utd_segment": null,
       "writes": [
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile-cpu-efficiency-20260912.yaml",
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile-cpu-efficiency-20260912.sha256",
-        "/home/ubuntu/edgeconnect-runs/variant-network/continuous-migrations.jsonl",
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile.sha256",
-        "/home/ubuntu/edgeconnect-runs/variant-network/source-commit.txt"
+        "/home/ubuntu/deltrel-runs/variant-network/profile-cpu-efficiency-20260912.yaml",
+        "/home/ubuntu/deltrel-runs/variant-network/profile-cpu-efficiency-20260912.sha256",
+        "/home/ubuntu/deltrel-runs/variant-network/continuous-migrations.jsonl",
+        "/home/ubuntu/deltrel-runs/variant-network/profile.sha256",
+        "/home/ubuntu/deltrel-runs/variant-network/source-commit.txt"
       ]
     },
     "readiness": {
@@ -23762,8 +23762,8 @@
           "inference": {}
         }
       },
-      "expected_resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-f808d0e5f61e219489127ceeabab88c929bcc8fadfae6ecc8f6274496bebba42.pt",
-      "actual_resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-f808d0e5f61e219489127ceeabab88c929bcc8fadfae6ecc8f6274496bebba42.pt"
+      "expected_resumed_from": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-f808d0e5f61e219489127ceeabab88c929bcc8fadfae6ecc8f6274496bebba42.pt",
+      "actual_resumed_from": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-f808d0e5f61e219489127ceeabab88c929bcc8fadfae6ecc8f6274496bebba42.pt"
     },
     "completed_ns": 1789215630515320137
   },
@@ -23771,11 +23771,11 @@
     "status": "passed",
     "observed_ns": 1789215878496487713,
     "source_commit": "8d0d643d30430afd9cd7c662fe4648aedecfca3e",
-    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-cpu-efficiency-20260912.yaml",
+    "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-cpu-efficiency-20260912.yaml",
     "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a",
     "stopped_step": 218423,
     "current_step": 219255,
-    "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-f808d0e5f61e219489127ceeabab88c929bcc8fadfae6ecc8f6274496bebba42.pt",
+    "resumed_from": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-f808d0e5f61e219489127ceeabab88c929bcc8fadfae6ecc8f6274496bebba42.pt",
     "workers": {
       "actor-cpu-ring4": {
         "state": "running",
@@ -23788,7 +23788,7 @@
         "graph_validation_failures": 0,
         "graph_retained_bytes": 0,
         "native_paths": [
-          "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so"
+          "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so"
         ]
       },
       "actor-gpu-1": {
@@ -23802,7 +23802,7 @@
         "graph_validation_failures": 0,
         "graph_retained_bytes": 18735937024,
         "native_paths": [
-          "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so"
+          "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so"
         ]
       },
       "actor-gpu-2": {
@@ -23816,7 +23816,7 @@
         "graph_validation_failures": 0,
         "graph_retained_bytes": 5867225600,
         "native_paths": [
-          "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so"
+          "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so"
         ]
       },
       "actor-gpu-3": {
@@ -23830,7 +23830,7 @@
         "graph_validation_failures": 0,
         "graph_retained_bytes": 18394620416,
         "native_paths": [
-          "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so"
+          "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so"
         ]
       },
       "actor-gpu-4": {
@@ -23844,7 +23844,7 @@
         "graph_validation_failures": 0,
         "graph_retained_bytes": 8099834368,
         "native_paths": [
-          "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so"
+          "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so"
         ]
       },
       "actor-gpu-5": {
@@ -23858,7 +23858,7 @@
         "graph_validation_failures": 0,
         "graph_retained_bytes": 29245536768,
         "native_paths": [
-          "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so"
+          "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so"
         ]
       },
       "actor-gpu-6": {
@@ -23872,7 +23872,7 @@
         "graph_validation_failures": 0,
         "graph_retained_bytes": 15394059264,
         "native_paths": [
-          "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so"
+          "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so"
         ]
       },
       "actor-gpu-7": {
@@ -23886,7 +23886,7 @@
         "graph_validation_failures": 0,
         "graph_retained_bytes": 17559031296,
         "native_paths": [
-          "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so"
+          "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so"
         ]
       },
       "arena-promotion": {
@@ -23900,7 +23900,7 @@
         "graph_validation_failures": 0,
         "graph_retained_bytes": 0,
         "native_paths": [
-          "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so"
+          "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so"
         ]
       },
       "learner": {
@@ -23917,27 +23917,27 @@
       }
     },
     "units": {
-      "edgeconnect-startrain-variant-network.service": {
+      "deltrel-deltreltrain-variant-network.service": {
         "MainPID": "2325860",
-        "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training",
+        "WorkingDirectory": "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training",
         "ActiveState": "active",
         "UnitFileState": "enabled"
       },
-      "edgeconnect-startrain-variant-network-monitor.service": {
+      "deltrel-deltreltrain-variant-network-monitor.service": {
         "MainPID": "2327010",
-        "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912/training",
+        "WorkingDirectory": "/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912/training",
         "ActiveState": "active",
         "UnitFileState": "enabled"
       },
-      "edgeconnect-startrain-variant-network-report.timer": {
+      "deltrel-deltreltrain-variant-network-report.timer": {
         "ActiveState": "active",
         "UnitFileState": "enabled"
       },
-      "edgeconnect-startrain-variant-network-backup.timer": {
+      "deltrel-deltreltrain-variant-network-backup.timer": {
         "ActiveState": "active",
         "UnitFileState": "enabled"
       },
-      "edgeconnect-startrain-variant-network-disaster-backup.timer": {
+      "deltrel-deltreltrain-variant-network-disaster-backup.timer": {
         "ActiveState": "active",
         "UnitFileState": "enabled"
       }
@@ -23950,7 +23950,7 @@
       "generation_family": "variant-network-a",
       "objects": 30179,
       "run_id": "variant-network",
-      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789214851402864005-3366e035fa63df49e32812c8b9a3813830717976b1a7f358dbafdfccd58e6769.json",
+      "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789214851402864005-3366e035fa63df49e32812c8b9a3813830717976b1a7f358dbafdfccd58e6769.json",
       "snapshot_bytes": 5842963,
       "snapshot_sha256": "3366e035fa63df49e32812c8b9a3813830717976b1a7f358dbafdfccd58e6769",
       "status": "ok"
@@ -27558,11 +27558,11 @@
         "inference": {}
       }
     },
-    "expected_resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-f808d0e5f61e219489127ceeabab88c929bcc8fadfae6ecc8f6274496bebba42.pt",
-    "actual_resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-f808d0e5f61e219489127ceeabab88c929bcc8fadfae6ecc8f6274496bebba42.pt"
+    "expected_resumed_from": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-f808d0e5f61e219489127ceeabab88c929bcc8fadfae6ecc8f6274496bebba42.pt",
+    "actual_resumed_from": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-f808d0e5f61e219489127ceeabab88c929bcc8fadfae6ecc8f6274496bebba42.pt"
   },
   "migration": {
-    "backup_bundle": "/home/ubuntu/edgeconnect-runs/variant-network/migration-backups/1789213955545289674-profile-cpu-efficiency-20260912",
+    "backup_bundle": "/home/ubuntu/deltrel-runs/variant-network/migration-backups/1789213955545289674-profile-cpu-efficiency-20260912",
     "boundary": {
       "champion_model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
       "committed_replay_samples": 81278024,
@@ -27593,11 +27593,11 @@
     },
     "utd_segment": null,
     "writes": [
-      "/home/ubuntu/edgeconnect-runs/variant-network/profile-cpu-efficiency-20260912.yaml",
-      "/home/ubuntu/edgeconnect-runs/variant-network/profile-cpu-efficiency-20260912.sha256",
-      "/home/ubuntu/edgeconnect-runs/variant-network/continuous-migrations.jsonl",
-      "/home/ubuntu/edgeconnect-runs/variant-network/profile.sha256",
-      "/home/ubuntu/edgeconnect-runs/variant-network/source-commit.txt"
+      "/home/ubuntu/deltrel-runs/variant-network/profile-cpu-efficiency-20260912.yaml",
+      "/home/ubuntu/deltrel-runs/variant-network/profile-cpu-efficiency-20260912.sha256",
+      "/home/ubuntu/deltrel-runs/variant-network/continuous-migrations.jsonl",
+      "/home/ubuntu/deltrel-runs/variant-network/profile.sha256",
+      "/home/ubuntu/deltrel-runs/variant-network/source-commit.txt"
     ]
   },
   "before_migration_optimized": {
@@ -27614,7 +27614,7 @@
     "mode": "exact-stopped-snapshot",
     "proof": {
       "age_seconds": 2197.004389877,
-      "path": "/home/ubuntu/edgeconnect-rollouts/cpu-efficiency-20260912/verified-objects-final.json",
+      "path": "/home/ubuntu/deltrel-rollouts/cpu-efficiency-20260912/verified-objects-final.json",
       "reused": true,
       "sha256": "f4114a7e7a993af39d1beb98dc4b4b16aa8ae73858c9d92005539800e3e0cdc6"
     },
@@ -27626,7 +27626,7 @@
       "generation_family": "variant-network-a",
       "objects": 29018,
       "run_id": "variant-network",
-      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789213542848212817-1d87087852140f6a2e1d9b5221a13154ab4e1aa7dfdd2ec8919d1d5ab95515ba.json",
+      "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789213542848212817-1d87087852140f6a2e1d9b5221a13154ab4e1aa7dfdd2ec8919d1d5ab95515ba.json",
       "snapshot_bytes": 5618863,
       "snapshot_sha256": "1d87087852140f6a2e1d9b5221a13154ab4e1aa7dfdd2ec8919d1d5ab95515ba",
       "status": "ok"
@@ -27634,21 +27634,21 @@
     "status": "ok"
   },
   "before_migration_exact_snapshot_pin": {
-    "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789213542848212817-1d87087852140f6a2e1d9b5221a13154ab4e1aa7dfdd2ec8919d1d5ab95515ba.json",
+    "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789213542848212817-1d87087852140f6a2e1d9b5221a13154ab4e1aa7dfdd2ec8919d1d5ab95515ba.json",
     "snapshot_sha256": "1d87087852140f6a2e1d9b5221a13154ab4e1aa7dfdd2ec8919d1d5ab95515ba",
     "snapshot_bytes": 5618863,
     "created_ns": 1789213542848212817,
     "run_id": "variant-network",
     "generation_family": "variant-network-a",
-    "backup_root": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network",
+    "backup_root": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network",
     "invocation_started_ns": 1789213004390259337,
     "pointer_sha256": "70365998d8b2f4ef368596d4b88e9186b4689245452ca01e39e576bd03c61327",
     "commit_marker_sha256": "270f34b483c49ca999d89ac873daf45c20d2cc74da9efc8a9356012a02ce75f4",
     "boundary": {
-      "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+      "run_root": "/home/ubuntu/deltrel-runs/variant-network",
       "run_id": "variant-network",
       "generation_family": "variant-network-a",
-      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.yaml",
+      "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-cache-activation-20260912.yaml",
       "source_commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14",
       "checkpoint_step": 218423,
       "files": {
@@ -27687,7 +27687,7 @@
     "generation_family": "variant-network-a",
     "objects": 29018,
     "run_id": "variant-network",
-    "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789213542848212817-1d87087852140f6a2e1d9b5221a13154ab4e1aa7dfdd2ec8919d1d5ab95515ba.json",
+    "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789213542848212817-1d87087852140f6a2e1d9b5221a13154ab4e1aa7dfdd2ec8919d1d5ab95515ba.json",
     "snapshot_bytes": 5618863,
     "snapshot_sha256": "1d87087852140f6a2e1d9b5221a13154ab4e1aa7dfdd2ec8919d1d5ab95515ba",
     "status": "ok"
@@ -27699,7 +27699,7 @@
     "generation_family": "variant-network-a",
     "objects": 30179,
     "run_id": "variant-network",
-    "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789214851402864005-3366e035fa63df49e32812c8b9a3813830717976b1a7f358dbafdfccd58e6769.json",
+    "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789214851402864005-3366e035fa63df49e32812c8b9a3813830717976b1a7f358dbafdfccd58e6769.json",
     "snapshot_bytes": 5842963,
     "snapshot_sha256": "3366e035fa63df49e32812c8b9a3813830717976b1a7f358dbafdfccd58e6769",
     "status": "ok"
@@ -27734,7 +27734,7 @@
   "worker_restarts": 0,
   "inference_failures": 0,
   "source_profile_changes": [],
-  "retained_server_directory": "/home/ubuntu/edgeconnect-rollouts/cpu-efficiency-20260912",
+  "retained_server_directory": "/home/ubuntu/deltrel-rollouts/cpu-efficiency-20260912",
   "validation_artifacts": {
     "controller-tests-server.xml": {
       "sha256": "ef16c50d49bdeff983a531920aed7d503f4f8eeefbab2ed929b29d3db0068f8f",

@@ -14,7 +14,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from startrain.runtime import atomic_json
+from deltreltrain.runtime import atomic_json
 
 if __package__:
     from .compare_frozen_replay_optimizer_calibration import compare_results
@@ -34,10 +34,10 @@ else:
         PREIMPORT_CACHE_BOOTSTRAP_ENV,
         CalibrationSettings,
     )
-from startrain.training import isolated_compile_cache
+from deltreltrain.training import isolated_compile_cache
 
-FORMAT = "startrain.frozen-replay-optimizer-calibration-queue"
-SCREEN_PLAN_REPORT = "startrain-elo-ablation-plan"
+FORMAT = "deltreltrain.frozen-replay-optimizer-calibration-queue"
+SCREEN_PLAN_REPORT = "deltreltrain-elo-ablation-plan"
 SCHEMA_VERSION = 1
 
 

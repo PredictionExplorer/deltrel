@@ -9,10 +9,10 @@ import weakref
 import pytest
 import torch
 
-from startrain.features import encode_batch
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.inference_batching import BoundedInferenceBroker
-from startrain.inference_graphs import (
+from deltreltrain.features import encode_batch
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.inference_batching import BoundedInferenceBroker
+from deltreltrain.inference_graphs import (
     BoundedInferenceGraphs,
     CaptureUnavailable,
     CudaBackend,
@@ -379,7 +379,7 @@ def test_failed_graph_reset_does_not_release_its_live_stream(monkeypatch):
 def test_owned_cuda_stream_uses_nonblocking_runtime_and_explicit_destruction(
     monkeypatch,
 ):
-    import startrain.inference_graphs as module
+    import deltreltrain.inference_graphs as module
 
     events = []
     runtime = SimpleNamespace(
@@ -411,7 +411,7 @@ def test_owned_cuda_stream_uses_nonblocking_runtime_and_explicit_destruction(
 
 
 def test_missing_runtime_bindings_never_fall_back_to_pooled_streams(monkeypatch):
-    import startrain.inference_graphs as module
+    import deltreltrain.inference_graphs as module
 
     def missing(name):
         raise ImportError("no bindings")
@@ -485,7 +485,7 @@ def test_failed_external_stream_destroy_quarantines_handle():
 
 
 def test_capture_exit_traceback_cannot_destroy_graph_after_stream_reuse(monkeypatch):
-    import startrain.inference_graphs as module
+    import deltreltrain.inference_graphs as module
 
     events = []
     pool = _CaptureStreamPool(max_idle_per_device=0)
@@ -600,7 +600,7 @@ def test_validation_error_traceback_releases_wrapper_before_external_stream(
 @pytest.fixture
 def feature_requests(monkeypatch):
     monkeypatch.setattr(
-        "startrain.inference.encode_native_feature_data",
+        "deltreltrain.inference.encode_native_feature_data",
         lambda data, **kwargs: data.encoded,
     )
     return encoded_requests
@@ -700,7 +700,7 @@ def test_broker_device_guard_serializes_capture_with_registry_work(feature_reque
             assert not future.done() and backend.attempts == 0
         assert future.result(timeout=3).tokens == [1]
         physical = broker.metrics_snapshot()["physical_inference"]
-    assert backend.threads == ["star-inference-owner"]
+    assert backend.threads == ["deltrel-inference-owner"]
     assert physical["neural_calls"] == 1
     assert physical["graph_warmup_calls"] == 3
     assert physical["graph_validation_replays"] == 1
@@ -791,9 +791,9 @@ def test_cuda_graph_stream_lifetimes_survive_ninety_six_cross_adapter_evictions(
 @pytest.mark.native
 def test_real_network_cuda_graphs_preserve_modes_boards_padding_and_cached_predictions():
     pytest.importorskip("cuda.bindings.runtime")
-    from startrain.model import GraphResTNet, ModelConfig
+    from deltreltrain.model import GraphResTNet, ModelConfig
 
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     torch.manual_seed(512)
     network = GraphResTNet(
         ModelConfig(width=16, rrt_groups=1, attention_heads=4, kv_heads=1)

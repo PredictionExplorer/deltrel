@@ -15,17 +15,17 @@ import torch
 import yaml
 
 from scripts import run_frozen_replay_optimizer_calibration as calibration
-from startrain.checkpoint import ExponentialMovingAverage, write_model_pointer
-from startrain.config import load_config
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, RULES_HASH_WIRE
-from startrain.features import DoubleStarPosition
-from startrain.learner import ImmutableModelPublisher
-from startrain.model import GraphResTNet
-from startrain.optim import build_optimizer
-from startrain.replay import ReplaySample, write_replay_shard
-from startrain.runtime import RunIdentity
-from startrain.topology import get_topology
-from startrain.training import build_scheduler, isolated_compile_cache
+from deltreltrain.checkpoint import ExponentialMovingAverage, write_model_pointer
+from deltreltrain.config import load_config
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, RULES_HASH_WIRE
+from deltreltrain.features import DoubleDeltrelPosition
+from deltreltrain.learner import ImmutableModelPublisher
+from deltreltrain.model import GraphResTNet
+from deltreltrain.optim import build_optimizer
+from deltreltrain.replay import ReplaySample, write_replay_shard
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.topology import get_topology
+from deltreltrain.training import build_scheduler, isolated_compile_cache
 
 TRAINING_ROOT = Path(__file__).parents[1]
 RUN_ID = "calibration-run"
@@ -87,7 +87,7 @@ def _sample(index: int) -> ReplaySample:
     topology = get_topology(10)
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
     stones[index % 5] = index % 2
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=10,
         stones=stones,
         to_move=(index + 1) % 2,

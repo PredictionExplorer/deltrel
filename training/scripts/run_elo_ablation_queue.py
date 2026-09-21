@@ -19,8 +19,8 @@ from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Protocol
 
-from startrain.config import load_config
-from startrain.runtime import atomic_json, load_run_identity
+from deltreltrain.config import load_config
+from deltreltrain.runtime import atomic_json, load_run_identity
 
 if __package__:
     from .compare_elo_ablation import (
@@ -54,9 +54,9 @@ else:
     from replay_manifest_backup import create_backup_with_evidence
 
 SCHEMA_VERSION = 1
-DEPLOYMENT_REPORT = "startrain-elo-ablation-deployment"
-QUEUE_REPORT = "startrain-elo-ablation-queue"
-CONTINUITY_HANDOFF_REPORT = "startrain-continuity-handoff-request"
+DEPLOYMENT_REPORT = "deltreltrain-elo-ablation-deployment"
+QUEUE_REPORT = "deltreltrain-elo-ablation-queue"
+CONTINUITY_HANDOFF_REPORT = "deltreltrain-continuity-handoff-request"
 _SEMANTIC_JSON_PIN = "json-fields-v1"
 _ARM_STATUSES = frozenset({"pending", "running", "completed", "failed", "quarantined"})
 _ISOLATED_FAILURE_DOMAINS = frozenset({"arm", "run", "workload"})
@@ -161,7 +161,7 @@ def _parser() -> argparse.ArgumentParser:
     manifest.add_argument("--continuity-handoff-output", type=Path)
     manifest.add_argument("--execution-lock", type=Path)
     manifest.add_argument("--source-commit")
-    manifest.add_argument("--orchestrator", default="startrain-orchestrate")
+    manifest.add_argument("--orchestrator", default="deltreltrain-orchestrate")
     manifest.add_argument("--poll-seconds", type=float, default=5.0)
     manifest.add_argument("--max-transient-retries", type=int, default=2)
     manifest.add_argument("--retry-delay-seconds", type=float, default=30.0)
@@ -589,7 +589,7 @@ def _profile_manifest_entry(
     if not run_root.is_dir():
         raise AblationQueueError(f"{label} run root does not exist: {run_root}")
     metadata = _read_json(metadata_path)
-    if metadata.get("report") != "startrain-elo-ablation-branch":
+    if metadata.get("report") != "deltreltrain-elo-ablation-branch":
         raise AblationQueueError(f"{label} ablation metadata report is invalid")
     if metadata.get("treatment") != label:
         raise AblationQueueError(f"{label} ablation metadata treatment disagrees")
@@ -644,7 +644,7 @@ def _profile_manifest_entry(
         cutover_path = run_root / "learner" / "selection-cutover.json"
         cutover = _read_json(cutover_path)
         if (
-            cutover.get("format") != "startrain.selection-cutover"
+            cutover.get("format") != "deltreltrain.selection-cutover"
             or cutover.get("schema_version") != 1
             or cutover.get("status") != "active"
             or cutover.get("selected_model_identity")
@@ -697,7 +697,7 @@ def _profile_manifest_entry(
     if warm_start_path.is_file():
         warm_start = _read_json(warm_start_path)
         if (
-            warm_start.get("format") != "startrain.champion-warm-start"
+            warm_start.get("format") != "deltreltrain.champion-warm-start"
             or warm_start.get("schema_version") != 1
             or warm_start.get("status") != "active"
             or warm_start.get("source_model_identity")
@@ -765,7 +765,7 @@ def generate_deployment_manifest(
     continuity_handoff_output: Path | None = None,
     execution_lock_path: Path | None = None,
     source_commit: str | None = None,
-    orchestrator: str = "startrain-orchestrate",
+    orchestrator: str = "deltreltrain-orchestrate",
     poll_seconds: float = 5.0,
     max_transient_retries: int = 2,
     retry_delay_seconds: float = 30.0,
@@ -786,7 +786,7 @@ def generate_deployment_manifest(
         raise AblationQueueError(f"training directory does not exist: {training}")
     plan_file = plan_path.expanduser().resolve()
     plan = _read_json(plan_file)
-    if plan.get("report") != "startrain-elo-ablation-plan":
+    if plan.get("report") != "deltreltrain-elo-ablation-plan":
         raise AblationQueueError("unsupported ablation plan")
     if plan.get("initialization", "fork") != "fork":
         raise AblationQueueError(
@@ -874,7 +874,7 @@ def generate_deployment_manifest(
         execution_lock_path.expanduser().resolve()
         if execution_lock_path is not None
         else resolved_state.parent.parent
-        / "edgeconnect-startrain-ablation-execution.lock"
+        / "deltrel-deltreltrain-ablation-execution.lock"
     )
     queue_outputs = {
         resolved_state,

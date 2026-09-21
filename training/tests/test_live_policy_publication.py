@@ -5,17 +5,17 @@ import json
 import pytest
 import torch
 
-from startrain import learner as learner_module
-from startrain.config import DataConfig, LearnerConfig, SchedulerConfig, TrainConfig
-from startrain.replay import (
+from deltreltrain import learner as learner_module
+from deltreltrain.config import DataConfig, LearnerConfig, SchedulerConfig, TrainConfig
+from deltreltrain.replay import (
     TARGET_OUTCOME,
     TARGET_POLICY,
     TARGET_SOFT_POLICY,
     read_replay_shard,
 )
-from startrain.replay_store import ReplayStore
-from startrain.runtime import RunIdentity
-from startrain.selfplay import (
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.selfplay import (
     PolicyPublicationConfig,
     SelfPlayActor,
     SelfPlayConfig,
@@ -33,7 +33,7 @@ class FixedEvaluator(Evaluator):
 
 
 def setup(tmp_path, variant=VARIANTS[1], *, games=2, rolling=False):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     identity = RunIdentity(tmp_path / "run.json", "live-run", "live-family", 1)
     store = ReplayStore(tmp_path / "replay")
     generation = store.lease_generation(identity, "live-actor")

@@ -6,12 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-import startrain.promotion as promotion_module
-from startrain.arena import ArenaRunner, summarize_completed_arena_pairs
-from startrain.checkpoint import write_model_pointer
-from startrain.config import HistoricalEvaluationConfig
-from startrain.historical_evaluation import HistoricalEvaluationPlan
-from startrain.promotion import PromotionSupervisor
+import deltreltrain.promotion as promotion_module
+from deltreltrain.arena import ArenaRunner, summarize_completed_arena_pairs
+from deltreltrain.checkpoint import write_model_pointer
+from deltreltrain.config import HistoricalEvaluationConfig
+from deltreltrain.historical_evaluation import HistoricalEvaluationPlan
+from deltreltrain.promotion import PromotionSupervisor
 
 from test_promotion import _promotion_wave_case
 
@@ -225,7 +225,7 @@ def test_native_balanced_supervisor_resumes_saved_moves_after_restart(
 ):
     from test_arena_resume import Clock, Evaluator
 
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     case = _promotion_wave_case(tmp_path, monkeypatch)
     experiment = replace(
         case.experiment,

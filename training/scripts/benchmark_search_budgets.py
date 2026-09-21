@@ -22,23 +22,23 @@ import sys
 import time
 from typing import Any
 
-from startrain.checkpoint import load_model_manifest
-from startrain.config import ActorInferenceConfig, load_config
-from startrain.contracts import (
+from deltreltrain.checkpoint import load_model_manifest
+from deltreltrain.config import ActorInferenceConfig, load_config
+from deltreltrain.contracts import (
     FEATURE_SCHEMA_VERSION,
     RULES_HASH_WIRE,
     SEARCH_ALGORITHM_ID,
 )
-from startrain.native import load_star_native
-from startrain.promotion import load_manifest_evaluator
-from startrain.search_options import (
+from deltreltrain.native import load_deltrel_native
+from deltreltrain.promotion import load_manifest_evaluator
+from deltreltrain.search_options import (
     FullSearchBudgetConfig,
     SearchExecutionConfig,
     normalized_root_entropy,
     require_search_execution,
 )
-from startrain.selfplay import GameVariant
-from startrain.topology import SUPPORTED_RINGS
+from deltreltrain.selfplay import GameVariant
+from deltreltrain.topology import SUPPORTED_RINGS
 
 
 @dataclass(frozen=True)
@@ -350,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError(f"search sweep failed: {stderr[-4000:]}")
         print(stdout, end="")
         return 0
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     assert native is not None
     benchmark_config = replace(
         config,

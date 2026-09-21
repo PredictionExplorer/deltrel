@@ -11,11 +11,11 @@ import sys
 import time
 from pathlib import Path
 
-from startrain.config import load_config
-from startrain.model import model_parameter_count
+from deltreltrain.config import load_config
+from deltreltrain.model import model_parameter_count
 
 SCHEMA_VERSION = 1
-REPORT = "startrain-scratch-architecture-initialization"
+REPORT = "deltreltrain-scratch-architecture-initialization"
 
 
 class ScratchPreparationError(RuntimeError):
@@ -39,7 +39,7 @@ def prepare_scratch_root(plan_path: Path, treatment: str) -> dict[str, object]:
     if (
         not isinstance(plan, dict)
         or plan.get("schema_version") != 1
-        or plan.get("report") != "startrain-elo-ablation-plan"
+        or plan.get("report") != "deltreltrain-elo-ablation-plan"
         or plan.get("initialization") != "scratch"
     ):
         raise ScratchPreparationError("plan is not a scratch architecture plan")

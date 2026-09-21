@@ -14,9 +14,9 @@ Run on every pull request:
 ```bash
 cd training
 uv sync --extra test --extra serve --extra onnx --locked
-uv run maturin develop --release --locked --manifest-path crates/star-py/Cargo.toml
-uv run ruff check startrain starserve tests scripts
-uv run ruff format --check startrain starserve tests scripts
+uv run maturin develop --release --locked --manifest-path crates/deltrel-py/Cargo.toml
+uv run ruff check deltreltrain deltrelserve tests scripts
+uv run ruff format --check deltreltrain deltrelserve tests scripts
 uv run pyright
 uv run pytest --require-native -m "not cuda and not multi_gpu and not soak" \
   --cov --cov-report=json:coverage.json
@@ -53,15 +53,15 @@ npm run test:mutation
 
 cd training
 uv run mutmut run
-cargo mutants --package star-engine --package star-search
+cargo mutants --package deltrel-engine --package deltrel-search
 ```
 
 The Python mirror must match the canonical v2 bytes and fingerprint in
-`src/lib/star/rules.ts`:
+`src/lib/deltrel/rules.ts`:
 
 ```bash
 uv run pytest tests/test_conformance_fixture.py
-# expected fingerprint: fnv1a64:a5d932b0ef8354e8
+# expected fingerprint: fnv1a64:46e4fbcff4e17fd3
 ```
 
 ## Tier 3: one-GPU CUDA validation
@@ -107,7 +107,7 @@ Then run the long tests and one complete orchestration lifecycle:
 
 ```bash
 uv run pytest --require-native --run-soak -m soak
-startrain-orchestrate --config configs/h100-8gpu.yaml
+deltreltrain-orchestrate --config configs/h100-8gpu.yaml
 ```
 
 The orchestration soak is complete only after it demonstrates:

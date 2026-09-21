@@ -1,28 +1,28 @@
 {
   "schema_version": 1,
-  "report": "startrain-elo-confirmation-campaign",
-  "state_path": "/var/lib/edgeconnect/elo-confirmation/campaign-state.json",
-  "seed_boundary_hold_path": "/var/lib/edgeconnect/elo-confirmation/seed-boundary-hold.json",
+  "report": "deltreltrain-elo-confirmation-campaign",
+  "state_path": "/var/lib/deltrel/elo-confirmation/campaign-state.json",
+  "seed_boundary_hold_path": "/var/lib/deltrel/elo-confirmation/seed-boundary-hold.json",
   "seeds": [
     {
       "seed": 17,
-      "deployment_manifest": "/var/lib/edgeconnect/elo-confirmation/seed17/deployment.json",
+      "deployment_manifest": "/var/lib/deltrel/elo-confirmation/seed17/deployment.json",
       "deployment_sha256": "<sha256>"
     },
     {
       "seed": 18,
-      "deployment_manifest": "/var/lib/edgeconnect/elo-confirmation/seed18/deployment.json",
+      "deployment_manifest": "/var/lib/deltrel/elo-confirmation/seed18/deployment.json",
       "deployment_sha256": "<sha256>"
     },
     {
       "seed": 19,
-      "deployment_manifest": "/var/lib/edgeconnect/elo-confirmation/seed19/deployment.json",
+      "deployment_manifest": "/var/lib/deltrel/elo-confirmation/seed19/deployment.json",
       "deployment_sha256": "<sha256>"
     }
   ],
   "cross_seed": {
-    "policy": "/var/lib/edgeconnect/elo-confirmation/adoption-policy.json",
+    "policy": "/var/lib/deltrel/elo-confirmation/adoption-policy.json",
     "policy_sha256": "<sha256>",
-    "output": "/var/lib/edgeconnect/elo-confirmation/cross-seed-comparison.json"
+    "output": "/var/lib/deltrel/elo-confirmation/cross-seed-comparison.json"
   }
 }

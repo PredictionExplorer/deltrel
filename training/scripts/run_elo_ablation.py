@@ -14,12 +14,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-from startrain.config import load_config
-from startrain.orchestration import (
+from deltreltrain.config import load_config
+from deltreltrain.orchestration import (
     FATAL_WORKER_EXIT_CODE,
     TRANSIENT_WORKER_EXIT_CODE,
 )
-from startrain.runtime import (
+from deltreltrain.runtime import (
     SignalLatch,
     atomic_json,
     load_run_identity,
@@ -34,7 +34,7 @@ else:
     from replay_manifest_backup import restore_if_corrupt
 
 SCHEMA_VERSION = 1
-REPORT_NAME = "startrain-elo-ablation-run"
+REPORT_NAME = "deltreltrain-elo-ablation-run"
 BUDGET_COMPLETION = "budget_completion"
 TRANSIENT_CRASH = "transient_crash"
 FATAL_ORCHESTRATOR_EXIT = "fatal_orchestrator_exit"
@@ -44,7 +44,7 @@ RUNNER_ERROR = "runner_error"
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--orchestrator", default="startrain-orchestrate")
+    parser.add_argument("--orchestrator", default="deltreltrain-orchestrate")
     parser.add_argument("--poll-seconds", type=float, default=5.0)
     return parser
 
@@ -623,7 +623,7 @@ def run_elo_ablation(
     if coordinator_lock.exists() and _coordinator_owner_is_live(coordinator_lock):
         raise RuntimeError("ablation run root has a live coordinator lock")
     metadata = _read_json(metadata_path)
-    if metadata.get("report") != "startrain-elo-ablation-branch":
+    if metadata.get("report") != "deltreltrain-elo-ablation-branch":
         raise ValueError("unsupported ablation metadata")
     configured_profile = metadata.get("profile")
     configured_digest = metadata.get("profile_sha256")

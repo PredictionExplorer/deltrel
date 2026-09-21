@@ -9,17 +9,17 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-import startrain.selfplay as selfplay_module
-import startrain.actor as actor_module
+import deltreltrain.selfplay as selfplay_module
+import deltreltrain.actor as actor_module
 from scripts import migrate_continuous_profile as migration
-from startrain.actor import resolve_actor_experiment
-from startrain.config import ActorPipelineConfig, GPUWorkerConfig, load_config
-from startrain.config_compatibility import (
+from deltreltrain.actor import resolve_actor_experiment
+from deltreltrain.config import ActorPipelineConfig, GPUWorkerConfig, load_config
+from deltreltrain.config_compatibility import (
     compatible_config_epoch_payloads,
     without_cohort_search_budget_defaults,
 )
-from startrain.runtime import RunIdentity
-from startrain.selfplay import (
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.selfplay import (
     SelfPlayActor,
     SelfPlayConfig,
     SelfPlayIdentity,
@@ -95,7 +95,7 @@ def run(native, *, shared=True, rolling=True, variant=VARIANTS[0], **changes):
 @pytest.mark.native
 @pytest.mark.parametrize("variant", VARIANTS, ids=lambda value: value.label)
 def test_shared_wave_budgets_preserve_search_and_pda_streams(variant):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     independent, _, baseline_games = run(native, shared=False, variant=variant)
     global_rng = random.getstate()
     shared, sink, shared_games = run(native, variant=variant)
@@ -117,7 +117,7 @@ def test_shared_wave_budgets_preserve_search_and_pda_streams(variant):
 @pytest.mark.parametrize("rolling", [False, True])
 @pytest.mark.parametrize("full", [False, True])
 def test_budget_probability_endpoints_and_repeatability(rolling, full):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     results = []
     for _ in range(2):
         worker, sink, _ = run(
@@ -136,7 +136,7 @@ def test_budget_probability_endpoints_and_repeatability(rolling, full):
 @pytest.mark.native
 @pytest.mark.parametrize("rolling", [False, True])
 def test_dedicated_generator_draws_exactly_once_per_search_wave(monkeypatch, rolling):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     original_random = random.Random
     generators = []
 

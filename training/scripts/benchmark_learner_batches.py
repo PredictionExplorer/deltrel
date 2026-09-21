@@ -18,14 +18,14 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     load_checkpoint,
     sha256_file,
 )
-from startrain.config import ExperimentConfig, load_config
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, RULES_HASH_WIRE
-from startrain.device import (
+from deltreltrain.config import ExperimentConfig, load_config
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, RULES_HASH_WIRE
+from deltreltrain.device import (
     empty_device_cache,
     enable_fast_math,
     resolve_compile,
@@ -35,25 +35,25 @@ from startrain.device import (
     seed_all,
     synchronize_device,
 )
-from startrain.model import GraphResTNet
-from startrain.optim import build_optimizer
-from startrain.replay import (
+from deltreltrain.model import GraphResTNet
+from deltreltrain.optim import build_optimizer
+from deltreltrain.replay import (
     DecodedReplayShard,
     ReplayBatch,
     augment_sample,
     collate_replay_samples,
     decode_replay_shard,
 )
-from startrain.replay_store import (
+from deltreltrain.replay_store import (
     MANIFEST_SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
     SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
     ReplaySpan,
     ShardRecord,
     validate_game_publications,
 )
-from startrain.runtime import validate_identifier
-from startrain.symmetry import deterministic_transform
-from startrain.training import (
+from deltreltrain.runtime import validate_identifier
+from deltreltrain.symmetry import deterministic_transform
+from deltreltrain.training import (
     HostTrainStepMetrics,
     build_scheduler,
     maybe_compile_model,

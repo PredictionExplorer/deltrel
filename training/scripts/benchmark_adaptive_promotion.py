@@ -13,9 +13,9 @@ import time
 
 import numpy as np
 
-from startrain.adaptive_promotion import _tail_counts, allocation_contract
-from startrain.config import ArenaConfig
-from startrain.balanced_evaluation import (
+from deltreltrain.adaptive_promotion import _tail_counts, allocation_contract
+from deltreltrain.config import ArenaConfig
+from deltreltrain.balanced_evaluation import (
     ADAPTIVE_INITIAL_HANDICAP_COEFFICIENT,
     cycle_log_e_value,
     stratified_pair_log_e_value,
@@ -199,8 +199,8 @@ def run_benchmark(*, trials=256, null_trials=1000, seed=71341):
     root = Path(__file__).resolve().parents[1]
     sources = [
         Path(__file__).resolve(),
-        root / "startrain/balanced_evaluation.py",
-        root / "startrain/adaptive_promotion.py",
+        root / "deltreltrain/balanced_evaluation.py",
+        root / "deltreltrain/adaptive_promotion.py",
     ]
     source_sha256 = {
         str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()

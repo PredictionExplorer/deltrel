@@ -4,10 +4,10 @@ import time
 
 import pytest
 
-from startrain import learner as module
-from startrain.config import DataConfig, LearnerConfig, SchedulerConfig, TrainConfig
-from startrain.replay import read_replay_shard, TARGET_OUTCOME
-from startrain.replay_store import ReplayStore
+from deltreltrain import learner as module
+from deltreltrain.config import DataConfig, LearnerConfig, SchedulerConfig, TrainConfig
+from deltreltrain.replay import read_replay_shard, TARGET_OUTCOME
+from deltreltrain.replay_store import ReplayStore
 from test_pipeline_core import make_test_learner
 from test_replay_game_revisions import publication as publication, _samples, _credit
 

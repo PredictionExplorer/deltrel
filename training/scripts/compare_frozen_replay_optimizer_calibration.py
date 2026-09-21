@@ -13,8 +13,8 @@ import random
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from startrain.checkpoint import sha256_file
-from startrain.runtime import atomic_json
+from deltreltrain.checkpoint import sha256_file
+from deltreltrain.runtime import atomic_json
 
 if __package__:
     from .prepare_elo_ablation import (
@@ -41,7 +41,7 @@ else:
         SCHEMA_VERSION as RESULT_SCHEMA_VERSION,
     )
 
-FORMAT = "startrain.frozen-replay-optimizer-calibration-comparison"
+FORMAT = "deltreltrain.frozen-replay-optimizer-calibration-comparison"
 SCHEMA_VERSION = 1
 MINIMUM_CONTROL_THROUGHPUT_FRACTION = 0.9
 DEFAULT_CONFIDENCE = 0.95
@@ -207,7 +207,7 @@ def _compile_cache(payload: Mapping[str, object]) -> dict[str, object] | None:
     cache = _mapping(raw, "compiled calibration cache")
     if (
         cache.get("schema_version") != 1
-        or cache.get("layout") != "startrain-isolated-compile-cache-v1"
+        or cache.get("layout") != "deltreltrain-isolated-compile-cache-v1"
     ):
         raise ValueError("compiled calibration cache schema is invalid")
     raw_root = cache.get("root")
@@ -273,9 +273,9 @@ def _compile_cache(payload: Mapping[str, object]) -> dict[str, object] | None:
             "compiled calibration cache owner marker is unreadable"
         ) from error
     expected_marker = {
-        "format": "startrain.compile-cache-owner",
+        "format": "deltreltrain.compile-cache-owner",
         "schema_version": 1,
-        "layout": "startrain-isolated-compile-cache-v1",
+        "layout": "deltreltrain-isolated-compile-cache-v1",
         "arm": payload.get("arm"),
         "run_contract_sha256": payload.get("run_contract_sha256"),
         "root": str(root),

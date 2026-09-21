@@ -12,11 +12,11 @@ from typing import Literal, cast
 import torch
 
 from scripts.run_lineage_arena import load_candidate
-from startrain.arena import ArenaRunner
-from startrain.config import ArenaConfig, load_config
-from startrain.checkpoint import sha256_file
-from startrain.native import validate_native_module
-from startrain.runtime import atomic_json
+from deltreltrain.arena import ArenaRunner
+from deltreltrain.config import ArenaConfig, load_config
+from deltreltrain.checkpoint import sha256_file
+from deltreltrain.native import validate_native_module
+from deltreltrain.runtime import atomic_json
 
 
 def compare(
@@ -77,9 +77,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.output.exists():
             raise ValueError("diagnostic output already exists")
-        import star_native
+        import deltrel_native
 
-        validate_native_module(star_native)
+        validate_native_module(deltrel_native)
         source = load_config(args.profile)
         arena = replace(
             source.arena,
@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
             config=arena,
             device=torch.device(args.device),
             precision=cast(Literal["fp32", "bf16"], args.precision),
-            native_module=star_native,
+            native_module=deltrel_native,
         )
         atomic_json(args.output, result)
     except (ValueError, OSError, RuntimeError) as error:

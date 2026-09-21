@@ -31,17 +31,17 @@ from typing import Any, cast
 
 import torch
 
-from startrain.checkpoint import load_ema_checkpoint, sha256_file
-from startrain.config import load_config
-from startrain.inference import (
+from deltreltrain.checkpoint import load_ema_checkpoint, sha256_file
+from deltreltrain.config import load_config
+from deltreltrain.inference import (
     GraphInferenceAdapter,
     InferenceConfig,
     InferenceResponse,
 )
-from startrain.inference_batching import BoundedInferenceBroker
-from startrain.model import GraphResTNet
-from startrain.native import load_star_native
-from startrain.topology import SUPPORTED_RINGS, get_topology
+from deltreltrain.inference_batching import BoundedInferenceBroker
+from deltreltrain.model import GraphResTNet
+from deltreltrain.native import load_deltrel_native
+from deltreltrain.topology import SUPPORTED_RINGS, get_topology
 
 
 def _requests(
@@ -126,7 +126,7 @@ def main() -> None:
     torch.cuda.set_device(device)
     torch.set_num_threads(2)
     torch.backends.cuda.matmul.allow_tf32 = True
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     assert native is not None
     config = load_config(args.config)
     cpu_model = GraphResTNet(config.model).eval()

@@ -7,8 +7,8 @@ from dataclasses import asdict, replace
 import pytest
 import torch
 
-import startrain.promotion as promotion_module
-from startrain.adaptive_promotion import (
+import deltreltrain.promotion as promotion_module
+from deltreltrain.adaptive_promotion import (
     allocation_metrics,
     cell_pair_prefixes,
     next_allocation,
@@ -16,14 +16,14 @@ from startrain.adaptive_promotion import (
     plan_complete,
     select_handicap_check,
 )
-from startrain.arena import ArenaPair, summarize_completed_arena_pairs
-from startrain.balanced_evaluation import (
+from deltreltrain.arena import ArenaPair, summarize_completed_arena_pairs
+from deltreltrain.balanced_evaluation import (
     balanced_cells,
     balanced_opening_seed,
     cell_variant,
     pair_key,
 )
-from startrain.config import ArenaConfig
+from deltreltrain.config import ArenaConfig
 
 from test_promotion import _promotion_wave_case
 

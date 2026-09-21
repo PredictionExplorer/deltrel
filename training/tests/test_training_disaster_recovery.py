@@ -11,7 +11,7 @@ import pytest
 import yaml
 
 import scripts.training_disaster_recovery as recovery
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     MODEL_MANIFEST_FORMAT,
     MODEL_MANIFEST_VERSION,
     MODEL_POINTER_FORMAT,
@@ -21,10 +21,10 @@ from startrain.checkpoint import (
     RESUME_CUTOVER_FORMAT,
     RESUME_CUTOVER_VERSION,
 )
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
-from startrain.model import MODEL_SCHEMA_VERSION
-from startrain.replay_store import ReplayStore
-from startrain.runtime import RunIdentity, atomic_json
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
+from deltreltrain.model import MODEL_SCHEMA_VERSION
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import RunIdentity, atomic_json
 
 
 @dataclass(frozen=True)
@@ -100,7 +100,7 @@ def _fixture(tmp_path: Path) -> RecoveryFixture:
     )
     (root / "source-commit.txt").write_text(f"{'a' * 40}\n", encoding="utf-8")
     (root / "python-environment.txt").write_text(
-        "Python 3.11.10\nstartrain==0.3.0\n",
+        "Python 3.11.10\ndeltreltrain==0.3.0\n",
         encoding="utf-8",
     )
 
@@ -235,7 +235,7 @@ def _fixture(tmp_path: Path) -> RecoveryFixture:
     _write_json(
         root / "learner" / "champion-warm-start.json",
         {
-            "format": "startrain.champion-warm-start",
+            "format": "deltreltrain.champion-warm-start",
             "schema_version": 1,
             "status": "active",
             "run_id": identity.run_id,

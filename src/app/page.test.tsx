@@ -9,8 +9,8 @@ vi.mock('@/components/GameScreen', () => ({
 vi.mock('@/components/SetupScreen', () => ({
   SetupScreen: () => <div>setup-screen</div>,
 }));
-vi.mock('@/components/Starfield', () => ({
-  Starfield: () => <div>starfield</div>,
+vi.mock('@/components/WaterScene', () => ({
+  WaterScene: () => <div>water-scene</div>,
 }));
 vi.mock('@/lib/store', () => ({
   useMounted: () => state.mounted,
@@ -28,7 +28,7 @@ describe('Home phase routing', () => {
   it('always renders decoration and gates setup until hydration', () => {
     state.mounted = false;
     const { container } = render(<Home />);
-    expect(screen.getByText('starfield')).toBeInTheDocument();
+    expect(screen.getByText('water-scene')).toBeInTheDocument();
     expect(screen.queryByText('setup-screen')).not.toBeInTheDocument();
     expect(container.querySelector('.app-skeleton')).toBeInTheDocument();
   });

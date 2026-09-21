@@ -49,7 +49,7 @@ is `756424294ea9b1ddb9275eda35882eb64d0799db8a05d41755156e6f77a13d1e`.
 No learner updates were discarded at shutdown.
 
 The cutover uses a separate disaster-recovery namespace:
-`/lambda/nfs/texas-north-fs/edgeconnect-dr/manual/mcts-throughput-cutover-20260910`.
+`/lambda/nfs/texas-north-fs/deltrel-dr/manual/mcts-throughput-cutover-20260910`.
 It was seeded with 12,764 immutable objects from one committed snapshot. Pinning
 that document directly avoided scanning the full historical snapshot archive;
 the stopped-boundary snapshot and its independent verifier still validate every
@@ -63,14 +63,14 @@ The migration recorded `kind: source-only`, an empty configuration diff, zero
 discarded steps, and no update-to-data segment change. All 117 captured learner,
 arena and run control files retained identical hashes through migration. The new
 frozen profile is
-`/home/ubuntu/edgeconnect-runs/variant-network/profile-mcts-throughput-20260910.yaml`;
+`/home/ubuntu/deltrel-runs/variant-network/profile-mcts-throughput-20260910.yaml`;
 its bytes match the prior frozen profile. The recorded configuration hash remains
 `cef8e21f826199dfb00f06c292c10fb09d2e4f874743c73d2de4b8407310c78b`.
 
 ## Activation and readiness
 
 The immutable runtime is
-`/home/ubuntu/edgeconnect-releases/variant-mcts-throughput-dced953`.
+`/home/ubuntu/deltrel-releases/variant-mcts-throughput-dced953`.
 It launched at 07:34:13 UTC and passed the sustained readiness gate at 07:36:43 UTC.
 The final independent health check reached learner step 164,371 and confirmed that
 the learner resumed from the exact stopped-boundary recovery checkpoint.
@@ -87,6 +87,6 @@ source authority, identical profile bytes, native import path and hash, read-onl
 ownership, and restoration of the original regular disaster-backup namespace.
 
 Operational evidence, saved units, rollout scripts and rollback material are under
-`/home/ubuntu/edgeconnect-rollouts/mcts-throughput-20260910`. The prior immutable
+`/home/ubuntu/deltrel-rollouts/mcts-throughput-20260910`. The prior immutable
 release is retained. Final migration and sustained readiness evidence are recorded
 in that directory's `cutover` subdirectory.

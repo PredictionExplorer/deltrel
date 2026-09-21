@@ -33,7 +33,7 @@ VARIANTS = (
 )
 GRAPH_BYTES = 12 * 1024**3
 MEMORY_FRACTION = 0.20
-FORMAT = "startrain.cuda-graph-runtime-validation"
+FORMAT = "deltreltrain.cuda-graph-runtime-validation"
 
 
 def parse_shape_order(value: str) -> tuple[int, ...]:
@@ -55,7 +55,7 @@ def _control():
 
 
 def validate_config(config) -> None:
-    from startrain.model import model_parameter_count
+    from deltreltrain.model import model_parameter_count
 
     if model_parameter_count(config.model) != 17_402_775:
         raise ValueError("probe requires the production 17,402,775-parameter model")
@@ -118,7 +118,7 @@ def require_memory_headroom(free_bytes: int, total_bytes: int) -> int:
 
 
 def make_requests(native, config, *, rows: int, version: int, variant_label: str):
-    from startrain.selfplay import GameVariant
+    from deltreltrain.selfplay import GameVariant
 
     variant = GameVariant.parse(variant_label)
     states = native.StateBatch(
@@ -148,7 +148,7 @@ def make_requests(native, config, *, rows: int, version: int, variant_label: str
 
 def regular_adapter(graph_adapter):
     """Use the graph row planner, but execute regular production inference."""
-    from startrain.inference import GraphInferenceAdapter
+    from deltreltrain.inference import GraphInferenceAdapter
 
     adapter = GraphInferenceAdapter(
         graph_adapter.model,
@@ -209,7 +209,7 @@ def compare_predictions(expected, actual) -> dict[str, float]:
 
 def entry_records(adapter, *, include_memory: bool = False) -> list[dict[str, Any]]:
     import torch
-    from startrain.inference_graphs import _account_graph_storage, _tensors
+    from deltreltrain.inference_graphs import _account_graph_storage, _tensors
 
     graphs = adapter._graphs
     if graphs is None:
@@ -322,7 +322,7 @@ def checked_request(
 
 def native_artifacts(native, modules=None) -> dict[str, str]:
     """Identify the actual loaded extension even when the import is a package."""
-    from startrain.checkpoint import sha256_file
+    from deltreltrain.checkpoint import sha256_file
 
     modules = sys.modules if modules is None else modules
     prefix = native.__name__.split(".")[0]
@@ -351,10 +351,10 @@ def native_artifacts(native, modules=None) -> dict[str, str]:
 
 def _source_identity(native) -> dict[str, object]:
     import torch
-    import startrain
-    from startrain.checkpoint import sha256_file
+    import deltreltrain
+    from deltreltrain.checkpoint import sha256_file
 
-    root = Path(startrain.__file__).resolve().parent
+    root = Path(deltreltrain.__file__).resolve().parent
     names = (
         "actor.py",
         "model.py",
@@ -366,7 +366,7 @@ def _source_identity(native) -> dict[str, object]:
     )
     paths = [Path(__file__).resolve(), *(root / name for name in names)]
     return {
-        "startrain_source_root": str(root),
+        "deltreltrain_source_root": str(root),
         "source_files": {str(path): sha256_file(path) for path in paths},
         "python": sys.version,
         "torch": str(torch.__version__),
@@ -379,12 +379,12 @@ def _source_identity(native) -> dict[str, object]:
 
 def run_probe(args) -> dict[str, object]:
     import torch
-    from startrain.actor import ManifestModelProvider
-    from startrain.checkpoint import load_model_manifest, sha256_file
-    from startrain.config import load_config
-    from startrain.inference import GraphInferenceAdapter
-    from startrain.native import load_star_native
-    from startrain.runtime import RunIdentity, atomic_json
+    from deltreltrain.actor import ManifestModelProvider
+    from deltreltrain.checkpoint import load_model_manifest, sha256_file
+    from deltreltrain.config import load_config
+    from deltreltrain.inference import GraphInferenceAdapter
+    from deltreltrain.native import load_deltrel_native
+    from deltreltrain.runtime import RunIdentity, atomic_json
 
     source_config = load_config(args.config)
     validate_config(source_config)
@@ -401,7 +401,7 @@ def run_probe(args) -> dict[str, object]:
     torch.cuda.set_per_process_memory_fraction(MEMORY_FRACTION, device)
     free, total = torch.cuda.mem_get_info(device)
     limit = require_memory_headroom(free, total)
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     assert native is not None
     config = probe_config(source_config)
     # CPU budget comes from the matching production actor, without changing its
@@ -646,9 +646,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.child:
         run_probe(args)
         return 0
-    from startrain.checkpoint import load_model_manifest, sha256_file
-    from startrain.config import load_config
-    from startrain.training import isolated_compile_cache
+    from deltreltrain.checkpoint import load_model_manifest, sha256_file
+    from deltreltrain.config import load_config
+    from deltreltrain.training import isolated_compile_cache
 
     config = load_config(args.config)
     validate_config(config)

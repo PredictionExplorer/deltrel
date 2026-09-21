@@ -3,9 +3,9 @@ from copy import deepcopy
 import pytest
 import torch
 
-import startrain.model as model_module
-from startrain.features import encode_batch
-from startrain.model import GraphResTNet, ModelConfig
+import deltreltrain.model as model_module
+from deltreltrain.features import encode_batch
+from deltreltrain.model import GraphResTNet, ModelConfig
 from test_model import position, randomize_v3_parameters
 
 

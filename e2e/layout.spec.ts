@@ -7,17 +7,17 @@ const health = {
   api_schema_version: 3,
   model: { ready: true, model_version: 'layout-model', model_step: 11 },
   rules: {
-    schema_id: 'edgeconnect.star.rules.v3',
+    schema_id: 'deltrel.rules.v3',
     version: 3,
-    hash: 'fnv1a64:a5d932b0ef8354e8',
+    hash: 'fnv1a64:46e4fbcff4e17fd3',
   },
   features: {
-    schema_id: 'edgeconnect.star.model-features.external.v3',
+    schema_id: 'deltrel.model-features.external.v3',
     version: 4,
-    hash: 'cb0e1e89a6ce3540',
+    hash: '058eb071d77948a7',
   },
   actions: {
-    schema_id: 'edgeconnect.star.action-layout.nodes-only.v1',
+    schema_id: 'deltrel.action-layout.nodes-only.v1',
     types: ['place', 'swap'],
   },
 };
@@ -50,7 +50,7 @@ async function openFreshSetup(page: Page) {
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await expect(
-    page.getByRole('heading', { level: 1, name: '✳Star' }),
+    page.getByRole('heading', { level: 1, name: 'Deltrel' }),
   ).toBeVisible();
 }
 
@@ -164,7 +164,7 @@ for (const viewport of viewports) {
       });
     }
 
-    await page.getByRole('button', { name: /^Double \*Star/i }).click();
+    await page.getByRole('button', { name: /^Double Deltrel/i }).click();
     await page.getByRole('button', { name: /^Mini, 4 rings$/i }).click();
     const controller = page.getByRole('combobox', {
       name: 'Player 1 controller',
@@ -187,7 +187,7 @@ for (const viewport of viewports) {
     await expect(page.getByText('Player 2 to play')).toBeVisible();
     await expect(
       page.getByRole('group', {
-        name: /\*Star board with 4 rings, 1 of 50 nodes occupied/i,
+        name: /Deltrel board with 4 rings, 1 of 50 nodes occupied/i,
       }),
     ).toBeVisible();
     expect(ai.moveCalls()).toBe(1);
@@ -239,7 +239,7 @@ test('keeps the setup preview fixed while AI capabilities resolve', async ({ pag
     });
   });
   await openFreshSetup(page);
-  await page.getByRole('button', { name: /^Double \*Star/i }).click();
+  await page.getByRole('button', { name: /^Double Deltrel/i }).click();
 
   const before = await bounds(page, '[data-setup-preview]');
   healthGate.resolve();
@@ -266,7 +266,7 @@ test('keeps dialogs in bounds and restores focus on a small phone', async ({ pag
 
   const rulesButton = page.getByRole('button', { name: 'Rules' });
   await rulesButton.click();
-  const dialog = page.getByRole('dialog', { name: 'How to play *Star' });
+  const dialog = page.getByRole('dialog', { name: 'How to play Deltrel' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole('button', { name: 'Close rules' })).toBeFocused();
   await expect(page).toHaveScreenshot('rules-phone.png');

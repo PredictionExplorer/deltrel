@@ -27,29 +27,29 @@ import torch
 
 from scripts.smoke_adaptive_promotion_cuda import publish_report, require_stopped_run
 from scripts.validate_cuda_graph_runtime import validate_output
-from startrain.auxiliary_upgrade import AUXILIARY_LOSSES, is_auxiliary_parameter
-from startrain.checkpoint import (
+from deltreltrain.auxiliary_upgrade import AUXILIARY_LOSSES, is_auxiliary_parameter
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     load_checkpoint,
     normalize_model_config,
     sha256_file,
 )
-from startrain.config import load_config
-from startrain.contracts import TARGET_OUTCOME, TARGET_POLICY
-from startrain.features import encode_batch
-from startrain.gradient_clipping import GradientClipper
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.native import load_star_native, positions_from_native
-from startrain.optim import build_optimizer, optimizer_checkpoint_contract
-from startrain.replay import (
+from deltreltrain.config import load_config
+from deltreltrain.contracts import TARGET_OUTCOME, TARGET_POLICY
+from deltreltrain.features import encode_batch
+from deltreltrain.gradient_clipping import GradientClipper
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.native import load_deltrel_native, positions_from_native
+from deltreltrain.optim import build_optimizer, optimizer_checkpoint_contract
+from deltreltrain.replay import (
     ReplayBatch,
     ReplaySample,
     collate_replay_samples,
     read_replay_shard,
 )
-from startrain.selfplay import GameVariant, _Decision, _future_policy_targets
-from startrain.training import build_scheduler, maybe_compile_model, train_step
+from deltreltrain.selfplay import GameVariant, _Decision, _future_policy_targets
+from deltreltrain.training import build_scheduler, maybe_compile_model, train_step
 
 
 TIMEOUT_SECONDS = 900
@@ -329,8 +329,8 @@ def load_smoke_replay(run_root: Path) -> tuple[list[ReplaySample], list[dict]]:
             for sample in rows:
                 if (
                     sample.target_mask & TARGET_POLICY
-                    and sample.final_peries is not None
-                    and sample.final_stars is not None
+                    and sample.final_shores is not None
+                    and sample.final_networks is not None
                     and sample.opponent_reply is not None
                 ):
                     destination = selected[mode]
@@ -610,7 +610,7 @@ def run_smoke(args: Any) -> dict:
         raise RuntimeError(f"smoke requires an exclusive GPU: {ownership_before}")
     state = load_training_state(config, args.checkpoint, device)
     model, reference, optimizer, scheduler, ema, clipper, preservation = state
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     if native is None:
         raise RuntimeError("native extension is unavailable")
     parity = check_primary_parity(model, reference, native, device, "bf16")
@@ -737,7 +737,7 @@ def main() -> None:
     ]
     with (
         _controller_signals(),
-        tempfile.TemporaryDirectory(prefix="startrain-auxiliary-smoke-") as cache,
+        tempfile.TemporaryDirectory(prefix="deltreltrain-auxiliary-smoke-") as cache,
     ):
         environment = dict(
             os.environ,

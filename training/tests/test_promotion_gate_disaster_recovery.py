@@ -6,8 +6,8 @@ import pytest
 import yaml
 
 from scripts import training_disaster_recovery as recovery
-from startrain import search_allocation_gate as gate
-from startrain.pie_promotion import pie_promotion_config
+from deltreltrain import search_allocation_gate as gate
+from deltreltrain.pie_promotion import pie_promotion_config
 from test_policy_gate_disaster_recovery import prepared_transition
 from test_search_allocation_gate import reference, write_json
 from test_training_disaster_recovery import _snapshot, _snapshot_payload

@@ -201,7 +201,7 @@ def _patch_runtime(
         lambda _path, **_kwargs: verified,
     )
     monkeypatch.setattr(
-        benchmark_module, "load_star_native", lambda **_kwargs: object()
+        benchmark_module, "load_deltrel_native", lambda **_kwargs: object()
     )
     monkeypatch.setattr(
         benchmark_module,

@@ -1,0 +1,59 @@
+.board {
+  isolation: isolate;
+  overflow: visible;
+  touch-action: manipulation;
+}
+
+.surfaceLight {
+  animation: water-light 14s ease-in-out infinite alternate;
+  animation-play-state: var(--water-motion-state, running);
+}
+
+.depthContours {
+  opacity: 0.3;
+}
+
+.coordinate {
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  paint-order: stroke;
+  stroke: #0b3a44;
+  stroke-width: 0.85px;
+  stroke-linejoin: round;
+}
+
+.moveRipple {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: placement-ripple 0.85s ease-out both;
+}
+
+@keyframes water-light {
+  from { opacity: 0.35; }
+  to { opacity: 0.7; }
+}
+
+@keyframes placement-ripple {
+  from { transform: scale(1); opacity: 0.8; }
+  to { transform: scale(1.65); opacity: 0; }
+}
+
+@media (max-width: 600px) {
+  .coordinate {
+    font-size: 5.25px;
+    letter-spacing: 0.015em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surfaceLight,
+  .moveRipple { animation: none; }
+  .moveRipple { display: none; }
+}
+
+@media (forced-colors: active) {
+  .board [data-water-decoration] { display: none; }
+  .board [data-channel-layer] { stroke: CanvasText; }
+  .coordinate { fill: CanvasText; stroke: Canvas; }
+}

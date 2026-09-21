@@ -1,13 +1,13 @@
 [workspace]
 members = [
-    "crates/star-engine",
-    "crates/star-search",
-    "crates/star-py",
-    "crates/star-wasm",
+    "crates/deltrel-engine",
+    "crates/deltrel-search",
+    "crates/deltrel-py",
+    "crates/deltrel-wasm",
 ]
 default-members = [
-    "crates/star-engine",
-    "crates/star-search",
+    "crates/deltrel-engine",
+    "crates/deltrel-search",
 ]
 resolver = "3"
 

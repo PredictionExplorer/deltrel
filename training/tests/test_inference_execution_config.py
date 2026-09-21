@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from startrain.config import ActorInferenceConfig, ConfigError, load_config
-from startrain.config_compatibility import (
+from deltreltrain.config import ActorInferenceConfig, ConfigError, load_config
+from deltreltrain.config_compatibility import (
     compatible_config_epoch_payloads,
     without_efficiency_defaults,
     without_inference_execution_defaults,

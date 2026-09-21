@@ -7,8 +7,8 @@ import os
 
 import pytest
 
-from startrain import cohort_work
-from startrain.cohort_work import (
+from deltreltrain import cohort_work
+from deltreltrain.cohort_work import (
     CompatibleWorkCoordinator,
     PersistentWorkSchedule,
     WorkBundle,

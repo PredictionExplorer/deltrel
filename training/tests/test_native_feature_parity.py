@@ -5,10 +5,10 @@ from dataclasses import fields
 import pytest
 import torch
 
-from startrain.features import EncodedBatch, encode_batch
-from startrain.features_v3 import encode_legacy_batch
-from startrain.native import encode_native_state_data, positions_from_native
-from startrain.topology import SUPPORTED_RINGS
+from deltreltrain.features import EncodedBatch, encode_batch
+from deltreltrain.features_v3 import encode_legacy_batch
+from deltreltrain.native import encode_native_state_data, positions_from_native
+from deltreltrain.topology import SUPPORTED_RINGS
 
 
 @pytest.mark.native
@@ -28,7 +28,7 @@ from startrain.topology import SUPPORTED_RINGS
 def test_native_features_match_oracle_across_variants_and_game_phases(
     rings: int, schema_version: int, mode: str, handicap: int, pie: bool
 ) -> None:
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     states = native.StateBatch(rings, 6, mode=mode, handicap=handicap, pie=pie)
     nodes = states.node_count
     # Opening, first response, retained history, midgame, last move, terminal.

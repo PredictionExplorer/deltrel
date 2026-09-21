@@ -10,9 +10,9 @@ import pytest
 import yaml
 
 from scripts import migrate_continuous_profile as migration
-from startrain import actor as actors
-from startrain.balanced_evaluation import evaluation_contract
-from startrain.config import (
+from deltreltrain import actor as actors
+from deltreltrain.balanced_evaluation import evaluation_contract
+from deltreltrain.config import (
     ActorWorkSchedulingConfig,
     ConfigError,
     GPUWorkerConfig,
@@ -22,12 +22,12 @@ from startrain.config import (
     RingWeightStage,
     load_config,
 )
-from startrain.config_compatibility import (
+from deltreltrain.config_compatibility import (
     compatible_config_epoch_payloads,
     without_fresh_data_defaults,
 )
-from startrain.cohort_work import CompatibleWorkCoordinator, PersistentWorkSchedule
-from startrain.selfplay import PolicyPublicationConfig
+from deltreltrain.cohort_work import CompatibleWorkCoordinator, PersistentWorkSchedule
+from deltreltrain.selfplay import PolicyPublicationConfig
 from test_cohort_work import fake_actor
 from test_continuous_profile_migration import _fixture, _write_json
 

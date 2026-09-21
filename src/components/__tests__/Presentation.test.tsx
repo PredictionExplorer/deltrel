@@ -2,8 +2,8 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'vitest-axe';
 import { describe, expect, it, vi } from 'vitest';
-import { initialState } from '@/lib/star/game';
-import type { ScoreResult } from '@/lib/star/scoring';
+import { initialState } from '@/lib/deltrel/game';
+import type { ScoreResult } from '@/lib/deltrel/scoring';
 import {
   ClinchDialog,
   EndGameConfirmDialog,
@@ -11,31 +11,31 @@ import {
 } from '../EndGameDialogs';
 import { GameOverOverlay } from '../GameOverOverlay';
 import { RulesDialog } from '../RulesDialog';
-import { Starfield } from '../Starfield';
+import { WaterScene } from '../WaterScene';
 
 function score(): ScoreResult {
   return {
     players: [
       {
-        peries: 7,
-        quarks: 3,
-        stars: 1,
-        quarkPeri: 1,
+        shores: 7,
+        capes: 3,
+        networks: 1,
+        capeBonus: 1,
         award: 2,
         total: 11,
       },
       {
-        peries: 8,
-        quarks: 2,
-        stars: 2,
-        quarkPeri: 0,
+        shores: 8,
+        capes: 2,
+        networks: 2,
+        capeBonus: 0,
         award: -2,
         total: 8,
       },
     ],
     nodeOwner: new Int8Array(50).fill(-1),
     aliveStone: new Uint8Array(50),
-    contestedPeries: 15,
+    contestedShores: 15,
     leader: 0,
   };
 }
@@ -87,7 +87,7 @@ describe('GameOverOverlay', () => {
     rings: 4,
     mode: 'double',
     pieRule: false,
-    playerNames: ['Aurora', 'Vega'],
+    playerNames: ['Clay', 'Seafoam'],
   });
 
   it('reports a binary winner and dispatches every next action', async () => {
@@ -106,7 +106,7 @@ describe('GameOverOverlay', () => {
       />,
     );
     expect(
-      screen.getByRole('heading', { name: /Aurora wins/ }),
+      screen.getByRole('heading', { name: /Clay wins/ }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Rematch' })).toHaveFocus();
     await user.click(screen.getByRole('button', { name: 'Review board' }));
@@ -132,7 +132,7 @@ describe('GameOverOverlay', () => {
         {...callbacks}
       />,
     );
-    expect(screen.getByRole('heading', { name: /Vega wins/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Seafoam wins/ })).toBeInTheDocument();
     rerender(
       <GameOverOverlay
         open={false}
@@ -165,7 +165,7 @@ describe('GameOverOverlay', () => {
       />,
     );
 
-    expect(screen.getByRole('heading', { name: 'Vega wins' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Seafoam wins' })).toBeInTheDocument();
     expect(screen.getByText(/no final score was recorded/i)).toBeInTheDocument();
     expect(screen.queryByText('11')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Review proof' }));
@@ -245,20 +245,20 @@ describe('end-game decision dialogs', () => {
   });
 });
 
-describe('Starfield', () => {
+describe('WaterScene', () => {
   it('is deterministic, decorative, and hidden from accessibility APIs', () => {
-    const { container, rerender } = render(<Starfield />);
-    const first = Array.from(container.querySelectorAll('circle'), (node) =>
-      node.getAttribute('cx'),
+    const { container, rerender } = render(<WaterScene />);
+    const first = Array.from(container.querySelectorAll('[data-water-contour]'), (node) =>
+      node.getAttribute('d'),
     );
-    expect(first).toHaveLength(140);
+    expect(first).toHaveLength(21);
+    expect(container.querySelector('[data-shoreline]')).not.toBeNull();
     expect(container.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
-    rerender(<Starfield />);
+    rerender(<WaterScene />);
     expect(
-      Array.from(container.querySelectorAll('circle'), (node) =>
-        node.getAttribute('cx'),
+      Array.from(container.querySelectorAll('[data-water-contour]'), (node) =>
+        node.getAttribute('d'),
       ),
     ).toEqual(first);
   });
 });
-

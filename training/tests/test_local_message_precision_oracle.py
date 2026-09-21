@@ -6,8 +6,8 @@ import pytest
 import torch
 
 from scripts import diagnose_local_message_precision as oracle
-from startrain.contracts import SCORE_MARGIN_MAX, SCORE_MARGIN_MIN
-from startrain.features import encode_batch
+from deltreltrain.contracts import SCORE_MARGIN_MAX, SCORE_MARGIN_MIN
+from deltreltrain.features import encode_batch
 from test_local_message_benchmark import pipeline_profile
 from test_local_message_inference import model
 from test_model import position
@@ -63,8 +63,8 @@ def test_plan_pins_production_actor_graphs_and_diagnostic_counts(tmp_path):
         checkpoint_sha256="checkpoint",
     )
     with (
-        patch("startrain.config.load_config", return_value=config),
-        patch("startrain.checkpoint.load_model_manifest", return_value=manifest),
+        patch("deltreltrain.config.load_config", return_value=config),
+        patch("deltreltrain.checkpoint.load_model_manifest", return_value=manifest),
     ):
         plan = oracle.plan(args)
     assert plan["runtime"]["cuda_graphs"]
@@ -206,7 +206,7 @@ def test_cpu_full_model_capture_checks_all_heads_and_utility(ring):
 
 
 def test_fp32_oracle_math_is_stricter_than_production_bf16_math():
-    from startrain.device import enable_fast_math
+    from deltreltrain.device import enable_fast_math
 
     old = torch.get_float32_matmul_precision()
     old_cuda, old_cudnn = (
@@ -220,7 +220,7 @@ def test_fp32_oracle_math_is_stricter_than_production_bf16_math():
             "cudnn_tf32": False,
         }
         with patch(
-            "startrain.device.enable_fast_math", wraps=enable_fast_math
+            "deltreltrain.device.enable_fast_math", wraps=enable_fast_math
         ) as enable:
             actual = oracle.configure_math(False, "cuda:2")
         enable.assert_called_once_with("cuda:2")

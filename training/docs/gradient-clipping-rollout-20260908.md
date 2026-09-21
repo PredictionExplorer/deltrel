@@ -56,7 +56,7 @@ repeat about 21 times over 600 steps. It does not measure self-play feedback or
 establish an Elo/hour gain. A lower held-out loss is evidence for further
 evaluation, not authorization to promote a model. Existing global clipping stays
 available as the control. Experimental evidence and deployment records belong
-under `/home/ubuntu/edgeconnect-rollouts/gradient-clipping-20260908`.
+under `/home/ubuntu/deltrel-rollouts/gradient-clipping-20260908`.
 
 ## Validation and outcome
 
@@ -134,7 +134,7 @@ directory; the original defective-backward screens remain separately preserved.
 
 Production runs immutable commit
 `637d49cbb26fd637225ce7bd850583fab937986b` from
-`/home/ubuntu/edgeconnect-releases/variant-gradient-correction-20260908`.
+`/home/ubuntu/deltrel-releases/variant-gradient-correction-20260908`.
 All 438 source files and the unchanged native artifact were checksum verified.
 The frozen profile is `profile-gradient-diagnostics-20260908.yaml`, SHA-256
 `a6a542c9cb276b2e4393969e8a73cb78373e7879952b26912ea47b3769708ff8`.

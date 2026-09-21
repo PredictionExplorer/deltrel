@@ -8,10 +8,10 @@ import pytest
 import yaml
 
 from scripts import migrate_continuous_profile as migration
-from startrain.balanced_evaluation import evaluation_contract
-from startrain.config import ConfigError, DataConfig, load_config
-from startrain.config_compatibility import compatible_config_epoch_payloads
-from startrain.selfplay import (
+from deltreltrain.balanced_evaluation import evaluation_contract
+from deltreltrain.config import ConfigError, DataConfig, load_config
+from deltreltrain.config_compatibility import compatible_config_epoch_payloads
+from deltreltrain.selfplay import (
     RingSearchAllocation,
     SelfPlayActor,
     SelfPlayConfig,
@@ -102,9 +102,9 @@ def test_empty_group_preserves_canonical_authority_and_nonempty_never_disappears
     for name in (
         "opponent_reply",
         "second_stone",
-        "final_peries",
-        "final_stars",
-        "final_quarks",
+        "final_shores",
+        "final_networks",
+        "final_capes",
     ):
         del old_payload["loss"][name]
     assert base.as_dict() == old_payload
@@ -174,7 +174,7 @@ def test_direct_native_actor_matches_manually_resolved_caps_and_targets(ring):
     from test_search_execution_selfplay import DeterministicEvaluator
     from test_selfplay_streaming import Sink, sample_fingerprints
 
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
 
     def states(rings, rows, **options):
         result = native.StateBatch(rings, rows, **options)

@@ -5,18 +5,18 @@ import pytest
 from hypothesis import assume, given, settings, strategies as st
 from torch.utils.data import DataLoader
 
-from startrain.inference import InferenceResponse
-from startrain.learner import (
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.learner import (
     LazyShardReplayDataset,
     LearnerLoop,
     SpawnedReplayLoaderPool,
     UniqueReplayBatchSampler,
     replay_selection_diagnostics,
 )
-from startrain.replay import collate_replay_samples
-from startrain.replay_store import ReplaySelection, ReplaySpan, ReplayStore, ShardRecord
-from startrain.runtime import RunIdentity
-from startrain.selfplay import SelfPlayActor, SelfPlayConfig, SelfPlayIdentity
+from deltreltrain.replay import collate_replay_samples
+from deltreltrain.replay_store import ReplaySelection, ReplaySpan, ReplayStore, ShardRecord
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.selfplay import SelfPlayActor, SelfPlayConfig, SelfPlayIdentity
 
 
 def selection_for(sizes, *, rings=None, starts=None):
@@ -233,7 +233,7 @@ class UniformEvaluator:
 
 @pytest.fixture
 def real_streamed_replay(tmp_path):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     identity = RunIdentity(
         tmp_path / "run.json", "streamed-packing", "streamed-family", 1
     )

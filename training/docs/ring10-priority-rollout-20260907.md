@@ -29,11 +29,11 @@ model improves on the largest board.
 ## Migration
 
 The source is the cooperative release `6a8cee7` under
-`/home/ubuntu/edgeconnect-releases/variant-cooperative-evaluation-20260905`.
+`/home/ubuntu/deltrel-releases/variant-cooperative-evaluation-20260905`.
 The new release is built separately at
-`/home/ubuntu/edgeconnect-releases/variant-ring10-priority-20260907` while training
+`/home/ubuntu/deltrel-releases/variant-ring10-priority-20260907` while training
 continues. Deployment evidence is stored under
-`/home/ubuntu/edgeconnect-rollouts/ring10-priority-20260907`.
+`/home/ubuntu/deltrel-rollouts/ring10-priority-20260907`.
 
 The profile changes exactly five fields: the explicit training objective, ring
 weight schedule, default self-play ring, arena ring set, and legacy regression-ring
@@ -57,7 +57,7 @@ backups. Keep the old release and saved profile authority available for rollback
 - Runtime commit: `8425b5b38237b6f6094b6b4588c44bda30181cf5`, frozen with 420
   source hashes and the unchanged native artifact hash.
 - Active profile:
-  `/home/ubuntu/edgeconnect-runs/variant-network/profile-ring10-priority-20260907.yaml`.
+  `/home/ubuntu/deltrel-runs/variant-network/profile-ring10-priority-20260907.yaml`.
   SHA-256: `fc5cf07c3ae06f3fc444714856b5bf6a6c4dd848bc65faba4873fa6da3dbb1df`.
 - The old runtime stopped cleanly at 08:43:48 UTC. Every worker exited zero;
   checkpoint step 103,066 was retained with zero uncheckpointed updates lost.

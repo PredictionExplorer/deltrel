@@ -32,8 +32,8 @@ from scripts.prepare_elo_ablation import (
     prepare_elo_ablation,
     resolve_treatments,
 )
-from startrain.config import load_config
-from startrain.model import model_parameter_count
+from deltreltrain.config import load_config
+from deltreltrain.model import model_parameter_count
 
 CONFIGS = Path(__file__).parents[1] / "configs"
 
@@ -141,7 +141,7 @@ def _write_live_ring10_profile(tmp_path: Path) -> tuple[Path, dict[str, object]]
 def test_prepare_generates_strict_one_factor_profiles(tmp_path: Path) -> None:
     manifest, output = _prepare(tmp_path)
 
-    assert manifest["report"] == "startrain-elo-ablation-plan"
+    assert manifest["report"] == "deltreltrain-elo-ablation-plan"
     assert manifest["training_objective"] == "generalist"
     assert manifest["promotion_objective"] == "ring_10_guarded"
     assert manifest["guard_rings"] == [4, 6, 8]

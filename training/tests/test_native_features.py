@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 import torch
 
-from startrain.features import DoubleStarPosition, EncodedBatch, encode_batch
-from startrain.native import (
+from deltreltrain.features import DoubleDeltrelPosition, EncodedBatch, encode_batch
+from deltreltrain.native import (
     NativeFeatureDataProtocol,
     NativeScoreDataProtocol,
     encode_native_state_data,
@@ -16,15 +16,15 @@ from startrain.native import (
     score_results_from_native,
     score_tensors_from_native_features,
 )
-from startrain.replay import (
+from deltreltrain.replay import (
     ReplayBatch,
     ReplaySample,
     augment_sample,
     collate_replay_samples,
 )
-from startrain.scoring import PlayerScore, ScoreResult
-from startrain.symmetry import D5Transform
-from startrain.topology import SUPPORTED_RINGS, get_topology
+from deltreltrain.scoring import PlayerScore, ScoreResult
+from deltreltrain.symmetry import D5Transform
+from deltreltrain.topology import SUPPORTED_RINGS, get_topology
 
 
 def assert_encoded_equal(actual: EncodedBatch, expected: EncodedBatch) -> None:
@@ -72,7 +72,7 @@ def live_sample(rings: int) -> ReplaySample:
     topology = get_topology(rings)
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
     stones[0] = 0
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=rings,
         stones=stones,
         to_move=1,
@@ -93,7 +93,7 @@ def live_sample(rings: int) -> ReplaySample:
             ),
             node_owner=torch.zeros(topology.n, dtype=torch.int8),
             alive_stone=torch.zeros(topology.n, dtype=torch.bool),
-            contested_peries=0,
+            contested_shores=0,
             leader=0,
         ),
         search_provenance="mcts:native-feature-parity",
@@ -103,7 +103,7 @@ def live_sample(rings: int) -> ReplaySample:
 
 @pytest.mark.native
 def test_native_features_and_scores_match_oracle_all_rings_and_d5() -> None:
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     reset_native_feature_path_stats()
     for rings in SUPPORTED_RINGS:
         topology = get_topology(rings)
@@ -127,7 +127,7 @@ def test_native_features_and_scores_match_oracle_all_rings_and_d5() -> None:
 
 @pytest.mark.native
 def test_native_features_cover_full_board_terminals() -> None:
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     topology = get_topology(4)
     states = native.StateBatch(4, 1)
     states.apply_many([0] * topology.n, list(range(topology.n)))
@@ -142,13 +142,13 @@ def test_native_features_cover_full_board_terminals() -> None:
 
 @pytest.mark.native
 def test_heterogeneous_learner_batch_uses_native_exact_path() -> None:
-    pytest.importorskip("star_native")
+    pytest.importorskip("deltrel_native")
     samples = [
         augment_sample(live_sample(rings), D5Transform.from_index(index))
         for index, rings in enumerate(SUPPORTED_RINGS)
     ]
     topology = get_topology(4)
-    terminal = DoubleStarPosition(
+    terminal = DoubleDeltrelPosition(
         rings=4,
         stones=torch.arange(topology.n, dtype=torch.int8) % 2,
         to_move=1,
@@ -167,7 +167,7 @@ def test_heterogeneous_learner_batch_uses_native_exact_path() -> None:
                 ),
                 node_owner=torch.zeros(topology.n, dtype=torch.int8),
                 alive_stone=torch.zeros(topology.n, dtype=torch.bool),
-                contested_peries=0,
+                contested_shores=0,
                 leader=0,
             ),
             search_provenance="terminal:full-board",

@@ -9,7 +9,7 @@ new configuration. The detailed
 source identities, receipts, and CPU qualification results.
 
 The release is `8d0d643d30430afd9cd7c662fe4648aedecfca3e`, staged at
-`/home/ubuntu/edgeconnect-releases/variant-cpu-efficiency-20260912`.
+`/home/ubuntu/deltrel-releases/variant-cpu-efficiency-20260912`.
 It contains all changes from the
 [implementation report](cpu-efficiency-implementation-20260912.md), plus a
 server-qualified refinement to native parallel submission. The previous

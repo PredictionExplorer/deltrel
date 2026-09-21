@@ -3,13 +3,13 @@
   "deployment": "live-replay-20260911",
   "status": "verified",
   "artifact": {
-    "local": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-live-replay-deploy-eh10ji7e",
+    "local": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-live-replay-deploy-eh10ji7e",
     "commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
     "tree": "51673763b8aedf4bb1a514f057f782d2403b5711",
     "archive_sha256": "b792a6b9493fa761ec254a700aad2d8019f0c0732510d760136e599e56cbb879",
     "source_files": 513,
-    "release": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1",
-    "rollout": "/home/ubuntu/edgeconnect-rollouts/live-replay-20260911"
+    "release": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1",
+    "rollout": "/home/ubuntu/deltrel-rollouts/live-replay-20260911"
   },
   "validation": {
     "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
@@ -31,11 +31,11 @@
     "complete": {
       "status": "complete",
       "source": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
-      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-baseline-20260911.yaml",
+      "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-live-replay-baseline-20260911.yaml",
       "completed_ns": 1789091679010570099
     },
     "migration": {
-      "backup_bundle": "/home/ubuntu/edgeconnect-runs/variant-network/migration-backups/1789090773921255027-profile-live-replay-baseline-20260911",
+      "backup_bundle": "/home/ubuntu/deltrel-runs/variant-network/migration-backups/1789090773921255027-profile-live-replay-baseline-20260911",
       "boundary": {
         "champion_model_identity": "sha256-37fd6c1ae569a1bbc55015815afaab755fb1c7ab40d4149c7ba80cb28961c585",
         "committed_replay_samples": 68264675,
@@ -66,11 +66,11 @@
       },
       "utd_segment": null,
       "writes": [
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-baseline-20260911.yaml",
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-baseline-20260911.sha256",
-        "/home/ubuntu/edgeconnect-runs/variant-network/continuous-migrations.jsonl",
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile.sha256",
-        "/home/ubuntu/edgeconnect-runs/variant-network/source-commit.txt"
+        "/home/ubuntu/deltrel-runs/variant-network/profile-live-replay-baseline-20260911.yaml",
+        "/home/ubuntu/deltrel-runs/variant-network/profile-live-replay-baseline-20260911.sha256",
+        "/home/ubuntu/deltrel-runs/variant-network/continuous-migrations.jsonl",
+        "/home/ubuntu/deltrel-runs/variant-network/profile.sha256",
+        "/home/ubuntu/deltrel-runs/variant-network/source-commit.txt"
       ]
     },
     "checkpoint": {
@@ -79,7 +79,7 @@
       "checkpoint_sha256": "3c49171f1287fc725834f7fbb09069dd6388aaca1dd1ce03e14daf29c2c0f799",
       "epoch": 615,
       "examples_consumed": 92161024,
-      "format": "startrain.recovery-pointer",
+      "format": "deltreltrain.recovery-pointer",
       "generation_family": "variant-network-a",
       "run_id": "variant-network",
       "schema_version": 1,
@@ -121,7 +121,7 @@
         "checkpoint_sha256": "3c49171f1287fc725834f7fbb09069dd6388aaca1dd1ce03e14daf29c2c0f799",
         "epoch": 615,
         "examples_consumed": 92161024,
-        "format": "startrain.recovery-pointer",
+        "format": "deltreltrain.recovery-pointer",
         "generation_family": "variant-network-a",
         "run_id": "variant-network",
         "schema_version": 1,
@@ -137,7 +137,7 @@
       "generation_family": "variant-network-a",
       "objects": 15099,
       "run_id": "variant-network",
-      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789090285073462574-5e1df6e953c69737afe78f5f8a26f88edeb3c12756b6ab58172fe4ff7218791a.json",
+      "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789090285073462574-5e1df6e953c69737afe78f5f8a26f88edeb3c12756b6ab58172fe4ff7218791a.json",
       "snapshot_bytes": 2934560,
       "snapshot_sha256": "5e1df6e953c69737afe78f5f8a26f88edeb3c12756b6ab58172fe4ff7218791a",
       "status": "ok"
@@ -149,7 +149,7 @@
       "generation_family": "variant-network-a",
       "objects": 15099,
       "run_id": "variant-network",
-      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789091176038009690-ab953e23a33e6d74c26a4a1ded064fdb24a005b8aa8ee6a7f3c66236c9c34953.json",
+      "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789091176038009690-ab953e23a33e6d74c26a4a1ded064fdb24a005b8aa8ee6a7f3c66236c9c34953.json",
       "snapshot_bytes": 2934532,
       "snapshot_sha256": "ab953e23a33e6d74c26a4a1ded064fdb24a005b8aa8ee6a7f3c66236c9c34953",
       "status": "ok"
@@ -159,11 +159,11 @@
     "complete": {
       "status": "complete",
       "source": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
-      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-20260911.yaml",
+      "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-live-replay-20260911.yaml",
       "completed_ns": 1789094239866245457
     },
     "migration": {
-      "backup_bundle": "/home/ubuntu/edgeconnect-runs/variant-network/migration-backups/1789093078153904316-profile-live-replay-20260911",
+      "backup_bundle": "/home/ubuntu/deltrel-runs/variant-network/migration-backups/1789093078153904316-profile-live-replay-20260911",
       "boundary": {
         "champion_model_identity": "sha256-37fd6c1ae569a1bbc55015815afaab755fb1c7ab40d4149c7ba80cb28961c585",
         "committed_replay_samples": 68419884,
@@ -210,11 +210,11 @@
       },
       "utd_segment": null,
       "writes": [
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-20260911.yaml",
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-20260911.sha256",
-        "/home/ubuntu/edgeconnect-runs/variant-network/continuous-migrations.jsonl",
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile.sha256",
-        "/home/ubuntu/edgeconnect-runs/variant-network/source-commit.txt"
+        "/home/ubuntu/deltrel-runs/variant-network/profile-live-replay-20260911.yaml",
+        "/home/ubuntu/deltrel-runs/variant-network/profile-live-replay-20260911.sha256",
+        "/home/ubuntu/deltrel-runs/variant-network/continuous-migrations.jsonl",
+        "/home/ubuntu/deltrel-runs/variant-network/profile.sha256",
+        "/home/ubuntu/deltrel-runs/variant-network/source-commit.txt"
       ]
     },
     "checkpoint": {
@@ -223,7 +223,7 @@
       "checkpoint_sha256": "e2a7bcd362eb85cb36da9ed4d22494135b5c2885b8d5d4ac61c059a639d39eb5",
       "epoch": 618,
       "examples_consumed": 92353024,
-      "format": "startrain.recovery-pointer",
+      "format": "deltreltrain.recovery-pointer",
       "generation_family": "variant-network-a",
       "run_id": "variant-network",
       "schema_version": 1,
@@ -267,7 +267,7 @@
         "checkpoint_sha256": "e2a7bcd362eb85cb36da9ed4d22494135b5c2885b8d5d4ac61c059a639d39eb5",
         "epoch": 618,
         "examples_consumed": 92353024,
-        "format": "startrain.recovery-pointer",
+        "format": "deltreltrain.recovery-pointer",
         "generation_family": "variant-network-a",
         "run_id": "variant-network",
         "schema_version": 1,
@@ -283,7 +283,7 @@
       "generation_family": "variant-network-a",
       "objects": 15174,
       "run_id": "variant-network",
-      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789092759147497842-93acbf9fe3a5157ab26f8ba6e9c2b0fbe23060c17b1821c1b17df34d0d4feee6.json",
+      "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789092759147497842-93acbf9fe3a5157ab26f8ba6e9c2b0fbe23060c17b1821c1b17df34d0d4feee6.json",
       "snapshot_bytes": 2949080,
       "snapshot_sha256": "93acbf9fe3a5157ab26f8ba6e9c2b0fbe23060c17b1821c1b17df34d0d4feee6",
       "status": "ok"
@@ -295,28 +295,28 @@
       "generation_family": "variant-network-a",
       "objects": 16071,
       "run_id": "variant-network",
-      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789093700187518757-2cd38d2c970dd28c594674d27ba8fc02e328efadbf73f19db850b019300b922b.json",
+      "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789093700187518757-2cd38d2c970dd28c594674d27ba8fc02e328efadbf73f19db850b019300b922b.json",
       "snapshot_bytes": 3122152,
       "snapshot_sha256": "2cd38d2c970dd28c594674d27ba8fc02e328efadbf73f19db850b019300b922b",
       "status": "ok"
     }
   },
   "activation_exact_snapshot": {
-    "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789092759147497842-93acbf9fe3a5157ab26f8ba6e9c2b0fbe23060c17b1821c1b17df34d0d4feee6.json",
+    "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789092759147497842-93acbf9fe3a5157ab26f8ba6e9c2b0fbe23060c17b1821c1b17df34d0d4feee6.json",
     "snapshot_sha256": "93acbf9fe3a5157ab26f8ba6e9c2b0fbe23060c17b1821c1b17df34d0d4feee6",
     "snapshot_bytes": 2949080,
     "created_ns": 1789092759147497842,
     "run_id": "variant-network",
     "generation_family": "variant-network-a",
-    "backup_root": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network",
+    "backup_root": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network",
     "invocation_started_ns": 1789092386223721483,
     "pointer_sha256": "518d95f16c9487d26420ef229b554cd81c83d30ea5dd9a2b0642d137cef7c850",
     "commit_marker_sha256": "c366601f3a430ae603f1d85c868a206b81a6695a783c37eac7f6740d3a115d6d",
     "boundary": {
-      "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+      "run_root": "/home/ubuntu/deltrel-runs/variant-network",
       "run_id": "variant-network",
       "generation_family": "variant-network-a",
-      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-baseline-20260911.yaml",
+      "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-live-replay-baseline-20260911.yaml",
       "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
       "checkpoint_step": 180377,
       "files": {
@@ -398,10 +398,10 @@
   "h100_smoke": {
     "status": "passed",
     "execution": "eager BF16 interface smoke, not a benchmark",
-    "release": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1",
+    "release": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1",
     "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
     "profile_sha256": "1db1a8b29a177e9b92a455d1468247e88e5fcfc5e74ce0aef1d9867a09265d62",
-    "native_binary": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+    "native_binary": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
     "native_binary_sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b",
     "model_identity": "sha256-7b1b6ece2c61d8becaae62fa18392a220e587409c714e5b09101267eab6e066c",
     "manifest_sha256": "19e83361d04afec1d09bb9e664f8383897d049e83b92858ca51b45824dc41f90",
@@ -480,7 +480,7 @@
         "status": "passed",
         "evidence": {
           "source_commit": "70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1",
-          "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-20260911.yaml",
+          "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-live-replay-20260911.yaml",
           "profile_sha256": "e7f6420f08d1b5efdad9490d1ee0521041840a717936c25ffbc61556109458da",
           "changes": [
             {
@@ -500,7 +500,7 @@
             }
           ],
           "source_files_verified": 513,
-          "native_path": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+          "native_path": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
           "native_sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b",
           "completed_ns": 1789094239866245457
         }
@@ -513,19 +513,19 @@
           "activation_stop_step": 180377,
           "learner_step": 184405,
           "advanced_steps": 4028,
-          "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-e2a7bcd362eb85cb36da9ed4d22494135b5c2885b8d5d4ac61c059a639d39eb5.pt",
+          "resumed_from": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-e2a7bcd362eb85cb36da9ed4d22494135b5c2885b8d5d4ac61c059a639d39eb5.pt",
           "coordinator": {
             "pid": 1945009,
-            "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+            "cwd": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training",
             "state": "S (sleeping)",
-            "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python"
+            "program": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/bin/python"
           },
           "workers": {
             "actor-cpu-ring4": {
               "pid": 1945086,
-              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "cwd": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training",
               "state": "running",
-              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "program": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/bin/python",
               "phase": "selfplay_policy_published",
               "heartbeat_age_seconds": 0.243457038,
               "restart_count": 0,
@@ -535,9 +535,9 @@
             },
             "actor-gpu-1": {
               "pid": 1945079,
-              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "cwd": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training",
               "state": "running",
-              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "program": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/bin/python",
               "phase": "shared_cohorts",
               "heartbeat_age_seconds": 0.174489834,
               "restart_count": 0,
@@ -547,9 +547,9 @@
             },
             "actor-gpu-2": {
               "pid": 1945080,
-              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "cwd": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training",
               "state": "running",
-              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "program": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/bin/python",
               "phase": "shared_cohorts",
               "heartbeat_age_seconds": 0.032569478,
               "restart_count": 0,
@@ -559,9 +559,9 @@
             },
             "actor-gpu-3": {
               "pid": 1945081,
-              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "cwd": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training",
               "state": "running",
-              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "program": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/bin/python",
               "phase": "shared_cohorts",
               "heartbeat_age_seconds": 0.152924375,
               "restart_count": 0,
@@ -571,9 +571,9 @@
             },
             "actor-gpu-4": {
               "pid": 1945082,
-              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "cwd": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training",
               "state": "running",
-              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "program": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/bin/python",
               "phase": "shared_cohorts",
               "heartbeat_age_seconds": 0.552833281,
               "restart_count": 0,
@@ -583,9 +583,9 @@
             },
             "actor-gpu-5": {
               "pid": 1945083,
-              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "cwd": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training",
               "state": "running",
-              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "program": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/bin/python",
               "phase": "shared_cohorts",
               "heartbeat_age_seconds": 0.536690045,
               "restart_count": 0,
@@ -595,9 +595,9 @@
             },
             "actor-gpu-6": {
               "pid": 1945084,
-              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "cwd": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training",
               "state": "running",
-              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "program": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/bin/python",
               "phase": "shared_cohorts",
               "heartbeat_age_seconds": 0.337678101,
               "restart_count": 0,
@@ -607,9 +607,9 @@
             },
             "actor-gpu-7": {
               "pid": 1945085,
-              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "cwd": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training",
               "state": "running",
-              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "program": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/bin/python",
               "phase": "shared_cohorts",
               "heartbeat_age_seconds": 1.717300314,
               "restart_count": 0,
@@ -619,9 +619,9 @@
             },
             "arena-promotion": {
               "pid": 1945088,
-              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "cwd": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training",
               "state": "running",
-              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "program": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/bin/python",
               "phase": "awaiting_new_candidate",
               "heartbeat_age_seconds": 3.585020639,
               "restart_count": 0,
@@ -631,9 +631,9 @@
             },
             "learner": {
               "pid": 1945078,
-              "cwd": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training",
+              "cwd": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training",
               "state": "running",
-              "program": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training/.venv/bin/python",
+              "program": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training/.venv/bin/python",
               "phase": "update_to_data_wait",
               "heartbeat_age_seconds": 2.040582446,
               "restart_count": 0,
@@ -746,25 +746,25 @@
         "status": "passed",
         "evidence": {
           "units": {
-            "edgeconnect-startrain-variant-network.service": {
+            "deltrel-deltreltrain-variant-network.service": {
               "ActiveState": "active",
               "SubState": "running",
               "MainPID": "1945009",
               "NRestarts": "0",
               "ExecMainStatus": "0",
               "UnitFileState": "enabled",
-              "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training"
+              "WorkingDirectory": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training"
             },
-            "edgeconnect-startrain-variant-network-monitor.service": {
+            "deltrel-deltreltrain-variant-network-monitor.service": {
               "ActiveState": "active",
               "SubState": "running",
               "MainPID": "1945091",
               "NRestarts": "0",
               "ExecMainStatus": "0",
               "UnitFileState": "enabled",
-              "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training"
+              "WorkingDirectory": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training"
             },
-            "edgeconnect-startrain-variant-network-report.timer": {
+            "deltrel-deltreltrain-variant-network-report.timer": {
               "ActiveState": "active",
               "SubState": "waiting",
               "MainPID": null,
@@ -773,7 +773,7 @@
               "UnitFileState": "enabled",
               "WorkingDirectory": null
             },
-            "edgeconnect-startrain-variant-network-backup.timer": {
+            "deltrel-deltreltrain-variant-network-backup.timer": {
               "ActiveState": "active",
               "SubState": "waiting",
               "MainPID": null,
@@ -782,7 +782,7 @@
               "UnitFileState": "enabled",
               "WorkingDirectory": null
             },
-            "edgeconnect-startrain-variant-network-disaster-backup.timer": {
+            "deltrel-deltreltrain-variant-network-disaster-backup.timer": {
               "ActiveState": "active",
               "SubState": "running",
               "MainPID": null,
@@ -791,42 +791,42 @@
               "UnitFileState": "enabled",
               "WorkingDirectory": null
             },
-            "edgeconnect-startrain-variant-network-report.service": {
+            "deltrel-deltreltrain-variant-network-report.service": {
               "ActiveState": "inactive",
               "SubState": "dead",
               "MainPID": "0",
               "NRestarts": "0",
               "ExecMainStatus": "0",
               "UnitFileState": "static",
-              "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training"
+              "WorkingDirectory": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training"
             },
-            "edgeconnect-startrain-variant-network-backup.service": {
+            "deltrel-deltreltrain-variant-network-backup.service": {
               "ActiveState": "inactive",
               "SubState": "dead",
               "MainPID": "0",
               "NRestarts": "0",
               "ExecMainStatus": "0",
               "UnitFileState": "static",
-              "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training"
+              "WorkingDirectory": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training"
             },
-            "edgeconnect-startrain-variant-network-disaster-backup.service": {
+            "deltrel-deltreltrain-variant-network-disaster-backup.service": {
               "ActiveState": "activating",
               "SubState": "start",
               "MainPID": "1981867",
               "NRestarts": "0",
               "ExecMainStatus": "0",
               "UnitFileState": "static",
-              "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1/training"
+              "WorkingDirectory": "/home/ubuntu/deltrel-releases/variant-live-replay-70058b1/training"
             }
           },
           "global_continuity": {
-            "edgeconnect-startrain-continuity.service": {
+            "deltrel-deltreltrain-continuity.service": {
               "ActiveState": "inactive",
               "SubState": "dead",
               "UnitFileState": "static",
               "MainPID": "0"
             },
-            "edgeconnect-startrain-continuity.timer": {
+            "deltrel-deltreltrain-continuity.timer": {
               "ActiveState": "inactive",
               "SubState": "dead",
               "UnitFileState": "disabled"
@@ -845,15 +845,15 @@
             "generation_family": "variant-network-a",
             "objects": 16071,
             "run_id": "variant-network",
-            "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789093700187518757-2cd38d2c970dd28c594674d27ba8fc02e328efadbf73f19db850b019300b922b.json",
+            "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789093700187518757-2cd38d2c970dd28c594674d27ba8fc02e328efadbf73f19db850b019300b922b.json",
             "snapshot_bytes": 3122152,
             "snapshot_sha256": "2cd38d2c970dd28c594674d27ba8fc02e328efadbf73f19db850b019300b922b",
             "status": "ok"
           },
-          "current_disaster_snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789106581182799457-08bbba90ee8c44a698ea582c15ef75c725c88a26cb2c07a094924715ffb71d90.json",
+          "current_disaster_snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789106581182799457-08bbba90ee8c44a698ea582c15ef75c725c88a26cb2c07a094924715ffb71d90.json",
           "current_disaster_snapshot_matches_verified_receipt": false,
           "current_disaster_created_ns": 1789106581182799457,
-          "local_replay_snapshot": "/home/ubuntu/edgeconnect-runs/variant-network/recovery/replay-manifest/manifest-1789106128145413968.sqlite3",
+          "local_replay_snapshot": "/home/ubuntu/deltrel-runs/variant-network/recovery/replay-manifest/manifest-1789106128145413968.sqlite3",
           "local_replay_schema": 6,
           "local_replay_sha256": "16e2dae09454e4ea0f03d016690625cde435a226cd2899dbc1a066645559491a",
           "note": "The controller already verified disaster payload objects; this audit verifies that immutable receipt and current pointer/documents without rerunning a large NFS payload scan."
@@ -868,41 +868,41 @@
     "checked_ns": 1789106961467834456,
     "all_temporary_processes_stopped": true,
     "cleared_failed_build_units": [
-      "edgeconnect-live-replay-build-70058b1.service",
-      "edgeconnect-live-replay-build-finish-70058b1.service"
+      "deltrel-live-replay-build-70058b1.service",
+      "deltrel-live-replay-build-finish-70058b1.service"
     ],
     "units_before_cleanup": {
-      "edgeconnect-live-replay-build-70058b1.service": {
+      "deltrel-live-replay-build-70058b1.service": {
         "MainPID": "0",
         "ControlGroup": "",
         "ActiveState": "failed",
         "SubState": "failed"
       },
-      "edgeconnect-live-replay-build-finish-70058b1.service": {
+      "deltrel-live-replay-build-finish-70058b1.service": {
         "MainPID": "0",
         "ControlGroup": "",
         "ActiveState": "failed",
         "SubState": "failed"
       },
-      "edgeconnect-live-replay-final-checks-70058b1.service": {
+      "deltrel-live-replay-final-checks-70058b1.service": {
         "MainPID": "0",
         "ControlGroup": "",
         "ActiveState": "inactive",
         "SubState": "dead"
       },
-      "edgeconnect-live-replay-source-70058b1.service": {
+      "deltrel-live-replay-source-70058b1.service": {
         "MainPID": "0",
         "ControlGroup": "",
         "ActiveState": "inactive",
         "SubState": "dead"
       },
-      "edgeconnect-live-replay-activation-70058b1.service": {
+      "deltrel-live-replay-activation-70058b1.service": {
         "MainPID": "0",
         "ControlGroup": "",
         "ActiveState": "inactive",
         "SubState": "dead"
       },
-      "edgeconnect-live-replay-h100-smoke.service": {
+      "deltrel-live-replay-h100-smoke.service": {
         "MainPID": "0",
         "ControlGroup": "",
         "ActiveState": "inactive",

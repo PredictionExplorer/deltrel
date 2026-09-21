@@ -14,9 +14,9 @@ from scripts.prepare_champion_warm_start import (
     prepare_champion_warm_start,
 )
 from scripts.prepare_pie_training_profile import pie_training_config
-from startrain.config import RingWeightStage
-from startrain.learner import LearnerLoop, UTDSegmentState
-from startrain.replay_store import ReplayStore
+from deltreltrain.config import RingWeightStage
+from deltreltrain.learner import LearnerLoop, UTDSegmentState
+from deltreltrain.replay_store import ReplayStore
 from test_replay_six_mode_selection import append_mode
 from test_run_state_preflight import _fixture as warm_fixture
 from test_training_disaster_recovery import _fixture as disaster_fixture, _snapshot

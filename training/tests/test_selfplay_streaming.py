@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from startrain.inference import InferenceResponse
-from startrain.selfplay import (
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.selfplay import (
     GameVariant,
     SelfPlayActor,
     SelfPlayConfig,
@@ -133,7 +133,7 @@ def near_terminal_native(native, snapshots):
 @pytest.mark.native
 @pytest.mark.parametrize("rings", [4, 6, 8, 10])
 def test_streaming_publishes_early_and_preserves_legacy_trajectories(rings):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     runs = []
     for streaming in (False, True):
         snapshots = []
@@ -161,7 +161,7 @@ def test_streaming_publishes_early_and_preserves_legacy_trajectories(rings):
 @pytest.mark.native
 @pytest.mark.parametrize("variant", VARIANTS, ids=lambda variant: variant.label)
 def test_game_seed_contract_matches_across_rolling_and_fixed_packings(variant):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     reference = None
     for slots, rolling in ((1, False), (3, False), (2, True), (3, True)):
         sink = Sink()
@@ -203,7 +203,7 @@ def test_game_seed_contract_matches_across_rolling_and_fixed_packings(variant):
 @pytest.mark.native
 @pytest.mark.parametrize("streaming", [False, True])
 def test_stop_keeps_completed_games_and_counts_only_unfinished_rows(streaming):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     snapshots = []
     sink = Sink()
     worker = actor(
@@ -227,7 +227,7 @@ def test_stop_keeps_completed_games_and_counts_only_unfinished_rows(streaming):
 
 @pytest.mark.native
 def test_refill_stops_issuing_but_drains_all_assigned_games():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     sink = Sink()
     worker = actor(
         native,
@@ -250,7 +250,7 @@ def test_refill_stops_issuing_but_drains_all_assigned_games():
 
 @pytest.mark.native
 def test_rolling_short_quota_does_not_start_unused_slots():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     sink = Sink()
     worker = actor(
         native,
@@ -279,7 +279,7 @@ def test_rolling_short_quota_does_not_start_unused_slots():
     ],
 )
 def test_refilled_slots_preserve_clinch_and_exact_endgame_provenance(termination):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     runs = []
     for rolling in (False, True):
         sink = Sink()
@@ -306,7 +306,7 @@ def test_refilled_slots_preserve_clinch_and_exact_endgame_provenance(termination
 
 @pytest.mark.native
 def test_model_pin_change_at_last_move_cannot_publish_mixed_model_game():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     snapshots = []
     sink = Sink()
     worker = actor(
@@ -329,7 +329,7 @@ def test_model_pin_change_at_last_move_cannot_publish_mixed_model_game():
 
 @pytest.mark.native
 def test_refill_progress_is_emitted_only_after_previous_game_is_durable():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     sink = Sink()
     worker = actor(
         native,
@@ -358,7 +358,7 @@ def test_refill_progress_is_emitted_only_after_previous_game_is_durable():
 @pytest.mark.native
 @pytest.mark.parametrize("full", [False, True])
 def test_game_mode_probability_endpoints_cover_the_entire_seed_range(full):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     sink = Sink()
     worker = actor(
         near_terminal_native(native, []),
@@ -384,7 +384,7 @@ def test_game_mode_probability_endpoints_cover_the_entire_seed_range(full):
 @pytest.mark.parametrize("handicap", range(2, 10))
 @pytest.mark.parametrize("mode", ["classic", "double"])
 def test_refill_preserves_every_handicap_severity_and_pda_assignment(mode, handicap):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     runs = []
     for rolling in (False, True):
         sink = Sink()
@@ -412,7 +412,7 @@ def test_refill_preserves_every_handicap_severity_and_pda_assignment(mode, handi
 
 @pytest.mark.native
 def test_game_seed_streams_are_unchanged_by_concurrent_native_tasks():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
 
     def task(index):
         sink = Sink()

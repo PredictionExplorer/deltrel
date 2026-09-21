@@ -5,13 +5,13 @@ from pathlib import Path
 import pytest
 
 from scripts.validate_continuous_profile import validate_continuous_config
-from startrain.config import (
+from deltreltrain.config import (
     ConfigError,
     HistoricalEvaluationConfig,
     PromotionConfig,
     load_config,
 )
-from startrain.config_compatibility import (
+from deltreltrain.config_compatibility import (
     compatible_config_epoch_payloads,
     without_evaluation_session_defaults,
     without_pause_strategy_default,

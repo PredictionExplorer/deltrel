@@ -6,11 +6,11 @@ test('setup and gameplay have no automatically detectable accessibility violatio
   page,
 }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: '✳Star' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Deltrel' })).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 
   await page.getByRole('button', { name: 'Begin the game' }).click();
-  await expect(page.getByRole('group', { name: /\*Star board/ })).toBeVisible();
+  await expect(page.getByRole('group', { name: /Deltrel board/ })).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
 
@@ -32,12 +32,15 @@ test('the primary flow remains within a narrow mobile viewport', async ({ page }
   expect(gameOverflow).toBeLessThanOrEqual(1);
 });
 
-test('reduced motion suppresses the repeating last-move pulse', async ({ page }) => {
+test('reduced motion suppresses placement ripples and decorative water motion', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   await page.getByRole('button', { name: 'Begin the game' }).click();
   await page.getByRole('button', { name: /Node .*empty/ }).first().click();
-  await expect(page.locator('.last-move-pulse')).toBeHidden();
+  const ripple = page.locator('[data-move-ripple]');
+  await expect(ripple).toHaveCount(1);
+  await expect(ripple).toHaveCSS('display', 'none');
+  await expect(page.locator('[data-water-light]')).toHaveCSS('animation-name', 'none');
 });
 
 test('clinch decisions and proof remain accessible', async ({ page }) => {
@@ -54,4 +57,3 @@ test('clinch decisions and proof remain accessible', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Clinch proof board' })).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
-

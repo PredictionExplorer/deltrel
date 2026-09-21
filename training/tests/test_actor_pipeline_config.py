@@ -8,15 +8,15 @@ import pytest
 import yaml
 
 from scripts import migrate_continuous_profile as migration
-from startrain.balanced_evaluation import evaluation_contract
-from startrain.config import (
+from deltreltrain.balanced_evaluation import evaluation_contract
+from deltreltrain.config import (
     ActorInferenceConfig,
     ActorPipelineConfig,
     ConfigError,
     GPUWorkerConfig,
     load_config,
 )
-from startrain.config_compatibility import (
+from deltreltrain.config_compatibility import (
     without_arena_clinch_default,
     compatible_config_epoch_payloads,
     without_search_execution_defaults,
@@ -24,7 +24,7 @@ from startrain.config_compatibility import (
     without_training_execution_defaults,
     without_fresh_data_defaults,
 )
-from startrain.learner import UTDSegmentState
+from deltreltrain.learner import UTDSegmentState
 from test_continuous_profile_migration import _fixture, _snapshot, _write_json
 
 

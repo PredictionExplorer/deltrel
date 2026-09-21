@@ -3,7 +3,7 @@
   "active_profile_sha256": "6cf8ceba830b4be34368f92824d2b8d32e8b866696ec810d03c9e7c2252a6d93",
   "canonical_config_sha256": "78b6b4ed7961791492ed43628aa99c67010e5fa4ab051fd144dd0b3f905ad9e1",
   "gate_sha256": "b9f033f8638eb63a505bdd7f63412580b83e6d53cc35bad72e9b347a7726c5b6",
-  "server_evidence_directory": "/home/ubuntu/edgeconnect-rollouts/starvation-deploy-v4-20260911",
+  "server_evidence_directory": "/home/ubuntu/deltrel-rollouts/starvation-deploy-v4-20260911",
   "baseline": {
     "window": {
       "start": "2026-09-11T11:59:17.651163+00:00",
@@ -406,9 +406,9 @@
     "completed_ns": 1789133351349129682,
     "readiness_step": 190450,
     "source": "7d874bba9206e07c4b17156e2dba169758d35720",
-    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-starvation-corrected-20260911.yaml",
+    "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-deltrelvation-corrected-20260911.yaml",
     "migration": {
-      "backup_bundle": "/home/ubuntu/edgeconnect-runs/variant-network/migration-backups/1789132071695781917-profile-starvation-corrected-20260911",
+      "backup_bundle": "/home/ubuntu/deltrel-runs/variant-network/migration-backups/1789132071695781917-profile-deltrelvation-corrected-20260911",
       "boundary": {
         "champion_model_identity": "sha256-37fd6c1ae569a1bbc55015815afaab755fb1c7ab40d4149c7ba80cb28961c585",
         "committed_replay_samples": 71700318,
@@ -461,17 +461,17 @@
       "status": "ok",
       "target": {
         "config_sha256": "78b6b4ed7961791492ed43628aa99c67010e5fa4ab051fd144dd0b3f905ad9e1",
-        "profile": "profile-starvation-corrected-20260911.yaml",
+        "profile": "profile-deltrelvation-corrected-20260911.yaml",
         "profile_sha256": "6cf8ceba830b4be34368f92824d2b8d32e8b866696ec810d03c9e7c2252a6d93",
         "source_commit": "7d874bba9206e07c4b17156e2dba169758d35720"
       },
       "utd_segment": null,
       "writes": [
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile-starvation-corrected-20260911.yaml",
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile-starvation-corrected-20260911.sha256",
-        "/home/ubuntu/edgeconnect-runs/variant-network/continuous-migrations.jsonl",
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile.sha256",
-        "/home/ubuntu/edgeconnect-runs/variant-network/source-commit.txt"
+        "/home/ubuntu/deltrel-runs/variant-network/profile-deltrelvation-corrected-20260911.yaml",
+        "/home/ubuntu/deltrel-runs/variant-network/profile-deltrelvation-corrected-20260911.sha256",
+        "/home/ubuntu/deltrel-runs/variant-network/continuous-migrations.jsonl",
+        "/home/ubuntu/deltrel-runs/variant-network/profile.sha256",
+        "/home/ubuntu/deltrel-runs/variant-network/source-commit.txt"
       ]
     },
     "stop_checkpoint": {
@@ -480,7 +480,7 @@
       "checkpoint_sha256": "46ce93fa07a892ceaca22391fe6077ad6b06ae7189e5a7020e1211ae0dc35354",
       "epoch": 1181,
       "examples_consumed": 97473024,
-      "format": "startrain.recovery-pointer",
+      "format": "deltreltrain.recovery-pointer",
       "generation_family": "variant-network-a",
       "run_id": "variant-network",
       "schema_version": 1,
@@ -491,10 +491,10 @@
     "h100_smoke": {
       "status": "passed",
       "execution": "eager BF16 interface smoke, not a benchmark",
-      "release": "/home/ubuntu/edgeconnect-releases/variant-starvation-7d874bb",
+      "release": "/home/ubuntu/deltrel-releases/variant-deltrelvation-7d874bb",
       "source_commit": "7d874bba9206e07c4b17156e2dba169758d35720",
       "profile_sha256": "6cf8ceba830b4be34368f92824d2b8d32e8b866696ec810d03c9e7c2252a6d93",
-      "native_binary": "/home/ubuntu/edgeconnect-releases/variant-starvation-7d874bb/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+      "native_binary": "/home/ubuntu/deltrel-releases/variant-deltrelvation-7d874bb/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
       "native_binary_sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b",
       "model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
       "manifest_sha256": "be4ecd6f7905b954e2ba4c3b66d742cb1cc80ebc8143c5037f79a213a5af2e64",
@@ -562,7 +562,7 @@
       "peak_cuda_allocated_bytes": 488418304,
       "elapsed_seconds": 12.503254000097513,
       "neural_smoke_report": {
-        "path": "/home/ubuntu/edgeconnect-rollouts/starvation-deploy-v4-20260911/single-cutover/h100-smoke-neural.json",
+        "path": "/home/ubuntu/deltrel-rollouts/starvation-deploy-v4-20260911/single-cutover/h100-smoke-neural.json",
         "bytes": 2658,
         "sha256": "82393bbbb07b140149895aebd84c96559a223dc2c8a41cc47f03a228e7140c2f"
       },
@@ -574,12 +574,12 @@
         "verified_test_executed": true,
         "junit_parse_error": null,
         "junit": {
-          "path": "/home/ubuntu/edgeconnect-rollouts/starvation-deploy-v4-20260911/single-cutover/h100-smoke-pinned-loader.xml",
+          "path": "/home/ubuntu/deltrel-rollouts/starvation-deploy-v4-20260911/single-cutover/h100-smoke-pinned-loader.xml",
           "bytes": 395,
           "sha256": "b474b45f2efa9705f97dd2c457b66b6d4b585a9c9b45d8c18ce12137a95b1eef"
         },
         "log": {
-          "path": "/home/ubuntu/edgeconnect-rollouts/starvation-deploy-v4-20260911/single-cutover/h100-smoke-pinned-loader.log",
+          "path": "/home/ubuntu/deltrel-rollouts/starvation-deploy-v4-20260911/single-cutover/h100-smoke-pinned-loader.log",
           "bytes": 80,
           "sha256": "423b1d0e014eb1eab96f4420f7b344c2615be505dd574b756ac884826ca74f2d"
         }
@@ -592,7 +592,7 @@
       "generation_family": "variant-network-a",
       "objects": 23765,
       "run_id": "variant-network",
-      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789131691974629022-2f6fbfa1c075a3803ffef190b37113243377c63b0cdb80373fd439d4353464e1.json",
+      "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789131691974629022-2f6fbfa1c075a3803ffef190b37113243377c63b0cdb80373fd439d4353464e1.json",
       "snapshot_bytes": 4603438,
       "snapshot_sha256": "2f6fbfa1c075a3803ffef190b37113243377c63b0cdb80373fd439d4353464e1",
       "status": "ok"
@@ -604,7 +604,7 @@
       "generation_family": "variant-network-a",
       "objects": 24717,
       "run_id": "variant-network",
-      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789132744622155182-51cc1af8746e7a1e2bca9e42dfb432617be0bab5af6e8d0b9b6095960e449c68.json",
+      "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789132744622155182-51cc1af8746e7a1e2bca9e42dfb432617be0bab5af6e8d0b9b6095960e449c68.json",
       "snapshot_bytes": 4787200,
       "snapshot_sha256": "51cc1af8746e7a1e2bca9e42dfb432617be0bab5af6e8d0b9b6095960e449c68",
       "status": "ok"
@@ -664,11 +664,11 @@
     "gate_sha256": "b9f033f8638eb63a505bdd7f63412580b83e6d53cc35bad72e9b347a7726c5b6",
     "input_artifacts": {
       "baseline-full-10min.json": {
-        "path": "/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-fresh-data-observer-sfnb2c2h/baseline-full-10min.json",
+        "path": "/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-fresh-data-observer-sfnb2c2h/baseline-full-10min.json",
         "sha256": "dfe6dc44e3b256da91bf2fd3244596adbcf9cef4a0e7769a4bac50a42ffba64d"
       },
       "post-20min.json": {
-        "path": "/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-fresh-data-observer-sfnb2c2h/post-20min.json",
+        "path": "/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-fresh-data-observer-sfnb2c2h/post-20min.json",
         "sha256": "33503d407ddd8e98305e8e82085157cd4bd9a358271f42486eace02a485d2e64"
       }
     },

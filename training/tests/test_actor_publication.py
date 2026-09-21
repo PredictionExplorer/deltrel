@@ -1,5 +1,5 @@
-from startrain import actor_publication as publication
-from startrain.actor_publication import PublicationProgress
+from deltreltrain import actor_publication as publication
+from deltreltrain.actor_publication import PublicationProgress
 import pytest
 import time
 

@@ -14,17 +14,17 @@ import torch
 import pytest
 import yaml
 
-import startrain.config as config_module
-import startrain.orchestration as orchestration_module
-from startrain.actor import ActorSupervisor, RingMixtureScheduler
-from startrain.device import AcceleratorInventory
-from startrain.checkpoint import (
+import deltreltrain.config as config_module
+import deltreltrain.orchestration as orchestration_module
+from deltreltrain.actor import ActorSupervisor, RingMixtureScheduler
+from deltreltrain.device import AcceleratorInventory
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     latest_checkpoint,
     load_ema_checkpoint,
     load_model_manifest,
 )
-from startrain.config import (
+from deltreltrain.config import (
     CurriculumStage,
     GameConfig,
     ConfigError,
@@ -38,10 +38,10 @@ from startrain.config import (
     ShutdownConfig,
     load_config,
 )
-from startrain.learner import ImmutableModelPublisher
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.optim import OptimizerConfig, build_optimizer
-from startrain.orchestration import (
+from deltreltrain.learner import ImmutableModelPublisher
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.optim import OptimizerConfig, build_optimizer
+from deltreltrain.orchestration import (
     Coordinator,
     FATAL_WORKER_EXIT_CODE,
     HARDWARE_HEALTH_EXIT_CODE,
@@ -54,14 +54,14 @@ from startrain.orchestration import (
     gpu_pause_ack_path,
     validate_autonomous_run_root,
 )
-from startrain.runtime import (
+from deltreltrain.runtime import (
     CHAMPION_WARM_START_FORMAT,
     CHAMPION_WARM_START_SCHEMA_VERSION,
     RunIdentity,
     atomic_json,
     load_or_create_run_identity,
 )
-from startrain.training import build_scheduler
+from deltreltrain.training import build_scheduler
 
 
 CONFIGS = Path(__file__).parents[1] / "configs"
@@ -69,9 +69,9 @@ DEPLOY = Path(__file__).parents[1] / "deploy"
 
 
 def test_finite_and_continuous_systemd_restart_policies_are_distinct() -> None:
-    finite = (DEPLOY / "edgeconnect-startrain.service.example").read_text()
+    finite = (DEPLOY / "deltrel-deltreltrain.service.example").read_text()
     continuous = (
-        DEPLOY / "edgeconnect-startrain-continuous.service.example"
+        DEPLOY / "deltrel-deltreltrain-continuous.service.example"
     ).read_text()
     assert "Restart=on-failure" in finite
     assert "Restart=always" not in finite
@@ -86,14 +86,14 @@ def test_finite_and_continuous_systemd_restart_policies_are_distinct() -> None:
     assert "WatchdogSignal=SIGTERM" in finite
     assert "WatchdogSignal=SIGTERM" in continuous
     ablation = (
-        DEPLOY / "edgeconnect-startrain-ablation-queue.service.example"
+        DEPLOY / "deltrel-deltreltrain-ablation-queue.service.example"
     ).read_text()
     assert "KillMode=mixed" in ablation
     assert "KillMode=control-group" not in ablation
     report_service = (
-        DEPLOY / "edgeconnect-startrain-report.service.example"
+        DEPLOY / "deltrel-deltreltrain-report.service.example"
     ).read_text()
-    report_timer = (DEPLOY / "edgeconnect-startrain-report.timer.example").read_text()
+    report_timer = (DEPLOY / "deltrel-deltreltrain-report.timer.example").read_text()
     assert "strength_efficiency_report.py" in report_service
     assert "@PROVISIONED_GPUS@" in report_service
     assert "--quiet" in report_service
@@ -102,7 +102,7 @@ def test_finite_and_continuous_systemd_restart_policies_are_distinct() -> None:
     assert "StandardOutput=null" in report_service
     assert "OnUnitActiveSec=15min" in report_timer
     assert "AccuracySec=1min" in report_timer
-    assert "edgeconnect-startrain-@RUN_ID@-report.service" in report_timer
+    assert "deltrel-deltreltrain-@RUN_ID@-report.service" in report_timer
 
 
 def test_orchestrator_refuses_prepared_warm_start(tmp_path: Path) -> None:
@@ -471,11 +471,11 @@ def test_autonomous_resume_accepts_only_unchanged_omitted_handicap_defaults(
     provenance = json.loads(directories.autonomous_provenance.read_text())
     legacy_config = configured.as_dict()
     if prior_session_epoch:
-        from startrain.config_compatibility import without_evaluation_session_defaults
+        from deltreltrain.config_compatibility import without_evaluation_session_defaults
 
         legacy_config = without_evaluation_session_defaults(legacy_config)
     if prior_efficiency_epoch:
-        from startrain.config_compatibility import without_efficiency_defaults
+        from deltreltrain.config_compatibility import without_efficiency_defaults
 
         legacy_config = without_efficiency_defaults(legacy_config)
     if omitted_mask & 1:
@@ -596,7 +596,7 @@ def test_actor_lanes_expand_worker_specs_with_distinct_identity_and_affinity(
     ]
     assert all(spec.cpu_affinity == (0, 1, 2, 3, 8) for spec in lanes)
     assert all(
-        spec.environment["STARTRAIN_CPU_AFFINITY"] == "0,1,2,3,8" for spec in lanes
+        spec.environment["DELTRELTRAIN_CPU_AFFINITY"] == "0,1,2,3,8" for spec in lanes
     )
     shared = next(gpu for gpu in gpus if gpu.gpu_id == 7)
     with pytest.raises(ConfigError, match="exactly one actor lane"):
@@ -1053,12 +1053,12 @@ def write_worker_failure(
     atomic_json(
         Path(environment[WORKER_FAILURE_PATH_ENV]),
         {
-            "format": "startrain.worker-failure",
+            "format": "deltreltrain.worker-failure",
             "schema_version": 1,
             "timestamp_ns": time.time_ns(),
             "pid": 123,
-            "worker": environment["STARTRAIN_WORKER_NAME"],
-            "role": environment["STARTRAIN_WORKER_ROLE"],
+            "worker": environment["DELTRELTRAIN_WORKER_NAME"],
+            "role": environment["DELTRELTRAIN_WORKER_ROLE"],
             "failure_class": failure_class,
             "exit_code": exit_code,
             "exception_type": exception_type,
@@ -2406,7 +2406,7 @@ def test_materialized_config_round_trips_without_auto_markers(
     assert reloaded.orchestration.promotion.gpu_id == 1
     assert reloaded.orchestration.promotion.pause_sharing_mode is True
     assert reloaded.learner.device == "cuda"
-    assert "# Materialized by startrain-orchestrate" in raw
+    assert "# Materialized by deltreltrain-orchestrate" in raw
 
 
 def test_materialize_worker_config_passthrough_for_explicit_profiles(

@@ -17,8 +17,8 @@ from typing import Any
 
 import yaml
 
-from startrain.config import ExperimentConfig, load_config
-from startrain.model import model_parameter_count
+from deltreltrain.config import ExperimentConfig, load_config
+from deltreltrain.model import model_parameter_count
 
 if __package__:
     from .validate_continuous_profile import validate_continuous_config
@@ -26,7 +26,7 @@ else:
     from validate_continuous_profile import validate_continuous_config
 
 SCHEMA_VERSION = 1
-REPORT_NAME = "startrain-elo-ablation-plan"
+REPORT_NAME = "deltreltrain-elo-ablation-plan"
 DEFAULT_TREATMENTS = (
     "control",
     "utd-1",
@@ -901,7 +901,7 @@ def validate_futility_policy(
     """Validate a stop-only policy without granting any promotion authority."""
     if (
         policy.get("schema_version") != 1
-        or policy.get("report") != "startrain-elo-futility-policy"
+        or policy.get("report") != "deltreltrain-elo-futility-policy"
     ):
         raise ValueError("unsupported Elo futility policy")
     if type(policy.get("enabled")) is not bool:

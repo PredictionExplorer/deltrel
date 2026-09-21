@@ -1,7 +1,7 @@
 import { useId, useMemo } from 'react';
-import type { Board } from '@/lib/star/board';
-import type { StarAiAnalysis } from '@/lib/star/ai/decision';
-import type { FutureMovePrediction } from '@/lib/star/ai/predictions';
+import type { Board } from '@/lib/deltrel/board';
+import type { DeltrelAiAnalysis } from '@/lib/deltrel/ai/decision';
+import type { FutureMovePrediction } from '@/lib/deltrel/ai/predictions';
 
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
@@ -18,7 +18,7 @@ function formatLatency(milliseconds: number): string {
 }
 
 function expectedMarginText(
-  analysis: StarAiAnalysis,
+  analysis: DeltrelAiAnalysis,
   playerNames: readonly [string, string],
 ): string {
   if (Math.abs(analysis.expectedMargin) < 0.05) return 'Even (0.0 points)';
@@ -30,7 +30,7 @@ function expectedMarginText(
 }
 
 export interface EngineEstimatePanelProps {
-  analysis: StarAiAnalysis;
+  analysis: DeltrelAiAnalysis;
   board: Board;
   playerNames: readonly [string, string];
   showSearchDetails?: boolean;
@@ -69,10 +69,10 @@ export function EngineEstimatePanel({
       role="status"
       aria-live="polite"
       aria-labelledby={titleId}
-      className="rounded-2xl border border-gold/30 bg-gold-faint"
+      className="rounded-2xl border border-sand/30 bg-sand-faint"
     >
       <details className="group px-4 py-2">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center text-sm text-gold-strong marker:text-gold">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center text-sm text-sand-strong marker:text-sand">
           <span id={titleId} className="font-medium">
             Engine estimate
           </span>
@@ -162,8 +162,8 @@ export function EngineEstimatePanel({
                   <thead className="text-muted">
                     <tr>
                       <th scope="col" className="py-1 pr-2 font-normal">Player</th>
-                      <th scope="col" className="p-1 text-right font-normal">Peries</th>
-                      <th scope="col" className="p-1 text-right font-normal">Stars</th>
+                      <th scope="col" className="p-1 text-right font-normal">Shores</th>
+                      <th scope="col" className="p-1 text-right font-normal">Networks</th>
                       <th scope="col" className="p-1 text-right font-normal">Corners</th>
                       <th scope="col" className="py-1 pl-2 text-right font-normal">Bonus chance</th>
                     </tr>
@@ -172,8 +172,8 @@ export function EngineEstimatePanel({
                     {predictions.finalCounts.map((counts) => (
                       <tr key={counts.player}>
                         <th scope="row" className="py-1.5 pr-2 font-medium">{playerNames[counts.player]}</th>
-                        <td className="p-1 text-right">{counts.peries.toFixed(1)}</td>
-                        <td className="p-1 text-right">{counts.stars.toFixed(1)}</td>
+                        <td className="p-1 text-right">{counts.shores.toFixed(1)}</td>
+                        <td className="p-1 text-right">{counts.networks.toFixed(1)}</td>
                         <td className="p-1 text-right">{counts.corners.toFixed(1)}</td>
                         <td className="py-1.5 pl-2 text-right">{formatPercent(counts.cornerBonusProbability)}</td>
                       </tr>
@@ -217,7 +217,7 @@ export function EngineEstimatePanel({
                   key={candidate.action.node}
                   className="grid grid-cols-[auto_1fr] items-baseline gap-2 rounded-lg bg-black/10 px-2.5 py-1.5 text-xs sm:grid-cols-[auto_1fr_auto]"
                 >
-                  <span className="font-mono text-gold-strong">
+                  <span className="font-mono text-sand-strong">
                     {board.labels[candidate.action.node]}
                   </span>
                   <span className="text-muted">

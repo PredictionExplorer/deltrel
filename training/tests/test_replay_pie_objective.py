@@ -6,19 +6,19 @@ import sqlite3
 
 import pytest
 
-from startrain.config import LearnerConfig, RingMixtureConfig, RingWeightStage
-from startrain.learner import (
+from deltreltrain.config import LearnerConfig, RingMixtureConfig, RingWeightStage
+from deltreltrain.learner import (
     LazyShardReplayDataset,
     LearnerLoop,
     UniqueReplayBatchSampler,
     UTDSegmentState,
 )
-from startrain.replay_store import (
+from deltreltrain.replay_store import (
     ReplayStore,
     training_committed_sample_count,
     _strict_variant_targets,
 )
-from startrain.variant_training import training_segment_quotas
+from deltreltrain.variant_training import training_segment_quotas
 from test_pipeline_core import make_test_learner, run_identity
 from test_replay_game_revisions import _samples, publication as publication
 from test_replay_six_mode_selection import append_mode, mode_counts

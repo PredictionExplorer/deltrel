@@ -94,7 +94,7 @@ def test_dedicated_architecture_queue_consumes_prepared_scratch_roots(
         architecture_queue,
         "build_architecture_ablation_evidence",
         lambda _suite: {
-            "format": "startrain-architecture-ablation-evidence",
+            "format": "deltreltrain-architecture-ablation-evidence",
             "diagnostic_only": True,
             "production_promotion_authorized": False,
             "adoption_authorized": False,

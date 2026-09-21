@@ -34,7 +34,7 @@ from typing import Any, TypeGuard
 
 API_BASE = "https://cloud.lambda.ai/api/v1"
 TARGET_TYPE = "gpu_8x_b200_sxm6"
-DEFAULT_STATE = Path.home() / ".local/state/edgeconnect/lambda-b200-watch.json"
+DEFAULT_STATE = Path.home() / ".local/state/deltrel/lambda-b200-watch.json"
 CAPACITY_ERROR = "instance-operations/launch/insufficient-capacity"
 REJECTED_ERRORS = {
     CAPACITY_ERROR,
@@ -130,7 +130,7 @@ class LambdaAPI:
                 "Authorization": f"Bearer {self._key}",
                 "Accept": "application/json",
                 "Content-Type": "application/json",
-                "User-Agent": "EdgeConnect-capacity-watch/1.0",
+                "User-Agent": "Deltrel-capacity-watch/1.0",
             },
             method=method,
         )
@@ -165,7 +165,7 @@ class Config:
     regions: tuple[str, ...] = ()
     max_hourly_cents: int = 6000
     interval_seconds: float = 300
-    name: str = "edgeconnect-b200-reserve"
+    name: str = "deltrel-b200-reserve"
     dry_run: bool = False
 
     def validate(self) -> None:
@@ -673,7 +673,7 @@ def main(argv: list[str] | None = None) -> int:
         default=300,
         help="Default 300, minimum 120; adds 0–30 seconds jitter",
     )
-    parser.add_argument("--name", default="edgeconnect-b200-reserve")
+    parser.add_argument("--name", default="deltrel-b200-reserve")
     parser.add_argument("--state-file", type=Path, default=DEFAULT_STATE)
     parser.add_argument(
         "--dry-run",

@@ -6,7 +6,7 @@ import math
 import pytest
 import torch
 
-from startrain.losses import LossWeights, compute_losses
+from deltreltrain.losses import LossWeights, compute_losses
 from test_losses import outputs, targets
 
 

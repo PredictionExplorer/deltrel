@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   checkAiCapabilities,
   type AiCapabilities,
-} from '@/lib/star/ai/capabilities';
+} from '@/lib/deltrel/ai/capabilities';
 import {
   DEFAULT_AI_SEARCH_SETTINGS,
   DEFAULT_CONFIG,
@@ -21,9 +21,9 @@ import {
 } from '@/lib/store';
 import { SetupScreen } from '../SetupScreen';
 
-vi.mock('@/lib/star/ai/capabilities', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/star/ai/capabilities')>(
-    '@/lib/star/ai/capabilities',
+vi.mock('@/lib/deltrel/ai/capabilities', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/deltrel/ai/capabilities')>(
+    '@/lib/deltrel/ai/capabilities',
   );
   return { ...actual, checkAiCapabilities: vi.fn() };
 });
@@ -98,7 +98,7 @@ function resetStore(overrides: Partial<AppState> = {}) {
 
 beforeEach(() => {
   localStorage.clear();
-  vi.stubEnv('NEXT_PUBLIC_STAR_AI_DEVTOOLS', '0');
+  vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '0');
   resetStore();
   vi.mocked(checkAiCapabilities).mockReset();
   vi.mocked(checkAiCapabilities).mockResolvedValue(availableCapabilities);
@@ -168,7 +168,7 @@ describe('SetupScreen', () => {
     render(<SetupScreen />);
     await user.click(await screen.findByRole('button', { name: 'Play against the champion' }));
     await user.click(screen.getByRole('button', {
-      name: mode === 'classic' ? 'Classic *Star, 1 stone per turn' : /Double \*Star, 2 stones per turn/,
+      name: mode === 'classic' ? 'Classic Deltrel, 1 stone per turn' : /Double Deltrel, 2 stones per turn/,
     }));
     if (handicap > 1) {
       await user.click(screen.getByRole('button', { name: 'Full, 10 rings' }));
@@ -249,7 +249,7 @@ describe('SetupScreen', () => {
   });
 
   it('synchronizes advanced budget drafts after choosing ordinary champion effort', async () => {
-    vi.stubEnv('NEXT_PUBLIC_STAR_AI_DEVTOOLS', '1');
+    vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
     vi.mocked(checkAiCapabilities).mockResolvedValue(championCapabilities);
     const user = userEvent.setup();
     render(<SetupScreen />);
@@ -305,8 +305,8 @@ describe('SetupScreen', () => {
     const user = userEvent.setup();
     render(<SetupScreen />);
 
-    const classic = screen.getByRole('button', { name: 'Classic *Star, 1 stone per turn' });
-    const double = screen.getByRole('button', { name: /Double \*Star, 2 stones per turn/i });
+    const classic = screen.getByRole('button', { name: 'Classic Deltrel, 1 stone per turn' });
+    const double = screen.getByRole('button', { name: /Double Deltrel, 2 stones per turn/i });
     expect(classic).toHaveAttribute('aria-pressed', 'true');
     expect(
       screen.getByRole('combobox', { name: 'Player 1 controller' }),
@@ -381,13 +381,13 @@ describe('SetupScreen', () => {
   });
 
   it('offers exact validated developer budgets from capability presets', async () => {
-    vi.stubEnv('NEXT_PUBLIC_STAR_AI_DEVTOOLS', '1');
+    vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
     vi.mocked(checkAiCapabilities).mockResolvedValue(developerCapabilities);
     const user = userEvent.setup();
     render(<SetupScreen />);
 
     await user.click(
-      screen.getByRole('button', { name: /Double \*Star, 2 stones per turn/i }),
+      screen.getByRole('button', { name: /Double Deltrel, 2 stones per turn/i }),
     );
     expect(
       screen.queryByText('Engine developer settings'),
@@ -467,13 +467,13 @@ describe('SetupScreen', () => {
   });
 
   it('keeps developer engine controls accessible when expanded', async () => {
-    vi.stubEnv('NEXT_PUBLIC_STAR_AI_DEVTOOLS', '1');
+    vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
     vi.mocked(checkAiCapabilities).mockResolvedValue(developerCapabilities);
     const user = userEvent.setup();
     const { container } = render(<SetupScreen />);
 
     await user.click(
-      screen.getByRole('button', { name: /Double \*Star, 2 stones per turn/i }),
+      screen.getByRole('button', { name: /Double Deltrel, 2 stones per turn/i }),
     );
     const controller = screen.getByRole('combobox', {
       name: 'Player 1 controller',

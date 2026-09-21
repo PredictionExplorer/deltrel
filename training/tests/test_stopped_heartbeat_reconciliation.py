@@ -10,8 +10,8 @@ import torch
 import yaml
 
 from scripts import graceful_training_deploy as deploy
-from startrain.checkpoint import ExponentialMovingAverage, save_checkpoint
-from startrain.config import load_config
+from deltreltrain.checkpoint import ExponentialMovingAverage, save_checkpoint
+from deltreltrain.config import load_config
 
 WORKERS = ["learner", "actor-gpu-1"]
 
@@ -70,7 +70,7 @@ def reconciliation_fixture(tmp_path, *, missing=1):
     final_checkpoint = checkpoint_path.with_name(f"sha256-{checksum}.pt")
     checkpoint_path.rename(final_checkpoint)
     pointer = {
-        "format": "startrain.recovery-pointer",
+        "format": "deltreltrain.recovery-pointer",
         "schema_version": 1,
         "checkpoint": f"recovery/{final_checkpoint.name}",
         "checkpoint_sha256": checksum,

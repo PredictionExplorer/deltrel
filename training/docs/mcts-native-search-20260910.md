@@ -58,7 +58,7 @@ The baseline is `283f6ca3cfd8836f8e408ff8bdc2517c424e9705`. Per-case medians,
 all timing samples, machine/compiler details and candidate source hashes are in
 `mcts-native-search-20260910.json`.
 
-To reproduce, copy the same `crates/star-search/examples/benchmark_search.rs`
+To reproduce, copy the same `crates/deltrel-search/examples/benchmark_search.rs`
 into isolated baseline and candidate checkouts, build it with each checkout's
 release profile, and run each binary with `--trace <new-file>` before comparing
 the files. Then alternate binary runs using `--repeats 3` across four blocks.

@@ -16,18 +16,18 @@ The existing network now learns five additional outputs:
 
 - the opponent's next observed reply, including a pie swap;
 - its own second placement in a regular Double turn;
-- each player's final peries, stars and controlled corners.
+- each player's final shores, networks and controlled corners.
 
 Final targets use the official completed board: after a mathematical clinch,
 the remaining cells are filled with the losing side's stones and scored.
 Self-play does not continue beyond the existing ending. Corner-count
-probabilities also provide the chance of receiving the quark-peri bonus.
+probabilities also provide the chance of receiving the cape-bonus bonus.
 
 The new heads add 65,065 parameters. The trained trunk and all six existing
 heads retain their original weights. Search omits the added heads at ordinary
 leaves, and its utility, budgets, game mixture and publication cadence are
 unchanged. Initial auxiliary loss weights are 0.1 for each future-move target,
-0.05 for peries and stars, and 0.025 for corners.
+0.05 for shores and networks, and 0.025 for corners.
 
 ## Preserved training state
 
@@ -116,7 +116,7 @@ whose source already has auxiliary heads. Those rollouts retain the original
 auxiliary settings instead of trying to repeat the one-way addition. Commit
 `28410aff86d6a15f5fce7c98b295df7222f4ff6d` passed 64 focused tests and is also
 installed as a separate immutable operator tool under
-`/home/ubuntu/edgeconnect-operator-tools/auxiliary-predictions-28410aff`.
+`/home/ubuntu/deltrel-operator-tools/auxiliary-predictions-28410aff`.
 It does not change the running training release or require another restart.
 
 ## Frontend availability

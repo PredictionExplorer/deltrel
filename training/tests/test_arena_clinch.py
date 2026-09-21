@@ -6,12 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from startrain.arena import ArenaPair, ArenaRunner
-from startrain.balanced_evaluation import evaluation_contract
-from startrain.config import ArenaConfig
-from startrain.inference import InferenceResponse
-from startrain.selfplay import GameVariant
-from startrain.search_options import SearchExecutionConfig
+from deltreltrain.arena import ArenaPair, ArenaRunner
+from deltreltrain.balanced_evaluation import evaluation_contract
+from deltreltrain.config import ArenaConfig
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.selfplay import GameVariant
+from deltreltrain.search_options import SearchExecutionConfig
 
 
 class Evaluator:
@@ -96,7 +96,7 @@ VARIANTS = [
 @pytest.mark.parametrize("sequential", [False, True])
 @pytest.mark.parametrize("variant", VARIANTS, ids=lambda variant: variant.label)
 def test_exact_clinch_preserves_outcomes_and_actual_history(variant, sequential):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     full_runner = runner(native, False, sequential=sequential)
     full, full_state = play(full_runner, variant)
     early_runner = runner(native, sequential=sequential)
@@ -135,7 +135,7 @@ def test_exact_clinch_preserves_outcomes_and_actual_history(variant, sequential)
 @pytest.mark.native
 @pytest.mark.parametrize("sequential", [False, True])
 def test_interrupted_clinches_survive_resume_and_disabling_new_clinches(sequential):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     variant = GameVariant(mode="double", handicap=9)
     subject = runner(native, sequential=sequential)
     _, partial = play(subject, variant, interrupt=True)
@@ -164,7 +164,7 @@ def test_interrupted_clinches_survive_resume_and_disabling_new_clinches(sequenti
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize("corruption", ["winner", "unproved_history"])
 def test_resume_rejects_forged_clinch_completion(enabled, corruption):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     variant = GameVariant(mode="classic", pie=True)
     _, saved = play(runner(native), variant)
     forged = json.loads(json.dumps(saved))
@@ -183,7 +183,7 @@ def test_resume_rejects_forged_clinch_completion(enabled, corruption):
 
 @pytest.mark.native
 def test_pending_pie_swap_is_excluded_from_native_proof(monkeypatch):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     subject = runner(native)
     states = native.StateBatch(4, 1, mode="classic", pie=True)
     states.apply_many([0], [0])
@@ -198,7 +198,7 @@ def test_pending_pie_swap_is_excluded_from_native_proof(monkeypatch):
 
 @pytest.mark.native
 def test_old_snapshot_without_option_resumes_and_other_contract_changes_fail():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     variant = GameVariant()
     _, old = play(runner(native, False), variant, interrupt=True)
     old["config"].pop("exact_clinch_termination", None)
@@ -230,7 +230,7 @@ def test_clinch_option_requires_independent_game_execution():
 
 @pytest.mark.native
 def test_clinch_option_rejects_group_dependent_subtree_reuse():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     with pytest.raises(ValueError, match="no subtree reuse"):
         ArenaRunner(
             native_module=native,
@@ -245,7 +245,7 @@ def test_clinch_option_rejects_group_dependent_subtree_reuse():
 
 @pytest.mark.native
 def test_balanced_cycle_statistics_and_resumed_pair_accounting_are_unchanged():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
 
     def balanced(enabled):
         return ArenaRunner(

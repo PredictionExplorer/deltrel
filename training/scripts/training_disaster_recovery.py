@@ -32,7 +32,7 @@ from typing import Any, ParamSpec, TypeVar
 import yaml
 
 from scripts.replay_manifest_backup import captured_backup_with_evidence
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     MODEL_MANIFEST_FORMAT,
     MODEL_MANIFEST_VERSION,
     MODEL_POINTER_FORMAT,
@@ -47,21 +47,21 @@ from startrain.checkpoint import (
     load_resume_cutover,
     sha256_file,
 )
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
-from startrain.model import MODEL_SCHEMA_VERSION
-from startrain.replay_store import (
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
+from deltreltrain.model import MODEL_SCHEMA_VERSION
+from deltreltrain.replay_store import (
     MANIFEST_SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
     SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
     validate_game_publications,
     training_committed_sample_count,
 )
-from startrain.runtime import load_run_identity, validate_identifier
+from deltreltrain.runtime import load_run_identity, validate_identifier
 
-SNAPSHOT_REPORT = "startrain-disaster-recovery-snapshot"
-LATEST_REPORT = "startrain-disaster-recovery-latest"
-RESTORE_REPORT = "startrain-disaster-recovery-restore"
-NAMESPACE_REPORT = "startrain-disaster-recovery-namespace"
-COMMIT_REPORT = "startrain-disaster-recovery-snapshot-commit"
+SNAPSHOT_REPORT = "deltreltrain-disaster-recovery-snapshot"
+LATEST_REPORT = "deltreltrain-disaster-recovery-latest"
+RESTORE_REPORT = "deltreltrain-disaster-recovery-restore"
+NAMESPACE_REPORT = "deltreltrain-disaster-recovery-namespace"
+COMMIT_REPORT = "deltreltrain-disaster-recovery-snapshot-commit"
 SCHEMA_VERSION = 1
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -1125,7 +1125,7 @@ def _add_warm_start(
     source, logical = _path_within(builder.run_root, path, name="warm-start marker")
     payload = _read_json_file(source, name="champion warm-start marker")
     if (
-        payload.get("format") != "startrain.champion-warm-start"
+        payload.get("format") != "deltreltrain.champion-warm-start"
         or payload.get("schema_version") != 1
         or payload.get("status") not in ("prepared", "active")
         or payload.get("run_id") != run_id
@@ -1476,8 +1476,8 @@ def _active_allocation_gate(profile_path: Path) -> str | None:
             raise ValueError("ring_search_allocations must be a sequence")
         if not allocations:
             return None
-        from startrain.config import load_config
-        from startrain.search_allocation_gate import canonical_config_sha256
+        from deltreltrain.config import load_config
+        from deltreltrain.search_allocation_gate import canonical_config_sha256
 
         config = load_config(profile_path)
         if not any(
@@ -1495,7 +1495,7 @@ def _allocation_gate_references(
 ) -> list[tuple[str, str, str]]:
     try:
         if (
-            payload.get("format") != "startrain.ring-search-allocation-gate"
+            payload.get("format") != "deltreltrain.ring-search-allocation-gate"
             or payload.get("schema_version") != 1
         ):
             raise ValueError("incompatible gate format")
@@ -1551,7 +1551,7 @@ def _controlled_graph_activation_references(
     """The explicit activation receipt also pins its live workload evidence."""
     try:
         if (
-            payload.get("format") != "startrain.graph-cache-controlled-activation"
+            payload.get("format") != "deltreltrain.graph-cache-controlled-activation"
             or type(payload.get("schema_version")) is not int
             or payload["schema_version"] != 1
         ):
@@ -1614,7 +1614,7 @@ def _allocation_gate_dependency_closure(
     if transition is None:
         return references
 
-    from startrain.search_allocation_gate import (
+    from deltreltrain.search_allocation_gate import (
         POLICY_TRANSITION_CLASS,
         POLICY_TRANSITION_FORMAT,
         POLICY_TRANSITION_SCOPE,
@@ -1730,8 +1730,8 @@ def _capture_allocation_gate_dependencies(
     logical = _active_allocation_gate(profile_path)
     if logical is None:
         return
-    from startrain.config import load_config
-    from startrain.search_allocation_gate import validate_production_ring_allocations
+    from deltreltrain.config import load_config
+    from deltreltrain.search_allocation_gate import validate_production_ring_allocations
 
     try:
         validate_production_ring_allocations(load_config(profile_path))
@@ -2844,7 +2844,7 @@ def _verify_snapshot_document(
     if warm_logical in catalog:
         warm = reader.json(warm_logical, name="champion warm-start marker")
         if (
-            warm.get("format") != "startrain.champion-warm-start"
+            warm.get("format") != "deltreltrain.champion-warm-start"
             or warm.get("schema_version") != 1
             or warm.get("status") not in ("prepared", "active")
         ):

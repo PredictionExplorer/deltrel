@@ -6,11 +6,11 @@
   "cpu": "Apple M4 Max",
   "compiler": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
   "source_sha256": {
-    "crates/star-py/src/lib.rs": "eb19053c176e3a8af1727b6ca4ccc6d4c80c83ba082a32bf2f2874abda594fd8",
-    "crates/star-search/src/tree.rs": "8d38ba2f227ca473bf264c5b1205e2669f0e236f5071287be04ed02b263118de",
+    "crates/deltrel-py/src/lib.rs": "eb19053c176e3a8af1727b6ca4ccc6d4c80c83ba082a32bf2f2874abda594fd8",
+    "crates/deltrel-search/src/tree.rs": "8d38ba2f227ca473bf264c5b1205e2669f0e236f5071287be04ed02b263118de",
     "scripts/benchmark_native_submit.py": "01269e8e7b888ef4198b1a8e64fd5ccbff5382585daf53309c9fd26bc4371914",
-    "baseline/star-py/src/lib.rs": "b60ac027c26fdbb9109e8454f4f8df4ff458f0d620f1e8a0f15cdd3e2b0114c3",
-    "baseline/star-search/src/tree.rs": "831b1398b0195cb96ab75ef845b9f00a096fdb849faae449bd596b5e4e87f6f3"
+    "baseline/deltrel-py/src/lib.rs": "b60ac027c26fdbb9109e8454f4f8df4ff458f0d620f1e8a0f15cdd3e2b0114c3",
+    "baseline/deltrel-search/src/tree.rs": "831b1398b0195cb96ab75ef845b9f00a096fdb849faae449bd596b5e4e87f6f3"
   },
   "layout": {
     "pointer_width": 64,
@@ -53,11 +53,11 @@
       },
       "binaries": {
         "baseline": {
-          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/baseline/star_native.abi3.so",
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-native-submit-ji1qxfw2/baseline/deltrel_native.abi3.so",
           "sha256": "322631bbe71229bc468546b5fc93cf1c5895b33b457bd2bcbc770dd322be0237"
         },
         "candidate": {
-          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/final/star_native.abi3.so",
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-native-submit-ji1qxfw2/final/deltrel_native.abi3.so",
           "sha256": "2f2947ab02dbd40f567386308899cae8925b9c2f3cfdd3e3b6de557287564de3"
         }
       },
@@ -1347,11 +1347,11 @@
       },
       "binaries": {
         "baseline": {
-          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/compact/star_native.abi3.so",
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-native-submit-ji1qxfw2/compact/deltrel_native.abi3.so",
           "sha256": "6efa5a153632697aa28c77c1e80a5542b39f22a6babc4cb54206feb9f4e4cd45"
         },
         "candidate": {
-          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/final/star_native.abi3.so",
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-native-submit-ji1qxfw2/final/deltrel_native.abi3.so",
           "sha256": "2f2947ab02dbd40f567386308899cae8925b9c2f3cfdd3e3b6de557287564de3"
         }
       },
@@ -1871,11 +1871,11 @@
       },
       "binaries": {
         "baseline": {
-          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/baseline/star_native.abi3.so",
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-native-submit-ji1qxfw2/baseline/deltrel_native.abi3.so",
           "sha256": "322631bbe71229bc468546b5fc93cf1c5895b33b457bd2bcbc770dd322be0237"
         },
         "candidate": {
-          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/final/star_native.abi3.so",
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-native-submit-ji1qxfw2/final/deltrel_native.abi3.so",
           "sha256": "2f2947ab02dbd40f567386308899cae8925b9c2f3cfdd3e3b6de557287564de3"
         }
       },
@@ -2549,11 +2549,11 @@
       },
       "binaries": {
         "baseline": {
-          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/baseline/star_native.abi3.so",
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-native-submit-ji1qxfw2/baseline/deltrel_native.abi3.so",
           "sha256": "322631bbe71229bc468546b5fc93cf1c5895b33b457bd2bcbc770dd322be0237"
         },
         "candidate": {
-          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/final/star_native.abi3.so",
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-native-submit-ji1qxfw2/final/deltrel_native.abi3.so",
           "sha256": "2f2947ab02dbd40f567386308899cae8925b9c2f3cfdd3e3b6de557287564de3"
         }
       },
@@ -3226,11 +3226,11 @@
       },
       "binaries": {
         "baseline": {
-          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/baseline/star_native.abi3.so",
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-native-submit-ji1qxfw2/baseline/deltrel_native.abi3.so",
           "sha256": "322631bbe71229bc468546b5fc93cf1c5895b33b457bd2bcbc770dd322be0237"
         },
         "candidate": {
-          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/final/star_native.abi3.so",
+          "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-native-submit-ji1qxfw2/final/deltrel_native.abi3.so",
           "sha256": "2f2947ab02dbd40f567386308899cae8925b9c2f3cfdd3e3b6de557287564de3"
         }
       },
@@ -3597,11 +3597,11 @@
     },
     "binaries": {
       "baseline": {
-        "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/baseline/star_native.abi3.so",
+        "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-native-submit-ji1qxfw2/baseline/deltrel_native.abi3.so",
         "sha256": "322631bbe71229bc468546b5fc93cf1c5895b33b457bd2bcbc770dd322be0237"
       },
       "candidate": {
-        "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/edgeconnect-native-submit-ji1qxfw2/parallel/star_native.abi3.so",
+        "path": "/private/var/folders/ts/17fc9m1171d9qxcn9k3h2v3w0000gn/T/deltrel-native-submit-ji1qxfw2/parallel/deltrel_native.abi3.so",
         "sha256": "f7c9df73125153cc7b65f16284c8e2c670f2444f4e1689f4c1efb84400ba8918"
       }
     },

@@ -4,16 +4,16 @@ import hashlib
 import pytest
 import torch
 
-from startrain.auxiliary_upgrade import is_auxiliary_parameter
-from startrain.checkpoint import (
+from deltreltrain.auxiliary_upgrade import is_auxiliary_parameter
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     inspect_checkpoint,
     load_checkpoint,
     save_checkpoint,
 )
-from startrain.gradient_clipping import GradientClipper, GradientClippingConfig
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.optim import (
+from deltreltrain.gradient_clipping import GradientClipper, GradientClippingConfig
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.optim import (
     OptimizerConfig,
     build_optimizer,
     optimizer_checkpoint_contract,
@@ -169,8 +169,8 @@ def test_upgrade_is_explicit_and_rejects_other_architecture_changes(tmp_path):
 
 
 def test_legacy_config_authority_excludes_new_default_fields():
-    from startrain.config import load_config
-    from startrain.auxiliary_upgrade import AUXILIARY_LOSSES
+    from deltreltrain.config import load_config
+    from deltreltrain.auxiliary_upgrade import AUXILIARY_LOSSES
 
     config = load_config("configs/small.yaml")
     payload = config.as_dict()
@@ -180,19 +180,19 @@ def test_legacy_config_authority_excludes_new_default_fields():
 
 def test_learner_records_only_observed_supervision_and_retains_first_step():
     from types import SimpleNamespace
-    from startrain.learner import LearnerLoop
+    from deltreltrain.learner import LearnerLoop
 
     learner = object.__new__(LearnerLoop)
     learner.step = 100
     learner._lr_governor = SimpleNamespace(as_dict=lambda: {})
     learner._record_auxiliary_supervision({"opponent_reply_available": 0.0})
     assert "auxiliary_supervision" not in learner._checkpoint_extra()
-    learner._record_auxiliary_supervision({"final_peries_available": 4.0})
+    learner._record_auxiliary_supervision({"final_shores_available": 4.0})
     learner.step = 110
     learner._record_auxiliary_supervision(
-        {"final_peries_available": 8.0, "opponent_reply_available": 2.0}
+        {"final_shores_available": 8.0, "opponent_reply_available": 2.0}
     )
     assert learner._checkpoint_extra()["auxiliary_supervision"] == {
-        "final_peries": 100,
+        "final_shores": 100,
         "opponent_reply": 110,
     }

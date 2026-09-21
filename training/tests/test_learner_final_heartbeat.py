@@ -7,9 +7,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from startrain import cli
-from startrain.config import load_config
-from startrain.runtime import HeartbeatReporter
+from deltreltrain import cli
+from deltreltrain.config import load_config
+from deltreltrain.runtime import HeartbeatReporter
 from test_learner_shutdown_durability import recovery_pointer, trained_fixture
 
 

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import hardware_health_preflight
-from startrain.hardware_health import (
+from deltreltrain.hardware_health import (
     GPUHealthProbeUnavailable,
     parse_nvidia_smi_xml,
     query_gpu_health,
@@ -187,7 +187,7 @@ def test_actively_bad_states_still_fail_on_consumer_gpus() -> None:
 
 def test_h100_profiles_pin_the_model_gate_and_auto_does_not() -> None:
     configs = Path(__file__).parents[1] / "configs"
-    from startrain.config import load_config
+    from deltreltrain.config import load_config
 
     for name in (
         "h100-4gpu",

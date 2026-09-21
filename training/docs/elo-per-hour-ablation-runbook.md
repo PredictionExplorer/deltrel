@@ -362,7 +362,7 @@ python scripts/prepare_arena_occupancy_benchmark.py \
   --output-dir /absolute/path/to/arena-occupancy-plan \
   --device cuda:7 \
   --physical-gpu-index 7 \
-  --execution-lock /var/lib/edgeconnect/elo-ablation-execution.lock \
+  --execution-lock /var/lib/deltrel/elo-ablation-execution.lock \
   --repeats 4
 
 python scripts/benchmark_arena_occupancy.py \
@@ -461,10 +461,10 @@ Do not generate the deployment manifest until every arm reports an active
 Run queues only from a clean, committed checkout. Render these templates to
 their final systemd paths:
 
-- `deploy/edgeconnect-startrain-ablation-queue.service.example`
-- `deploy/edgeconnect-startrain-ablation-finalize.service.example`
-- `deploy/edgeconnect-startrain-ablation-replay-backup.service.example`
-- `deploy/edgeconnect-startrain-ablation-replay-backup.timer.example`
+- `deploy/deltrel-deltreltrain-ablation-queue.service.example`
+- `deploy/deltrel-deltreltrain-ablation-finalize.service.example`
+- `deploy/deltrel-deltreltrain-ablation-replay-backup.service.example`
+- `deploy/deltrel-deltreltrain-ablation-replay-backup.timer.example`
 
 Both rendered units must reference the same deployment manifest and environment
 file. The environment file can contain host-specific settings, but it must be
@@ -477,18 +477,18 @@ After all arms have been forked, generate the deployment manifest:
 ```bash
 python scripts/run_elo_ablation_queue.py manifest \
   --plan /absolute/path/to/pilot-profiles-seed17/ablation-plan.json \
-  --output /etc/edgeconnect/elo-ablation-seed17.json \
+  --output /etc/deltrel/elo-ablation-seed17.json \
   --training-dir "$PWD" \
-  --queue-unit /etc/systemd/system/edgeconnect-startrain-ablation-queue.service \
-  --finalize-unit /etc/systemd/system/edgeconnect-startrain-ablation-finalize.service \
-  --replay-backup-service-unit /etc/systemd/system/edgeconnect-startrain-ablation-seed17-replay-backup.service \
-  --replay-backup-timer-unit /etc/systemd/system/edgeconnect-startrain-ablation-seed17-replay-backup.timer \
+  --queue-unit /etc/systemd/system/deltrel-deltreltrain-ablation-queue.service \
+  --finalize-unit /etc/systemd/system/deltrel-deltreltrain-ablation-finalize.service \
+  --replay-backup-service-unit /etc/systemd/system/deltrel-deltreltrain-ablation-seed17-replay-backup.service \
+  --replay-backup-timer-unit /etc/systemd/system/deltrel-deltreltrain-ablation-seed17-replay-backup.timer \
   --replay-backup-interval-seconds 3600 \
   --replay-backup-retain 3 \
-  --environment-file /etc/edgeconnect/elo-ablation-seed17.env \
-  --state /var/lib/edgeconnect/elo-ablation-seed17/queue.json \
-  --comparison-output /var/lib/edgeconnect/elo-ablation-seed17/comparison.json \
-  --execution-lock /var/lib/edgeconnect/elo-ablation-execution.lock \
+  --environment-file /etc/deltrel/elo-ablation-seed17.env \
+  --state /var/lib/deltrel/elo-ablation-seed17/queue.json \
+  --comparison-output /var/lib/deltrel/elo-ablation-seed17/comparison.json \
+  --execution-lock /var/lib/deltrel/elo-ablation-execution.lock \
   --max-transient-retries 2 \
   --retry-delay-seconds 30
 ```
@@ -505,7 +505,7 @@ Verify the exact installed deployment before enabling it:
 
 ```bash
 python scripts/run_elo_ablation_queue.py verify \
-  --manifest /etc/edgeconnect/elo-ablation-seed17.json
+  --manifest /etc/deltrel/elo-ablation-seed17.json
 ```
 
 Do not edit a profile, unit, script, environment file, or seed snapshot after
@@ -518,8 +518,8 @@ Enable the queue and its rendered replay-backup timer on the 8-H100 host:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now edgeconnect-startrain-ablation-seed17-replay-backup.timer
-sudo systemctl enable --now edgeconnect-startrain-ablation-queue.service
+sudo systemctl enable --now deltrel-deltreltrain-ablation-seed17-replay-backup.timer
+sudo systemctl enable --now deltrel-deltreltrain-ablation-queue.service
 ```
 
 `queue.json` is an atomically replaced state file. It records every arm as
@@ -590,7 +590,7 @@ run its own cleanup. The finalizer is idempotent:
 
 ```bash
 python scripts/run_elo_ablation_queue.py finalize \
-  --manifest /etc/edgeconnect/elo-ablation-seed17.json
+  --manifest /etc/deltrel/elo-ablation-seed17.json
 ```
 
 The report always includes every configured arm. Pending and failed arms receive
@@ -599,7 +599,7 @@ the `queue_arm_incomplete` ineligibility reason and are never ranked. An
 successful experiment.
 
 Install
-`deploy/edgeconnect-startrain-continuity-trigger.conf.example` as a systemd
+`deploy/deltrel-deltreltrain-continuity-trigger.conf.example` as a systemd
 drop-in for immediate handoff on queue success or failure. The periodic
 continuity timer is still required as an independent backstop.
 
@@ -729,7 +729,7 @@ python scripts/run_staged_elo_pipeline.py \
   --confirmation-campaign /absolute/path/to/confirmation-campaign.json \
   --seed-boundary-action release
 
-systemctl start edgeconnect-startrain-confirmation-campaign.service
+systemctl start deltrel-deltreltrain-confirmation-campaign.service
 ```
 
 Never time a signal between seeds or edit campaign state. Older pinned releases
@@ -788,7 +788,7 @@ configured archives. The 15-minute strength report must be atomically replaced;
 an active run reports stale strength evidence after the timer's grace window.
 
 Every campaign arm also needs its own rendered
-`edgeconnect-startrain-disaster-backup` service/timer and distinct backup root.
+`deltrel-deltreltrain-disaster-backup` service/timer and distinct backup root.
 Forked arms intentionally share a run ID and generation family, so sharing one
 disaster-backup namespace would make `latest.json` ambiguous. Run the timer
 every 15 minutes so an arm release loses at most one snapshot interval. Keep

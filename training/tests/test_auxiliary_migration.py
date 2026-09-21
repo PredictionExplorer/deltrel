@@ -12,16 +12,16 @@ import yaml
 from scripts import graceful_training_deploy as deploy
 from scripts import migrate_continuous_profile as migration
 from scripts import prepare_auxiliary_training_profile as auxiliary_preparation
-from startrain.auxiliary_upgrade import AUXILIARY_LOSSES
-from startrain.checkpoint import (
+from deltreltrain.auxiliary_upgrade import AUXILIARY_LOSSES
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     inference_model_config,
     load_model_manifest,
     save_checkpoint,
 )
-from startrain.config import ConfigError, load_config
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
-from startrain.model import GraphResTNet, MODEL_SCHEMA_VERSION, ModelConfig
+from deltreltrain.config import ConfigError, load_config
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
+from deltreltrain.model import GraphResTNet, MODEL_SCHEMA_VERSION, ModelConfig
 from test_continuous_profile_migration import _fixture
 from test_graceful_training_deploy import deployment as deployment, stopped_files, write
 
@@ -233,7 +233,7 @@ def published_checkpoint(tmp_path, *, auxiliary, changes=None):
     checkpoint = tmp_path / f"sha256-{checkpoint_hash}.pt"
     source.rename(checkpoint)
     payload = {
-        "format": "startrain.model-manifest",
+        "format": "deltreltrain.model-manifest",
         "schema_version": 3,
         "model_identity": f"sha256-{checkpoint_hash}",
         "model_version": f"sha256-{checkpoint_hash}",

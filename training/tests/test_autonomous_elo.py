@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from startrain.autonomous_elo import (
+from deltreltrain.autonomous_elo import (
     DecisiveMatch,
     fit_bradley_terry_elo,
 )

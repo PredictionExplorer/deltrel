@@ -4,14 +4,14 @@ import json
 
 import pytest
 
-from startrain.arena import ArenaPair, ArenaRunner
-from startrain.balanced_evaluation import (
+from deltreltrain.arena import ArenaPair, ArenaRunner
+from deltreltrain.balanced_evaluation import (
     balanced_cells,
     cell_variant,
     pair_key,
     summarize_balanced_pairs,
 )
-from startrain.config import ArenaConfig
+from deltreltrain.config import ArenaConfig
 from test_arena_resume import Clock, Evaluator
 
 
@@ -218,7 +218,7 @@ def test_legacy_ring_ranges_remain_unchanged_when_targets_are_absent(monkeypatch
 
 @pytest.mark.native
 def test_native_targets_resume_committed_games_with_the_same_seeds_and_final_results():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     cfg = config(rings=(4,))
     targets = {"r4/classic-pie": 2, "r4/double-pie": 1}
     complete = runner(cfg, native=native).run(
@@ -263,7 +263,7 @@ def test_native_targets_resume_committed_games_with_the_same_seeds_and_final_res
 
 @pytest.mark.native
 def test_targets_may_skip_proven_pairs_already_present_in_previous_results():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     cfg = config(rings=(4,))
     targets = {"r4/classic-pie": 1, "r4/double-pie": 0}
     full = runner(cfg, native=native).run(

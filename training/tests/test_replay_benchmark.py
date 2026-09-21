@@ -10,17 +10,17 @@ from scripts.benchmark_replay_pipeline import (
     benchmark_replay_shard,
     main,
 )
-from startrain.features import DoubleStarPosition
-from startrain.replay import ReplaySample, write_replay_shard
-from startrain.scoring import PlayerScore, ScoreResult
-from startrain.topology import get_topology
+from deltreltrain.features import DoubleDeltrelPosition
+from deltreltrain.replay import ReplaySample, write_replay_shard
+from deltreltrain.scoring import PlayerScore, ScoreResult
+from deltreltrain.topology import get_topology
 
 
 def _sample(index: int) -> ReplaySample:
     topology = get_topology(4)
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
     stones[index % topology.n] = index % 2
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=4,
         stones=stones,
         to_move=(index + 1) % 2,
@@ -41,7 +41,7 @@ def _sample(index: int) -> ReplaySample:
             ),
             node_owner=torch.zeros(topology.n, dtype=torch.int8),
             alive_stone=torch.zeros(topology.n, dtype=torch.bool),
-            contested_peries=0,
+            contested_shores=0,
             leader=0,
         ),
         search_provenance=f"benchmark:{index}",

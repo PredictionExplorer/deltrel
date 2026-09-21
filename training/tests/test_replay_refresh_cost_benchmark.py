@@ -11,7 +11,7 @@ from scripts.benchmark_replay_refresh_cost import (
     measure_arm,
     parse_arm,
 )
-from startrain.config import load_config
+from deltreltrain.config import load_config
 from test_replay_game_revisions import publication as publication, _samples
 
 

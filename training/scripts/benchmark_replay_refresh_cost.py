@@ -19,13 +19,13 @@ import shutil
 import statistics
 import time
 
-from startrain.config import load_config
-from startrain.learner import (
+from deltreltrain.config import load_config
+from deltreltrain.learner import (
     LazyShardReplayDataset,
     SpawnedReplayLoaderPool,
     UniqueReplayBatchSampler,
 )
-from startrain.replay_store import ReplaySelection, ReplaySpan, ShardRecord
+from deltreltrain.replay_store import ReplaySelection, ReplaySpan, ShardRecord
 
 if __package__:
     from .benchmark_learner_batches import (

@@ -3,13 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from startrain.config import (
+from deltreltrain.config import (
     ActorInferenceConfig,
     CPUActorConfig,
     ConfigError,
     load_config,
 )
-from startrain.config_compatibility import without_efficiency_defaults
+from deltreltrain.config_compatibility import without_efficiency_defaults
 
 
 def profile():

@@ -5,7 +5,7 @@ import weakref
 
 import pytest
 
-from startrain.search_sessions import CompletedSearchCache
+from deltreltrain.search_sessions import CompletedSearchCache
 
 
 class Session:

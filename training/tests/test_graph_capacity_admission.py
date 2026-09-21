@@ -6,8 +6,8 @@ import json
 import pytest
 import yaml
 
-from startrain.config import ActorPipelineConfig
-from startrain import search_allocation_gate as gate
+from deltreltrain.config import ActorPipelineConfig
+from deltreltrain import search_allocation_gate as gate
 from test_graph_cache_capacity_benchmark import fixture_report
 from test_search_allocation_gate import fixture, reference, update_plan, write_json
 
@@ -215,7 +215,7 @@ def test_unchanged_capacity_rejects_any_unused_report_extension(
 def test_noninferiority_never_waives_original_teacher_production_floor(
     tmp_path, monkeypatch, original_rate, accepted
 ):
-    from startrain.graph_cache_evidence import BOUNDED_NONINFERIORITY_POLICY
+    from deltreltrain.graph_cache_evidence import BOUNDED_NONINFERIORITY_POLICY
     from test_search_allocation_gate import GOOD
 
     _, target, root, envelope = graph_admission_fixture(

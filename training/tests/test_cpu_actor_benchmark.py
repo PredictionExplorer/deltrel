@@ -7,8 +7,8 @@ import subprocess
 import pytest
 
 from scripts import benchmark_cpu_actor as benchmark
-import startrain.checkpoint as checkpoints
-from startrain.config import load_config
+import deltreltrain.checkpoint as checkpoints
+from deltreltrain.config import load_config
 
 
 def manifest(tmp_path):

@@ -5,25 +5,25 @@ import pytest
 import torch
 import torch.nn.functional as functional
 
-from startrain.features import DoubleStarPosition, encode_batch
-from startrain.model import (
+from deltreltrain.features import DoubleDeltrelPosition, encode_batch
+from deltreltrain.model import (
     MODEL_SCHEMA_VERSION,
     GraphResTNet,
     LocalEdgeBlock,
     LocalOperator,
     ModelConfig,
-    StarModelOutput,
+    DeltrelModelOutput,
     _relation_bias_gradient_carrier,
     model_parameter_count,
     model_parameter_counts,
 )
-from startrain.symmetry import (
+from deltreltrain.symmetry import (
     D5Transform,
     permute_actions,
     permute_nodes,
     transform_position,
 )
-from startrain.topology import (
+from deltreltrain.topology import (
     EDGE_CLASS_COUNT,
     SUPPORTED_RINGS,
     get_topology,
@@ -31,12 +31,12 @@ from startrain.topology import (
 )
 
 
-def position(rings: int) -> DoubleStarPosition:
+def position(rings: int) -> DoubleDeltrelPosition:
     topology = get_topology(rings)
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
     stones[0] = 0
     stones[topology.n - 2] = 1
-    return DoubleStarPosition(
+    return DoubleDeltrelPosition(
         rings=rings,
         stones=stones,
         to_move=0,
@@ -106,8 +106,8 @@ def randomize_v3_parameters(model: GraphResTNet) -> None:
 
 
 def assert_global_outputs_close(
-    actual: StarModelOutput,
-    expected: StarModelOutput,
+    actual: DeltrelModelOutput,
+    expected: DeltrelModelOutput,
     *,
     actual_index: int,
     expected_index: int,
@@ -587,7 +587,7 @@ def test_relation_bias_gradient_carrier_matches_the_explicit_attention_gradient(
     }
     assert grads
     model.zero_grad(set_to_none=True)
-    with patch("startrain.model._relation_bias_gradient_carrier") as carrier_mock:
+    with patch("deltreltrain.model._relation_bias_gradient_carrier") as carrier_mock:
         carrier_mock.side_effect = AssertionError("carrier must not run in eval mode")
         model.eval()
         with torch.no_grad():

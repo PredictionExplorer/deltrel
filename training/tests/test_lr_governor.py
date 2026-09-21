@@ -5,15 +5,15 @@ import math
 import pytest
 import torch
 
-from startrain.config import SchedulerConfig
-from startrain.lr_governor import (
+from deltreltrain.config import SchedulerConfig
+from deltreltrain.lr_governor import (
     LEARNING_RATE_GOVERNOR_KEY,
     LearningRateGovernorState,
     apply_governor,
     governor_from_checkpoint_extra,
     reduced_multiplier,
 )
-from startrain.training import build_scheduler
+from deltreltrain.training import build_scheduler
 
 
 def _optimizer_and_scheduler(

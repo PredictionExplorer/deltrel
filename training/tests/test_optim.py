@@ -4,7 +4,7 @@ import pytest
 import torch
 from torch import nn
 
-from startrain.optim import (
+from deltreltrain.optim import (
     MuonAdamW,
     OptimizerConfig,
     build_optimizer,
@@ -87,7 +87,7 @@ def test_muon_fallback_routing_is_explicit_and_deterministic() -> None:
     assert metadata.implementation == "torch_adamw"
     assert metadata.fallback_used is True
     assert [group.name for group in metadata.groups] == ["adamw_no_decay"]
-    with pytest.raises(ValueError, match="no StarTrain routing"):
+    with pytest.raises(ValueError, match="no DeltrelTrain routing"):
         optimizer_routing_metadata(torch.optim.SGD(model.parameters(), lr=0.1))
 
 

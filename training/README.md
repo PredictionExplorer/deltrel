@@ -1,17 +1,19 @@
-# Double *Star AI operator guide
+# Double Deltrel AI operator guide
+
+For existing model artifacts, follow the explicit [Deltrel identity migration](docs/deltrel-rebrand.md) before deploying this release.
 
 This directory contains the implemented training, arena, serving and browser-export
-pipeline for the Double *Star variant family on rings 4, 6, 8, and 10.
+pipeline for the Double Deltrel variant family on rings 4, 6, 8, and 10.
 
 The deployed training policy is **90% even games with pie and 10% handicap games**,
-split equally between classic and Double *Star. Handicap games run only on ring 10
+split equally between classic and Double Deltrel. Handicap games run only on ring 10
 and never use pie. The 85/5/5/5 board allocation is retained. See the
 [verified deployment record](docs/pie-policy-deployment-20260913.md) and
 [pie-even training](docs/pie-even-training.md) for replay exclusions, evaluation,
 and preparing profiles while preserving their measured execution settings.
 
 **No trained model is checked into this repository.** The code and tests establish the
-pipeline contracts; they do not establish strong or superhuman play. `starserve` needs a
+pipeline contracts; they do not establish strong or superhuman play. `deltrelserve` needs a
 valid `champion.json`, and local browser AI needs a separately distilled and published
 model.
 
@@ -43,39 +45,39 @@ checkpoint preservation, and final verification are recorded in the
 ## Architecture
 
 The September 18 [auxiliary predictions](docs/auxiliary-predictions.md) add
-future replies, Double second stones, and official final peries/stars/corners
+future replies, Double second stones, and official final shores/networks/corners
 through an additive checkpoint upgrade. See the
 [verified deployment](docs/auxiliary-predictions-deployment-20260918.md) for
 state preservation, live supervision, frontend availability and backups.
 
-- `crates/star-engine`: authoritative Rust board, rules, scoring and D5 symmetry.
-- `crates/star-search`: batched exact-state Gumbel AlphaZero search with Sequential
+- `crates/deltrel-engine`: authoritative Rust board, rules, scoring and D5 symmetry.
+- `crates/deltrel-search`: batched exact-state Gumbel AlphaZero search with Sequential
   Halving and completed-Q statistics.
-- `crates/star-py`: the `star_native` PyO3 boundary used by Python actors and serving.
-- `startrain`: graph feature encoding, `GraphResTNet`, Gumbel self-play, replay,
+- `crates/deltrel-py`: the `deltrel_native` PyO3 boundary used by Python actors and serving.
+- `deltreltrain`: graph feature encoding, `GraphResTNet`, Gumbel self-play, replay,
   learning, EMA checkpoints, arenas, promotion and orchestration.
-- `starserve`: one-process FastAPI service that combines an EMA champion with native
+- `deltrelserve`: one-process FastAPI service that combines an EMA champion with native
   search.
-- `crates/star-wasm`: the same Rust rules/search contract compiled for local browser
+- `crates/deltrel-wasm`: the same Rust rules/search contract compiled for local browser
   inference.
 
 `GraphResTNet` alternates local edge-aware residual blocks with global grouped-query
 attention. It predicts node policy, binary loss/win outcome, score margin, ownership,
 alive stones, and a node-only KataGo-style soft-policy auxiliary. Value is
 `P(win) - P(loss)`. Architecture v3 adds a D5-invariant relational attention bias
-(ring difference, angular offset, shortest path, peri pair) and adaLN-Zero rule
+(ring difference, angular offset, shortest path, shore pair) and adaLN-Zero rule
 conditioning so one network plays every rule variant: classic (one stone per turn) and
-Double *Star, handicap openings of 1..9 stones, and the pie rule with the swap. The
+Double Deltrel, handicap openings of 1..9 stones, and the pie rule with the swap. The
 network sees the retained placement history (current turn, both previous turns, the
 handicap stones), whether that history is known, and a playout-doubling advantage input
 that self-play uses to keep lopsided handicap games informative. Self-play searches
 placements; the pie responder swaps when the selected keep continuation is below a dead
 zone, and the opener searches the optimal-swap payoff `-|q|`.
 
-The canonical gameplay contract is `edgeconnect.star.rules.v3` with fingerprint
-`fnv1a64:a5d932b0ef8354e8`. Training uses feature schema v4, replay/data schema v5,
+The canonical gameplay contract is `deltrel.rules.v3` with fingerprint
+`fnv1a64:46e4fbcff4e17fd3`. Training uses feature schema v4, replay/data schema v5,
 config schema v4, model schema v3, browser manifest v3, arena result schema v4, and
-starserve API schema v3 (server config schema 2). Previous-lineage artifacts
+deltrelserve API schema v3 (server config schema 2). Previous-lineage artifacts
 (rules v2 / feature schema v3) are rejected by every runtime path except the explicit
 lineage transfer: `scripts/prepare_lineage_transfer.py` re-labels the old replay with
 the legacy champion's soft targets so a fresh rules-v3 run distils it (see
@@ -141,7 +143,7 @@ The documented baseline is:
 - Linux for CUDA training and serving;
 - Rust 1.93 (`training/Cargo.toml` requires it);
 - Python 3.11;
-- `uv` or `pip`, plus maturin 1.14.1 for `star_native`;
+- `uv` or `pip`, plus maturin 1.14.1 for `deltrel_native`;
 - a CUDA-enabled PyTorch build compatible with the host NVIDIA driver;
 - 4 or 8 H100s for the supplied continuous profiles;
 - Node.js/npm for the web application, and `wasm-pack` plus the
@@ -179,7 +181,7 @@ The supplied layouts are single-host profiles:
 All supplied continuous profiles set `distributed.enabled: false`; they do not use
 NCCL.
 
-## Install and build `star_native`
+## Install and build `deltrel_native`
 
 Run from `training/`. The CUDA wheel index below matches the CUDA 12.6 service image;
 select a different official PyTorch index when the installed driver requires it.
@@ -192,19 +194,19 @@ uv venv --python 3.11 .venv
 source .venv/bin/activate
 uv pip install --index-url https://download.pytorch.org/whl/cu126 "torch>=2.13"
 uv pip install "maturin==1.14.1" -e ".[test,serve,onnx]"
-maturin develop --release --locked --manifest-path crates/star-py/Cargo.toml
+maturin develop --release --locked --manifest-path crates/deltrel-py/Cargo.toml
 
 rustc +1.93.0 --version
 python --version
 python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
-python -c "import star_native; print(star_native.native_rules_hash_tag())"
+python -c "import deltrel_native; print(deltrel_native.native_rules_hash_tag())"
 ```
 
 For a CPU-only workstation, omit the CUDA-index command and let the project dependency
 resolve an appropriate CPU PyTorch build. With `pip`, create the Python 3.11 virtual
 environment normally and replace each `uv pip` invocation with `python -m pip`.
 
-Re-run `maturin develop` after changing Rust code. `star_native` is required for real
+Re-run `maturin develop` after changing Rust code. `deltrel_native` is required for real
 self-play and native end-to-end tests; without it, those pytest cases skip.
 
 ## Full validation
@@ -215,7 +217,7 @@ With the environment active:
 cd training
 cargo +1.93.0 fmt --all --check
 cargo +1.93.0 test --workspace --locked
-python -m ruff check startrain starserve tests
+python -m ruff check deltreltrain deltrelserve tests
 python -m pytest
 
 cd ..
@@ -244,7 +246,7 @@ mkdir -p "$RUN"
 
 python - <<'PY'
 import os
-from startrain.runtime import load_or_create_run_identity
+from deltreltrain.runtime import load_or_create_run_identity
 
 identity = load_or_create_run_identity(
     f"{os.environ['RUN']}/run.json",
@@ -253,7 +255,7 @@ identity = load_or_create_run_identity(
 print(identity)
 PY
 
-startrain-selfplay \
+deltreltrain-selfplay \
   --config configs/small.yaml \
   --replay-store "$RUN/replay" \
   --run-identity "$RUN/run.json" \
@@ -263,7 +265,7 @@ startrain-selfplay \
   --rings 4 \
   --games 4
 
-startrain-train \
+deltreltrain-train \
   --config configs/small.yaml \
   --replay-store "$RUN/replay" \
   --output "$RUN/learner" \
@@ -273,21 +275,21 @@ startrain-train \
 ```
 
 Choose a new directory and run ID for a clean repeat. Outside `--cpu-smoke`,
-`startrain-selfplay --checkpoint` expects an immutable champion model manifest, not a
+`deltreltrain-selfplay --checkpoint` expects an immutable champion model manifest, not a
 raw `.pt` file.
 
 ## Run on any machine (auto profile)
 
 The pipeline no longer assumes an H100 host. Device policy lives in
-`startrain/device.py`; every worker accepts `--device auto` and resolves
+`deltreltrain/device.py`; every worker accepts `--device auto` and resolves
 `cuda` > `mps` > `cpu` with clear errors when an explicit device is
 unavailable.
 
 First inspect what this host offers and what a profile resolves to on it:
 
 ```bash
-startrain-preflight --exercise
-startrain-preflight --config configs/auto.yaml --exercise
+deltreltrain-preflight --exercise
+deltreltrain-preflight --config configs/auto.yaml --exercise
 ```
 
 `--exercise` proves each resolved device with a tiny forward/backward pass.
@@ -295,7 +297,7 @@ startrain-preflight --config configs/auto.yaml --exercise
 Then start the hardware-adaptive continuous profile:
 
 ```bash
-startrain-orchestrate --config configs/auto.yaml
+deltreltrain-orchestrate --config configs/auto.yaml
 ```
 
 `orchestration.gpus: auto` detects the host at launch and generates the
@@ -367,20 +369,20 @@ directory, so launch from `training/`.
 Start exactly one profile:
 
 ```bash
-startrain-orchestrate --config configs/h100-4gpu.yaml
+deltreltrain-orchestrate --config configs/h100-4gpu.yaml
 ```
 
 or:
 
 ```bash
-startrain-orchestrate --config configs/h100-8gpu.yaml
+deltreltrain-orchestrate --config configs/h100-8gpu.yaml
 ```
 
 The evidence-backed 8-H100 treatment is available separately, leaving the historical
 control unchanged:
 
 ```bash
-startrain-orchestrate --config configs/h100-8gpu-optimized.yaml
+deltreltrain-orchestrate --config configs/h100-8gpu-optimized.yaml
 ```
 
 It uses 128-game actor cohorts, seven actor GPUs, learner-aware progressive rings,
@@ -393,7 +395,7 @@ control profile.
 The higher-utilization successor is intentionally a separate profile:
 
 ```bash
-startrain-orchestrate --config configs/h100-8gpu-throughput.yaml
+deltreltrain-orchestrate --config configs/h100-8gpu-throughput.yaml
 ```
 
 It combines decode-once replay loading, real pinned asynchronous learner transfers,
@@ -408,7 +410,7 @@ the anytime-valid gate resolves.
 The explicit ring-10-only objective uses the same topology:
 
 ```bash
-startrain-orchestrate --config configs/h100-8gpu-ring10-only.yaml
+deltreltrain-orchestrate --config configs/h100-8gpu-ring10-only.yaml
 ```
 
 It sets `orchestration.training_objective: ring10_only`, fixes ring-mixture
@@ -439,7 +441,7 @@ The learner-shared topology is also available as an explicit one-factor
 experiment:
 
 ```bash
-startrain-orchestrate --config configs/h100-8gpu-learner-shared.yaml
+deltreltrain-orchestrate --config configs/h100-8gpu-learner-shared.yaml
 ```
 
 ### Variant-capable network (lineage transfer, then the mixture)
@@ -461,13 +463,13 @@ python scripts/prepare_lineage_transfer.py \
   --output-root runs/variant-network \
   --run-id variant-network --generation-family variant-network-a \
   --max-samples 20000000 --device cuda:0
-startrain-orchestrate --config configs/h100-8gpu-variant-stage-a.yaml
+deltreltrain-orchestrate --config configs/h100-8gpu-variant-stage-a.yaml
 ```
 
 The Stage A profile trains the v3 architecture at 384 x 8 groups (17,402,775
 parameters, about 1.6x the inference cost of the previous 384 x 5 lineage) from random
 weights with `loss.teacher_*` distilling the transferred targets while the actors
-generate standard Double *Star games with real history planes. The transferred shards carry
+generate standard Double Deltrel games with real history planes. The transferred shards carry
 `model_step 0`, so they leave the replay window once the learner passes
 `learner.max_replay_lag_steps`. Measure how much of the old strength the new lineage
 recovered with the cross-schema arena, which evaluates the legacy champion through its
@@ -544,7 +546,7 @@ For a new self-contained research run that must learn without imported weights,
 replay, positions, or human data, start from a frozen copy of:
 
 ```bash
-startrain-orchestrate --config configs/h100-8gpu-autonomous.yaml
+deltreltrain-orchestrate --config configs/h100-8gpu-autonomous.yaml
 ```
 
 The coordinator refuses pre-populated training artifacts before creating the
@@ -589,7 +591,7 @@ For the 8-GPU profile, `runs/h100-8gpu/` contains:
   separately retained self-play manifests and checkpoints.
 - `learner/cadence.json`: durable promotion/self-play example watermarks.
 - `learner/champion.json`: atomic deployment pointer and champion actor source.
-  `starserve` accepts only this role.
+  `deltrelserve` accepts only this role.
 - `learner/metrics.jsonl` and `learner/learner-complete.json`: training metrics and
   final completion identity.
 - `learner/model-history.jsonl`: append-only identity/step history retained even
@@ -624,13 +626,13 @@ feed self-play. Research ablations may select `candidate` or
 `candidate_champion_mix`; the selected role and policy-supervision rate are written to
 actor metrics and model swaps still occur only at complete batch boundaries.
 
-For a reproducible non-human strength anchor, `startrain-arena` also accepts
+For a reproducible non-human strength anchor, `deltreltrain-arena` also accepts
 `--baseline-kind uniform`, `greedy`, or `shallow-search`. The frozen baseline identity,
 algorithm and its separate search budget are embedded in the result. An internal target
 can be assessed with paired anytime-valid bounds:
 
 ```bash
-startrain-arena \
+deltreltrain-arena \
   --config "$PROFILE" \
   --candidate "$RUN/learner/candidate.json" \
   --baseline-kind shallow-search \
@@ -701,7 +703,7 @@ The native CPU smoke benchmark is:
 
 ```bash
 RAYON_NUM_THREADS=32 \
-  cargo +1.93.0 run -p star-py --example actor_throughput --release --locked
+  cargo +1.93.0 run -p deltrel-py --example actor_throughput --release --locked
 ```
 
 It measures native scoring and uniform-evaluator search only. It is not an H100
@@ -761,7 +763,7 @@ were:
 - 4 H100s: 18–28 days base, 5–8 days optimistic, 5–7 months pessimistic.
 
 These are capacity estimates, not strength guarantees. They carry roughly **3–5×
-uncertainty**, primarily because Double *Star has no modern rating pool or established
+uncertainty**, primarily because Double Deltrel has no modern rating pool or established
 neural baseline.
 
 **A real H100 soak is still required.** The shipped profiles and automated tests have
@@ -773,17 +775,17 @@ coordination.
 
 ## Serve the private champion
 
-Update `configs/starserve.yaml` to point at the intended experiment config and
+Update `configs/deltrelserve.yaml` to point at the intended experiment config and
 `champion.json`. The sample path does not exist until training has produced a champion.
 
 ```bash
-export STARSERVE_BEARER_TOKEN="replace-with-a-secret"
-starserve --config configs/starserve.yaml --check-config
-starserve --config configs/starserve.yaml
+export DELTRELSERVE_BEARER_TOKEN="replace-with-a-secret"
+deltrelserve --config configs/deltrelserve.yaml --check-config
+deltrelserve --config configs/deltrelserve.yaml
 ```
 
-The YAML names `STARSERVE_BEARER_TOKEN`; the secret itself must exist only in the
-environment. `starserve` rejects candidate pointers, verifies the immutable manifest
+The YAML names `DELTRELSERVE_BEARER_TOKEN`; the secret itself must exist only in the
+environment. `deltrelserve` rejects candidate pointers, verifies the immutable manifest
 and EMA checkpoint, and reloads a new champion between requests. An invalid replacement
 keeps the prior champion live and degrades health.
 
@@ -791,19 +793,19 @@ For the browser, keep the GPU service private and let Next.js proxy the fixed
 same-origin routes:
 
 ```bash
-export STAR_AI_SERVER_URL="http://127.0.0.1:8080"
-export STAR_AI_BEARER_TOKEN="$STARSERVE_BEARER_TOKEN"
+export DELTREL_AI_SERVER_URL="http://127.0.0.1:8080"
+export DELTREL_AI_BEARER_TOKEN="$DELTRELSERVE_BEARER_TOKEN"
 cd ..
 npm run dev
 ```
 
-- `STAR_AI_SERVER_URL` and `STAR_AI_BEARER_TOKEN` are server-only Next.js variables.
-- Leave `NEXT_PUBLIC_STAR_AI_URL` unset to use `/v2/move` and `/v2/health`.
+- `DELTREL_AI_SERVER_URL` and `DELTREL_AI_BEARER_TOKEN` are server-only Next.js variables.
+- Leave `NEXT_PUBLIC_DELTREL_AI_URL` unset to use `/v2/move` and `/v2/health`.
 - Never put the token in a `NEXT_PUBLIC_*` variable or a URL.
-- Optional `NEXT_PUBLIC_STAR_AI_SIMULATIONS` and
-  `NEXT_PUBLIC_STAR_AI_MAX_CONSIDERED` must not exceed the limits in
-  `configs/starserve.yaml`.
-- `starserve` health is unauthenticated; move/analyze requests use the bearer token when
+- Optional `NEXT_PUBLIC_DELTREL_AI_SIMULATIONS` and
+  `NEXT_PUBLIC_DELTREL_AI_MAX_CONSIDERED` must not exceed the limits in
+  `configs/deltrelserve.yaml`.
+- `deltrelserve` health is unauthenticated; move/analyze requests use the bearer token when
   configured. Direct-browser CORS origins must be explicit; `*` is rejected.
 
 See [serving and distillation](docs/serving-and-distillation.md) for the API contract and
@@ -816,26 +818,26 @@ a new `export.model_version` for every release; output artifacts are immutable.
 
 ```bash
 cd training
-startrain-distill --config configs/distill-browser.yaml
+deltreltrain-distill --config configs/distill-browser.yaml
 
 cd ..
 rustup target add wasm32-unknown-unknown --toolchain 1.93.0
 cargo +1.93.0 install wasm-pack --locked
-RUSTUP_TOOLCHAIN=1.93.0 npm run build:star-wasm
+RUSTUP_TOOLCHAIN=1.93.0 npm run build:deltrel-wasm
 
 cd training
-startrain-publish-browser \
-  --manifest runs/browser/star-browser-v3.browser.json \
-  --target ../public/models/star \
-  --wasm-source ../public/models/star/wasm-a5d932b0ef8354e8
+deltreltrain-publish-browser \
+  --manifest runs/browser/deltrel-browser-v3.browser.json \
+  --target ../public/models/deltrel \
+  --wasm-source ../public/models/deltrel/wasm-46e4fbcff4e17fd3
 ```
 
-The sample config emits `star-browser-v3.pt`, `star-browser-v3.fp16.onnx` and
-`star-browser-v3.browser.json`. The ONNX graph takes the eight schema-v4 inputs
+The sample config emits `deltrel-browser-v3.pt`, `deltrel-browser-v3.fp16.onnx` and
+`deltrel-browser-v3.browser.json`. The ONNX graph takes the eight schema-v4 inputs
 (including the per-sample `rings` tensor that selects the relation table); the browser
-encoder in `src/lib/star/ai/features.ts` is pinned to the Python encoder through
-`testdata/star/features-v4.json` (regenerate with
+encoder in `src/lib/deltrel/ai/features.ts` is pinned to the Python encoder through
+`testdata/deltrel/features-v4.json` (regenerate with
 `python scripts/export_feature_fixture.py`). Publication verifies checkpoint, ONNX and WASM
 integrity, copies the immutable ONNX artifact, and replaces
-`public/models/star/manifest.json` last. The web app reports local AI unavailable until
+`public/models/deltrel/manifest.json` last. The web app reports local AI unavailable until
 that canonical manifest and all referenced artifacts exist.

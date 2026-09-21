@@ -54,7 +54,7 @@ loss:
 
 export:
   output_directory: ../runs/browser
-  model_version: star-browser-v3
+  model_version: deltrel-browser-v3
   onnx_opset: 18
   recommended_search:
     simulations: 64

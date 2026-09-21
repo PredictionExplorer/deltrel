@@ -6,8 +6,8 @@ import yaml
 
 from scripts import training_disaster_recovery as recovery
 from scripts.validate_continuous_profile import validate_continuous_config
-from startrain import search_allocation_gate as gate
-from startrain.config import load_config
+from deltreltrain import search_allocation_gate as gate
+from deltreltrain.config import load_config
 from test_graph_capacity_admission import graph_admission_fixture
 from test_search_allocation_gate import fixture as allocation_fixture, write_json
 from test_training_disaster_recovery import _fixture, _snapshot, _snapshot_payload

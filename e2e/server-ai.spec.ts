@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { AnalyzeRequestV3 } from '../src/lib/star/ai/server-client';
+import type { AnalyzeRequestV3 } from '../src/lib/deltrel/ai/server-client';
 
 const health = {
   status: 'ok',
@@ -22,17 +22,17 @@ const health = {
     },
   },
   rules: {
-    schema_id: 'edgeconnect.star.rules.v3',
+    schema_id: 'deltrel.rules.v3',
     version: 3,
-    hash: 'fnv1a64:a5d932b0ef8354e8',
+    hash: 'fnv1a64:46e4fbcff4e17fd3',
   },
   features: {
-    schema_id: 'edgeconnect.star.model-features.external.v3',
+    schema_id: 'deltrel.model-features.external.v3',
     version: 4,
-    hash: 'cb0e1e89a6ce3540',
+    hash: '058eb071d77948a7',
   },
   actions: {
-    schema_id: 'edgeconnect.star.action-layout.nodes-only.v1',
+    schema_id: 'deltrel.action-layout.nodes-only.v1',
     types: ['place', 'swap'],
   },
 };
@@ -96,7 +96,7 @@ async function openFreshSetup(page: Page) {
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
   await page.reload();
-  await expect(page.getByRole('heading', { name: '✳Star' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Deltrel' })).toBeVisible();
 }
 
 async function selectGame(
@@ -107,7 +107,7 @@ async function selectGame(
   await page.getByRole('textbox', { name: 'Player 1 name' }).fill('Ada');
   await page.getByRole('textbox', { name: 'Player 2 name' }).fill('Champion');
   await page.getByRole('button', {
-    name: mode === 'classic' ? /^Classic \*Star,/ : /^Double \*Star,/,
+    name: mode === 'classic' ? /^Classic Deltrel,/ : /^Double Deltrel,/,
   }).click();
   const rings = opening === 'Handicap' ? 10 : 4;
   await page.getByRole('button', {
@@ -141,7 +141,7 @@ test('a compatible server AI capability drives one validated atomic move', async
   const requests = await mockChampion(page);
   await openFreshSetup(page);
 
-  await page.getByRole('button', { name: /Double \*Star/ }).click();
+  await page.getByRole('button', { name: /Double Deltrel/ }).click();
   const playerOneController = page.getByRole('combobox', {
     name: 'Player 1 controller',
   });

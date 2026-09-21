@@ -17,7 +17,7 @@ from typing import Any
 
 import yaml
 
-from startrain.config import CONFIG_SCHEMA_VERSION
+from deltreltrain.config import CONFIG_SCHEMA_VERSION
 
 if __package__:
     from .compare_elo_ablation_seeds import (
@@ -40,8 +40,8 @@ else:
     )
     from prepare_elo_ablation import verify_winner_snapshot
 
-PLAN_REPORT = "startrain-elo-ablation-adoption-plan"
-INELIGIBLE_REPORT = "startrain-elo-ablation-adoption-ineligible"
+PLAN_REPORT = "deltreltrain-elo-ablation-adoption-plan"
+INELIGIBLE_REPORT = "deltreltrain-elo-ablation-adoption-ineligible"
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 

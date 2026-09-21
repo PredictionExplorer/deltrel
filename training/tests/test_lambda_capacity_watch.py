@@ -407,7 +407,7 @@ def test_save_failure_after_success_keeps_restart_read_only(tmp_path, monkeypatc
 
 def test_compatible_existing_instance_avoids_launch(tmp_path):
     api, clock = FakeAPI(), Clock()
-    api.instances = [_instance("edgeconnect-b200-reserve")]
+    api.instances = [_instance("deltrel-b200-reserve")]
     assert _watcher(tmp_path, api, clock).check() is True
     assert api.launches == []
 
@@ -422,7 +422,7 @@ def test_instance_appearing_after_capacity_lookup_avoids_launch(tmp_path, monkey
         if method == "GET" and path == "/instances":
             inventories += 1
             if inventories == 2:
-                api.instances = [_instance("edgeconnect-b200-reserve")]
+                api.instances = [_instance("deltrel-b200-reserve")]
         return original(method, path, payload)
 
     monkeypatch.setattr(api, "request", appear_before_launch)

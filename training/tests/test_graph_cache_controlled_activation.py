@@ -6,13 +6,13 @@ import json
 
 import pytest
 
-from startrain import search_allocation_gate as gate
-from startrain.graph_cache_controlled_activation import (
+from deltreltrain import search_allocation_gate as gate
+from deltreltrain.graph_cache_controlled_activation import (
     ACTIVATION_SCOPE,
     CONTROLLED_ACTIVATION_FORMAT,
     LIVE_WORKLOAD_FORMAT,
 )
-from startrain.graph_cache_evidence import BOUNDED_NONINFERIORITY_POLICY
+from deltreltrain.graph_cache_evidence import BOUNDED_NONINFERIORITY_POLICY
 from test_graph_cache_capacity_benchmark import set_paired_ratio
 from test_graph_capacity_admission import graph_admission_fixture
 from test_search_allocation_gate import GOOD, reference, write_json

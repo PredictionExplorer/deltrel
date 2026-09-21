@@ -1,7 +1,7 @@
 'use client';
 
 import { Trophy } from 'lucide-react';
-import type { AiCapability } from '@/lib/star/ai/capabilities';
+import type { AiCapability } from '@/lib/deltrel/ai/capabilities';
 import { useAppStore } from '@/lib/store';
 
 const EFFORTS = [
@@ -25,12 +25,12 @@ export function ChampionPanel({
   const search = capability.status === 'available' ? capability.search : undefined;
 
   return (
-    <section aria-labelledby="champion-heading" className="rounded-2xl border border-gold/30 bg-gold-faint px-4 py-3">
+    <section aria-labelledby="champion-heading" className="rounded-2xl border border-sand/30 bg-sand-faint px-4 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="champion-heading" className="flex items-center gap-2 text-sm font-medium text-ink">
-          <Trophy className="h-4 w-4 text-gold" aria-hidden /> Current champion
+          <Trophy className="h-4 w-4 text-sand" aria-hidden /> Current champion
         </h2>
-        <span className="text-xs text-gold-strong" role="status">
+        <span className="text-xs text-sand-strong" role="status">
           {capability.status === 'checking'
             ? 'Checking connection…'
             : champion
@@ -48,7 +48,7 @@ export function ChampionPanel({
             type="button"
             onClick={onChoose}
             aria-pressed={selected}
-            className="mt-3 min-h-10 w-full rounded-xl border border-gold/50 bg-white/[0.03] px-3 py-2 text-sm font-medium text-gold-strong transition-colors hover:bg-gold/15"
+            className="mt-3 min-h-10 w-full rounded-xl border border-sand/50 bg-white/[0.03] px-3 py-2 text-sm font-medium text-sand-strong transition-colors hover:bg-sand/15"
           >
             Play against the champion
           </button>
@@ -67,8 +67,8 @@ export function ChampionPanel({
                       onClick={() => setBudget('server', { ...preset })}
                       className={`min-h-14 rounded-xl border px-2 py-2 text-left transition-colors ${
                         budget.simulations === preset.simulations && budget.maxConsidered === preset.maxConsidered
-                          ? 'border-gold/70 bg-gold-faint'
-                          : 'border-white/10 bg-white/[0.03] hover:border-gold/35'
+                          ? 'border-sand/70 bg-sand-faint'
+                          : 'border-white/10 bg-white/[0.03] hover:border-sand/35'
                       }`}
                     >
                       <span className="block text-xs font-medium text-ink">{label}</span>
@@ -83,7 +83,7 @@ export function ChampionPanel({
             </div>
           )}
           <details className="mt-3 text-xs text-muted">
-            <summary className="min-h-8 cursor-pointer py-1 text-gold-strong">Champion details</summary>
+            <summary className="min-h-8 cursor-pointer py-1 text-sand-strong">Champion details</summary>
             <dl className="space-y-2 pb-1 pt-2">
               <div>
                 <dt>Model version</dt>

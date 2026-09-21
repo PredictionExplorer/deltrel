@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodic Deltrel host training continuity reconciliation
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=1min
+AccuracySec=10s
+Persistent=true
+Unit=deltrel-deltreltrain-continuity.service
+
+[Install]
+WantedBy=timers.target

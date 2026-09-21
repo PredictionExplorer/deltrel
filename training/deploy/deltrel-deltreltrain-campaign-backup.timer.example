@@ -1,0 +1,13 @@
+[Unit]
+Description=Periodic Deltrel confirmation-campaign control-plane backup
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=15s
+RandomizedDelaySec=30s
+Persistent=true
+Unit=deltrel-deltreltrain-campaign-backup.service
+
+[Install]
+WantedBy=timers.target

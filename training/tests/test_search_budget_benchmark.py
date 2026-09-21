@@ -39,7 +39,7 @@ def test_default_benchmark_only_reports_immutable_plan(tmp_path, monkeypatch, ca
     args = arguments(tmp_path, monkeypatch)
     monkeypatch.setattr(
         benchmark,
-        "load_star_native",
+        "load_deltrel_native",
         lambda **_: pytest.fail("native execution needs --execute"),
     )
     assert benchmark.main(args) == 0
@@ -153,11 +153,11 @@ def test_process_timeout_kills_only_owned_worker_group(
 @pytest.mark.native
 def test_native_frozen_position_sweep_records_real_rows_and_reference_differences():
     import time
-    from startrain.config import load_config
-    from startrain.search_options import FullSearchBudgetConfig
+    from deltreltrain.config import load_config
+    from deltreltrain.search_options import FullSearchBudgetConfig
     from test_inference_efficiency import cached_adapter
 
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     evaluator = cached_adapter()
     position = benchmark.FrozenPosition("late", 4, tuple(range(42)), seed=19)
     config = load_config("configs/small.yaml").selfplay

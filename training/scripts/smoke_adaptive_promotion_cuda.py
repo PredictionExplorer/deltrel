@@ -19,7 +19,7 @@ import sys
 import tempfile
 import time
 
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
 
 
 TIMEOUT_SECONDS = 180
@@ -35,7 +35,7 @@ def require_stopped_run(config, checkpoint: Path) -> dict:
         _validate_recovery,
         _validate_run_identity,
     )
-    from startrain.checkpoint import sha256_file
+    from deltreltrain.checkpoint import sha256_file
 
     root = Path(config.orchestration.directories.root).expanduser().resolve()
     identity, _ = _read_json(root / "run.json", "run identity")
@@ -175,8 +175,8 @@ def smoke_inference_configs(config) -> tuple[InferenceConfig, InferenceConfig]:
 
 
 def exercise_prefix_resume(native, adapter, config, label: str) -> dict:
-    from startrain.arena import ArenaRunner
-    from startrain.selfplay import GameVariant
+    from deltreltrain.arena import ArenaRunner
+    from deltreltrain.selfplay import GameVariant
 
     variant = GameVariant.parse(label)
     initial = max(config.minimum_pairs_per_ring, len(config.handicap_severity_cycle))
@@ -356,11 +356,11 @@ def run_smoke(args) -> dict:
         regular_adapter,
         validate_output,
     )
-    from startrain.checkpoint import load_ema_checkpoint, sha256_file
-    from startrain.config import load_config
-    from startrain.model import GraphResTNet
-    from startrain.native import load_star_native
-    from startrain.training import maybe_compile_model
+    from deltreltrain.checkpoint import load_ema_checkpoint, sha256_file
+    from deltreltrain.config import load_config
+    from deltreltrain.model import GraphResTNet
+    from deltreltrain.native import load_deltrel_native
+    from deltreltrain.training import maybe_compile_model
 
     started = time.time_ns()
     config = load_config(args.profile)
@@ -419,7 +419,7 @@ def run_smoke(args) -> dict:
         )
     production_config, shadow_config = smoke_inference_configs(config)
     adapters = []
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     if native is None:
         raise RuntimeError("native extension unavailable")
     try:
@@ -491,7 +491,7 @@ def run_smoke(args) -> dict:
             raise RuntimeError("stopped-run artifacts changed during the smoke")
         return {
             "status": status,
-            "format": "startrain.adaptive-promotion-cuda-smoke",
+            "format": "deltreltrain.adaptive-promotion-cuda-smoke",
             "schema_version": 2,
             "stage": "shadow" if args.shadow_only else "production",
             "profile_sha256": profile_hash,
@@ -567,8 +567,8 @@ def run_owned_stage(command: list[str], timeout: int) -> dict:
 
 
 def revalidate_boundary(args, production: dict) -> None:
-    from startrain.config import load_config
-    from startrain.checkpoint import sha256_file
+    from deltreltrain.config import load_config
+    from deltreltrain.checkpoint import sha256_file
     from scripts.benchmark_actor_throughput import _gpu_ownership
 
     current = require_stopped_run(load_config(args.profile), args.checkpoint)
@@ -643,7 +643,7 @@ def main() -> None:
     if args.worker:
         print(json.dumps(run_smoke(args)))
         return
-    from startrain.config import load_config
+    from deltreltrain.config import load_config
     from scripts.validate_cuda_graph_runtime import validate_output
 
     validate_output(

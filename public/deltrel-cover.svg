@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<defs><linearGradient id="sea" x2="1" y2="1"><stop stop-color="#397974"/><stop offset=".6" stop-color="#123f43"/><stop offset="1" stop-color="#062e32"/></linearGradient></defs>
+<path fill="url(#sea)" d="M0 0h1200v630H0z"/>
+<g fill="none" stroke="#91bdaa" stroke-width="1" opacity=".22"><path d="M-50 80C180-40 260 110 370 170s330 130 830-140"/><path d="M-50 114C180-6 260 144 370 204s330 130 830-140"/><path d="M-50 148C180 28 260 178 370 238s330 130 830-140"/><path d="M-50 182C180 62 260 212 370 272s330 130 830-140"/><path d="M-50 216C180 96 260 246 370 306s330 130 830-140"/><path d="M-50 250C180 130 260 280 370 340s330 130 830-140"/><path d="M-50 284C180 164 260 314 370 374s330 130 830-140"/><path d="M-50 318C180 198 260 348 370 408s330 130 830-140"/><path d="M-50 352C180 232 260 382 370 442s330 130 830-140"/><path d="M-50 386C180 266 260 416 370 476s330 130 830-140"/></g>
+<path d="M1140-30c-220 105-43 236-100 372s39 182 108 326h90V-30Z" fill="#9eb7a2"/><path d="M1170-30c-220 105-43 236-100 372s39 182 108 326h60V-30Z" fill="#d2c9aa"/><path d="M1170-30c-220 105-43 236-100 372s39 182 108 326" fill="none" stroke="#efead0" stroke-width="3"/>
+<g fill="none" stroke="#e4c9a1" stroke-width="5" stroke-linecap="round"><path d="M92 89c0 27 35 19 35 47v26M127 87v75M162 89c0 27-35 19-35 47"/><path d="M91 144c16-10 21 6 36 6s25-16 39-6" opacity=".6" stroke-width="3"/></g>
+<text x="90" y="337" font-family="Georgia,serif" font-size="158" letter-spacing="-8" fill="#f5f1e5">Deltrel<tspan fill="#e4c9a1">.</tspan></text>
+<text x="99" y="395" font-family="Arial,sans-serif" font-size="29" fill="#e4c9a1">Connection runs deep.</text>
+<path d="M99 495h805" stroke="#91bdaa" opacity=".35"/>
+<text x="99" y="536" font-family="Arial,sans-serif" font-size="13" letter-spacing="4" fill="#c3d2c6">A GAME OF CONNECTION</text>
+<text x="903" y="536" text-anchor="end" font-family="Arial,sans-serif" font-size="13" fill="#c3d2c6">Two players. A world between you.</text>
+</svg>

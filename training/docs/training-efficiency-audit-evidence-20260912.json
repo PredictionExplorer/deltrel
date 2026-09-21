@@ -2,7 +2,7 @@
   "audit": "Read-only training efficiency audit, 2026-09-12 UTC",
   "source_commit": "7d874bba9206e07c4b17156e2dba169758d35720",
   "local_head": "9d8553d",
-  "production_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+  "production_root": "/home/ubuntu/deltrel-runs/variant-network",
   "production_changes": false,
   "new_gpu_workloads": false,
   "interval": {
@@ -51,7 +51,7 @@
       "progress_ns": 1789174179294320045,
       "rank": 0,
       "replay_samples": 76918929,
-      "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-46ce93fa07a892ceaca22391fe6077ad6b06ae7189e5a7020e1211ae0dc35354.pt",
+      "resumed_from": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-46ce93fa07a892ceaca22391fe6077ad6b06ae7189e5a7020e1211ae0dc35354.pt",
       "schema_version": 1,
       "step": 205722,
       "target_updates_per_new_sample": 1.5,
@@ -65,7 +65,7 @@
       "world_size": 1
     },
     "champion": {
-      "format": "startrain.model-pointer",
+      "format": "deltreltrain.model-pointer",
       "generation_family": "variant-network-a",
       "manifest": "manifests/manifest-bcb46d2369d47384f2338b73105dfb448d42a461ec3d252e174eb0e070956dcb.json",
       "manifest_bytes": 701,
@@ -79,7 +79,7 @@
       "updated_ns": 1789081943924491627
     },
     "candidate_pointer": {
-      "format": "startrain.model-pointer",
+      "format": "deltreltrain.model-pointer",
       "generation_family": "variant-network-a",
       "manifest": "manifests/manifest-2d600b6ea4f2c01d80b9a658f403cd5169c0f8b40381f62c3ad0e6028bbe2a6b.json",
       "manifest_bytes": 701,
@@ -3352,13 +3352,13 @@
     "checkpoint_reverification": {
       "priority": "Highest-confidence lowest-effort learner-side optimization",
       "source_refs": {
-        "every_outer_iteration": "training/startrain/learner.py:1806",
-        "plateau": "training/startrain/learner.py:4763",
-        "unconditional_champion": "training/startrain/learner.py:4766",
-        "candidate_keep_weights": "training/startrain/learner.py:4772",
-        "full_checkpoint_verification": "training/startrain/checkpoint.py:1732",
-        "hash_loop": "training/startrain/checkpoint.py:1760",
-        "actor_existing_cache": "training/startrain/actor.py:1983"
+        "every_outer_iteration": "training/deltreltrain/learner.py:1806",
+        "plateau": "training/deltreltrain/learner.py:4763",
+        "unconditional_champion": "training/deltreltrain/learner.py:4766",
+        "candidate_keep_weights": "training/deltreltrain/learner.py:4772",
+        "full_checkpoint_verification": "training/deltreltrain/checkpoint.py:1732",
+        "hash_loop": "training/deltreltrain/checkpoint.py:1760",
+        "actor_existing_cache": "training/deltreltrain/actor.py:1983"
       },
       "step": 205844,
       "champion_step": 156256,
@@ -3388,13 +3388,13 @@
     },
     "replay_scanning": {
       "source_refs": {
-        "sweep": "training/startrain/learner.py:2767",
-        "paths": "training/startrain/learner.py:2771",
-        "loop_check": "training/startrain/learner.py:1819",
-        "no_credit_check": "training/startrain/learner.py:1884",
-        "after_consumption_check": "training/startrain/learner.py:2343",
-        "discarded_successor": "training/startrain/learner.py:2857",
-        "write_transaction": "training/startrain/replay_store.py:1847"
+        "sweep": "training/deltreltrain/learner.py:2767",
+        "paths": "training/deltreltrain/learner.py:2771",
+        "loop_check": "training/deltreltrain/learner.py:1819",
+        "no_credit_check": "training/deltreltrain/learner.py:1884",
+        "after_consumption_check": "training/deltreltrain/learner.py:2343",
+        "discarded_successor": "training/deltreltrain/learner.py:2857",
+        "write_transaction": "training/deltreltrain/replay_store.py:1847"
       },
       "step": 205785,
       "selected_spans": 23641,
@@ -3421,11 +3421,11 @@
     },
     "loss_dynamic_indexing": {
       "source_refs": [
-        "training/startrain/losses.py:412",
-        "training/startrain/losses.py:435",
-        "training/startrain/losses.py:463",
-        "training/startrain/training.py:989",
-        "training/startrain/learner.py:1993"
+        "training/deltreltrain/losses.py:412",
+        "training/deltreltrain/losses.py:435",
+        "training/deltreltrain/losses.py:463",
+        "training/deltreltrain/training.py:989",
+        "training/deltreltrain/learner.py:1993"
       ],
       "finding": "Three validation-only variable-length boolean selections run even with trusted_batch=True; losses run outside compiled model.",
       "CPU_proof": {
@@ -5432,25 +5432,25 @@
     },
     "code_refs": {
       "history_floor": [
-        "training/startrain/actor.py:1816",
-        "training/startrain/actor.py:1969"
+        "training/deltreltrain/actor.py:1816",
+        "training/deltreltrain/actor.py:1969"
       ],
       "task_end_eligibility": [
-        "training/startrain/actor.py:1153",
-        "training/startrain/actor.py:1353"
+        "training/deltreltrain/actor.py:1153",
+        "training/deltreltrain/actor.py:1353"
       ],
-      "graph_entry_eviction": "training/startrain/inference_graphs.py:694",
-      "graph_byte_eviction": "training/startrain/inference_graphs.py:754",
-      "registry_budget_split": "training/startrain/actor.py:139",
-      "serial_session_submit": "training/crates/star-py/src/lib.rs:2126",
-      "parallel_legacy_submit": "training/crates/star-py/src/lib.rs:2170",
-      "duplicate_validation": "training/crates/star-search/src/session.rs:423",
-      "blocking_gpu_copy": "training/startrain/inference.py:891",
-      "cpu_postprocess": "training/startrain/inference.py:1116",
-      "owner_device_lock": "training/startrain/inference_batching.py:265",
-      "pda_budget_rule": "training/startrain/selfplay.py:549",
-      "wave_barrier": "training/startrain/selfplay.py:1700",
-      "eager_leaf_edges": "training/crates/star-search/src/tree.rs:838"
+      "graph_entry_eviction": "training/deltreltrain/inference_graphs.py:694",
+      "graph_byte_eviction": "training/deltreltrain/inference_graphs.py:754",
+      "registry_budget_split": "training/deltreltrain/actor.py:139",
+      "serial_session_submit": "training/crates/deltrel-py/src/lib.rs:2126",
+      "parallel_legacy_submit": "training/crates/deltrel-py/src/lib.rs:2170",
+      "duplicate_validation": "training/crates/deltrel-search/src/session.rs:423",
+      "blocking_gpu_copy": "training/deltreltrain/inference.py:891",
+      "cpu_postprocess": "training/deltreltrain/inference.py:1116",
+      "owner_device_lock": "training/deltreltrain/inference_batching.py:265",
+      "pda_budget_rule": "training/deltreltrain/selfplay.py:549",
+      "wave_barrier": "training/deltreltrain/selfplay.py:1700",
+      "eager_leaf_edges": "training/crates/deltrel-search/src/tree.rs:838"
     }
   },
   "evaluation": {
@@ -5568,37 +5568,37 @@
   },
   "source_artifacts": {
     "snapshot.json": {
-      "local_path": "/tmp/edgeconnect-audit-20260912/snapshot.json",
+      "local_path": "/tmp/deltrel-audit-20260912/snapshot.json",
       "bytes": 1953510,
       "sha256": "4576929429852710c4e27cefedb2d02992d152a60bdd939486f781abd05bd188"
     },
     "telemetry.json": {
-      "local_path": "/tmp/edgeconnect-audit-20260912/telemetry.json",
+      "local_path": "/tmp/deltrel-audit-20260912/telemetry.json",
       "bytes": 298056418,
       "sha256": "ed12530f2b5a6484d481ac5586cd8fbf541303b13234bde0fe2c7cbde0fa815c"
     },
     "actor-events.json": {
-      "local_path": "/tmp/edgeconnect-audit-20260912/actor-events.json",
+      "local_path": "/tmp/deltrel-audit-20260912/actor-events.json",
       "bytes": 24084888,
       "sha256": "319b1df524e87936579207cd5278f520597f3f875bba68b14a26822792254595"
     },
     "arena-resume.json": {
-      "local_path": "/tmp/edgeconnect-audit-20260912/arena-resume.json",
+      "local_path": "/tmp/deltrel-audit-20260912/arena-resume.json",
       "bytes": 338037,
       "sha256": "8a139d81e8fdebce01b9d03d8a40c1ada2706069c77f92bdace3fce5437f4cd1"
     },
     "arena-clinch-audit.json": {
-      "local_path": "/tmp/edgeconnect-audit-20260912/arena-clinch-audit.json",
+      "local_path": "/tmp/deltrel-audit-20260912/arena-clinch-audit.json",
       "bytes": 80478,
       "sha256": "2738029c0fa83e726f21d507c496ebbb7770819d3d2d780534ddb621f9a7fb21"
     },
     "actor-audit.json": {
-      "local_path": "/tmp/edgeconnect-audit-20260912/actor-audit.json",
+      "local_path": "/tmp/deltrel-audit-20260912/actor-audit.json",
       "bytes": 56471,
       "sha256": "8f4ab9b064612cd278bbb8bcc73082fde06babf1102185cbf5587aeaae93fa01"
     },
     "learner-audit.json": {
-      "local_path": "/tmp/edgeconnect-audit-20260912/learner-audit.json",
+      "local_path": "/tmp/deltrel-audit-20260912/learner-audit.json",
       "bytes": 6699,
       "sha256": "ad882b96b610c7f3f653ca9d249ef6e51642575d3b2ea86559469dbd2ed94e3a"
     }

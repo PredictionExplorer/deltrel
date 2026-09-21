@@ -16,13 +16,13 @@ from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from pathlib import Path
 
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
-from startrain.replay_store import (
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
+from deltreltrain.replay_store import (
     MANIFEST_SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
     SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
     validate_game_publications,
 )
-from startrain.runtime import atomic_json
+from deltreltrain.runtime import atomic_json
 
 
 class BackupLockBusy(RuntimeError):

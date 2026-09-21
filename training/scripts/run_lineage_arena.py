@@ -2,7 +2,7 @@
 """Cross-schema arena: a variant-capable candidate against the legacy champion.
 
 The candidate (rules v3, feature schema v4) and the previous lineage's champion
-(rules v2, feature schema v3) play standard Double *Star pairs under one search
+(rules v2, feature schema v3) play standard Double Deltrel pairs under one search
 budget. The legacy side evaluates through its frozen v3 encoder, so the match
 measures exactly how much of the old lineage's strength the new network has
 recovered. Only the standard segment is played: the legacy network never saw
@@ -24,15 +24,15 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from startrain.arena import ArenaRunner  # noqa: E402
-from startrain.checkpoint import (  # noqa: E402
+from deltreltrain.arena import ArenaRunner  # noqa: E402
+from deltreltrain.checkpoint import (  # noqa: E402
     load_ema_checkpoint,
     load_checkpoint,
     normalize_model_config,
     sha256_file,
 )
-from startrain.config import ArenaConfig, ConfigError, ExperimentConfig, load_config  # noqa: E402
-from startrain.contracts import (  # noqa: E402
+from deltreltrain.config import ArenaConfig, ConfigError, ExperimentConfig, load_config  # noqa: E402
+from deltreltrain.contracts import (  # noqa: E402
     FEATURE_SCHEMA_HASH,
     FEATURE_SCHEMA_VERSION,
     LEGACY_FEATURE_SCHEMA_HASH,
@@ -40,16 +40,16 @@ from startrain.contracts import (  # noqa: E402
     LEGACY_RULES_HASH_WIRE,
     RULES_HASH_WIRE,
 )
-from startrain.inference import GraphInferenceAdapter, InferenceConfig  # noqa: E402
-from startrain.lineage import (  # noqa: E402
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig  # noqa: E402
+from deltreltrain.lineage import (  # noqa: E402
     LineageTransferError,
     load_legacy_teacher,
     resolve_legacy_champion,
 )
-from startrain.model import GraphResTNet, ModelConfig  # noqa: E402
-from startrain.native import validate_native_module  # noqa: E402
-from startrain.runtime import atomic_json  # noqa: E402
-from startrain.training import maybe_compile_model  # noqa: E402
+from deltreltrain.model import GraphResTNet, ModelConfig  # noqa: E402
+from deltreltrain.native import validate_native_module  # noqa: E402
+from deltreltrain.runtime import atomic_json  # noqa: E402
+from deltreltrain.training import maybe_compile_model  # noqa: E402
 
 RESULT_KIND = "lineage_crossplay"
 EVALUATION_MODE = "cross_schema"
@@ -103,7 +103,7 @@ def load_candidate(
         digest
         if weights == "ema"
         else hashlib.sha256(
-            f"startrain-weights:raw:{digest}".encode("ascii")
+            f"deltreltrain-weights:raw:{digest}".encode("ascii")
         ).hexdigest()
     )
     identity = f"sha256-{selected_digest}"
@@ -306,16 +306,16 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.output.exists():
             raise LineageArenaError(f"output already exists: {args.output}")
-        import star_native
+        import deltrel_native
 
-        validate_native_module(star_native)
+        validate_native_module(deltrel_native)
         legacy_checkpoint = (
             args.legacy_checkpoint
             if args.legacy_checkpoint is not None
             else resolve_legacy_champion(args.legacy_champion)
         )
         result = run_lineage_arena(
-            native_module=star_native,
+            native_module=deltrel_native,
             candidate_checkpoint=args.candidate_checkpoint,
             legacy_checkpoint=legacy_checkpoint,
             rings=tuple(int(value) for value in str(args.rings).split(",")),

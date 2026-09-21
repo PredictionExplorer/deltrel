@@ -1,0 +1,5078 @@
+"""Single-machine replay learner, checkpoint publication, and metrics."""
+
+from __future__ import annotations
+
+import hashlib
+import heapq
+import json
+import math
+import os
+import random
+import time
+from bisect import bisect_right
+from collections import OrderedDict, defaultdict, deque
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from fractions import Fraction
+from pathlib import Path
+from typing import Literal, TypedDict
+
+import torch
+from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data import DataLoader, Dataset, Sampler
+
+from .checkpoint import (
+    MODEL_MANIFEST_FORMAT,
+    MODEL_MANIFEST_VERSION,
+    ExponentialMovingAverage,
+    ModelManifest,
+    ResumeCheckpoint,
+    collect_model_garbage,
+    collect_recovery_garbage,
+    inspect_checkpoint,
+    load_checkpoint,
+    load_model_manifest,
+    save_checkpoint,
+    sha256_file,
+    verify_file,
+    write_recovery_checkpoint,
+    write_model_pointer,
+    write_resume_cutover,
+)
+from .config import (
+    DataConfig,
+    ExperimentConfig,
+    LearnerConfig,
+    RingMixtureConfig,
+    TrainConfig,
+)
+from .checkpoint_manifest_cache import ControlManifestCache
+from .contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
+from .device import (
+    device_memory_snapshot,
+    empty_device_cache,
+    enable_fast_math,
+    resolve_compile,
+    resolve_device_string,
+    resolve_loader_workers,
+    resolve_pin_memory,
+    resolve_precision,
+    seed_all,
+    synchronize_device,
+)
+from .losses import LossWeights
+from .gradient_clipping import GradientClipper
+from .lr_governor import (
+    LEARNING_RATE_GOVERNOR_KEY,
+    LearningRateGovernorState,
+    apply_governor,
+    governor_from_checkpoint_extra,
+    reduced_multiplier,
+)
+from .model import MODEL_SCHEMA_VERSION, GraphResTNet
+from .optim import OptimizerRoutingMetadata, build_optimizer, optimizer_routing_metadata
+from .replay import (
+    DecodedReplayShard,
+    ReplayBatch,
+    ReplaySample,
+    augment_sample,
+    collate_replay_samples,
+    decode_replay_shard,
+)
+from .replay_store import ReplaySelection, ReplaySpan, ReplayStore
+from .runtime import RunIdentity, append_jsonl, atomic_json
+from .symmetry import deterministic_transform
+from .variant_training import training_segment_quotas, training_variant_allowed
+from .training import (
+    DeviceBatchPrefetcher,
+    NonFiniteTrainingError,
+    TrainMetricAccumulator,
+    build_scheduler,
+    ema_effective_turnover,
+    maybe_compile_model,
+    train_step,
+    unwrap_model,
+)
+from .policy_batch_metrics import PolicyBatchAccumulator
+from .utd_wait import (
+    AdaptiveCreditWait,
+    WaitSummary,
+    new_samples_for_batch,
+    sleep_interruptibly,
+)
+
+UTD_SEGMENT_SCHEMA_VERSION = 1
+UTD_SEGMENT_FILENAME = "utd-segment.json"
+STATE_REBASE_FORMAT = "deltreltrain.learner-state-rebase"
+STATE_REBASE_SCHEMA_VERSION = 1
+STATE_REBASE_FILENAME = "state-rebase.json"
+STATE_REBASE_PENDING_FILENAME = "state-rebase.pending.json"
+LOADER_LIFECYCLE_ENV = "DELTRELTRAIN_LOADER_LIFECYCLE"
+LOADER_LIFECYCLES = ("process", "per_window")
+PROCESS_LOADER_TIMEOUT_SECONDS = 120.0
+REPLAY_LOADER_SHUTDOWN_DRAIN_SECONDS = 10.0
+REPLAY_WINDOW_MAX_AGE_SECONDS = 300.0
+REPLAY_FRESHNESS_RETRY_SECONDS = 30.0
+_UNSET = object()
+
+
+def resolve_loader_lifecycle(value: str | None = None) -> str:
+    """Resolve and validate the learner DataLoader lifecycle rollback switch."""
+
+    lifecycle = (
+        os.environ.get(LOADER_LIFECYCLE_ENV, "process") if value is None else value
+    )
+    if lifecycle not in LOADER_LIFECYCLES:
+        expected = "|".join(LOADER_LIFECYCLES)
+        raise ValueError(f"{LOADER_LIFECYCLE_ENV} must be {expected}")
+    return lifecycle
+
+
+class AugmentedReplayDataset(Dataset[ReplaySample]):
+    def __init__(
+        self,
+        samples: Sequence[ReplaySample],
+        *,
+        seed: int,
+        epoch: int,
+        enabled: bool,
+    ) -> None:
+        self.samples = list(samples)
+        self.seed = seed
+        self.epoch = epoch
+        self.enabled = enabled
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int) -> ReplaySample:
+        sample = self.samples[index]
+        if not self.enabled:
+            return sample
+        transform = deterministic_transform(
+            seed=self.seed, sample_index=index, epoch=self.epoch
+        )
+        return augment_sample(sample, transform)
+
+
+@dataclass(frozen=True, slots=True)
+class ShardBatchChunk:
+    ring: int
+    span_index: int
+    dataset_start: int
+    sample_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class ReplaySampleReference:
+    """Picklable, immutable coordinates for one replay sample."""
+
+    shard_id: int
+    shard_path: str
+    shard_checksum_sha256: str
+    shard_sample_count: int
+    sample_offset: int
+    augmentation_seed: int
+    augmentation_epoch: int
+    logical_index: int
+
+
+class PersistentReplayWorkerDataset(Dataset[ReplaySample]):
+    """Resolve self-contained references with a process-local bounded shard cache."""
+
+    def __init__(
+        self,
+        *,
+        augmentation_enabled: bool,
+        shard_cache_size: int,
+    ) -> None:
+        if shard_cache_size <= 0:
+            raise ValueError("persistent replay requires a positive shard cache")
+        self.augmentation_enabled = augmentation_enabled
+        self.shard_cache_size = shard_cache_size
+        self._cache: OrderedDict[tuple[int, str, str, int], DecodedReplayShard] = (
+            OrderedDict()
+        )
+        self.shard_load_count = 0
+        self.checksum_verification_count = 0
+        self.sample_materialization_count = 0
+
+    def __getitem__(self, reference: ReplaySampleReference) -> ReplaySample:
+        if not isinstance(reference, ReplaySampleReference):
+            raise TypeError("persistent replay indices must be sample references")
+        if (
+            reference.shard_id <= 0
+            or reference.shard_sample_count <= 0
+            or reference.sample_offset < 0
+            or reference.sample_offset >= reference.shard_sample_count
+            or reference.logical_index < 0
+        ):
+            raise IndexError("persistent replay sample reference is invalid")
+        shard = self._load_reference_shard(reference)
+        sample = shard.sample(reference.sample_offset)
+        self.sample_materialization_count += 1
+        if not self.augmentation_enabled:
+            return sample
+        transform = deterministic_transform(
+            seed=reference.augmentation_seed,
+            sample_index=reference.logical_index,
+            epoch=reference.augmentation_epoch,
+        )
+        return augment_sample(sample, transform)
+
+    def __getitems__(
+        self,
+        references: list[ReplaySampleReference],
+    ) -> list[ReplaySample]:
+        return [self[reference] for reference in references]
+
+    def __getstate__(self) -> dict[str, object]:
+        state = dict(self.__dict__)
+        state["_cache"] = OrderedDict()
+        state["shard_load_count"] = 0
+        state["checksum_verification_count"] = 0
+        state["sample_materialization_count"] = 0
+        return state
+
+    def _load_reference_shard(
+        self,
+        reference: ReplaySampleReference,
+    ) -> DecodedReplayShard:
+        key = (
+            reference.shard_id,
+            reference.shard_path,
+            reference.shard_checksum_sha256,
+            reference.shard_sample_count,
+        )
+        cached = self._cache.pop(key, None)
+        if cached is None:
+            path = Path(reference.shard_path)
+            self.checksum_verification_count += 1
+            if _sha256(path) != reference.shard_checksum_sha256:
+                raise ValueError(f"replay shard checksum failed: {path}")
+            cached = decode_replay_shard(path)
+            self.shard_load_count += 1
+            if len(cached) != reference.shard_sample_count:
+                raise ValueError("replay shard count disagrees with its reference")
+        self._cache[key] = cached
+        while len(self._cache) > self.shard_cache_size:
+            self._cache.popitem(last=False)
+        return cached
+
+
+class LazyShardReplayDataset(Dataset[ReplaySample]):
+    """Indexes immutable shards and lazily caches a bounded number per worker."""
+
+    def __init__(
+        self,
+        selection: ReplaySelection,
+        *,
+        seed: int,
+        epoch: int,
+        augmentation_enabled: bool,
+        shard_cache_size: int,
+    ) -> None:
+        if not selection.spans or shard_cache_size <= 0:
+            raise ValueError("lazy replay requires spans and a positive shard cache")
+        self.spans = selection.spans
+        self.seed = seed
+        self.epoch = epoch
+        self.augmentation_enabled = augmentation_enabled
+        self.shard_cache_size = shard_cache_size
+        self._ends: list[int] = []
+        self._starts: list[int] = []
+        self._ring_ranges: dict[int, list[tuple[int, int]]] = defaultdict(list)
+        total = 0
+        for span in self.spans:
+            start = total
+            self._starts.append(start)
+            total += span.sample_count
+            self._ends.append(total)
+            self._ring_ranges[span.record.ring].append((start, total))
+        self._cache: OrderedDict[int, DecodedReplayShard] = OrderedDict()
+        self._verified_shards: set[int] = set()
+        self.shard_load_count = 0
+        self.checksum_verification_count = 0
+        self.sample_materialization_count = 0
+
+    def __len__(self) -> int:
+        return self._ends[-1]
+
+    @property
+    def rings(self) -> tuple[int, ...]:
+        return tuple(sorted(self._ring_ranges))
+
+    def ring_count(self, ring: int) -> int:
+        return sum(end - start for start, end in self._ring_ranges.get(ring, ()))
+
+    def ring_offset_to_index(self, ring: int, offset: int) -> int:
+        if offset < 0:
+            raise IndexError(offset)
+        for start, end in self._ring_ranges.get(ring, ()):
+            width = end - start
+            if offset < width:
+                return start + offset
+            offset -= width
+        raise IndexError(offset)
+
+    def shard_batch_chunks(self, batch_size: int) -> tuple[ShardBatchChunk, ...]:
+        """Cover every selected row, including short spans and partial tails."""
+        if batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        chunks: list[ShardBatchChunk] = []
+        for span_index, span in enumerate(self.spans):
+            for offset in range(0, span.sample_count, batch_size):
+                chunks.append(
+                    ShardBatchChunk(
+                        ring=span.record.ring,
+                        span_index=span_index,
+                        dataset_start=self._starts[span_index] + offset,
+                        sample_count=min(batch_size, span.sample_count - offset),
+                    )
+                )
+        return tuple(chunks)
+
+    @staticmethod
+    def indices_for_chunk(chunk: ShardBatchChunk) -> list[int]:
+        return list(
+            range(
+                chunk.dataset_start,
+                chunk.dataset_start + chunk.sample_count,
+            )
+        )
+
+    def __getitem__(self, index: int) -> ReplaySample:
+        reference = self.reference(index)
+        span_index = bisect_right(self._ends, reference.logical_index)
+        span = self.spans[span_index]
+        shard = self._load_span_shard(span)
+        sample = shard.sample(reference.sample_offset)
+        self.sample_materialization_count += 1
+        if not self.augmentation_enabled:
+            return sample
+        transform = deterministic_transform(
+            seed=reference.augmentation_seed,
+            sample_index=reference.logical_index,
+            epoch=reference.augmentation_epoch,
+        )
+        return augment_sample(sample, transform)
+
+    def reference(self, index: int) -> ReplaySampleReference:
+        """Translate a logical selection index without opening its shard."""
+
+        if index < 0:
+            index += len(self)
+        if index < 0 or index >= len(self):
+            raise IndexError(index)
+        span_index = bisect_right(self._ends, index)
+        previous_end = self._ends[span_index - 1] if span_index else 0
+        span = self.spans[span_index]
+        return ReplaySampleReference(
+            shard_id=span.record.shard_id,
+            shard_path=str(span.record.path),
+            shard_checksum_sha256=span.record.checksum_sha256,
+            shard_sample_count=span.record.sample_count,
+            sample_offset=span.sample_start + index - previous_end,
+            augmentation_seed=self.seed,
+            augmentation_epoch=self.epoch,
+            logical_index=index,
+        )
+
+    def __getitems__(self, indices: list[int]) -> list[ReplaySample]:
+        """Bulk Dataset hook used by DataLoader for one shard-local batch."""
+
+        return [self[index] for index in indices]
+
+    def __getstate__(self) -> dict[str, object]:
+        state = dict(self.__dict__)
+        state["_cache"] = OrderedDict()
+        state["_verified_shards"] = set()
+        state["shard_load_count"] = 0
+        state["checksum_verification_count"] = 0
+        state["sample_materialization_count"] = 0
+        return state
+
+    def _load_span_shard(self, span: ReplaySpan) -> DecodedReplayShard:
+        shard_id = span.record.shard_id
+        cached = self._cache.pop(shard_id, None)
+        if cached is None:
+            if shard_id not in self._verified_shards:
+                self.checksum_verification_count += 1
+                if _sha256(span.record.path) != span.record.checksum_sha256:
+                    raise ValueError(
+                        f"replay shard checksum failed: {span.record.path}"
+                    )
+                self._verified_shards.add(shard_id)
+            cached = decode_replay_shard(span.record.path)
+            self.shard_load_count += 1
+            if len(cached) != span.record.sample_count:
+                raise ValueError("replay shard count disagrees with its manifest")
+        self._cache[shard_id] = cached
+        while len(self._cache) > self.shard_cache_size:
+            self._cache.popitem(last=False)
+        return cached
+
+
+class UniqueReplayBatchSampler(Sampler[list[int]]):
+    """Deterministic no-replacement batches with explicit DDP rank partitioning."""
+
+    def __init__(
+        self,
+        dataset: LazyShardReplayDataset,
+        *,
+        batch_size: int,
+        batches: int,
+        seed: int,
+        epoch: int,
+        ring_stratified: bool,
+        ring_weights: Mapping[int, float] | None = None,
+        shards_per_batch: int = 1,
+        rank: int = 0,
+        world_size: int = 1,
+    ) -> None:
+        if len(dataset) <= 0 or batch_size <= 0 or batches <= 0:
+            raise ValueError("dataset, batch_size, and batches must be positive")
+        if world_size <= 0 or rank < 0 or rank >= world_size:
+            raise ValueError("invalid distributed sampler rank")
+        if (
+            isinstance(shards_per_batch, bool)
+            or not isinstance(shards_per_batch, int)
+            or shards_per_batch <= 0
+        ):
+            raise ValueError("shards_per_batch must be positive")
+        if shards_per_batch > 1 and not ring_stratified:
+            raise ValueError("cross-shard batches require ring-stratified replay")
+        required = batches * world_size * batch_size
+        if required > len(dataset):
+            raise ValueError("replay window lacks enough unique samples")
+        self.batch_size = batch_size
+        self.batches = batches
+        self.seed = seed
+        self.epoch = epoch
+        self.dataset = dataset
+        self.ring_stratified = ring_stratified
+        self.ring_weights = (
+            {int(ring): float(weight) for ring, weight in ring_weights.items()}
+            if ring_weights is not None
+            else None
+        )
+        self.shards_per_batch = shards_per_batch
+        self.rank = rank
+        self.world_size = world_size
+        # Shard diversity is a minimum where possible, not a requirement that
+        # every file contain a full optimizer batch. A streamed game may have
+        # only a few rows; all of them remain eligible.
+        fragment_rows = max(
+            1, math.ceil(batch_size / min(shards_per_batch, batch_size))
+        )
+        self.chunks = dataset.shard_batch_chunks(fragment_rows)
+        self.capacities = {
+            ring: dataset.ring_count(ring) // batch_size for ring in dataset.rings
+        }
+        if sum(self.capacities.values()) < batches * world_size:
+            raise ValueError("replay spans lack enough ring-homogeneous unique batches")
+        if ring_stratified:
+            if self.ring_weights is not None and (
+                any(weight < 0 for weight in self.ring_weights.values())
+                or not any(weight > 0 for weight in self.ring_weights.values())
+            ):
+                raise ValueError("ring weights must be non-negative with positive sum")
+
+    def __len__(self) -> int:
+        return self.batches
+
+    def __iter__(self) -> Iterator[list[int]]:
+        rng = random.Random(self.seed + self.epoch * 1_000_003)
+        total_batches = self.batches * self.world_size
+        capacities = self.capacities
+        if not self.ring_stratified:
+            order = rng.sample(
+                [
+                    ring
+                    for ring, capacity in sorted(capacities.items())
+                    for _ in range(capacity)
+                ],
+                total_batches,
+            )
+            used = {ring: order.count(ring) for ring in capacities}
+        else:
+            if self.ring_weights is None:
+                order = []
+                used = {ring: 0 for ring in capacities}
+                while len(order) < total_batches:
+                    available = [
+                        ring for ring in capacities if used[ring] < capacities[ring]
+                    ]
+                    rng.shuffle(available)
+                    for ring in available:
+                        order.append(ring)
+                        used[ring] += 1
+                        if len(order) == total_batches:
+                            break
+            else:
+                used = _weighted_ring_quotas(
+                    total_batches,
+                    capacities=capacities,
+                    weights=self.ring_weights,
+                )
+                order = [
+                    ring for ring, count in sorted(used.items()) for _ in range(count)
+                ]
+                rng.shuffle(order)
+        by_ring: dict[int, list[ShardBatchChunk]] = defaultdict(list)
+        for chunk in self.chunks:
+            by_ring[chunk.ring].append(chunk)
+        packed = {
+            ring: iter(
+                _pack_replay_batches(
+                    self.dataset,
+                    by_ring[ring],
+                    batch_size=self.batch_size,
+                    batches=count,
+                    minimum_shards=self.shards_per_batch,
+                    rng=rng,
+                )
+            )
+            for ring, count in sorted(used.items())
+            if count
+        }
+        # Every rank constructs the same global plan before taking its disjoint
+        # batches. Physical loader workers never choose or duplicate row IDs.
+        global_batches = [next(packed[ring]) for ring in order]
+        local = global_batches[self.rank :: self.world_size]
+        if len(local) != self.batches:
+            raise RuntimeError("distributed sampler emitted uneven batches")
+        yield from local
+
+
+def _pack_replay_batches(
+    dataset: LazyShardReplayDataset,
+    chunks: Sequence[ShardBatchChunk],
+    *,
+    batch_size: int,
+    batches: int,
+    minimum_shards: int,
+    rng: random.Random,
+) -> list[list[int]]:
+    """Pack shuffled fragments without dropping rows or requiring large files."""
+    shuffled = list(chunks)
+    rng.shuffle(shuffled)
+    by_span: dict[int, deque[tuple[int, ShardBatchChunk, int]]] = defaultdict(deque)
+    for priority, chunk in enumerate(shuffled):
+        by_span[chunk.span_index].append((priority, chunk, 0))
+    available = [(queue[0][0], span) for span, queue in by_span.items()]
+    heapq.heapify(available)
+    permutations: dict[int, list[int]] = {}
+    output = []
+    for _ in range(batches):
+        required = min(minimum_shards, len(by_span), batch_size)
+        seen: set[int] = set()
+        held: list[tuple[int, int]] = []
+        indices: list[int] = []
+        while len(indices) < batch_size:
+            if not available:
+                raise RuntimeError("replay row packing exhausted before its capacity")
+            _, span_index = heapq.heappop(available)
+            queue = by_span[span_index]
+            priority, chunk, consumed = queue.popleft()
+            seen.add(span_index)
+            # Reserve one row for each still-needed distinct source. This also
+            # handles batch sizes not divisible by the desired diversity.
+            room = batch_size - len(indices) - max(0, required - len(seen))
+            take = min(chunk.sample_count - consumed, room)
+            if take <= 0:
+                raise RuntimeError(
+                    "replay shard diversity reservation made no progress"
+                )
+            permutation = permutations.get(span_index)
+            if permutation is None:
+                start = dataset._starts[span_index]
+                permutation = list(
+                    range(start, start + dataset.spans[span_index].sample_count)
+                )
+                rng.shuffle(permutation)
+                permutations[span_index] = permutation
+            offset = chunk.dataset_start - dataset._starts[span_index] + consumed
+            indices.extend(permutation[offset : offset + take])
+            if consumed + take < chunk.sample_count:
+                queue.appendleft((priority, chunk, consumed + take))
+            if queue:
+                head = (queue[0][0], span_index)
+                if len(seen) < required:
+                    held.append(head)
+                else:
+                    heapq.heappush(available, head)
+            else:
+                del by_span[span_index]
+                permutations.pop(span_index, None)
+            if len(seen) >= required and held:
+                for head in held:
+                    heapq.heappush(available, head)
+                held.clear()
+        rng.shuffle(indices)
+        output.append(indices)
+    return output
+
+
+def replay_selection_diagnostics(
+    selection: ReplaySelection, *, batch_size: int, current_model_step: int
+) -> dict[str, object]:
+    """Metadata-only accounting of selected rows and actual packing capacity."""
+    if batch_size <= 0:
+        raise ValueError("diagnostic batch size must be positive")
+    rows: dict[int, int] = defaultdict(int)
+    old_rows: dict[int, int] = defaultdict(int)
+    short_rows: dict[int, int] = defaultdict(int)
+    modes: dict[str, int] = defaultdict(int)
+    cells: dict[str, int] = defaultdict(int)
+    ages: dict[int, int] = defaultdict(int)
+    for span in selection.spans:
+        ring, count = span.record.ring, span.sample_count
+        rows[ring] += count
+        old_rows[ring] += (count // batch_size) * batch_size
+        short_rows[ring] += count if count < batch_size else 0
+        variant = getattr(span.record, "variant", "unknown")
+        mode = (
+            "handicap-" + variant.rsplit("-", 1)[-1]
+            if variant.startswith("handicap-")
+            else variant
+        )
+        modes[mode] += count
+        cells[f"r{ring}/{mode}"] += count
+        model_step = getattr(span.record, "model_step", None)
+        if type(model_step) is int:
+            ages[current_model_step - model_step] += count
+    total_aged = sum(ages.values())
+
+    def quantile(fraction: float) -> int | None:
+        consumed = 0
+        for age, count in sorted(ages.items()):
+            consumed += count
+            if consumed >= max(1, math.ceil(total_aged * fraction)):
+                return age
+        return None
+
+    return {
+        "sampler": "selected-span-packing-v2",
+        "selected_rows_by_ring": {str(r): n for r, n in sorted(rows.items())},
+        "batch_capacity_by_ring": {
+            str(r): n // batch_size for r, n in sorted(rows.items())
+        },
+        "packable_rows_by_ring": {
+            str(r): (n // batch_size) * batch_size for r, n in sorted(rows.items())
+        },
+        "legacy_chunk_rows_by_ring": {str(r): n for r, n in sorted(old_rows.items())},
+        "short_span_rows_by_ring": {str(r): n for r, n in sorted(short_rows.items())},
+        "selected_rows_by_six_mode": dict(sorted(modes.items())),
+        "selected_rows_by_ring_and_six_mode": dict(sorted(cells.items())),
+        "selected_model_age": {
+            "known_rows": total_aged,
+            "mean": sum(age * count for age, count in ages.items()) / total_aged
+            if total_aged
+            else None,
+            "minimum": min(ages) if ages else None,
+            "maximum": max(ages) if ages else None,
+            "p50": quantile(0.5),
+            "p90": quantile(0.9),
+        },
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class _ReplaySamplerBinding:
+    dataset: LazyShardReplayDataset
+    sampler: UniqueReplayBatchSampler
+
+
+class RebindableReplayBatchSampler(Sampler[list[ReplaySampleReference]]):
+    """Parent-only adapter from deterministic integers to immutable references."""
+
+    def __init__(self) -> None:
+        self._binding: _ReplaySamplerBinding | None = None
+        self.rebind_count = 0
+
+    def rebind(
+        self,
+        dataset: LazyShardReplayDataset,
+        sampler: UniqueReplayBatchSampler,
+    ) -> None:
+        if sampler.dataset is not dataset:
+            raise ValueError("replay sampler must be bound to its source dataset")
+        self._binding = _ReplaySamplerBinding(dataset, sampler)
+        self.rebind_count += 1
+
+    def clear(self) -> None:
+        self._binding = None
+
+    def __len__(self) -> int:
+        binding = self._binding
+        return len(binding.sampler) if binding is not None else 0
+
+    def __iter__(self) -> Iterator[list[ReplaySampleReference]]:
+        binding = self._binding
+        if binding is None:
+            return
+        dataset = binding.dataset
+        for indices in binding.sampler:
+            yield [dataset.reference(index) for index in indices]
+
+
+class SpawnedReplayLoaderPool:
+    """One persistent spawned DataLoader worker pool for a learner process."""
+
+    def __init__(
+        self,
+        *,
+        num_workers: int,
+        augmentation_enabled: bool,
+        shard_cache_size: int,
+        pin_memory: bool,
+        prefetch_factor: int,
+    ) -> None:
+        if num_workers <= 0:
+            raise ValueError("spawned replay pool requires positive workers")
+        self.dataset = PersistentReplayWorkerDataset(
+            augmentation_enabled=augmentation_enabled,
+            shard_cache_size=shard_cache_size,
+        )
+        self.batch_sampler = RebindableReplayBatchSampler()
+        self.loader = DataLoader(
+            dataset=self.dataset,
+            batch_sampler=self.batch_sampler,
+            collate_fn=collate_replay_samples,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+            prefetch_factor=prefetch_factor,
+            persistent_workers=True,
+            multiprocessing_context="spawn",
+            timeout=PROCESS_LOADER_TIMEOUT_SECONDS,
+        )
+        self.num_workers = num_workers
+        self.closed = False
+        self.shutdown_count = 0
+
+    @property
+    def worker_pids(self) -> tuple[int, ...]:
+        iterator = getattr(self.loader, "_iterator", None)
+        workers = getattr(iterator, "_workers", ())
+        return tuple(
+            int(worker.pid)
+            for worker in workers
+            if getattr(worker, "pid", None) is not None
+        )
+
+    def rebind(
+        self,
+        dataset: LazyShardReplayDataset,
+        sampler: UniqueReplayBatchSampler,
+    ) -> None:
+        if self.closed:
+            raise RuntimeError("cannot rebind a closed replay loader pool")
+        self.batch_sampler.rebind(dataset, sampler)
+
+    def quiesce(self) -> None:
+        """Drain stale work through a zero-length iterator without respawning."""
+
+        if self.closed:
+            return
+        self.batch_sampler.clear()
+        if getattr(self.loader, "_iterator", None) is not None:
+            try:
+                iter(self.loader)
+            except BaseException as error:
+                self.shutdown(strict=False)
+                raise RuntimeError(
+                    "persistent replay loader workers did not quiesce"
+                ) from error
+
+    def shutdown(self, *, strict: bool = True) -> BaseException | None:
+        if self.closed:
+            return None
+        failure: BaseException | None = None
+        iterator = getattr(self.loader, "_iterator", None)
+        self.batch_sampler.clear()
+        try:
+            shutdown_workers = getattr(iterator, "_shutdown_workers", None)
+            if iterator is not None and callable(shutdown_workers):
+                try:
+                    if hasattr(iterator, "_sampler_iter") and not getattr(
+                        iterator, "_shutdown", False
+                    ):
+                        # Stop scheduling new batches, then consume the bounded
+                        # prefetched tail while workers and the pinning thread
+                        # are still alive. Their tensor queue feeder threads
+                        # must finish before Torch closes the result queue.
+                        # Ordinary next() retains queued exception/SIGCHLD
+                        # checks; persistent-loader reset would discard them.
+                        iterator._sampler_iter = iter(())
+                        previous_timeout = iterator._timeout
+                        deadline = (
+                            time.monotonic() + REPLAY_LOADER_SHUTDOWN_DRAIN_SECONDS
+                        )
+                        try:
+                            while True:
+                                remaining = deadline - time.monotonic()
+                                if remaining <= 0:
+                                    raise TimeoutError(
+                                        "replay loader shutdown drain timed out"
+                                    )
+                                iterator._timeout = (
+                                    min(previous_timeout, remaining)
+                                    if previous_timeout > 0
+                                    else remaining
+                                )
+                                try:
+                                    next(iterator)
+                                except StopIteration:
+                                    break
+                        finally:
+                            iterator._timeout = previous_timeout
+                except BaseException as exc:
+                    failure = exc
+                finally:
+                    # Even a failed drain must reap workers. Preserve the
+                    # original error instead of treating SIGABRT as success.
+                    try:
+                        shutdown_workers()
+                    except BaseException as exc:
+                        if failure is None:
+                            failure = exc
+        except BaseException as exc:
+            failure = exc
+        finally:
+            self.loader._iterator = None
+            self.batch_sampler.clear()
+            self.closed = True
+            self.shutdown_count += 1
+        if strict and failure is not None:
+            raise failure
+        return failure
+
+
+def _cross_shard_chunk_groups(
+    chunks: Sequence[ShardBatchChunk],
+    *,
+    shards_per_batch: int,
+    rng: random.Random,
+) -> list[list[ShardBatchChunk]]:
+    by_span: dict[int, list[ShardBatchChunk]] = defaultdict(list)
+    for chunk in chunks:
+        by_span[chunk.span_index].append(chunk)
+    heap: list[tuple[int, float, int]] = []
+    for span_index, span_chunks in by_span.items():
+        rng.shuffle(span_chunks)
+        heap.append((-len(span_chunks), rng.random(), span_index))
+    heapq.heapify(heap)
+    output: list[list[ShardBatchChunk]] = []
+    while len(heap) >= shards_per_batch:
+        selected = [heapq.heappop(heap) for _ in range(shards_per_batch)]
+        group = []
+        for negative_count, _tie, span_index in selected:
+            group.append(by_span[span_index].pop())
+            remaining = -negative_count - 1
+            if remaining:
+                heapq.heappush(
+                    heap,
+                    (-remaining, rng.random(), span_index),
+                )
+        output.append(group)
+    return output
+
+
+def _maximum_cross_shard_groups(
+    chunk_counts: Sequence[int],
+    *,
+    shards_per_batch: int,
+) -> int:
+    if not chunk_counts:
+        return 0
+    upper = sum(chunk_counts) // shards_per_batch
+    low = 0
+    while low < upper:
+        middle = (low + upper + 1) // 2
+        available = sum(min(count, middle) for count in chunk_counts)
+        if available >= middle * shards_per_batch:
+            low = middle
+        else:
+            upper = middle - 1
+    return low
+
+
+def _weighted_ring_quotas(
+    total: int,
+    *,
+    capacities: Mapping[int, int],
+    weights: Mapping[int, float],
+) -> dict[int, int]:
+    if total <= 0:
+        raise ValueError("weighted ring quota total must be positive")
+    eligible = [ring for ring, weight in weights.items() if weight > 0]
+    if any(capacities.get(ring, 0) <= 0 for ring in eligible):
+        raise ValueError("weighted ring replay is missing a configured ring")
+    if sum(capacities[ring] for ring in eligible) < total:
+        raise ValueError("weighted ring replay lacks enough configured capacity")
+    total_weight = sum(float(weights[ring]) for ring in eligible)
+    targets = {ring: total * float(weights[ring]) / total_weight for ring in eligible}
+    quotas = {ring: int(targets[ring]) for ring in eligible}
+    remaining = total - sum(quotas.values())
+    remainders = sorted(
+        eligible,
+        key=lambda ring: (
+            targets[ring] - quotas[ring],
+            float(weights[ring]),
+            -ring,
+        ),
+        reverse=True,
+    )
+    for ring in remainders[:remaining]:
+        quotas[ring] += 1
+    if any(quotas[ring] > capacities[ring] for ring in eligible):
+        raise ValueError("weighted ring replay cannot satisfy configured proportions")
+    return {ring: quotas.get(ring, 0) for ring in capacities}
+
+
+class JSONLMetrics:
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def append(self, payload: dict[str, object]) -> None:
+        line = json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
+        with self.path.open("a", encoding="utf-8") as stream:
+            stream.write(line)
+            stream.flush()
+            os.fsync(stream.fileno())
+
+
+class TrainingObjectiveOptions(TypedDict, total=False):
+    training_objective: Literal["ring10_pie"]
+
+
+class RingSegmentQuotaOptions(TypedDict, total=False):
+    ring_segment_quotas: dict[int, dict[str, float]]
+
+
+@dataclass(frozen=True, slots=True)
+class UTDSegmentState:
+    run_id: str
+    generation_family: str
+    target_updates_per_new_sample: float
+    baseline_examples_consumed: int
+    baseline_committed_replay_samples: int
+    training_objective: str | None = None
+
+    def as_dict(self) -> dict[str, object]:
+        result: dict[str, object] = {
+            "schema_version": UTD_SEGMENT_SCHEMA_VERSION,
+            "run_id": self.run_id,
+            "generation_family": self.generation_family,
+            "target_updates_per_new_sample": self.target_updates_per_new_sample,
+            "baseline_examples_consumed": self.baseline_examples_consumed,
+            "baseline_committed_replay_samples": (
+                self.baseline_committed_replay_samples
+            ),
+        }
+        if self.training_objective is not None:
+            result["training_objective"] = self.training_objective
+        return result
+
+
+@dataclass(slots=True)
+class ReplayWindowSession:
+    selection: ReplaySelection
+    loader: DataLoader | None
+    prefetcher: DeviceBatchPrefetcher | None
+    batches_allocated: int
+    effective_workers: int
+    setup_seconds: float
+    refresh_reason: str
+    opened_step: int
+    opened_epoch: int
+    active_rings: tuple[int, ...]
+    ring_weights: tuple[tuple[int, float], ...] | None
+    recovery_boundary: int | None
+    ring_weight_boundary: int | None
+    shutdown_loader_workers: bool = True
+    batches_consumed: int = 0
+    reuse_spins: int = 0
+    utd_wait_spins: int = 0
+    pause_generation: int = 0
+    suspended: bool = False
+    closed: bool = False
+    opened_monotonic: float = field(default_factory=time.monotonic)
+    opened_committed_samples: int = 0
+    opened_publication_revision: int = 0
+    opened_enriched_samples: int = 0
+    freshness_last_checked_monotonic: float | None = None
+    freshness_probes: int = 0
+    freshness_new_committed_rows: int = 0
+    freshness_additional_selected_rows: int = 0
+    freshness_enriched_rows: int = 0
+
+    @property
+    def batches_remaining(self) -> int:
+        return self.batches_allocated - self.batches_consumed
+
+    def next_batch(self) -> ReplayBatch:
+        if self.closed or self.prefetcher is None:
+            raise RuntimeError("replay window is closed")
+        if self.suspended:
+            raise RuntimeError("replay window is suspended")
+        return next(self.prefetcher)
+
+    def pop_copy_events(self) -> list[tuple[torch.cuda.Event, torch.cuda.Event]]:
+        if self.prefetcher is None:
+            return []
+        return self.prefetcher.pop_copy_events()
+
+    def shutdown(self, *, strict: bool = True) -> BaseException | None:
+        if self.closed:
+            return None
+        loader = self.loader
+        prefetcher = self.prefetcher
+        failure: BaseException | None = None
+        prefetcher_closed_iterator = False
+        try:
+            try:
+                if prefetcher is not None:
+                    close = getattr(prefetcher, "close", None)
+                    if callable(close):
+                        close_result = close(
+                            strict=False,
+                            shutdown_workers=self.shutdown_loader_workers,
+                        )
+                        if close_result is not None and not isinstance(
+                            close_result, BaseException
+                        ):
+                            raise TypeError(
+                                "device prefetcher close returned an invalid result"
+                            )
+                        failure = close_result
+                        prefetcher_closed_iterator = True
+                    else:
+                        stream = getattr(prefetcher, "_stream", None)
+                        if stream is not None:
+                            stream.synchronize()
+            except BaseException as exc:
+                failure = exc
+            if self.shutdown_loader_workers and not prefetcher_closed_iterator:
+                try:
+                    iterator = getattr(loader, "_iterator", None)
+                    if iterator is None:
+                        iterator = getattr(prefetcher, "_batches", None)
+                    shutdown_workers = getattr(iterator, "_shutdown_workers", None)
+                    if callable(shutdown_workers):
+                        shutdown_workers()
+                except BaseException as exc:
+                    if failure is None:
+                        failure = exc
+        finally:
+            self.prefetcher = None
+            self.loader = None
+            self.suspended = False
+            self.closed = True
+        if failure is not None and strict:
+            raise failure
+        return failure
+
+    def suspend_for_gpu_pause(self) -> int:
+        if self.closed:
+            raise RuntimeError("cannot suspend a closed replay window")
+        if self.suspended:
+            return self.pause_generation
+        if self.prefetcher is not None:
+            self.prefetcher.suspend_device()
+        self.pause_generation += 1
+        self.suspended = True
+        return self.pause_generation
+
+    def resume_after_gpu_pause(self) -> int:
+        if self.closed:
+            raise RuntimeError("cannot resume a closed replay window")
+        if not self.suspended:
+            return self.pause_generation
+        if self.prefetcher is not None:
+            self.prefetcher.resume_device()
+        self.suspended = False
+        return self.pause_generation
+
+
+def plateau_policy_decision(
+    *,
+    lag_steps: int,
+    soft_lag_steps: int,
+    hard_replay_lag_steps: int,
+    status_matches_candidate: bool,
+    terminal_rejection: bool,
+    rejection_streak: int,
+    reset_after_rejections: int,
+    action: str,
+    reset_already_applied: bool,
+    at_rate_floor: bool = False,
+) -> str:
+    if action == "reduce_lr_keep_weights":
+        # Weights are never rewound under this action, so the champion lag is
+        # not a reason to stop training: pausing would only idle the learner
+        # while the arena works, and the lag grows without bound between
+        # promotions. The only plateau response is an evidence-driven rate cut
+        # after a streak of conclusive rejections, and once the multiplier sits
+        # at its floor there is nothing left to cut.
+        if reset_already_applied or at_rate_floor:
+            return "proceed"
+        if (
+            status_matches_candidate
+            and terminal_rejection
+            and rejection_streak >= reset_after_rejections
+        ):
+            return "recover"
+        return "proceed"
+    if lag_steps < soft_lag_steps:
+        return "proceed"
+    if (
+        status_matches_candidate
+        and terminal_rejection
+        and lag_steps >= hard_replay_lag_steps
+        and action == "reset_from_champion"
+        and not reset_already_applied
+    ):
+        return "reset"
+    if (
+        status_matches_candidate
+        and terminal_rejection
+        and rejection_streak >= reset_after_rejections
+        and action == "reset_from_champion"
+        and not reset_already_applied
+    ):
+        return "reset"
+    if (
+        status_matches_candidate
+        and terminal_rejection
+        and rejection_streak < reset_after_rejections
+        and lag_steps < hard_replay_lag_steps
+    ):
+        return "proceed"
+    return "pause"
+
+
+class ImmutableModelPublisher:
+    def __init__(self, root: str | Path, run_identity: RunIdentity) -> None:
+        self.root = Path(root)
+        self.checkpoint_directory = self.root / "checkpoints"
+        self.manifest_directory = self.root / "manifests"
+        self.checkpoint_directory.mkdir(parents=True, exist_ok=True)
+        self.manifest_directory.mkdir(parents=True, exist_ok=True)
+        self.candidate_path = self.root / "candidate.json"
+        self.champion_path = self.root / "champion.json"
+        self.run_identity = run_identity
+
+    def publish(
+        self,
+        *,
+        model: torch.nn.Module,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler.LRScheduler,
+        ema: ExponentialMovingAverage,
+        gradient_clipper: GradientClipper | None = None,
+        step: int,
+        epoch: int,
+        config: dict[str, object],
+        examples_consumed: int | None = None,
+        global_batch_size: int | None = None,
+        utd_segment: Mapping[str, object] | None = None,
+        extra: Mapping[str, object] | None = None,
+    ) -> ModelManifest:
+        if self.candidate_path.is_file():
+            try:
+                current = load_model_manifest(self.candidate_path)
+            except ValueError:
+                current = None
+            if current is not None:
+                if (
+                    current.model_step == step
+                    and current.run_id == self.run_identity.run_id
+                    and current.generation_family == self.run_identity.generation_family
+                ):
+                    self._record_model_history(current)
+                    return current
+        additional = dict(extra or {})
+        reserved = {
+            "training_step_version",
+            "run_id",
+            "generation_family",
+            "examples_consumed",
+            "global_batch_size",
+            "utd_segment",
+        }
+        collision = reserved & additional.keys()
+        if collision:
+            raise ValueError(
+                "publication extra metadata overrides reserved fields: "
+                + ", ".join(sorted(collision))
+            )
+        staged = self.checkpoint_directory / f".candidate-{step:012d}.staging.pt"
+        save_checkpoint(
+            staged,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            ema=ema,
+            gradient_clipper=gradient_clipper,
+            step=step,
+            epoch=epoch,
+            config=config,
+            extra={
+                "training_step_version": f"step-{step:012d}",
+                "run_id": self.run_identity.run_id,
+                "generation_family": self.run_identity.generation_family,
+                **(
+                    {
+                        "examples_consumed": examples_consumed,
+                        "global_batch_size": global_batch_size,
+                    }
+                    if examples_consumed is not None
+                    else {}
+                ),
+                **({"utd_segment": dict(utd_segment)} if utd_segment else {}),
+                **additional,
+            },
+        )
+        checkpoint_sha256 = sha256_file(staged)
+        model_identity = f"sha256-{checkpoint_sha256}"
+        checkpoint = self.checkpoint_directory / f"{model_identity}.pt"
+        if checkpoint.exists():
+            verify_file(
+                checkpoint,
+                expected_sha256=checkpoint_sha256,
+                expected_bytes=staged.stat().st_size,
+            )
+            staged.unlink()
+        else:
+            os.replace(staged, checkpoint)
+            descriptor = os.open(checkpoint.parent, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        manifest_payload = {
+            "format": MODEL_MANIFEST_FORMAT,
+            "schema_version": MODEL_MANIFEST_VERSION,
+            "model_version": model_identity,
+            "model_identity": model_identity,
+            "model_step": step,
+            "checkpoint": os.path.relpath(checkpoint, self.manifest_directory),
+            "checkpoint_sha256": checkpoint_sha256,
+            "checkpoint_bytes": checkpoint.stat().st_size,
+            "weights": "ema",
+            "run_id": self.run_identity.run_id,
+            "generation_family": self.run_identity.generation_family,
+            "rules_hash": RULES_HASH_WIRE,
+            "feature_schema_hash": f"{FEATURE_SCHEMA_HASH:016x}",
+            "model_schema_version": MODEL_SCHEMA_VERSION,
+            "created_ns": time.time_ns(),
+        }
+        serialized = (
+            json.dumps(manifest_payload, sort_keys=True, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
+        manifest_sha256 = hashlib.sha256(serialized).hexdigest()
+        manifest_path = self.manifest_directory / f"manifest-{manifest_sha256}.json"
+        if manifest_path.exists():
+            verify_file(
+                manifest_path,
+                expected_sha256=manifest_sha256,
+                expected_bytes=len(serialized),
+            )
+        else:
+            atomic_json(manifest_path, manifest_payload)
+        manifest = load_model_manifest(manifest_path)
+        write_model_pointer(self.candidate_path, manifest, role="candidate")
+        published = load_model_manifest(self.candidate_path)
+        self._record_model_history(published)
+        return published
+
+    def _record_model_history(self, manifest: ModelManifest) -> None:
+        append_jsonl(
+            self.root / "model-history.jsonl",
+            {
+                "schema_version": 1,
+                "run_id": manifest.run_id,
+                "generation_family": manifest.generation_family,
+                "model_identity": manifest.model_identity,
+                "model_step": manifest.model_step,
+                "published_ns": manifest.published_ns,
+                "manifest": os.path.relpath(
+                    manifest.artifact_manifest or manifest.path,
+                    self.root,
+                ),
+            },
+            durable=True,
+        )
+
+
+AtomicModelPublisher = ImmutableModelPublisher
+
+
+class LearnerLoop:
+    def __init__(
+        self,
+        *,
+        store: ReplayStore,
+        model: GraphResTNet,
+        optimizer: torch.optim.Optimizer,
+        scheduler: torch.optim.lr_scheduler.LRScheduler,
+        ema: ExponentialMovingAverage,
+        output_directory: str | Path,
+        learner_config: LearnerConfig,
+        train_config: TrainConfig,
+        data_config: DataConfig,
+        loss_weights: LossWeights,
+        seed: int,
+        serialized_config: dict[str, object],
+        run_identity: RunIdentity,
+        ring_mixture_config: RingMixtureConfig = RingMixtureConfig(),
+        promotion_status_path: str | Path | None = None,
+        expected_promotion_contract_identity: str | None = None,
+        gpu_pause_path: str | Path | None = None,
+        rank: int = 0,
+        world_size: int = 1,
+    ) -> None:
+        if world_size <= 0 or rank < 0 or rank >= world_size:
+            raise ValueError("invalid learner distributed rank")
+        self.loader_lifecycle = resolve_loader_lifecycle()
+        self._loader_pool: SpawnedReplayLoaderPool | None = None
+        self._loader_pool_starts = 0
+        self._loader_pool_rebinds = 0
+        self._loader_pool_shutdowns = 0
+        self.store = store
+        learner_config = replace(
+            learner_config,
+            device=resolve_device_string(learner_config.device),
+        )
+        self.model = model.to(learner_config.device)
+        self.optimizer = optimizer
+        try:
+            self._optimizer_routing: OptimizerRoutingMetadata | None = (
+                optimizer_routing_metadata(optimizer)
+            )
+        except ValueError:
+            self._optimizer_routing = None
+        self.scheduler = scheduler
+        # The freshly built scheduler carries the profile's reference rates;
+        # plateau recovery only ever applies a floored absolute multiplier.
+        self._lr_governor = LearningRateGovernorState.from_scheduler(scheduler)
+        self.ema = ema
+        self.learner_config = learner_config
+        device = next(self.model.parameters()).device
+        enable_fast_math(device)
+        # "auto" precision/compile and CUDA-only dataloader features resolve
+        # against the device the model actually lives on.
+        train_config = replace(
+            train_config,
+            precision=resolve_precision(train_config.precision, device),
+            compile=resolve_compile(train_config.compile, device),
+        )
+        data_config = replace(
+            data_config,
+            pin_memory=resolve_pin_memory(data_config.pin_memory, device),
+            workers=resolve_loader_workers(data_config.workers),
+        )
+        self.train_config = train_config
+        self.gradient_clipper = (
+            GradientClipper(
+                self.model.named_parameters(),
+                config=train_config.gradient_clipping,
+                max_norm=train_config.gradient_clip_norm,
+            )
+            if train_config.gradient_clipping.mode == "adagc"
+            else None
+        )
+        self.data_config = data_config
+        self.loss_weights = loss_weights
+        self.seed = seed
+        self.serialized_config = serialized_config
+        self.run_identity = run_identity
+        self.ring_mixture_config = ring_mixture_config
+        self.promotion_status_path = (
+            Path(promotion_status_path) if promotion_status_path is not None else None
+        )
+        if expected_promotion_contract_identity is not None and (
+            not isinstance(expected_promotion_contract_identity, str)
+            or not expected_promotion_contract_identity
+        ):
+            raise ValueError(
+                "expected promotion contract identity must be a nonempty string"
+            )
+        self.expected_promotion_contract_identity = expected_promotion_contract_identity
+        self.gpu_pause_path = (
+            Path(gpu_pause_path) if gpu_pause_path is not None else None
+        )
+        self._last_plateau_reset: tuple[str, str] | None = None
+        self._control_manifest_cache = ControlManifestCache()
+        self.rank = rank
+        self.world_size = world_size
+        self.store.register_run(run_identity)
+        output_root = Path(output_directory)
+        self.utd_segment_path = output_root / UTD_SEGMENT_FILENAME
+        self._utd_segment_state: UTDSegmentState | None = None
+        self._resume_utd_segment_state: UTDSegmentState | None = None
+        self._resume_utd_target: object = _UNSET
+        self._segment_baseline_examples = 0
+        self.publisher = ImmutableModelPublisher(output_root, run_identity)
+        self.selfplay_publisher = (
+            ImmutableModelPublisher(output_root / "selfplay", run_identity)
+            if learner_config.selfplay_snapshot_interval_examples is not None
+            else None
+        )
+        self.cadence_path = output_root / "cadence.json"
+        self.state_rebase_path = output_root / STATE_REBASE_FILENAME
+        self.state_rebase_pending_path = output_root / STATE_REBASE_PENDING_FILENAME
+        self._last_candidate_examples: int | None = None
+        self._last_selfplay_examples: int | None = None
+        self.metrics = JSONLMetrics(output_root / "metrics.jsonl")
+        if rank == 0 and any(store.reconciliation_metrics.values()):
+            self.metrics.append(
+                {
+                    "schema_version": 1,
+                    "timestamp_ns": time.time_ns(),
+                    "worker": "learner",
+                    "event": "replay_reconciliation",
+                    **store.reconciliation_metrics,
+                }
+            )
+        self.step = 0
+        self.epoch = 0
+        self.examples_consumed = 0
+        self._last_recovery_step = 0
+        self._latest_total_replay_samples = 0
+        self._utd_credit_wait: AdaptiveCreditWait | None = None
+        self._utd_missing_new_samples: int | None = None
+        self._gpu_pause_generation = 0
+        # Replay batches are fixed-size and ring-homogeneous. Static compilation
+        # avoids Inductor's dynamic backward reductions (which fail on variable
+        # graph lengths) while allowing one cached graph per encountered ring.
+        compiled_model = maybe_compile_model(
+            self.model,
+            enabled=train_config.compile,
+            dynamic=False,
+            recompile_limit=len(self.ring_mixture_config.rings),
+            isolate_recompiles=True,
+        )
+        if world_size > 1:
+            parameter = next(self.model.parameters())
+            device_ids = (
+                [parameter.device.index]
+                if parameter.device.type == "cuda"
+                and parameter.device.index is not None
+                else None
+            )
+            self.compiled_model: torch.nn.Module = DistributedDataParallel(
+                compiled_model,
+                device_ids=device_ids,
+                output_device=device_ids[0] if device_ids else None,
+            )
+        else:
+            self.compiled_model = compiled_model
+
+    @classmethod
+    def from_experiment(
+        cls,
+        config: ExperimentConfig,
+        *,
+        store: ReplayStore,
+        output_directory: str | Path,
+        run_identity: RunIdentity,
+        promotion_status_path: str | Path | None = None,
+        gpu_pause_path: str | Path | None = None,
+        rank: int = 0,
+        world_size: int = 1,
+    ) -> "LearnerLoop":
+        seed_all(config.train.seed)
+        learner_device = resolve_device_string(config.learner.device)
+        if learner_device != config.learner.device:
+            config = replace(
+                config,
+                learner=replace(config.learner, device=learner_device),
+            )
+        model = GraphResTNet(config.model).to(learner_device)
+        optimizer = build_optimizer(model, config.optimizer)
+        scheduler = build_scheduler(optimizer, config.train.scheduler)
+        ema = ExponentialMovingAverage(
+            model,
+            decay=config.train.resolved_ema_decay(world_size),
+        )
+        expected_promotion_contract_identity = None
+        if config.arena.balanced_cells:
+            from .balanced_evaluation import evaluation_contract
+
+            expected_promotion_contract_identity = str(
+                evaluation_contract(config.arena)["identity"]
+            )
+        return cls(
+            store=store,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            ema=ema,
+            output_directory=output_directory,
+            learner_config=config.learner,
+            train_config=config.train,
+            data_config=config.data,
+            loss_weights=config.loss,
+            seed=config.train.seed,
+            serialized_config=config.as_dict(),
+            run_identity=run_identity,
+            ring_mixture_config=config.orchestration.ring_mixture,
+            promotion_status_path=promotion_status_path,
+            expected_promotion_contract_identity=expected_promotion_contract_identity,
+            gpu_pause_path=gpu_pause_path,
+            rank=rank,
+            world_size=world_size,
+        )
+
+    def resume(
+        self,
+        checkpoint: str | Path,
+        *,
+        expected_sha256: str | None = None,
+        expected_bytes: int | None = None,
+    ) -> None:
+        model_config = self.serialized_config.get("model")
+        game_config = self.serialized_config.get("game")
+        metadata = load_checkpoint(
+            checkpoint,
+            model=self.model,
+            optimizer=self.optimizer,
+            scheduler=self.scheduler,
+            ema=self.ema,
+            gradient_clipper=self.gradient_clipper,
+            # Selecting AdaGC in the frozen profile explicitly starts warmup
+            # when continuing a legacy global-clipping checkpoint. Missing
+            # state in an already-adaptive checkpoint remains a fatal error.
+            allow_gradient_clipping_cold_start=self.gradient_clipper is not None,
+            allow_auxiliary_upgrade=self.model.config.auxiliary_predictions,
+            map_location=self.learner_config.device,
+            expected_model_config=(
+                model_config if isinstance(model_config, Mapping) else None
+            ),
+            expected_game_config=(
+                game_config if isinstance(game_config, Mapping) else None
+            ),
+            expected_run_id=self.run_identity.run_id,
+            expected_generation_family=self.run_identity.generation_family,
+            expected_sha256=expected_sha256,
+            expected_bytes=expected_bytes,
+            metadata_validator=self._validate_resume_metadata,
+        )
+        resume_utd_target = self._checkpoint_utd_target(metadata)
+        resume_utd_segment = self._checkpoint_utd_segment(metadata)
+        self.step = int(metadata["step"])
+        self.epoch = int(metadata["epoch"])
+        self.examples_consumed = self._resume_examples_consumed(metadata)
+        self._segment_baseline_examples = self._checkpoint_segment_baseline(
+            metadata,
+            examples_consumed=self.examples_consumed,
+        )
+        self._resume_utd_target = resume_utd_target
+        self._resume_utd_segment_state = resume_utd_segment
+        self._last_recovery_step = self.step
+        self._adopt_checkpoint_governor(metadata.get("extra"))
+        extra = metadata.get("extra", {})
+        if isinstance(extra, Mapping) and isinstance(
+            extra.get("auxiliary_upgrade"), Mapping
+        ):
+            self._auxiliary_upgrade = dict(extra["auxiliary_upgrade"])
+        if isinstance(extra, Mapping) and "auxiliary_supervision" in extra:
+            from .auxiliary_upgrade import AUXILIARY_LOSSES
+
+            supervised = extra["auxiliary_supervision"]
+            if not isinstance(supervised, Mapping) or any(
+                name not in AUXILIARY_LOSSES
+                or type(step) is not int
+                or not 0 < step <= self.step
+                for name, step in supervised.items()
+            ):
+                raise ValueError("checkpoint auxiliary supervision metadata is invalid")
+            self._auxiliary_supervision = dict(supervised)
+
+    def _adopt_checkpoint_governor(self, extra: object) -> None:
+        """Adopt the resumed checkpoint's learning-rate governance.
+
+        Legacy checkpoints (no governor record) keep their stored scheduler rates
+        as the reference, so resuming them never changes the effective rate.
+        """
+
+        self._lr_governor = governor_from_checkpoint_extra(extra, self.scheduler)
+        apply_governor(self.optimizer, self.scheduler, self._lr_governor)
+        if self.rank == 0 and self._lr_governor.legacy_reference:
+            self.metrics.append(
+                {
+                    "schema_version": 1,
+                    "timestamp_ns": time.time_ns(),
+                    "worker": "learner",
+                    "event": "learning_rate_governor_legacy",
+                    "step": self.step,
+                    "reference_learning_rates": list(
+                        self._lr_governor.reference_base_lrs
+                    ),
+                }
+            )
+
+    def _checkpoint_extra(self) -> dict[str, object]:
+        extra: dict[str, object] = {
+            LEARNING_RATE_GOVERNOR_KEY: self._lr_governor.as_dict()
+        }
+        upgrade = getattr(self, "_auxiliary_upgrade", None)
+        if upgrade is not None:
+            extra["auxiliary_upgrade"] = upgrade
+        supervised = getattr(self, "_auxiliary_supervision", None)
+        if supervised is not None:
+            extra["auxiliary_supervision"] = dict(supervised)
+        return extra
+
+    def _record_auxiliary_supervision(self, losses: Mapping[str, float]) -> None:
+        """Conservatively mark heads trained, using already-synchronized metrics."""
+        from .auxiliary_upgrade import AUXILIARY_LOSSES
+
+        for name in AUXILIARY_LOSSES:
+            if losses.get(name + "_available", 0.0) > 0:
+                if not hasattr(self, "_auxiliary_supervision"):
+                    self._auxiliary_supervision: dict[str, int] = {}
+                self._auxiliary_supervision.setdefault(name, self.step)
+
+    def _learning_rate_metrics(self) -> dict[str, object]:
+        return {
+            "learning_rate_multiplier": self._lr_governor.multiplier,
+            "reference_learning_rates": list(self._lr_governor.reference_base_lrs),
+            "learning_rate_scaled_champion_identity": (
+                self._lr_governor.scaled_champion_identity
+            ),
+        }
+
+    def _validate_resume_metadata(self, metadata: Mapping[str, object]) -> None:
+        examples_consumed = self._resume_examples_consumed(metadata)
+        self._checkpoint_segment_baseline(
+            metadata,
+            examples_consumed=examples_consumed,
+        )
+        checkpoint_target = self._checkpoint_utd_target(metadata)
+        segment = self._checkpoint_utd_segment(metadata)
+        if segment is not None and (
+            segment.run_id != self.run_identity.run_id
+            or segment.generation_family != self.run_identity.generation_family
+        ):
+            raise ValueError("checkpoint UTD segment run identity does not match")
+        if (
+            segment is not None
+            and checkpoint_target is not None
+            and segment.target_updates_per_new_sample != checkpoint_target
+        ):
+            raise ValueError("checkpoint UTD segment target does not match its profile")
+        if (
+            segment is not None
+            and segment.baseline_examples_consumed > examples_consumed
+        ):
+            raise ValueError(
+                "checkpoint examples_consumed precedes its UTD segment baseline"
+            )
+
+    @staticmethod
+    def _checkpoint_segment_baseline(
+        metadata: Mapping[str, object],
+        *,
+        examples_consumed: int,
+    ) -> int:
+        extra = metadata.get("extra")
+        training_segment = (
+            extra.get("training_segment") if isinstance(extra, Mapping) else None
+        )
+        if training_segment is None:
+            return 0
+        if not isinstance(training_segment, Mapping):
+            raise ValueError("checkpoint training segment must be a mapping")
+        baseline = training_segment.get("baseline_examples_consumed")
+        if (
+            isinstance(baseline, bool)
+            or not isinstance(baseline, int)
+            or baseline < 0
+            or baseline > examples_consumed
+        ):
+            raise ValueError("checkpoint training segment baseline is invalid")
+        return baseline
+
+    @staticmethod
+    def _checkpoint_utd_target(metadata: Mapping[str, object]) -> float | None:
+        config = metadata.get("config")
+        learner = config.get("learner") if isinstance(config, Mapping) else None
+        value = (
+            learner.get("target_updates_per_new_sample")
+            if isinstance(learner, Mapping)
+            else None
+        )
+        if value is None:
+            return None
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(float(value))
+            or value <= 0
+        ):
+            raise ValueError("checkpoint update-to-data target is invalid")
+        return float(value)
+
+    @staticmethod
+    def _checkpoint_utd_segment(
+        metadata: Mapping[str, object],
+    ) -> UTDSegmentState | None:
+        extra = metadata.get("extra")
+        payload = extra.get("utd_segment") if isinstance(extra, Mapping) else None
+        if payload is None:
+            return None
+        return LearnerLoop._parse_utd_segment_state(payload)
+
+    def _resume_examples_consumed(self, metadata: Mapping[str, object]) -> int:
+        extra = metadata.get("extra")
+        consumed = (
+            extra.get("examples_consumed") if isinstance(extra, Mapping) else None
+        )
+        if isinstance(consumed, int) and not isinstance(consumed, bool):
+            if consumed < 0:
+                raise ValueError("checkpoint examples_consumed must be non-negative")
+            return consumed
+        uses_example_cadence = (
+            self.learner_config.target_updates_per_new_sample is not None
+            or self.learner_config.candidate_interval_examples is not None
+            or self.learner_config.selfplay_snapshot_interval_examples is not None
+        )
+        if uses_example_cadence:
+            raise ValueError(
+                "legacy checkpoint lacks examples_consumed required by "
+                "example-based learner controls"
+            )
+        step = metadata.get("step")
+        if isinstance(step, bool) or not isinstance(step, int) or step < 0:
+            raise ValueError("checkpoint step must be a non-negative integer")
+        return step * self.train_config.global_batch_size(self.world_size)
+
+    def run(
+        self,
+        *,
+        steps: int | None = None,
+        stop_requested: Callable[[], bool] = lambda: False,
+        progress: Callable[..., None] | None = None,
+    ) -> int:
+        target = (
+            self.step + steps
+            if steps is not None
+            else (None if self.learner_config.unlimited else self.learner_config.steps)
+        )
+        completion_path = self.publisher.root / "learner-complete.json"
+        self._recover_pending_state_rebase()
+        if self.learner_config.target_updates_per_new_sample is not None:
+            self._ensure_utd_segment_state()
+        if self.rank == 0 and (target is None or self.step < target):
+            completion_path.unlink(missing_ok=True)
+        if self.rank == 0 and not self.publisher.candidate_path.is_file():
+            self._publish()
+        if self.rank == 0:
+            self._load_cadence_state()
+            self._publish_due_models()
+        self._distributed_barrier()
+        interval_started = time.perf_counter()
+        interval_steps = 0
+        interval_data_wait_seconds = 0.0
+        interval_window_setup_seconds = 0.0
+        interval_utd_sleep_seconds = 0.0
+        interval_utd_poll_count = 0
+        interval_cpu_device_seconds = 0.0
+        interval_device_events: list[tuple[torch.cuda.Event, torch.cuda.Event]] = []
+        interval_copy_events: list[tuple[torch.cuda.Event, torch.cuda.Event]] = []
+        interval_train_metrics = TrainMetricAccumulator()
+        interval_policy_metrics = PolicyBatchAccumulator()
+        window: ReplayWindowSession | None = None
+        pending_selection_pin = False
+        next_refresh_reason = "initial"
+        exit_reason = "stop"
+        run_failure: BaseException | None = None
+
+        def close_active_window(reason: str) -> None:
+            nonlocal next_refresh_reason, window
+            if window is not None:
+                self._close_replay_window(window, reason=reason)
+                window = None
+            next_refresh_reason = reason
+
+        def suspend_active_window() -> int | None:
+            if window is None:
+                return None
+            started = time.perf_counter()
+            generation = window.suspend_for_gpu_pause()
+            if self.rank == 0:
+                self.metrics.append(
+                    {
+                        "schema_version": 1,
+                        "timestamp_ns": time.time_ns(),
+                        "worker": "learner",
+                        "event": "replay_window_suspended",
+                        "step": self.step,
+                        "epoch": self.epoch,
+                        "pause_generation": generation,
+                        "window_batches_allocated": window.batches_allocated,
+                        "window_batches_consumed": window.batches_consumed,
+                        "suspend_seconds": time.perf_counter() - started,
+                    }
+                )
+            return generation
+
+        def resume_active_window() -> int | None:
+            if window is None:
+                return None
+            started = time.perf_counter()
+            generation = window.resume_after_gpu_pause()
+            if self.rank == 0:
+                self.metrics.append(
+                    {
+                        "schema_version": 1,
+                        "timestamp_ns": time.time_ns(),
+                        "worker": "learner",
+                        "event": "replay_window_resumed",
+                        "step": self.step,
+                        "epoch": self.epoch,
+                        "pause_generation": generation,
+                        "window_batches_allocated": window.batches_allocated,
+                        "window_batches_consumed": window.batches_consumed,
+                        "resume_seconds": time.perf_counter() - started,
+                    }
+                )
+            return generation
+
+        try:
+            while target is None or self.step < target:
+                if self._collective_stop(stop_requested()):
+                    exit_reason = "stop"
+                    break
+                if not self._gpu_pause_control(
+                    stop_requested=stop_requested,
+                    progress=progress,
+                    on_pause=suspend_active_window,
+                    on_resume=resume_active_window,
+                ):
+                    exit_reason = "stop"
+                    break
+                if not self._plateau_control(
+                    stop_requested=stop_requested,
+                    progress=progress,
+                    on_boundary=lambda: close_active_window("plateau"),
+                ):
+                    exit_reason = "stop"
+                    break
+                if target is not None and self.step >= target:
+                    exit_reason = "target"
+                    break
+
+                if window is not None:
+                    refresh_reason = self._window_refresh_reason(window, target=target)
+                    if refresh_reason is not None:
+                        if refresh_reason == "target":
+                            exit_reason = "target"
+                            break
+                        close_active_window(refresh_reason)
+                        continue
+
+                window_reused = window is not None
+                if window is None:
+                    if progress is not None and self.rank == 0:
+                        progress(
+                            phase="replay_wait",
+                            step=self.step,
+                            epoch=self.epoch,
+                        )
+                    if not self._wait_for_replay(
+                        stop_requested=stop_requested,
+                        progress=progress,
+                    ):
+                        exit_reason = "stop"
+                        break
+                    self._synchronize_last_recovery_step()
+                    pending_selection_pin = True
+                    selection = self._select_replay_spans(pin=True)
+                    batches = self._window_allocation_budget(
+                        selection,
+                        target=target,
+                    )
+                    batches = self._collective_min_int(batches)
+                    if batches <= 0:
+                        if self.rank == 0:
+                            self.store.clear_gc_watermark(self._watermark_name())
+                        pending_selection_pin = False
+                        if target is not None and self.step >= target:
+                            exit_reason = "target"
+                            break
+                        if progress is not None and self.rank == 0:
+                            progress(
+                                phase="replay_wait",
+                                step=self.step,
+                                epoch=self.epoch,
+                                reason="invalid_window_capacity",
+                            )
+                        time.sleep(self.learner_config.replay_poll_seconds)
+                        next_refresh_reason = "invalid_capacity"
+                        continue
+                    window = self._open_replay_window(
+                        selection,
+                        batches=batches,
+                        refresh_reason=next_refresh_reason,
+                    )
+                    pending_selection_pin = False
+                    if self.rank == 0:
+                        interval_window_setup_seconds += window.setup_seconds
+                    window_reused = False
+
+                spin_window = window
+                if window_reused:
+                    spin_window.reuse_spins += 1
+                consume_budget = self._window_consumption_budget(
+                    spin_window,
+                    target=target,
+                )
+                if consume_budget <= 0:
+                    refresh_reason = self._window_refresh_reason(
+                        spin_window,
+                        target=target,
+                    )
+                    if refresh_reason is not None:
+                        if refresh_reason == "target":
+                            exit_reason = "target"
+                            break
+                        close_active_window(refresh_reason)
+                        continue
+                    spin_window.utd_wait_spins += 1
+                    if progress is not None and self.rank == 0:
+                        progress(
+                            phase="update_to_data_wait",
+                            step=self.step,
+                            examples_consumed=self.examples_consumed,
+                            replay_samples=self._latest_total_replay_samples,
+                            target_updates_per_new_sample=(
+                                self.learner_config.target_updates_per_new_sample
+                            ),
+                            window_batches_allocated=(spin_window.batches_allocated),
+                            window_batches_consumed=(spin_window.batches_consumed),
+                            window_reuse=True,
+                            window_age_seconds=max(
+                                0.0, time.monotonic() - spin_window.opened_monotonic
+                            ),
+                            window_selection_max_shard_id=spin_window.selection.max_shard_id,
+                            new_committed_samples_since_window_open=max(
+                                0,
+                                self._latest_total_replay_samples
+                                - spin_window.opened_committed_samples,
+                            ),
+                            enriched_samples_since_window_open=spin_window.freshness_enriched_rows,
+                            window_publication_revision=spin_window.opened_publication_revision,
+                        )
+                    waited = self._wait_for_utd_credit(stop_requested=stop_requested)
+                    interval_utd_sleep_seconds += float(waited["actual_sleep_seconds"])
+                    interval_utd_poll_count += int(waited["credit_polls"])
+                    if self.rank == 0:
+                        self.metrics.append(
+                            {
+                                "schema_version": 1,
+                                "timestamp_ns": time.time_ns(),
+                                "worker": "learner",
+                                "event": "utd_wait",
+                                "step": self.step,
+                                "examples_consumed": self.examples_consumed,
+                                **waited,
+                            }
+                        )
+                    continue
+
+                consumed_this_spin = 0
+                refresh_for_freshness = False
+                stop_training = False
+                device = next(self.model.parameters()).device
+                for _ in range(consume_budget):
+                    if self._collective_stop(stop_requested()):
+                        exit_reason = "stop"
+                        stop_training = True
+                        break
+                    if not self._gpu_pause_control(
+                        stop_requested=stop_requested,
+                        progress=progress,
+                        on_pause=suspend_active_window,
+                        on_resume=resume_active_window,
+                    ):
+                        exit_reason = "stop"
+                        stop_training = True
+                        break
+                    if window is not spin_window or spin_window.closed:
+                        break
+                    data_wait_started = time.perf_counter()
+                    try:
+                        batch = spin_window.next_batch()
+                    except StopIteration as exc:
+                        if spin_window.batches_remaining:
+                            raise RuntimeError(
+                                "replay window iterator exhausted early"
+                            ) from exc
+                        break
+                    if self.rank == 0:
+                        interval_data_wait_seconds += (
+                            time.perf_counter() - data_wait_started
+                        )
+                        interval_copy_events.extend(spin_window.pop_copy_events())
+                    step_started = time.perf_counter()
+                    device_events: tuple[torch.cuda.Event, torch.cuda.Event] | None = (
+                        None
+                    )
+                    if self.rank == 0 and device.type == "cuda":
+                        device_events = (
+                            torch.cuda.Event(enable_timing=True),
+                            torch.cuda.Event(enable_timing=True),
+                        )
+                        device_events[0].record()
+                    collect_step_diagnostics = (
+                        self.rank == 0
+                        and (self.step + 1) % self.learner_config.metrics_interval == 0
+                    )
+                    try:
+                        result = train_step(
+                            self.compiled_model,
+                            batch,
+                            self.optimizer,
+                            loss_weights=self.loss_weights,
+                            precision=self.train_config.precision,
+                            gradient_clip_norm=self.train_config.gradient_clip_norm,
+                            scheduler=self.scheduler,
+                            ema=self.ema,
+                            trusted_batch=True,
+                            share_homogeneous_geometry=(
+                                self.train_config.share_homogeneous_geometry
+                            ),
+                            collect_diagnostics=collect_step_diagnostics,
+                            gradient_clipper=self.gradient_clipper,
+                            collect_gradient_diagnostics=(
+                                collect_step_diagnostics
+                                and self.train_config.gradient_diagnostics
+                            ),
+                        )
+                    except NonFiniteTrainingError as error:
+                        if self.rank == 0:
+                            self.metrics.append(
+                                {
+                                    "schema_version": 1,
+                                    "timestamp_ns": time.time_ns(),
+                                    "worker": "learner",
+                                    "phase": "nonfinite_abort",
+                                    "step": self.step,
+                                    "epoch": self.epoch,
+                                    "nonfinite_loss_count": (
+                                        error.nonfinite_loss_count
+                                    ),
+                                    "nonfinite_gradient_count": (
+                                        error.nonfinite_gradient_count
+                                    ),
+                                }
+                            )
+                        raise
+                    if device_events is not None:
+                        device_events[1].record()
+                        interval_device_events.append(device_events)
+                    elif self.rank == 0:
+                        interval_cpu_device_seconds += (
+                            time.perf_counter() - step_started
+                        )
+                    self.step += 1
+                    spin_window.batches_consumed += 1
+                    consumed_this_spin += 1
+                    self.examples_consumed += self.train_config.global_batch_size(
+                        self.world_size
+                    )
+                    if self.rank == 0:
+                        interval_steps += 1
+                        interval_train_metrics.update(result)
+                        interval_policy_metrics.update(batch.policy_metrics)
+                    if (
+                        self.rank == 0
+                        and self.step % self.learner_config.metrics_interval == 0
+                    ):
+                        host_metrics = result.to_host()
+                        self._record_auxiliary_supervision(host_metrics.losses)
+                        interval_health = interval_train_metrics.to_host()
+                        h2d_seconds = (
+                            sum(
+                                started.elapsed_time(completed)
+                                for started, completed in interval_copy_events
+                            )
+                            / 1_000.0
+                        )
+                        device_seconds = (
+                            interval_cpu_device_seconds
+                            + sum(
+                                started.elapsed_time(completed)
+                                for started, completed in interval_device_events
+                            )
+                            / 1_000.0
+                        )
+                        measured_at = time.perf_counter()
+                        wall_seconds = measured_at - interval_started
+                        measured_steps = max(1, interval_steps)
+                        global_batch_size = self.train_config.global_batch_size(
+                            self.world_size
+                        )
+                        scheduler_metrics = (
+                            host_metrics.scheduler.as_dict()
+                            if host_metrics.scheduler is not None
+                            else None
+                        )
+                        ema_metrics = (
+                            host_metrics.ema.as_dict()
+                            if host_metrics.ema is not None
+                            else None
+                        )
+                        optimizer_routing = (
+                            self._optimizer_routing.as_dict()
+                            if self._optimizer_routing is not None
+                            else None
+                        )
+                        optimizer_weight_norm = (
+                            math.sqrt(
+                                math.fsum(
+                                    group.weight_norm**2
+                                    for group in host_metrics.optimizer_groups
+                                )
+                            )
+                            if host_metrics.optimizer_groups
+                            else None
+                        )
+                        optimizer_update_norm = (
+                            math.sqrt(
+                                math.fsum(
+                                    group.update_norm**2
+                                    for group in host_metrics.optimizer_groups
+                                )
+                            )
+                            if host_metrics.optimizer_groups
+                            else None
+                        )
+                        interval_ema_turnover = ema_effective_turnover(
+                            self.ema.decay,
+                            interval_health.steps,
+                        )
+                        self.metrics.append(
+                            {
+                                "schema_version": 1,
+                                "timestamp_ns": time.time_ns(),
+                                "worker": "learner",
+                                "step": self.step,
+                                "epoch": self.epoch,
+                                "world_size": self.world_size,
+                                "losses": host_metrics.losses,
+                                "gradient_norm": host_metrics.gradient_norm,
+                                "gradient_clipping": host_metrics.gradient_clipping,
+                                "gradient_diagnostics": host_metrics.gradient_diagnostics,
+                                "gradient_pre_clip_norm": (
+                                    host_metrics.gradient_pre_clip_norm
+                                ),
+                                "gradient_post_clip_norm": (
+                                    host_metrics.gradient_post_clip_norm
+                                ),
+                                "gradient_clip_threshold": (
+                                    host_metrics.gradient_clip_threshold
+                                ),
+                                "gradient_clip_coefficient": (
+                                    host_metrics.gradient_clip_coefficient
+                                ),
+                                "gradient_clip_severity": (
+                                    host_metrics.gradient_clip_severity
+                                ),
+                                "gradient_clip_ratio": (
+                                    host_metrics.gradient_clip_ratio
+                                ),
+                                "gradient_clipped": host_metrics.gradient_clipped,
+                                "gradient_clipped_steps": (
+                                    interval_health.gradient_clipped_steps
+                                ),
+                                "gradient_clipping_frequency": (
+                                    interval_health.gradient_clipping_frequency
+                                ),
+                                "gradient_clip_fraction": (
+                                    interval_health.gradient_clipping_frequency
+                                ),
+                                "nonfinite_loss_count": (
+                                    interval_health.nonfinite_loss_count
+                                ),
+                                "nonfinite_gradient_count": (
+                                    interval_health.nonfinite_gradient_count
+                                ),
+                                "learning_rates": host_metrics.learning_rates,
+                                **self._learning_rate_metrics(),
+                                "optimizer_routing": optimizer_routing,
+                                "optimizer_routing_hash": (
+                                    self._optimizer_routing.routing_hash
+                                    if self._optimizer_routing is not None
+                                    else None
+                                ),
+                                "optimizer_parameter_tensors": (
+                                    self._optimizer_routing.parameter_tensors
+                                    if self._optimizer_routing is not None
+                                    else None
+                                ),
+                                "optimizer_parameter_elements": (
+                                    self._optimizer_routing.parameter_elements
+                                    if self._optimizer_routing is not None
+                                    else None
+                                ),
+                                "optimizer_groups": [
+                                    group.as_dict()
+                                    for group in host_metrics.optimizer_groups
+                                ],
+                                "optimizer_weight_norm": optimizer_weight_norm,
+                                "optimizer_update_norm": optimizer_update_norm,
+                                "scheduler": scheduler_metrics,
+                                "scheduler_age_steps": (
+                                    host_metrics.scheduler.age_steps
+                                    if host_metrics.scheduler is not None
+                                    else None
+                                ),
+                                "scheduler_segment": (
+                                    host_metrics.scheduler.segment
+                                    if host_metrics.scheduler is not None
+                                    else None
+                                ),
+                                "scheduler_segment_position": (
+                                    host_metrics.scheduler.segment_position
+                                    if host_metrics.scheduler is not None
+                                    else None
+                                ),
+                                "ema": ema_metrics,
+                                "raw_vs_ema_distance": (
+                                    host_metrics.ema.distance_norm
+                                    if host_metrics.ema is not None
+                                    else None
+                                ),
+                                "ema_raw_shadow_distance": (
+                                    host_metrics.ema.distance_norm
+                                    if host_metrics.ema is not None
+                                    else None
+                                ),
+                                "raw_vs_ema_relative_distance": (
+                                    host_metrics.ema.relative_distance
+                                    if host_metrics.ema is not None
+                                    else None
+                                ),
+                                "ema_effective_turnover": (
+                                    host_metrics.ema.effective_turnover
+                                    if host_metrics.ema is not None
+                                    else None
+                                ),
+                                "ema_interval_effective_turnover": (
+                                    interval_ema_turnover
+                                ),
+                                "ema_turnover": interval_ema_turnover,
+                                "step_seconds": wall_seconds / measured_steps,
+                                "examples_per_second": (
+                                    global_batch_size * measured_steps / wall_seconds
+                                ),
+                                "device_step_seconds": (
+                                    device_seconds / measured_steps
+                                ),
+                                "device_examples_per_second": (
+                                    global_batch_size * measured_steps / device_seconds
+                                    if device_seconds
+                                    else None
+                                ),
+                                "data_wait_seconds": (
+                                    interval_data_wait_seconds / measured_steps
+                                ),
+                                "h2d_seconds": h2d_seconds / measured_steps,
+                                "window_setup_seconds": (
+                                    interval_window_setup_seconds / measured_steps
+                                ),
+                                "window_setup_amortized_seconds": (
+                                    spin_window.setup_seconds
+                                    / spin_window.batches_allocated
+                                ),
+                                "window_batches_allocated": (
+                                    spin_window.batches_allocated
+                                ),
+                                "window_batches_consumed": (
+                                    spin_window.batches_consumed
+                                ),
+                                "window_batches_consumed_this_spin": (
+                                    consumed_this_spin
+                                ),
+                                "window_reuse": window_reused,
+                                "window_reuse_spins": spin_window.reuse_spins,
+                                "window_refresh_reason": (spin_window.refresh_reason),
+                                "loader_workers_effective": (
+                                    spin_window.effective_workers
+                                ),
+                                "loader_lifecycle": self.loader_lifecycle,
+                                "loader_pool_starts": self._loader_pool_starts,
+                                "loader_pool_rebinds": self._loader_pool_rebinds,
+                                "loader_pool_shutdowns": self._loader_pool_shutdowns,
+                                "loader_worker_pids": (
+                                    list(self._loader_pool.worker_pids)
+                                    if self._loader_pool is not None
+                                    else []
+                                ),
+                                "utd_wait_spins": spin_window.utd_wait_spins,
+                                "metrics_interval_utd_sleep_seconds": interval_utd_sleep_seconds,
+                                "metrics_interval_utd_credit_polls": interval_utd_poll_count,
+                                "policy_batch_metrics": interval_policy_metrics.as_dict(),
+                                "metrics_interval_steps": measured_steps,
+                                "metrics_interval_wall_seconds": wall_seconds,
+                                "examples_consumed": self.examples_consumed,
+                                "total_replay_samples": (
+                                    self._latest_total_replay_samples
+                                ),
+                                **self._utd_metric_values(),
+                                "feature_path": batch.feature_path,
+                                "replay_samples": (spin_window.selection.sample_count),
+                                "replay_samples_by_ring": (
+                                    spin_window.selection.samples_by_ring
+                                ),
+                                "replay_samples_by_segment": (
+                                    spin_window.selection.samples_by_segment
+                                ),
+                                "replay_segment_quotas": (
+                                    self.learner_config.segment_quotas
+                                ),
+                                "ring_batch_weights": (self._active_ring_weights()),
+                                "replay_max_shard_id": (
+                                    spin_window.selection.max_shard_id
+                                ),
+                                "replay_minimum_shard_id_exclusive": (
+                                    spin_window.selection.minimum_shard_id_exclusive
+                                ),
+                                "effective_unique_samples": (
+                                    spin_window.batches_allocated * global_batch_size
+                                ),
+                                "per_rank_batch_size": (
+                                    self.train_config.per_rank_batch_size
+                                ),
+                                "global_batch_size": global_batch_size,
+                            }
+                        )
+                        interval_started = measured_at
+                        interval_steps = 0
+                        interval_data_wait_seconds = 0.0
+                        interval_window_setup_seconds = 0.0
+                        interval_utd_sleep_seconds = 0.0
+                        interval_utd_poll_count = 0
+                        interval_cpu_device_seconds = 0.0
+                        interval_device_events.clear()
+                        interval_copy_events.clear()
+                        interval_train_metrics.reset()
+                        interval_policy_metrics.reset()
+                    if self.rank == 0:
+                        self._publish_due_models()
+                    if progress is not None and self.rank == 0:
+                        progress(
+                            phase="training",
+                            step=self.step,
+                            examples_consumed=self.examples_consumed,
+                            epoch=self.epoch,
+                            learning_rate_multiplier=self._lr_governor.multiplier,
+                        )
+                    if target is not None and self.step >= target:
+                        break
+                    # A large UTD allowance must not run an entire long-lived
+                    # selection without observing newly eligible replay.
+                    if self._window_freshness_requested(spin_window):
+                        refresh_for_freshness = True
+                        break
+
+                if consumed_this_spin and self.rank == 0:
+                    self._record_window_consumption(
+                        spin_window,
+                        consumed=consumed_this_spin,
+                        reused=window_reused,
+                    )
+                if stop_training:
+                    break
+                if window is spin_window:
+                    refresh_reason = (
+                        "fresh_replay"
+                        if refresh_for_freshness
+                        else self._window_completion_reason(spin_window, target=target)
+                    )
+                    if refresh_reason is not None:
+                        if refresh_reason == "target":
+                            exit_reason = "target"
+                            break
+                        close_active_window(refresh_reason)
+            else:
+                exit_reason = "target"
+        except BaseException as exc:
+            exit_reason = "error"
+            run_failure = exc
+            raise
+        finally:
+            checkpoint_failure: BaseException | None = None
+            if run_failure is None and self.rank == 0:
+                try:
+                    # A worker failure during teardown must not discard healthy
+                    # completed updates. Never save a partially failed run.
+                    self._maybe_write_recovery_checkpoint(force=True)
+                except BaseException as exc:
+                    checkpoint_failure = exc
+            cleanup_failure: BaseException | None = None
+            try:
+                if pending_selection_pin and self.rank == 0:
+                    try:
+                        self.store.clear_gc_watermark(self._watermark_name())
+                    except BaseException as exc:
+                        cleanup_failure = exc
+                if window is not None:
+                    try:
+                        close_active_window(exit_reason)
+                    except BaseException as exc:
+                        cleanup_failure = exc
+            finally:
+                pool_failure = self._shutdown_loader_pool()
+                if cleanup_failure is None and pool_failure is not None:
+                    cleanup_failure = pool_failure
+            if checkpoint_failure is not None:
+                # A DataLoader SIGCHLD handler can interrupt checkpoint I/O.
+                # Retry once after workers are gone, retaining the original
+                # failure so the supervisor still reports the unhealthy exit.
+                try:
+                    self._maybe_write_recovery_checkpoint(force=True)
+                except BaseException as exc:
+                    checkpoint_failure.add_note(
+                        "Recovery checkpoint retry after loader cleanup failed: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                raise checkpoint_failure
+            if cleanup_failure is not None and run_failure is None:
+                raise cleanup_failure
+        if self.rank == 0:
+            completed = target is not None and self.step >= target
+            if completed:
+                final_manifest = self._publish()
+                atomic_json(
+                    completion_path,
+                    {
+                        "schema_version": 1,
+                        "run_id": self.run_identity.run_id,
+                        "generation_family": (self.run_identity.generation_family),
+                        "candidate_identity": final_manifest.model_identity,
+                        "candidate_step": final_manifest.model_step,
+                        "completed_ns": time.time_ns(),
+                    },
+                )
+        self._distributed_barrier()
+        return self.step
+
+    def _window_allocation_budget(
+        self,
+        selection: ReplaySelection,
+        *,
+        target: int | None,
+    ) -> int:
+        limit = self.learner_config.steps_per_window
+        target_budget = limit if target is None else max(0, target - self.step)
+        next_weight_step = self.ring_mixture_config.next_weight_step(self.step)
+        weight_budget = (
+            limit if next_weight_step is None else max(0, next_weight_step - self.step)
+        )
+        recovery_boundary = self._next_recovery_boundary()
+        recovery_budget = (
+            limit
+            if recovery_boundary is None
+            else max(0, recovery_boundary - self.step)
+        )
+        return min(
+            limit,
+            target_budget,
+            weight_budget,
+            recovery_budget,
+            self._maximum_unique_batches(selection),
+            self._plateau_step_budget(),
+        )
+
+    def _window_consumption_budget(
+        self,
+        window: ReplayWindowSession,
+        *,
+        target: int | None,
+    ) -> int:
+        limit = window.batches_remaining
+        target_budget = limit if target is None else max(0, target - self.step)
+        recovery_budget = (
+            limit
+            if window.recovery_boundary is None
+            else max(0, window.recovery_boundary - self.step)
+        )
+        weight_budget = (
+            limit
+            if window.ring_weight_boundary is None
+            else max(0, window.ring_weight_boundary - self.step)
+        )
+        budget = min(
+            limit,
+            target_budget,
+            recovery_budget,
+            weight_budget,
+            self._plateau_step_budget(),
+            self._utd_step_budget(),
+        )
+        return self._collective_min_int(budget)
+
+    def _open_replay_window(
+        self,
+        selection: ReplaySelection,
+        *,
+        batches: int,
+        refresh_reason: str,
+    ) -> ReplayWindowSession:
+        if not self._selection_matches_training_objective(selection):
+            raise ValueError(
+                "replay window contains variants excluded by the training objective"
+            )
+        if batches <= 0:
+            raise ValueError("replay window batches must be positive")
+        watermark_name = self._watermark_name()
+        if self.rank == 0:
+            self.store.set_gc_watermark(watermark_name, selection)
+        setup_started = time.perf_counter()
+        loader: DataLoader | None = None
+        prefetcher: DeviceBatchPrefetcher | None = None
+        try:
+            loader = self._loader(selection, batches=batches)
+            if loader is None:
+                raise RuntimeError("replay loader construction returned no loader")
+            pooled_loader = self._loader_uses_process_pool(loader)
+            prefetcher = DeviceBatchPrefetcher(
+                loader,
+                device=next(self.model.parameters()).device,
+                enabled=self.data_config.pin_memory,
+            )
+            session = ReplayWindowSession(
+                selection=selection,
+                loader=loader,
+                prefetcher=prefetcher,
+                batches_allocated=batches,
+                effective_workers=loader.num_workers,
+                setup_seconds=time.perf_counter() - setup_started,
+                refresh_reason=refresh_reason,
+                opened_step=self.step,
+                opened_epoch=self.epoch,
+                active_rings=tuple(selection.samples_by_ring),
+                ring_weights=self._ring_weight_fingerprint(),
+                recovery_boundary=self._next_recovery_boundary(),
+                ring_weight_boundary=(
+                    self.ring_mixture_config.next_weight_step(self.step)
+                ),
+                shutdown_loader_workers=not pooled_loader,
+                opened_monotonic=time.monotonic(),
+                opened_publication_revision=selection.publication_revision,
+                opened_enriched_samples=selection.enriched_samples,
+                opened_committed_samples=(
+                    selection.committed_samples
+                    if selection.committed_samples is not None
+                    else self.store.total_committed_sample_count(
+                        run_id=self.run_identity.run_id,
+                        generation_family=self.run_identity.generation_family,
+                        **self._training_objective_kwargs(),
+                    )
+                ),
+            )
+        except BaseException:
+            if loader is not None:
+                pooled_loader = self._loader_uses_process_pool(loader)
+                failed = ReplayWindowSession(
+                    selection=selection,
+                    loader=loader,
+                    prefetcher=prefetcher,
+                    batches_allocated=batches,
+                    effective_workers=loader.num_workers,
+                    setup_seconds=time.perf_counter() - setup_started,
+                    refresh_reason=refresh_reason,
+                    opened_step=self.step,
+                    opened_epoch=self.epoch,
+                    active_rings=tuple(selection.samples_by_ring),
+                    ring_weights=self._ring_weight_fingerprint(),
+                    recovery_boundary=self._next_recovery_boundary(),
+                    ring_weight_boundary=None,
+                    shutdown_loader_workers=not pooled_loader,
+                )
+                failed.shutdown(strict=False)
+                if pooled_loader and self._loader_pool is not None:
+                    try:
+                        self._loader_pool.quiesce()
+                    except BaseException:
+                        self._shutdown_loader_pool()
+            if self.rank == 0:
+                self.store.clear_gc_watermark(watermark_name)
+            raise
+        if self.rank == 0:
+            self.metrics.append(
+                {
+                    "schema_version": 1,
+                    "timestamp_ns": time.time_ns(),
+                    "worker": "learner",
+                    "event": "replay_window_allocated",
+                    "step": self.step,
+                    "epoch": self.epoch,
+                    "window_batches_allocated": session.batches_allocated,
+                    "window_batches_consumed": 0,
+                    "loader_workers_effective": session.effective_workers,
+                    "window_refresh_reason": refresh_reason,
+                    "window_setup_seconds": session.setup_seconds,
+                    "window_setup_amortized_seconds": (
+                        session.setup_seconds / session.batches_allocated
+                    ),
+                    "replay_samples": selection.sample_count,
+                    "replay_max_shard_id": selection.max_shard_id,
+                    "replay_selection": replay_selection_diagnostics(
+                        selection,
+                        batch_size=self.train_config.per_rank_batch_size,
+                        current_model_step=self.step,
+                    ),
+                }
+            )
+        return session
+
+    def _close_replay_window(
+        self,
+        window: ReplayWindowSession,
+        *,
+        reason: str,
+    ) -> None:
+        if window.closed:
+            return
+        failure: BaseException | None = None
+        pooled_loader = not window.shutdown_loader_workers
+        terminal_cleanup = reason in {"error", "stop", "target"}
+        try:
+            failure = window.shutdown(strict=False)
+            if pooled_loader and self._loader_pool is not None:
+                try:
+                    if terminal_cleanup:
+                        pool_failure = self._shutdown_loader_pool()
+                        if pool_failure is not None:
+                            raise pool_failure
+                    else:
+                        self._loader_pool.quiesce()
+                except BaseException as exc:
+                    if failure is None:
+                        failure = exc
+                    if self._loader_pool is not None:
+                        pool_failure = self._shutdown_loader_pool()
+                        if failure is None and pool_failure is not None:
+                            failure = pool_failure
+        except BaseException as exc:
+            if failure is None:
+                failure = exc
+
+        collective_completed = self.world_size == 1
+        if self.world_size > 1 and reason != "error":
+            try:
+                messages = self._collective_error_messages(
+                    (
+                        f"{type(failure).__name__}: {failure}"
+                        if failure is not None
+                        else None
+                    )
+                )
+                collective_completed = True
+                if messages:
+                    failure = RuntimeError(
+                        "distributed replay window cleanup failed: "
+                        + "; ".join(messages)
+                    )
+            except BaseException as exc:
+                if failure is None:
+                    failure = exc
+
+        if self.rank == 0 and reason != "error" and collective_completed:
+            try:
+                self.store.clear_gc_watermark(self._watermark_name())
+            except BaseException as exc:
+                if failure is None:
+                    failure = exc
+        if failure is not None and self.rank == 0:
+            try:
+                self.metrics.append(
+                    {
+                        "schema_version": 1,
+                        "timestamp_ns": time.time_ns(),
+                        "worker": "learner",
+                        "event": "replay_window_shutdown_warning",
+                        "step": self.step,
+                        "epoch": self.epoch,
+                        "window_refresh_reason": reason,
+                        "error_type": type(failure).__name__,
+                        "error": str(failure),
+                    }
+                )
+            except BaseException:
+                pass
+        if self.rank == 0:
+            try:
+                self.metrics.append(
+                    {
+                        "schema_version": 1,
+                        "timestamp_ns": time.time_ns(),
+                        "worker": "learner",
+                        "event": "replay_window_refreshed",
+                        "step": self.step,
+                        "epoch": self.epoch,
+                        "window_refresh_reason": reason,
+                        "window_batches_allocated": window.batches_allocated,
+                        "window_batches_consumed": window.batches_consumed,
+                        "window_batches_remaining": window.batches_remaining,
+                        "window_reuse_spins": window.reuse_spins,
+                        "utd_wait_spins": window.utd_wait_spins,
+                        "loader_workers_effective": window.effective_workers,
+                        "window_setup_seconds": window.setup_seconds,
+                        "window_setup_amortized_seconds": (
+                            window.setup_seconds / window.batches_allocated
+                        ),
+                        "window_age_seconds": max(
+                            0.0, time.monotonic() - window.opened_monotonic
+                        ),
+                        "freshness_probes": window.freshness_probes,
+                        "freshness_new_committed_rows": window.freshness_new_committed_rows,
+                        "freshness_additional_selected_rows": window.freshness_additional_selected_rows,
+                        "freshness_enriched_rows": window.freshness_enriched_rows,
+                        "window_publication_revision": window.opened_publication_revision,
+                    }
+                )
+            except BaseException as exc:
+                if failure is None:
+                    failure = exc
+            if failure is None and reason != "error":
+                self._maybe_write_recovery_checkpoint()
+                self._maybe_collect_replay_garbage()
+        if failure is not None:
+            raise failure
+        self.epoch += 1
+
+    def _record_window_consumption(
+        self,
+        window: ReplayWindowSession,
+        *,
+        consumed: int,
+        reused: bool,
+    ) -> None:
+        self.metrics.append(
+            {
+                "schema_version": 1,
+                "timestamp_ns": time.time_ns(),
+                "worker": "learner",
+                "event": "replay_window_consumed",
+                "step": self.step,
+                "epoch": self.epoch,
+                "window_batches_allocated": window.batches_allocated,
+                "window_batches_consumed_this_spin": consumed,
+                "window_batches_consumed": window.batches_consumed,
+                "window_batches_remaining": window.batches_remaining,
+                "window_reuse": reused,
+                "window_reuse_spins": window.reuse_spins,
+                "utd_wait_spins": window.utd_wait_spins,
+                "loader_workers_effective": window.effective_workers,
+                "sampler": "selected-span-packing-v2",
+                "window_age_seconds": max(
+                    0.0, time.monotonic() - window.opened_monotonic
+                ),
+                "window_opened_step": window.opened_step,
+                "window_selection_max_shard_id": window.selection.max_shard_id,
+                "new_committed_samples_since_window_open": max(
+                    0,
+                    self._latest_total_replay_samples - window.opened_committed_samples,
+                ),
+            }
+        )
+
+    def _window_completion_reason(
+        self,
+        window: ReplayWindowSession,
+        *,
+        target: int | None,
+    ) -> str | None:
+        reason = self._window_refresh_reason(window, target=target)
+        if reason is not None:
+            return reason
+        if window.batches_remaining <= 0:
+            return "window_exhausted"
+        return None
+
+    def _window_refresh_reason(
+        self,
+        window: ReplayWindowSession,
+        *,
+        target: int | None,
+    ) -> str | None:
+        if target is not None and self.step >= target:
+            return "target"
+        if not self._selection_matches_training_objective(window.selection):
+            return "training_objective_change"
+        if self._ring_weight_fingerprint() != window.ring_weights:
+            return "ring_weight_change"
+        if (
+            window.ring_weight_boundary is not None
+            and self.step >= window.ring_weight_boundary
+        ):
+            return "ring_weight_change"
+        if (
+            window.recovery_boundary is not None
+            and self.step >= window.recovery_boundary
+        ):
+            return "recovery_boundary"
+        if self._plateau_step_budget() <= 0:
+            return "plateau"
+        status = None
+        if self.rank == 0:
+            counts = self._eligible_replay_counts()
+            status = {
+                "active_rings": self._active_replay_rings(counts),
+                "ready": self._replay_is_ready(counts),
+                "paths_present": all(
+                    span.record.path.is_file() for span in window.selection.spans
+                ),
+            }
+            if (
+                status["active_rings"] == window.active_rings
+                and status["ready"]
+                and status["paths_present"]
+            ):
+                status.update(self._rank_zero_freshness_status(window))
+        status = self._broadcast_object(status)
+        if not isinstance(status, dict):
+            raise RuntimeError("distributed replay window status is invalid")
+        active_rings = status.get("active_rings")
+        if not isinstance(active_rings, tuple):
+            raise RuntimeError("distributed active replay rings are invalid")
+        if active_rings != window.active_rings:
+            return "curriculum_change"
+        if status.get("ready") is not True or status.get("paths_present") is not True:
+            return "invalid_capacity"
+        if status.get("freshness_error") is not None:
+            raise RuntimeError(
+                f"replay freshness probe failed: {status['freshness_error']}"
+            )
+        if status.get("fresh_replay") is True:
+            return "fresh_replay"
+        return None
+
+    def _rank_zero_freshness_status(
+        self, window: ReplayWindowSession
+    ) -> dict[str, object]:
+        try:
+            return {"fresh_replay": self._rank_zero_has_fresh_replay(window)}
+        except Exception as error:
+            # Broadcast probe failures too, so another rank cannot hang waiting
+            # for a decision after rank zero encounters a manifest error.
+            return {"freshness_error": f"{type(error).__name__}: {error}"}
+
+    def _window_freshness_requested(self, window: ReplayWindowSession) -> bool:
+        status = self._broadcast_object(
+            self._rank_zero_freshness_status(window) if self.rank == 0 else None
+        )
+        if not isinstance(status, dict):
+            raise RuntimeError("distributed replay freshness status is invalid")
+        if status.get("freshness_error") is not None:
+            raise RuntimeError(
+                f"replay freshness probe failed: {status['freshness_error']}"
+            )
+        if type(status.get("fresh_replay")) is not bool:
+            raise RuntimeError("distributed replay freshness decision is invalid")
+        return status["fresh_replay"]
+
+    def _rank_zero_has_fresh_replay(self, window: ReplayWindowSession) -> bool:
+        now = time.monotonic()
+        if now - window.opened_monotonic < self.learner_config.replay_refresh_seconds:
+            return False
+        if (
+            window.freshness_last_checked_monotonic is not None
+            and now - window.freshness_last_checked_monotonic
+            < REPLAY_FRESHNESS_RETRY_SECONDS
+        ):
+            return False
+        window.freshness_last_checked_monotonic = now
+        window.freshness_probes += 1
+        committed = self.store.total_committed_sample_count(
+            run_id=self.run_identity.run_id,
+            generation_family=self.run_identity.generation_family,
+            **self._training_objective_kwargs(),
+        )
+        window.freshness_new_committed_rows = max(
+            0, committed - window.opened_committed_samples
+        )
+        window.freshness_additional_selected_rows = 0
+        publication_revision, enriched = self.store.replay_revision_counts(
+            run_id=self.run_identity.run_id,
+            generation_family=self.run_identity.generation_family,
+        )
+        window.freshness_enriched_rows = max(
+            0, enriched - window.opened_enriched_samples
+        )
+        batch = self.train_config.global_batch_size(self.world_size)
+        has_enrichment = (
+            publication_revision > window.opened_publication_revision
+            and window.freshness_enriched_rows > 0
+        )
+        if window.freshness_new_committed_rows < batch and not has_enrichment:
+            return False
+        successor = self._rank_zero_select_replay_spans()
+        previous = {
+            span.record.shard_id: (
+                span.sample_start,
+                span.sample_start + span.sample_count,
+            )
+            for span in window.selection.spans
+        }
+        added = 0
+        for span in successor.spans:
+            start, end = span.sample_start, span.sample_start + span.sample_count
+            old_start, old_end = previous.get(span.record.shard_id, (0, 0))
+            added += span.sample_count - max(
+                0, min(end, old_end) - max(start, old_start)
+            )
+        window.freshness_additional_selected_rows = added
+        # An outcome-only revision is new supervision, not a new position. It
+        # must become visible without manufacturing a fresh-data allowance.
+        changed = added > 0 if has_enrichment else added >= batch
+        return changed and self._maximum_unique_batches(successor) > 0
+
+    def _ring_weight_fingerprint(
+        self,
+    ) -> tuple[tuple[int, float], ...] | None:
+        weights = self._active_ring_weights()
+        return tuple(sorted(weights.items())) if weights is not None else None
+
+    def _next_recovery_boundary(self) -> int | None:
+        interval = self.learner_config.recovery_interval_steps
+        return None if interval is None else self._last_recovery_step + interval
+
+    def _synchronize_last_recovery_step(self) -> None:
+        value = self._broadcast_object(
+            self._last_recovery_step if self.rank == 0 else None
+        )
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise RuntimeError("distributed recovery step is invalid")
+        self._last_recovery_step = value
+
+    def _watermark_name(self) -> str:
+        return f"learner-{self.run_identity.run_id}"
+
+    def _effective_loader_workers(self, batches: int) -> int:
+        if batches <= 0:
+            raise ValueError("replay window batches must be positive")
+        if batches < self.data_config.min_batches_for_workers:
+            return 0
+        return self.data_config.workers
+
+    def _loader_uses_process_pool(self, loader: DataLoader) -> bool:
+        pool = self._loader_pool
+        return pool is not None and loader is pool.loader
+
+    @property
+    def loader_pool_counters(self) -> dict[str, int]:
+        return {
+            "starts": self._loader_pool_starts,
+            "rebinds": self._loader_pool_rebinds,
+            "shutdowns": self._loader_pool_shutdowns,
+        }
+
+    def _record_loader_pool_event(
+        self,
+        event: str,
+        *,
+        worker_pids: Sequence[int] = (),
+        error: BaseException | None = None,
+    ) -> None:
+        if self.rank != 0:
+            return
+        self.metrics.append(
+            {
+                "schema_version": 1,
+                "timestamp_ns": time.time_ns(),
+                "worker": "learner",
+                "event": event,
+                "step": self.step,
+                "epoch": self.epoch,
+                "loader_lifecycle": self.loader_lifecycle,
+                "loader_workers_effective": self.data_config.workers,
+                "loader_worker_pids": list(worker_pids),
+                "loader_pool_starts": self._loader_pool_starts,
+                "loader_pool_rebinds": self._loader_pool_rebinds,
+                "loader_pool_shutdowns": self._loader_pool_shutdowns,
+                "error_type": type(error).__name__ if error is not None else None,
+                "error": str(error) if error is not None else None,
+            }
+        )
+
+    def _shutdown_loader_pool(self) -> BaseException | None:
+        pool = self._loader_pool
+        if pool is None:
+            return None
+        worker_pids: tuple[int, ...] = ()
+        failure: BaseException | None = None
+        try:
+            worker_pids = pool.worker_pids
+            failure = pool.shutdown(strict=False)
+        except BaseException as exc:
+            failure = exc
+        self._loader_pool = None
+        self._loader_pool_shutdowns += 1
+        try:
+            self._record_loader_pool_event(
+                "replay_loader_pool_shutdown",
+                worker_pids=worker_pids,
+                error=failure,
+            )
+        except BaseException as exc:
+            if failure is None:
+                failure = exc
+        return failure
+
+    def _loader(self, selection: ReplaySelection, *, batches: int) -> DataLoader:
+        dataset = LazyShardReplayDataset(
+            selection,
+            seed=self.seed,
+            epoch=self.epoch,
+            augmentation_enabled=self.data_config.d5_augmentation,
+            shard_cache_size=self.data_config.shard_cache_size,
+        )
+        batch_sampler = UniqueReplayBatchSampler(
+            dataset,
+            batch_size=self.train_config.per_rank_batch_size,
+            batches=batches,
+            seed=self.seed,
+            epoch=self.epoch,
+            ring_stratified=self.data_config.ring_stratified,
+            ring_weights=self._active_ring_weights(),
+            shards_per_batch=self.data_config.shards_per_batch,
+            rank=self.rank,
+            world_size=self.world_size,
+        )
+        effective_workers = self._effective_loader_workers(batches)
+        if effective_workers:
+            if self.loader_lifecycle == "process":
+                pool = self._loader_pool
+                if pool is None:
+                    pool = SpawnedReplayLoaderPool(
+                        num_workers=effective_workers,
+                        augmentation_enabled=self.data_config.d5_augmentation,
+                        shard_cache_size=self.data_config.shard_cache_size,
+                        pin_memory=self.data_config.pin_memory,
+                        prefetch_factor=self.data_config.prefetch_factor,
+                    )
+                    self._loader_pool = pool
+                    self._loader_pool_starts += 1
+                    self._record_loader_pool_event("replay_loader_pool_started")
+                elif pool.num_workers != effective_workers:
+                    raise RuntimeError(
+                        "replay loader worker count changed within a run"
+                    )
+                pool.rebind(dataset, batch_sampler)
+                self._loader_pool_rebinds += 1
+                self._record_loader_pool_event(
+                    "replay_loader_pool_rebound",
+                    worker_pids=pool.worker_pids,
+                )
+                return pool.loader
+            return DataLoader(
+                dataset=dataset,
+                batch_sampler=batch_sampler,
+                collate_fn=collate_replay_samples,
+                num_workers=effective_workers,
+                pin_memory=self.data_config.pin_memory,
+                prefetch_factor=self.data_config.prefetch_factor,
+                persistent_workers=True,
+                multiprocessing_context="spawn",
+            )
+        return DataLoader(
+            dataset=dataset,
+            batch_sampler=batch_sampler,
+            collate_fn=collate_replay_samples,
+            num_workers=0,
+            pin_memory=self.data_config.pin_memory,
+        )
+
+    def _publish(self) -> ModelManifest:
+        return self._publish_to(self.publisher)
+
+    def _publish_to(self, publisher: ImmutableModelPublisher) -> ModelManifest:
+        utd_segment = self._ensure_utd_segment_state()
+        return publisher.publish(
+            model=unwrap_model(self.compiled_model),
+            optimizer=self.optimizer,
+            scheduler=self.scheduler,
+            ema=self.ema,
+            gradient_clipper=self.gradient_clipper,
+            step=self.step,
+            epoch=self.epoch,
+            config=self.serialized_config,
+            examples_consumed=self.examples_consumed,
+            global_batch_size=self.train_config.global_batch_size(self.world_size),
+            utd_segment=utd_segment.as_dict() if utd_segment is not None else None,
+            extra=self._checkpoint_extra(),
+        )
+
+    def _load_cadence_state(self) -> None:
+        if self._last_candidate_examples is not None:
+            return
+        if self.cadence_path.is_file():
+            try:
+                payload = json.loads(self.cadence_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ValueError(f"cannot read learner cadence state: {exc}") from exc
+            if (
+                not isinstance(payload, dict)
+                or payload.get("schema_version") != 1
+                or payload.get("run_id") != self.run_identity.run_id
+                or payload.get("generation_family")
+                != self.run_identity.generation_family
+            ):
+                raise ValueError("learner cadence state is incompatible")
+            candidate_examples = payload.get("candidate_examples")
+            selfplay_examples = payload.get("selfplay_examples")
+            if (
+                isinstance(candidate_examples, bool)
+                or not isinstance(candidate_examples, int)
+                or candidate_examples < 0
+                or (
+                    selfplay_examples is not None
+                    and (
+                        isinstance(selfplay_examples, bool)
+                        or not isinstance(selfplay_examples, int)
+                        or selfplay_examples < 0
+                    )
+                )
+            ):
+                raise ValueError("learner cadence counters are invalid")
+            if candidate_examples > self.examples_consumed or (
+                selfplay_examples is not None
+                and selfplay_examples > self.examples_consumed
+            ):
+                raise ValueError(
+                    "learner cadence counters are ahead of restored examples"
+                )
+            self._last_candidate_examples = candidate_examples
+            self._last_selfplay_examples = selfplay_examples
+            if self.selfplay_publisher is not None and selfplay_examples is None:
+                self._migrate_null_selfplay_cadence(candidate_examples)
+            return
+
+        self._last_candidate_examples = self._pointer_examples(
+            self.publisher.candidate_path
+        )
+        if self.selfplay_publisher is not None:
+            if not self.selfplay_publisher.candidate_path.is_file():
+                candidate = load_model_manifest(self.publisher.candidate_path)
+                write_model_pointer(
+                    self.selfplay_publisher.candidate_path,
+                    candidate,
+                    role="candidate",
+                )
+            self._last_selfplay_examples = self._pointer_examples(
+                self.selfplay_publisher.candidate_path
+            )
+        self._write_cadence_state()
+
+    def _migrate_null_selfplay_cadence(self, candidate_examples: int) -> None:
+        """Idempotently enable self-play snapshots on an existing cadence."""
+
+        if self.selfplay_publisher is None:
+            raise RuntimeError("self-play cadence migration has no publisher")
+        candidate = load_model_manifest(self.publisher.candidate_path)
+        if (
+            candidate.run_id != self.run_identity.run_id
+            or candidate.generation_family != self.run_identity.generation_family
+        ):
+            raise ValueError("candidate pointer belongs to another run")
+        pointer = self.selfplay_publisher.candidate_path
+        if pointer.is_file():
+            existing = load_model_manifest(pointer)
+            if (
+                existing.run_id != self.run_identity.run_id
+                or existing.generation_family != self.run_identity.generation_family
+            ):
+                raise ValueError("self-play pointer belongs to another run")
+        else:
+            write_model_pointer(pointer, candidate, role="candidate")
+        self._last_selfplay_examples = candidate_examples
+        self._write_cadence_state()
+
+    def _pointer_examples(self, pointer: Path) -> int:
+        manifest = load_model_manifest(pointer)
+        metadata = inspect_checkpoint(
+            manifest.checkpoint,
+            expected_run_id=manifest.run_id,
+            expected_generation_family=manifest.generation_family,
+            expected_sha256=manifest.checkpoint_sha256,
+            expected_bytes=manifest.checkpoint_bytes,
+        )
+        extra = metadata.get("extra")
+        examples = (
+            extra.get("examples_consumed") if isinstance(extra, Mapping) else None
+        )
+        if (
+            isinstance(examples, int)
+            and not isinstance(examples, bool)
+            and examples >= 0
+        ):
+            return examples
+        return manifest.model_step * self.train_config.global_batch_size(
+            self.world_size
+        )
+
+    def _write_cadence_state(self) -> None:
+        if self._last_candidate_examples is None:
+            raise RuntimeError("candidate cadence was not initialized")
+        if self._last_candidate_examples > self.examples_consumed or (
+            self._last_selfplay_examples is not None
+            and self._last_selfplay_examples > self.examples_consumed
+        ):
+            raise ValueError("cannot persist cadence ahead of learner examples")
+        atomic_json(
+            self.cadence_path,
+            {
+                "schema_version": 1,
+                "run_id": self.run_identity.run_id,
+                "generation_family": self.run_identity.generation_family,
+                "candidate_examples": self._last_candidate_examples,
+                "selfplay_examples": self._last_selfplay_examples,
+                "updated_ns": time.time_ns(),
+            },
+        )
+
+    def _selfplay_snapshot_interval(self) -> int | None:
+        steady = self.learner_config.selfplay_snapshot_interval_examples
+        if steady is None:
+            return None
+        warmup = self.learner_config.selfplay_snapshot_warmup_interval_examples
+        if (
+            warmup is not None
+            and self.examples_consumed - self._segment_baseline_examples
+            < self.learner_config.selfplay_snapshot_warmup_examples
+        ):
+            return warmup
+        return steady
+
+    def _candidate_due(self) -> bool:
+        interval_examples = self.learner_config.candidate_interval_examples
+        if interval_examples is None:
+            current_step = (
+                load_model_manifest(self.publisher.candidate_path).model_step
+                if self.publisher.candidate_path.is_file()
+                else None
+            )
+            return (
+                self.step % self.learner_config.candidate_interval == 0
+                and current_step != self.step
+            )
+        if self._last_candidate_examples is None:
+            raise RuntimeError("candidate cadence was not initialized")
+        return (
+            self.examples_consumed - self._last_candidate_examples >= interval_examples
+        )
+
+    def _selfplay_snapshot_due(self) -> bool:
+        interval = self._selfplay_snapshot_interval()
+        if interval is None:
+            return False
+        if self._last_selfplay_examples is None:
+            raise RuntimeError("self-play cadence was not initialized")
+        return self.examples_consumed - self._last_selfplay_examples >= interval
+
+    def _publish_due_models(self) -> tuple[ModelManifest | None, ModelManifest | None]:
+        self._load_cadence_state()
+        candidate = None
+        selfplay = None
+        if self._candidate_due():
+            candidate = self._publish()
+            self._last_candidate_examples = self.examples_consumed
+            self._last_recovery_step = self.step
+            self.metrics.append(
+                {
+                    "schema_version": 1,
+                    "timestamp_ns": time.time_ns(),
+                    "worker": "learner",
+                    "event": "promotion_candidate",
+                    "model_identity": candidate.model_identity,
+                    "model_step": candidate.model_step,
+                    "examples_consumed": self.examples_consumed,
+                }
+            )
+        if self._selfplay_snapshot_due():
+            if self.selfplay_publisher is None:
+                raise RuntimeError("self-play publisher is unavailable")
+            selfplay = self._publish_to(self.selfplay_publisher)
+            self._last_selfplay_examples = self.examples_consumed
+            self.metrics.append(
+                {
+                    "schema_version": 1,
+                    "timestamp_ns": time.time_ns(),
+                    "worker": "learner",
+                    "event": "selfplay_snapshot",
+                    "model_identity": selfplay.model_identity,
+                    "model_step": selfplay.model_step,
+                    "examples_consumed": self.examples_consumed,
+                    "interval_examples": self._selfplay_snapshot_interval(),
+                }
+            )
+        if candidate is not None or selfplay is not None:
+            self._write_cadence_state()
+        return candidate, selfplay
+
+    def _scale_learning_rates(
+        self,
+        scale: float,
+        *,
+        champion_identity: str | None = None,
+    ) -> float:
+        """Descend one recovery stage below the reference schedule.
+
+        The multiplier is applied against the profile's reference rates, steps
+        down by ``scale`` per recovery within the current champion segment, stops
+        at the configured floor, and is restored when a promotion ends the
+        segment. Returns the multiplier now in force.
+        """
+
+        if not 0 < scale <= 1:
+            raise ValueError("learning-rate scale must be in (0, 1]")
+        configured = self._plateau_config()
+        current = float(self._lr_governor.multiplier)
+        multiplier = reduced_multiplier(
+            scale,
+            configured.minimum_learning_rate_scale,
+            current=current,
+        )
+        if multiplier >= current:
+            return current
+        self._lr_governor = self._lr_governor.with_multiplier(
+            multiplier,
+            scaled_champion_identity=champion_identity,
+        )
+        apply_governor(self.optimizer, self.scheduler, self._lr_governor)
+        return multiplier
+
+    def _restore_learning_rates(self, multiplier: float = 1.0) -> None:
+        """Return to ``multiplier`` of the reference with no champion attached."""
+
+        if multiplier >= 1.0:
+            self._lr_governor = self._lr_governor.restored()
+        else:
+            self._lr_governor = self._lr_governor.with_multiplier(
+                multiplier, scaled_champion_identity=None
+            )
+        apply_governor(self.optimizer, self.scheduler, self._lr_governor)
+
+    def _carry_governor_across_rewind(
+        self,
+        live: LearningRateGovernorState,
+    ) -> None:
+        """Keep the live multiplier after rewinding weights to a champion.
+
+        A champion checkpoint records the multiplier of the segment that produced
+        it, which is stale once the live policy has moved on. The live multiplier
+        is the policy's single source of truth for the current segment.
+        """
+
+        self._lr_governor = self._lr_governor.with_multiplier(
+            live.multiplier,
+            scaled_champion_identity=live.scaled_champion_identity,
+        )
+        apply_governor(self.optimizer, self.scheduler, self._lr_governor)
+
+    def _clear_optimizer_state(self) -> None:
+        self.optimizer.state.clear()
+        if self.gradient_clipper is not None:
+            self.gradient_clipper.reset()
+
+    def _active_ring_weights(self) -> dict[int, float] | None:
+        weights = self.ring_mixture_config.weights_for_step(self.step)
+        if weights is None:
+            return None
+        return dict(zip(self.ring_mixture_config.rings, weights, strict=True))
+
+    def _maybe_write_recovery_checkpoint(
+        self, *, force: bool = False
+    ) -> ResumeCheckpoint | None:
+        interval = self.learner_config.recovery_interval_steps
+        if interval is None and not force:
+            return None
+        if not force and (
+            self.step <= self._last_recovery_step
+            or interval is None
+            or self.step - self._last_recovery_step < interval
+        ):
+            return None
+        utd_segment = self._ensure_utd_segment_state()
+        recovery = write_recovery_checkpoint(
+            self.publisher.root,
+            model=unwrap_model(self.compiled_model),
+            optimizer=self.optimizer,
+            scheduler=self.scheduler,
+            ema=self.ema,
+            gradient_clipper=self.gradient_clipper,
+            step=self.step,
+            epoch=self.epoch,
+            config=self.serialized_config,
+            run_id=self.run_identity.run_id,
+            generation_family=self.run_identity.generation_family,
+            examples_consumed=self.examples_consumed,
+            global_batch_size=self.train_config.global_batch_size(self.world_size),
+            utd_segment=utd_segment.as_dict() if utd_segment is not None else None,
+            extra=self._checkpoint_extra(),
+        )
+        self._last_recovery_step = self.step
+        self.metrics.append(
+            {
+                "schema_version": 1,
+                "timestamp_ns": time.time_ns(),
+                "worker": "learner",
+                "event": "recovery_checkpoint",
+                "step": recovery.step,
+                "checkpoint_sha256": recovery.checkpoint_sha256,
+                "checkpoint_bytes": recovery.checkpoint_bytes,
+            }
+        )
+        retention = self._retention_config()
+        if self.epoch % retention.gc_interval_windows == 0:
+            metrics = collect_recovery_garbage(
+                self.publisher.root,
+                retain_checkpoints=retention.recovery_checkpoints,
+                dry_run=retention.recovery_dry_run,
+            )
+            self.metrics.append(
+                {
+                    "schema_version": 1,
+                    "timestamp_ns": time.time_ns(),
+                    "worker": "learner",
+                    "event": "recovery_gc",
+                    **metrics,
+                }
+            )
+        return recovery
+
+    def _wait_for_replay(
+        self,
+        *,
+        stop_requested: Callable[[], bool],
+        progress: Callable[..., None] | None,
+    ) -> bool:
+        started = time.monotonic()
+        while True:
+            counts = self._eligible_replay_counts()
+            active_counts = self._active_replay_counts(counts)
+            available = sum(active_counts.values())
+            ready = self._replay_is_ready(counts)
+            stop, globally_ready = self._collective_flags(stop_requested(), ready)
+            if stop:
+                return False
+            if globally_ready:
+                return True
+            if progress is not None and self.rank == 0:
+                progress(
+                    phase="replay_wait",
+                    step=self.step,
+                    available=available,
+                    samples_by_ring=counts,
+                )
+            timeout = self.learner_config.replay_wait_timeout_seconds
+            timed_out = bool(timeout and time.monotonic() - started >= timeout)
+            if self._collective_any(timed_out):
+                raise TimeoutError(
+                    "minimum replay was not reached before the learner timeout"
+                )
+            time.sleep(self.learner_config.replay_poll_seconds)
+
+    def _maximum_unique_batches(self, selection: ReplaySelection) -> int:
+        batch = self.train_config.per_rank_batch_size
+        rows_by_ring: dict[int, int] = defaultdict(int)
+        for span in selection.spans:
+            rows_by_ring[span.record.ring] += span.sample_count
+        capacities = {ring: count // batch for ring, count in rows_by_ring.items()}
+        capacity = sum(capacities.values()) // self.world_size
+        weights = self._active_ring_weights()
+        if not self.data_config.ring_stratified or weights is None:
+            return capacity
+        for batches in range(
+            min(capacity, self.learner_config.steps_per_window),
+            0,
+            -1,
+        ):
+            try:
+                _weighted_ring_quotas(
+                    batches * self.world_size,
+                    capacities=capacities,
+                    weights=weights,
+                )
+            except ValueError:
+                continue
+            return batches
+        return 0
+
+    def _select_replay_spans(self, *, pin: bool = False) -> ReplaySelection:
+        result: object = None
+        if self.rank == 0:
+            try:
+                result = (
+                    self._rank_zero_select_replay_spans(
+                        gc_watermark_name=self._watermark_name()
+                    )
+                    if pin
+                    else self._rank_zero_select_replay_spans()
+                )
+            except Exception as error:
+                result = {"replay_selection_error": f"{type(error).__name__}: {error}"}
+        selection = self._broadcast_object(result)
+        if isinstance(selection, dict) and "replay_selection_error" in selection:
+            raise RuntimeError(
+                f"replay selection failed: {selection['replay_selection_error']}"
+            )
+        if not isinstance(selection, ReplaySelection):
+            raise RuntimeError("rank 0 broadcast invalid replay selection metadata")
+        return selection
+
+    def _training_objective_kwargs(self) -> TrainingObjectiveOptions:
+        orchestration = getattr(self, "serialized_config", {}).get("orchestration")
+        if (
+            isinstance(orchestration, Mapping)
+            and orchestration.get("training_objective") == "ring10_pie"
+        ):
+            return {"training_objective": "ring10_pie"}
+        return {}
+
+    def _ring_segment_quota_kwargs(
+        self, rings: Sequence[int]
+    ) -> RingSegmentQuotaOptions:
+        if not self._training_objective_kwargs():
+            return {}
+        weights = self._active_ring_weights()
+        if weights is None:
+            raise ValueError("pie training requires explicit board weights")
+        return {
+            "ring_segment_quotas": {
+                ring: training_segment_quotas(ring, weights) for ring in rings
+            }
+        }
+
+    def _selection_matches_training_objective(self, selection: ReplaySelection) -> bool:
+        if not self._training_objective_kwargs():
+            return True
+        for span in selection.spans:
+            record = span.record
+            parts = record.variant.split("-")
+            if parts[0] == "pie" and len(parts) == 2 and record.segment == "pie":
+                mode, handicap, pie = parts[1], 1, True
+            elif (
+                parts[0] == "handicap"
+                and len(parts) == 3
+                and parts[1].isdigit()
+                and record.segment == "handicap"
+            ):
+                mode, handicap, pie = parts[2], int(parts[1]), False
+            else:
+                return False
+            if not training_variant_allowed(record.ring, mode, handicap, pie):
+                return False
+        return True
+
+    def _within_segment_classic_shares(self) -> dict[str, float] | None:
+        orchestration = self.serialized_config.get("orchestration")
+        if isinstance(orchestration, Mapping) and orchestration.get(
+            "training_objective"
+        ) in {"ring10_priority", "ring10_pie"}:
+            return {"handicap": 0.5, "pie": 0.5}
+        return None
+
+    def _rank_zero_select_replay_spans(
+        self, *, gc_watermark_name: str | None = None
+    ) -> ReplaySelection:
+        rings = self.ring_mixture_config.rings
+        if self.learner_config.use_ring_mixture_curriculum:
+            rings = self._active_replay_rings(self._eligible_replay_counts())
+        return self.store.select_recent_spans(
+            rings=rings,
+            per_ring_quota=self.learner_config.recent_samples_per_ring,
+            run_id=self.run_identity.run_id,
+            generation_family=self.run_identity.generation_family,
+            current_model_step=self.step,
+            max_model_lag_steps=self.learner_config.max_replay_lag_steps,
+            minimum_shard_id_exclusive=(
+                self.learner_config.minimum_replay_shard_id_exclusive
+            ),
+            segment_quotas=self.learner_config.segment_quotas,
+            within_segment_classic_shares=self._within_segment_classic_shares(),
+            **self._training_objective_kwargs(),
+            **self._ring_segment_quota_kwargs(rings),
+            **(
+                {"gc_watermark_name": gc_watermark_name}
+                if gc_watermark_name is not None
+                else {}
+            ),
+        )
+
+    def _eligible_replay_counts(self) -> dict[int, int]:
+        return self.store.eligible_sample_counts(
+            self.ring_mixture_config.rings,
+            run_id=self.run_identity.run_id,
+            generation_family=self.run_identity.generation_family,
+            **self._training_objective_kwargs(),
+            **self._ring_segment_quota_kwargs(self.ring_mixture_config.rings),
+            current_model_step=self.step,
+            max_model_lag_steps=self.learner_config.max_replay_lag_steps,
+            minimum_shard_id_exclusive=(
+                self.learner_config.minimum_replay_shard_id_exclusive
+            ),
+        )
+
+    def _active_replay_rings(self, counts: Mapping[int, int]) -> tuple[int, ...]:
+        step_weights = self.ring_mixture_config.weights_for_step(self.step)
+        if step_weights is not None:
+            return tuple(
+                ring
+                for ring, weight in zip(
+                    self.ring_mixture_config.rings, step_weights, strict=True
+                )
+                if weight > 0
+            )
+        if not self.learner_config.use_ring_mixture_curriculum:
+            return self.ring_mixture_config.rings
+        total = sum(int(counts.get(ring, 0)) for ring in self.ring_mixture_config.rings)
+        return self.ring_mixture_config.active_rings(total)
+
+    def _active_replay_counts(self, counts: Mapping[int, int]) -> dict[int, int]:
+        return {
+            ring: int(counts.get(ring, 0)) for ring in self._active_replay_rings(counts)
+        }
+
+    def _replay_is_ready(self, counts: Mapping[int, int]) -> bool:
+        active_counts = self._active_replay_counts(counts)
+        per_ring_ready = (
+            all(
+                count >= self.learner_config.minimum_unique_samples_per_ring
+                for count in active_counts.values()
+            )
+            if self.data_config.ring_stratified
+            else True
+        )
+        ready = (
+            sum(active_counts.values()) >= self.learner_config.minimum_replay_samples
+            and per_ring_ready
+            and self._available_batch_capacity(active_counts) >= self.world_size
+        )
+        weights = self._active_ring_weights()
+        if ready and self.data_config.ring_stratified and weights is not None:
+            try:
+                _weighted_ring_quotas(
+                    self.world_size,
+                    capacities={
+                        ring: count // self.train_config.per_rank_batch_size
+                        for ring, count in active_counts.items()
+                    },
+                    weights=weights,
+                )
+            except ValueError:
+                return False
+        return ready
+
+    def _available_batch_capacity(self, counts: Mapping[int, int]) -> int:
+        batch = self.train_config.per_rank_batch_size
+        # Even unstratified scheduling emits homogeneous board-size batches.
+        return sum(count // batch for count in counts.values())
+
+    def _recover_pending_state_rebase(self) -> None:
+        outcome: dict[str, object] | None = None
+        if self.rank == 0:
+            try:
+                if self.state_rebase_pending_path.is_file():
+                    payload = json.loads(
+                        self.state_rebase_pending_path.read_text(encoding="utf-8")
+                    )
+                    state, candidate, selfplay = self._parse_state_rebase(payload)
+                    self._rank_zero_complete_state_rebase(
+                        payload,
+                        state=state,
+                        candidate_examples=candidate,
+                        selfplay_examples=selfplay,
+                    )
+                    outcome = {"recovered": True, "state": payload}
+                else:
+                    outcome = {"recovered": False}
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                outcome = {"error": str(exc)}
+        broadcast = self._broadcast_object(outcome)
+        if not isinstance(broadcast, dict):
+            raise RuntimeError("distributed state-rebase recovery is invalid")
+        error = broadcast.get("error")
+        if isinstance(error, str):
+            raise ValueError(f"cannot recover learner state rebase: {error}")
+        if broadcast.get("recovered") is not True:
+            return
+        state_payload = broadcast.get("state")
+        state, candidate, selfplay = self._parse_state_rebase(state_payload)
+        self._utd_segment_state = state
+        self._resume_utd_segment_state = state
+        self._last_candidate_examples = candidate
+        self._last_selfplay_examples = selfplay
+        to_examples = (
+            state_payload.get("to_examples_consumed")
+            if isinstance(state_payload, Mapping)
+            else None
+        )
+        if isinstance(to_examples, bool) or not isinstance(to_examples, int):
+            raise ValueError("recovered state rebase examples are invalid")
+        self._segment_baseline_examples = to_examples
+
+    def _rebase_state_after_rewind(
+        self,
+        *,
+        previous_step: int,
+        previous_examples: int,
+        reason: str,
+    ) -> None:
+        """Start a new cadence/UTD segment after a checkpoint rewind."""
+
+        if self.examples_consumed >= previous_examples:
+            return
+        outcome: dict[str, object] | None = None
+        if self.rank == 0:
+            try:
+                target = self.learner_config.target_updates_per_new_sample
+                state = None
+                committed_samples = 0
+                if target is not None:
+                    if not self.store.committed_sample_history_is_complete(
+                        run_id=self.run_identity.run_id,
+                        generation_family=self.run_identity.generation_family,
+                    ):
+                        raise ValueError(
+                            "cannot rebase UTD without complete committed-sample "
+                            "history"
+                        )
+                    committed_samples = self.store.total_committed_sample_count(
+                        run_id=self.run_identity.run_id,
+                        generation_family=self.run_identity.generation_family,
+                        **self._training_objective_kwargs(),
+                    )
+                    state = UTDSegmentState(
+                        run_id=self.run_identity.run_id,
+                        generation_family=self.run_identity.generation_family,
+                        target_updates_per_new_sample=float(target),
+                        baseline_examples_consumed=self.examples_consumed,
+                        baseline_committed_replay_samples=committed_samples,
+                        **self._training_objective_kwargs(),
+                    )
+                candidate_examples = self.examples_consumed
+                selfplay_examples = (
+                    self.examples_consumed
+                    if self.selfplay_publisher is not None
+                    else None
+                )
+                created_ns = time.time_ns()
+                payload: dict[str, object] = {
+                    "format": STATE_REBASE_FORMAT,
+                    "schema_version": STATE_REBASE_SCHEMA_VERSION,
+                    "run_id": self.run_identity.run_id,
+                    "generation_family": self.run_identity.generation_family,
+                    "reason": reason,
+                    "from_step": previous_step,
+                    "to_step": self.step,
+                    "from_examples_consumed": previous_examples,
+                    "to_examples_consumed": self.examples_consumed,
+                    "committed_replay_samples": committed_samples,
+                    "utd_segment": state.as_dict() if state is not None else None,
+                    "cadence": {
+                        "candidate_examples": candidate_examples,
+                        "selfplay_examples": selfplay_examples,
+                    },
+                    "created_ns": created_ns,
+                }
+                atomic_json(self.state_rebase_pending_path, payload)
+                self._rank_zero_complete_state_rebase(
+                    payload,
+                    state=state,
+                    candidate_examples=candidate_examples,
+                    selfplay_examples=selfplay_examples,
+                )
+                outcome = {"state": payload}
+            except (OSError, ValueError) as exc:
+                outcome = {"error": str(exc)}
+        broadcast = self._broadcast_object(outcome)
+        if not isinstance(broadcast, dict):
+            raise RuntimeError("distributed state rebase is invalid")
+        error = broadcast.get("error")
+        if isinstance(error, str):
+            raise ValueError(f"learner rewind state rebase failed: {error}")
+        state_payload = broadcast.get("state")
+        state, candidate, selfplay = self._parse_state_rebase(state_payload)
+        self._utd_segment_state = state
+        self._resume_utd_segment_state = state
+        self._resume_utd_target = (
+            state.target_updates_per_new_sample if state is not None else None
+        )
+        self._last_candidate_examples = candidate
+        self._last_selfplay_examples = selfplay
+        self._segment_baseline_examples = self.examples_consumed
+
+    def _rank_zero_complete_state_rebase(
+        self,
+        payload: Mapping[str, object],
+        *,
+        state: UTDSegmentState | None,
+        candidate_examples: int,
+        selfplay_examples: int | None,
+    ) -> None:
+        created_ns = payload.get("created_ns")
+        if isinstance(created_ns, bool) or not isinstance(created_ns, int):
+            raise ValueError("learner state rebase created_ns is invalid")
+        if state is not None:
+            atomic_json(self.utd_segment_path, state.as_dict())
+        atomic_json(
+            self.cadence_path,
+            {
+                "schema_version": 1,
+                "run_id": self.run_identity.run_id,
+                "generation_family": self.run_identity.generation_family,
+                "candidate_examples": candidate_examples,
+                "selfplay_examples": selfplay_examples,
+                "updated_ns": created_ns,
+            },
+        )
+        atomic_json(self.state_rebase_path, payload)
+        self.state_rebase_pending_path.unlink(missing_ok=True)
+        descriptor = os.open(self.publisher.root, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def _parse_state_rebase(
+        self,
+        payload: object,
+    ) -> tuple[UTDSegmentState | None, int, int | None]:
+        if (
+            not isinstance(payload, dict)
+            or payload.get("format") != STATE_REBASE_FORMAT
+            or payload.get("schema_version") != STATE_REBASE_SCHEMA_VERSION
+            or payload.get("run_id") != self.run_identity.run_id
+            or payload.get("generation_family") != self.run_identity.generation_family
+        ):
+            raise ValueError("learner state rebase is incompatible")
+        for name in (
+            "from_step",
+            "to_step",
+            "from_examples_consumed",
+            "to_examples_consumed",
+            "committed_replay_samples",
+        ):
+            value = payload.get(name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"learner state rebase {name} is invalid")
+        created_ns = payload.get("created_ns")
+        if (
+            isinstance(created_ns, bool)
+            or not isinstance(created_ns, int)
+            or created_ns <= 0
+        ):
+            raise ValueError("learner state rebase created_ns is invalid")
+        if (
+            payload["to_step"] != self.step
+            or payload["to_examples_consumed"] != self.examples_consumed
+        ):
+            raise ValueError("learner state rebase does not match restored state")
+        cadence = payload.get("cadence")
+        if not isinstance(cadence, dict):
+            raise ValueError("learner state rebase cadence is invalid")
+        candidate = cadence.get("candidate_examples")
+        selfplay = cadence.get("selfplay_examples")
+        if (
+            isinstance(candidate, bool)
+            or not isinstance(candidate, int)
+            or candidate < 0
+            or candidate > self.examples_consumed
+            or (
+                selfplay is not None
+                and (
+                    isinstance(selfplay, bool)
+                    or not isinstance(selfplay, int)
+                    or selfplay < 0
+                    or selfplay > self.examples_consumed
+                )
+            )
+        ):
+            raise ValueError("learner state rebase cadence counters are invalid")
+        raw_state = payload.get("utd_segment")
+        state = None if raw_state is None else self._parse_utd_segment_state(raw_state)
+        if state is not None:
+            if (
+                state.run_id != self.run_identity.run_id
+                or state.generation_family != self.run_identity.generation_family
+                or state.baseline_examples_consumed != self.examples_consumed
+                or state.baseline_committed_replay_samples
+                != payload["committed_replay_samples"]
+            ):
+                raise ValueError("learner state rebase UTD boundary is invalid")
+        assert isinstance(candidate, int)
+        assert selfplay is None or isinstance(selfplay, int)
+        return state, candidate, selfplay
+
+    def _state_rebase_authorizes(self, state: UTDSegmentState) -> bool:
+        if not self.state_rebase_path.is_file():
+            return False
+        try:
+            payload = json.loads(self.state_rebase_path.read_text(encoding="utf-8"))
+            expected, _, _ = self._parse_state_rebase(payload)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return False
+        return expected == state
+
+    def _ensure_utd_segment_state(self) -> UTDSegmentState | None:
+        configured_target = self.learner_config.target_updates_per_new_sample
+        if configured_target is None:
+            return None
+        if self._utd_segment_state is not None:
+            if self._utd_segment_state.target_updates_per_new_sample != float(
+                configured_target
+            ):
+                raise ValueError(
+                    "configured update-to-data target does not match "
+                    "the persisted UTD segment state"
+                )
+            self._validate_utd_segment_boundary(self._utd_segment_state)
+            return self._utd_segment_state
+
+        outcome = None
+        if self.rank == 0:
+            try:
+                state = self._rank_zero_load_or_initialize_utd_segment(
+                    float(configured_target)
+                )
+                outcome = {"state": state.as_dict()}
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                outcome = {"error": str(exc)}
+        outcome = self._broadcast_object(outcome)
+        if not isinstance(outcome, dict):
+            raise RuntimeError("distributed UTD segment state is invalid")
+        error = outcome.get("error")
+        if isinstance(error, str):
+            raise ValueError(f"update-to-data segment state is incompatible: {error}")
+        payload = outcome.get("state")
+        state = self._parse_utd_segment_state(payload)
+        if state.run_id != self.run_identity.run_id or (
+            state.generation_family != self.run_identity.generation_family
+        ):
+            raise ValueError("update-to-data segment run identity does not match")
+        if state.target_updates_per_new_sample != float(configured_target):
+            raise ValueError(
+                "configured update-to-data target does not match "
+                "the persisted UTD segment state"
+            )
+        if (
+            self._resume_utd_segment_state is not None
+            and state != self._resume_utd_segment_state
+            and state.training_objective
+            == self._resume_utd_segment_state.training_objective
+            and self._resume_utd_target == float(configured_target)
+            and not self._state_rebase_authorizes(state)
+        ):
+            raise ValueError(
+                "persisted UTD segment state disagrees with the resume checkpoint"
+            )
+        self._validate_utd_segment_boundary(state)
+        self._utd_segment_state = state
+        return state
+
+    def _rank_zero_load_or_initialize_utd_segment(
+        self,
+        configured_target: float,
+    ) -> UTDSegmentState:
+        if self.utd_segment_path.is_file():
+            try:
+                payload = json.loads(self.utd_segment_path.read_text(encoding="utf-8"))
+            except OSError as exc:
+                raise ValueError(f"cannot read UTD segment state: {exc}") from exc
+            return self._parse_utd_segment_state(payload)
+        if self._resume_utd_segment_state is not None:
+            state = self._resume_utd_segment_state
+            if state.target_updates_per_new_sample != configured_target:
+                raise ValueError(
+                    "checkpoint UTD segment target does not match the active profile"
+                )
+            self._validate_utd_segment_boundary(state)
+            atomic_json(self.utd_segment_path, state.as_dict())
+            return state
+        if not self._can_initialize_utd_origin(configured_target):
+            raise ValueError(
+                "an existing run changed its update-to-data target without "
+                "a compatible prepared UTD segment state"
+            )
+        state = UTDSegmentState(
+            run_id=self.run_identity.run_id,
+            generation_family=self.run_identity.generation_family,
+            target_updates_per_new_sample=configured_target,
+            baseline_examples_consumed=0,
+            baseline_committed_replay_samples=0,
+            **self._training_objective_kwargs(),
+        )
+        atomic_json(self.utd_segment_path, state.as_dict())
+        return state
+
+    def _validate_utd_segment_boundary(self, state: UTDSegmentState) -> None:
+        if state.training_objective != self._training_objective_kwargs().get(
+            "training_objective"
+        ):
+            raise ValueError(
+                "training objective changed without a prepared scoped UTD segment"
+            )
+        if state.baseline_examples_consumed > self.examples_consumed:
+            raise ValueError("learner examples precede the UTD segment baseline")
+
+    def _can_initialize_utd_origin(self, configured_target: float) -> bool:
+        if self._resume_utd_target is not _UNSET:
+            if self._training_objective_kwargs():
+                return False
+            return (
+                isinstance(self._resume_utd_target, float)
+                and self._resume_utd_target == configured_target
+                and configured_target == 1.0
+            )
+        return (
+            self.step == 0
+            and self.examples_consumed == 0
+            and not self._learner_history_exists()
+        )
+
+    def _learner_history_exists(self) -> bool:
+        root = self.publisher.root
+        if any(
+            (root / name).exists()
+            for name in (
+                "candidate.json",
+                "cadence.json",
+                "learner-complete.json",
+                "model-history.jsonl",
+                "recovery.json",
+                "resume-cutover.json",
+            )
+        ):
+            return True
+        checkpoint_directory = root / "checkpoints"
+        return checkpoint_directory.is_dir() and any(checkpoint_directory.glob("*.pt"))
+
+    @staticmethod
+    def _parse_utd_segment_state(payload: object) -> UTDSegmentState:
+        if not isinstance(payload, dict):
+            raise ValueError("UTD segment state must be a JSON object")
+        required = {
+            "schema_version",
+            "run_id",
+            "generation_family",
+            "target_updates_per_new_sample",
+            "baseline_examples_consumed",
+            "baseline_committed_replay_samples",
+        }
+        allowed = required | {"created_ns", "training_objective"}
+        if set(payload) - allowed or not required <= set(payload):
+            raise ValueError("UTD segment state fields are invalid")
+        if payload.get("schema_version") != UTD_SEGMENT_SCHEMA_VERSION:
+            raise ValueError("UTD segment schema version is incompatible")
+        run_id = payload.get("run_id")
+        generation_family = payload.get("generation_family")
+        target = payload.get("target_updates_per_new_sample")
+        baseline_examples = payload.get("baseline_examples_consumed")
+        baseline_samples = payload.get("baseline_committed_replay_samples")
+        if not isinstance(run_id, str) or not run_id:
+            raise ValueError("UTD segment run_id is invalid")
+        if not isinstance(generation_family, str) or not generation_family:
+            raise ValueError("UTD segment generation_family is invalid")
+        if (
+            isinstance(target, bool)
+            or not isinstance(target, int | float)
+            or not math.isfinite(float(target))
+            or target <= 0
+        ):
+            raise ValueError("UTD segment target is invalid")
+        for name, value in (
+            ("baseline examples", baseline_examples),
+            ("baseline committed replay samples", baseline_samples),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"UTD segment {name} is invalid")
+        created_ns = payload.get("created_ns")
+        if created_ns is not None and (
+            isinstance(created_ns, bool)
+            or not isinstance(created_ns, int)
+            or created_ns <= 0
+        ):
+            raise ValueError("UTD segment created_ns is invalid")
+        objective = payload.get("training_objective")
+        if objective not in (None, "ring10_pie"):
+            raise ValueError("UTD segment training objective is invalid")
+        assert isinstance(baseline_examples, int)
+        assert isinstance(baseline_samples, int)
+        return UTDSegmentState(
+            run_id=run_id,
+            generation_family=generation_family,
+            target_updates_per_new_sample=float(target),
+            baseline_examples_consumed=baseline_examples,
+            baseline_committed_replay_samples=baseline_samples,
+            training_objective=objective,
+        )
+
+    def _utd_step_budget(self) -> int:
+        self._latest_total_replay_samples = self.store.total_committed_sample_count(
+            run_id=self.run_identity.run_id,
+            generation_family=self.run_identity.generation_family,
+            **self._training_objective_kwargs(),
+        )
+        target = self.learner_config.target_updates_per_new_sample
+        if target is None:
+            return self.learner_config.steps_per_window
+        if not self.store.committed_sample_history_is_complete(
+            run_id=self.run_identity.run_id,
+            generation_family=self.run_identity.generation_family,
+        ):
+            raise ValueError(
+                "update-to-data control requires a complete committed-sample history"
+            )
+        state = self._ensure_utd_segment_state()
+        if state is None:
+            raise RuntimeError("update-to-data segment state was not initialized")
+        if self._latest_total_replay_samples < state.baseline_committed_replay_samples:
+            raise ValueError(
+                "committed replay samples precede the UTD segment baseline"
+            )
+        if self.examples_consumed < state.baseline_examples_consumed:
+            raise ValueError("learner examples precede the UTD segment baseline")
+        segment_samples = (
+            self._latest_total_replay_samples - state.baseline_committed_replay_samples
+        )
+        ratio = Fraction(str(state.target_updates_per_new_sample))
+        segment_allowance = ratio.numerator * segment_samples // ratio.denominator
+        allowed_examples = state.baseline_examples_consumed + segment_allowance
+        remaining = max(0, allowed_examples - self.examples_consumed)
+        self._utd_missing_new_samples = new_samples_for_batch(
+            target=ratio,
+            segment_samples=segment_samples,
+            segment_examples=self.examples_consumed - state.baseline_examples_consumed,
+            batch_size=self.train_config.global_batch_size(self.world_size),
+        )
+        if self.rank == 0:
+            self._credit_wait_policy().observe(
+                self._latest_total_replay_samples, time.monotonic()
+            )
+        return remaining // self.train_config.global_batch_size(self.world_size)
+
+    def _credit_wait_policy(self) -> AdaptiveCreditWait:
+        policy = getattr(self, "_utd_credit_wait", None)
+        maximum = self.learner_config.replay_poll_seconds
+        if policy is None or policy.maximum_seconds != maximum:
+            policy = AdaptiveCreditWait(maximum)
+            self._utd_credit_wait = policy
+        return policy
+
+    def _wait_for_utd_credit(
+        self, *, stop_requested: Callable[[], bool]
+    ) -> WaitSummary:
+        """Poll only the lightweight credit boundary between normal validations.
+
+        The outer loop still rechecks replay eligibility, paths and freshness
+        after at most the original polling period. Fast wakeup forecasts do not
+        multiply those full-window scans or heartbeat writes.
+        """
+        started = time.monotonic()
+        actual_sleep = requested_sleep = 0.0
+        polls = 0
+        credit_ready = False
+        reason = "stopped"
+        rate: float | None = None
+        missing: int | None = None
+        while True:
+            if self._collective_stop(stop_requested()):
+                reason = "stopped"
+                break
+            polls += 1
+            control = None
+            if self.rank == 0:
+                try:
+                    # Initialization can itself broadcast. It must have finished
+                    # collectively before entering this rank-zero-only probe.
+                    if (
+                        self.learner_config.target_updates_per_new_sample is not None
+                        and self._utd_segment_state is None
+                    ):
+                        raise RuntimeError(
+                            "UTD segment was not initialized before waiting"
+                        )
+                    credit_ready = self._utd_step_budget() > 0
+                    remaining = max(
+                        0.0,
+                        self.learner_config.replay_poll_seconds
+                        - (time.monotonic() - started),
+                    )
+                    decision = self._credit_wait_policy().decide(
+                        getattr(self, "_utd_missing_new_samples", None),
+                        time.monotonic(),
+                    )
+                    expired = remaining <= min(
+                        1e-6, self.learner_config.replay_poll_seconds / 1000
+                    )
+                    control = {
+                        "credit_ready": credit_ready,
+                        "done": credit_ready or expired,
+                        "seconds": min(remaining, decision.seconds),
+                        "reason": "credit_ready"
+                        if credit_ready
+                        else "poll_deadline"
+                        if expired
+                        else decision.reason,
+                        "rows_per_second": decision.rows_per_second,
+                        "missing_rows": decision.missing_rows,
+                    }
+                except Exception as exc:
+                    control = {"error": f"{type(exc).__name__}: {exc}"}
+            control = self._broadcast_object(control)
+            if not isinstance(control, dict):
+                raise RuntimeError("distributed UTD wakeup control is invalid")
+            if isinstance(control.get("error"), str):
+                raise RuntimeError(f"UTD credit probe failed: {control['error']}")
+            if (
+                type(control.get("done")) is not bool
+                or type(control.get("credit_ready")) is not bool
+            ):
+                raise RuntimeError("distributed UTD wakeup control is invalid")
+            credit_ready = control["credit_ready"]
+            reason = str(control["reason"])
+            rate, missing = control["rows_per_second"], control["missing_rows"]
+            if control["done"]:
+                break
+            seconds = control["seconds"]
+            if (
+                isinstance(seconds, bool)
+                or not isinstance(seconds, (int, float))
+                or not math.isfinite(seconds)
+                or not 0 < seconds <= self.learner_config.replay_poll_seconds
+            ):
+                raise RuntimeError("distributed UTD sleep duration is invalid")
+            requested_sleep += seconds
+            actual_sleep += sleep_interruptibly(
+                seconds,
+                stop_requested=stop_requested,
+                clock=time.monotonic,
+                sleep=time.sleep,
+            )
+        return {
+            "actual_sleep_seconds": actual_sleep,
+            "requested_sleep_seconds": requested_sleep,
+            "wait_wall_seconds": max(0.0, time.monotonic() - started),
+            "credit_polls": polls,
+            "credit_ready": credit_ready,
+            "wake_reason": reason,
+            "estimated_committed_rows_per_second": rate,
+            "new_rows_for_next_batch": missing,
+            "poll_ceiling_seconds": self.learner_config.replay_poll_seconds,
+        }
+
+    def _utd_metric_values(self) -> dict[str, object]:
+        lifetime = (
+            self.examples_consumed / self._latest_total_replay_samples
+            if self._latest_total_replay_samples
+            and not self._training_objective_kwargs()
+            else None
+        )
+        state = self._utd_segment_state
+        segment = None
+        if state is not None:
+            segment_samples = (
+                self._latest_total_replay_samples
+                - state.baseline_committed_replay_samples
+            )
+            segment_examples = self.examples_consumed - state.baseline_examples_consumed
+            if segment_samples > 0 and segment_examples >= 0:
+                segment = segment_examples / segment_samples
+        return {
+            "updates_per_new_sample": lifetime,
+            "lifetime_updates_per_new_sample": lifetime,
+            "segment_updates_per_new_sample": segment,
+            **(
+                {"utd_segment_training_objective": "ring10_pie"}
+                if self._training_objective_kwargs()
+                else {}
+            ),
+            "utd_segment_target_updates_per_new_sample": (
+                state.target_updates_per_new_sample if state is not None else None
+            ),
+            "utd_segment_baseline_examples_consumed": (
+                state.baseline_examples_consumed if state is not None else None
+            ),
+            "utd_segment_baseline_committed_replay_samples": (
+                state.baseline_committed_replay_samples if state is not None else None
+            ),
+        }
+
+    def _plateau_step_budget(self) -> int:
+        """Bound a window so a rewinding policy cannot outrun its replay window.
+
+        Only ``reset_from_champion`` needs the bound: its rewind returns to the
+        champion, so training past ``champion + max_replay_lag_steps`` would be
+        discarded anyway. Under ``reduce_lr_keep_weights`` weights are never
+        rewound and the lag grows without bound between promotions, so the cap
+        would simply stop the learner at the lag limit forever.
+        """
+
+        configured = self._plateau_config()
+        budget = self.learner_config.steps_per_window
+        if (
+            configured.enabled
+            and configured.action != "reduce_lr_keep_weights"
+            and self.rank == 0
+            and self.publisher.champion_path.is_file()
+        ):
+            champion = self._control_model_manifest(self.publisher.champion_path)
+            budget = max(
+                0,
+                champion.model_step
+                + self.learner_config.max_replay_lag_steps
+                - self.step,
+            )
+        value = self._broadcast_object(budget if self.rank == 0 else None)
+        if not isinstance(value, int):
+            raise RuntimeError("distributed plateau step budget is invalid")
+        return value
+
+    def _plateau_control(
+        self,
+        *,
+        stop_requested: Callable[[], bool],
+        progress: Callable[..., None] | None,
+        on_boundary: Callable[[], None] | None = None,
+    ) -> bool:
+        configured = self._plateau_config()
+        if not configured.enabled or self.promotion_status_path is None:
+            return True
+        boundary_applied = False
+        self._maybe_restore_learning_rates_after_promotion(configured)
+        while True:
+            action = (
+                self._rank_zero_plateau_action(configured) if self.rank == 0 else None
+            )
+            action = self._broadcast_object(action)
+            if not isinstance(action, dict):
+                raise RuntimeError("distributed plateau action is invalid")
+            kind = action.get("kind")
+            if kind == "proceed":
+                return True
+            if not boundary_applied and on_boundary is not None:
+                on_boundary()
+                boundary_applied = True
+            # Inconclusive evidence (a candidate that merely exhausted its arena
+            # budget) may release the replay-lag cap but never lowers the rate.
+            reduce_learning_rate = (
+                action.get("reset_reason") == "terminal_rejection_streak"
+            )
+            if kind == "reset":
+                checkpoint = Path(str(action["checkpoint"]))
+                previous_step = self.step
+                previous_examples = self.examples_consumed
+                champion_manifest = None
+                if self.rank == 0:
+                    champion_manifest = load_model_manifest(
+                        self.publisher.champion_path
+                    )
+                self._distributed_barrier()
+                live_governor = self._lr_governor
+                self.resume(
+                    checkpoint,
+                    expected_sha256=str(action["sha256"]),
+                    expected_bytes=int(action["bytes"]),
+                )
+                self._carry_governor_across_rewind(live_governor)
+                if reduce_learning_rate:
+                    self._scale_learning_rates(
+                        configured.reset_learning_rate_scale,
+                        champion_identity=str(action["champion_identity"]),
+                    )
+                self._rebase_state_after_rewind(
+                    previous_step=previous_step,
+                    previous_examples=previous_examples,
+                    reason="plateau_reset",
+                )
+                if self.rank == 0:
+                    assert champion_manifest is not None
+                    self._last_recovery_step = max(0, self.step - 1)
+                    recovery = self._maybe_write_recovery_checkpoint(force=True)
+                    if recovery is None:
+                        raise RuntimeError(
+                            "plateau reset did not create a recovery checkpoint"
+                        )
+                    cutover_created_ns = time.time_ns()
+                    write_resume_cutover(
+                        self.publisher.root,
+                        manifest=recovery,
+                        run_id=self.run_identity.run_id,
+                        generation_family=self.run_identity.generation_family,
+                        created_ns=cutover_created_ns,
+                    )
+                    write_model_pointer(
+                        self.publisher.candidate_path,
+                        champion_manifest,
+                        role="candidate",
+                    )
+                    if self.selfplay_publisher is not None:
+                        write_model_pointer(
+                            self.selfplay_publisher.candidate_path,
+                            champion_manifest,
+                            role="candidate",
+                        )
+                    if self.promotion_status_path is not None:
+                        atomic_json(
+                            self.promotion_status_path,
+                            {
+                                "schema_version": 1,
+                                **self._promotion_contract_metadata(),
+                                "candidate_identity": champion_manifest.model_identity,
+                                "candidate_step": champion_manifest.model_step,
+                                "champion_identity": champion_manifest.model_identity,
+                                "champion_step": champion_manifest.model_step,
+                                "decision": "plateau_reset",
+                                "terminal": True,
+                                "conclusive": True,
+                                "consecutive_terminal_rejections": 0,
+                                "consecutive_conclusive_rejections": 0,
+                                "cutover_created_ns": cutover_created_ns,
+                                "updated_ns": time.time_ns(),
+                            },
+                        )
+                    self.metrics.append(
+                        {
+                            "schema_version": 1,
+                            "timestamp_ns": time.time_ns(),
+                            "worker": "learner",
+                            "event": "plateau_reset",
+                            "reason": action.get("reset_reason"),
+                            "from_step": previous_step,
+                            "to_step": self.step,
+                            "champion_identity": champion_manifest.model_identity,
+                            "learning_rate_scale": (
+                                configured.reset_learning_rate_scale
+                            ),
+                            "learning_rate_reduced": reduce_learning_rate,
+                            **self._learning_rate_metrics(),
+                            "learning_rates": [
+                                float(group["lr"])
+                                for group in self.optimizer.param_groups
+                            ],
+                        }
+                    )
+                self._distributed_barrier()
+                self._last_plateau_reset = (
+                    str(action["champion_identity"]),
+                    str(action["candidate_identity"]),
+                )
+                if progress is not None and self.rank == 0:
+                    progress(
+                        phase="plateau_reset",
+                        step=self.step,
+                        champion_identity=action["champion_identity"],
+                        reason=action.get("reset_reason"),
+                    )
+                return True
+            if kind == "recover":
+                previous_step = self.step
+                previous_examples = getattr(self, "examples_consumed", None)
+                if reduce_learning_rate:
+                    self._scale_learning_rates(
+                        configured.reset_learning_rate_scale,
+                        champion_identity=str(action["champion_identity"]),
+                    )
+                if (
+                    reduce_learning_rate
+                    and configured.clear_optimizer_state_on_recovery
+                ):
+                    self._clear_optimizer_state()
+                if previous_examples is not None:
+                    self._rebase_state_after_rewind(
+                        previous_step=previous_step,
+                        previous_examples=previous_examples,
+                        reason="plateau_recovery",
+                    )
+                if self.rank == 0:
+                    self._last_recovery_step = max(0, self.step - 1)
+                    recovery = self._maybe_write_recovery_checkpoint(force=True)
+                    if recovery is None:
+                        raise RuntimeError(
+                            "plateau recovery did not create a recovery checkpoint"
+                        )
+                    cutover_created_ns = time.time_ns()
+                    write_resume_cutover(
+                        self.publisher.root,
+                        manifest=recovery,
+                        run_id=self.run_identity.run_id,
+                        generation_family=self.run_identity.generation_family,
+                        created_ns=cutover_created_ns,
+                    )
+                    if self.promotion_status_path is not None:
+                        atomic_json(
+                            self.promotion_status_path,
+                            {
+                                "schema_version": 1,
+                                **self._promotion_contract_metadata(),
+                                "candidate_identity": action["candidate_identity"],
+                                "candidate_step": action["candidate_step"],
+                                "champion_identity": action["champion_identity"],
+                                "champion_step": action["champion_step"],
+                                "decision": "plateau_recover",
+                                "terminal": True,
+                                "conclusive": True,
+                                "consecutive_terminal_rejections": 0,
+                                "consecutive_conclusive_rejections": 0,
+                                "cutover_created_ns": cutover_created_ns,
+                                "updated_ns": time.time_ns(),
+                            },
+                        )
+                    self.metrics.append(
+                        {
+                            "schema_version": 1,
+                            "timestamp_ns": time.time_ns(),
+                            "worker": "learner",
+                            "event": "plateau_recovery",
+                            "reason": action.get("reset_reason"),
+                            "from_step": previous_step,
+                            "to_step": self.step,
+                            "candidate_identity": action["candidate_identity"],
+                            "champion_identity": action["champion_identity"],
+                            "learning_rate_scale": (
+                                configured.reset_learning_rate_scale
+                            ),
+                            "learning_rate_reduced": reduce_learning_rate,
+                            **self._learning_rate_metrics(),
+                            "optimizer_state_cleared": (
+                                reduce_learning_rate
+                                and configured.clear_optimizer_state_on_recovery
+                            ),
+                            "learning_rates": [
+                                float(group["lr"])
+                                for group in self.optimizer.param_groups
+                            ],
+                        }
+                    )
+                self._distributed_barrier()
+                self._last_plateau_reset = (
+                    str(action["champion_identity"]),
+                    str(action["candidate_identity"]),
+                )
+                if progress is not None and self.rank == 0:
+                    progress(
+                        phase="plateau_recovery",
+                        step=self.step,
+                        champion_identity=action["champion_identity"],
+                        candidate_identity=action["candidate_identity"],
+                        reason=action.get("reset_reason"),
+                    )
+                return True
+            if kind != "pause":
+                raise RuntimeError("unknown plateau action")
+            if self._collective_stop(stop_requested()):
+                return False
+            if progress is not None and self.rank == 0:
+                progress(
+                    phase="learner_plateau",
+                    step=self.step,
+                    reason=action.get("reason"),
+                    champion_step=action.get("champion_step"),
+                )
+            time.sleep(configured.poll_seconds)
+
+    def _gpu_pause_control(
+        self,
+        *,
+        stop_requested: Callable[[], bool],
+        progress: Callable[..., None] | None,
+        on_pause: Callable[[], object] | None = None,
+        on_resume: Callable[[], object] | None = None,
+    ) -> bool:
+        if self.gpu_pause_path is None:
+            return True
+        pause_applied = False
+        cuda_cache_released = False
+        pause_checkpoint_step: int | None = None
+        pause_started = 0.0
+        while True:
+            active = self._rank_zero_gpu_pause_active() if self.rank == 0 else None
+            active = self._broadcast_object(active)
+            if active is False:
+                if pause_applied:
+                    resume_error = None
+                    try:
+                        if on_resume is not None:
+                            on_resume()
+                    except BaseException as exc:
+                        resume_error = f"{type(exc).__name__}: {exc}"
+                    resume_errors = self._collective_error_messages(resume_error)
+                    if resume_errors:
+                        raise RuntimeError(
+                            "distributed GPU pause resume failed: "
+                            + "; ".join(resume_errors)
+                        )
+                    self._distributed_barrier()
+                    if self.rank == 0:
+                        self.metrics.append(
+                            {
+                                "schema_version": 1,
+                                "timestamp_ns": time.time_ns(),
+                                "worker": "learner",
+                                "event": "gpu_pause_resumed",
+                                "step": self.step,
+                                "pause_generation": self._gpu_pause_generation,
+                                "pause_seconds": time.perf_counter() - pause_started,
+                            }
+                        )
+                return True
+            if active is not True:
+                raise RuntimeError("distributed GPU pause state is invalid")
+            if not pause_applied:
+                pause_started = time.perf_counter()
+                checkpoint_outcome = None
+                if self.rank == 0:
+                    try:
+                        recovery = self._maybe_write_recovery_checkpoint(force=True)
+                        checkpoint_outcome = {
+                            "ok": True,
+                            "step": recovery.step
+                            if recovery is not None
+                            else self.step,
+                        }
+                    except BaseException as exc:
+                        checkpoint_outcome = {
+                            "ok": False,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                checkpoint_payload = self._broadcast_object(checkpoint_outcome)
+                if (
+                    not isinstance(checkpoint_payload, dict)
+                    or checkpoint_payload.get("ok") is not True
+                    or isinstance(checkpoint_payload.get("step"), bool)
+                    or not isinstance(checkpoint_payload.get("step"), int)
+                ):
+                    detail = (
+                        checkpoint_payload.get("error")
+                        if isinstance(checkpoint_payload, dict)
+                        else "invalid checkpoint outcome"
+                    )
+                    raise RuntimeError(
+                        f"GPU pause recovery checkpoint failed: {detail}"
+                    )
+                pause_checkpoint_step = int(checkpoint_payload["step"])
+                device = next(self.model.parameters()).device
+                pause_error = None
+                try:
+                    synchronize_device(device)
+                    if on_pause is not None:
+                        on_pause()
+                    empty_device_cache(device)
+                    if device.type in ("cuda", "mps"):
+                        cuda_cache_released = True
+                except BaseException as exc:
+                    pause_error = f"{type(exc).__name__}: {exc}"
+                pause_errors = self._collective_error_messages(pause_error)
+                if pause_errors:
+                    raise RuntimeError(
+                        "distributed GPU pause preparation failed: "
+                        + "; ".join(pause_errors)
+                    )
+                self._distributed_barrier()
+                self._gpu_pause_generation += 1
+                pause_applied = True
+                if self.rank == 0:
+                    self.metrics.append(
+                        {
+                            "schema_version": 1,
+                            "timestamp_ns": time.time_ns(),
+                            "worker": "learner",
+                            "event": "gpu_pause_ready",
+                            "step": self.step,
+                            "pause_generation": self._gpu_pause_generation,
+                            "pause_checkpoint_step": pause_checkpoint_step,
+                            "cuda_cache_released": cuda_cache_released,
+                        }
+                    )
+            if self._collective_stop(stop_requested()):
+                return False
+            if progress is not None and self.rank == 0:
+                device = next(self.model.parameters()).device
+                allocated_bytes, reserved_bytes = device_memory_snapshot(device)
+                progress(
+                    phase="arena_gpu_pause",
+                    step=self.step,
+                    cuda_cache_released=cuda_cache_released,
+                    pause_generation=self._gpu_pause_generation,
+                    pause_checkpoint_step=pause_checkpoint_step,
+                    cuda_memory_allocated_bytes=allocated_bytes,
+                    cuda_memory_reserved_bytes=reserved_bytes,
+                )
+            time.sleep(self._plateau_config().poll_seconds)
+
+    def _rank_zero_gpu_pause_active(self) -> bool:
+        assert self.gpu_pause_path is not None
+        try:
+            with self.gpu_pause_path.open("r", encoding="utf-8") as stream:
+                payload = json.load(stream)
+            pid = int(payload["pid"])
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+            self.gpu_pause_path.unlink(missing_ok=True)
+            return False
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            self.gpu_pause_path.unlink(missing_ok=True)
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def _plateau_config(self):
+        # The typed object is retained separately from serialized checkpoint
+        # configuration so resume cannot silently alter live plateau policy.
+        from .config import PlateauConfig
+
+        values = self.serialized_config.get("orchestration")
+        if not isinstance(values, Mapping):
+            return PlateauConfig()
+        plateau = values.get("plateau")
+        return (
+            PlateauConfig(**plateau) if isinstance(plateau, dict) else PlateauConfig()
+        )
+
+    def _retention_config(self):
+        from .config import RetentionConfig
+
+        values = self.serialized_config.get("orchestration")
+        if not isinstance(values, Mapping):
+            return RetentionConfig()
+        retention = values.get("retention")
+        return (
+            RetentionConfig(**retention)
+            if isinstance(retention, dict)
+            else RetentionConfig()
+        )
+
+    def _maybe_collect_replay_garbage(self) -> None:
+        retention = self._retention_config()
+        if not retention.enabled or self.epoch % retention.gc_interval_windows != 0:
+            return
+        metrics = self.store.collect_garbage(
+            run_id=self.run_identity.run_id,
+            generation_family=self.run_identity.generation_family,
+            retain_shards_per_ring=retention.replay_shards_per_ring,
+            dry_run=retention.dry_run,
+            minimum_samples_per_ring=self.learner_config.recent_samples_per_ring,
+            current_model_step=self.step,
+            max_model_lag_steps=self.learner_config.max_replay_lag_steps,
+            minimum_shard_id_exclusive=self.learner_config.minimum_replay_shard_id_exclusive,
+            segment_quotas=self.learner_config.segment_quotas,
+            within_segment_classic_shares=self._within_segment_classic_shares(),
+            **self._training_objective_kwargs(),
+            **self._ring_segment_quota_kwargs(self.ring_mixture_config.rings),
+        )
+        self.metrics.append(
+            {
+                "schema_version": 1,
+                "timestamp_ns": time.time_ns(),
+                "worker": "learner",
+                "event": "replay_gc",
+                **metrics,
+            }
+        )
+        if self.selfplay_publisher is not None:
+            selfplay_metrics = collect_model_garbage(
+                self.selfplay_publisher.root,
+                retain_candidate_manifests=retention.candidate_manifests,
+                dry_run=retention.dry_run,
+            )
+            self.metrics.append(
+                {
+                    "schema_version": 1,
+                    "timestamp_ns": time.time_ns(),
+                    "worker": "learner",
+                    "event": "selfplay_model_gc",
+                    **selfplay_metrics,
+                }
+            )
+
+    def _maybe_restore_learning_rates_after_promotion(self, configured) -> None:
+        """Return to the restore multiplier once a reduced segment promotes.
+
+        The restore multiplier is also a cap: a governor above it (a profile
+        that lowered the cap while the run sat at the reference, or a legacy
+        checkpoint) is brought down to it without waiting for a promotion.
+        """
+
+        cap = float(configured.restore_learning_rate_scale)
+        action = None
+        if self.rank == 0:
+            governor = self._lr_governor
+            if governor.multiplier > cap + 1e-9:
+                action = "capped"
+            elif (
+                configured.restore_scale_on_promotion
+                and governor.multiplier < cap - 1e-9
+                and governor.scaled_champion_identity is not None
+                and self.publisher.champion_path.is_file()
+            ):
+                champion = self._control_model_manifest(self.publisher.champion_path)
+                if champion.model_identity != governor.scaled_champion_identity:
+                    action = "restored"
+        action = self._broadcast_object(action)
+        if action is None:
+            return
+        previous = self._lr_governor.multiplier
+        self._restore_learning_rates(cap)
+        if self.rank == 0:
+            self.metrics.append(
+                {
+                    "schema_version": 1,
+                    "timestamp_ns": time.time_ns(),
+                    "worker": "learner",
+                    "event": f"plateau_scale_{action}",
+                    "step": self.step,
+                    "previous_learning_rate_multiplier": previous,
+                    "restore_learning_rate_scale": cap,
+                    **self._learning_rate_metrics(),
+                    "learning_rates": [
+                        float(group["lr"]) for group in self.optimizer.param_groups
+                    ],
+                }
+            )
+
+    @staticmethod
+    def _promotion_status_rejection(
+        status: Mapping[str, object],
+        *,
+        count_inconclusive: bool = False,
+    ) -> tuple[bool, int]:
+        """Return (terminal rejection, rejection streak).
+
+        ``reject_max_pairs`` is a terminal but inconclusive outcome: the arena
+        exhausted its budget without evidence either way. It still releases the
+        replay-lag cap, but by default only conclusive rejections accumulate
+        toward the learning-rate reduction streak. With ``count_inconclusive``
+        every terminal non-promotion counts, so a candidate that keeps ending
+        below the promotion bar still advances the anneal. Status files written
+        before the arena recorded conclusiveness fall back to the terminal
+        streak.
+        """
+
+        decision = status.get("decision")
+        terminal_rejection = bool(status.get("terminal")) and decision in (
+            "reject",
+            "reject_ring_regression",
+            "reject_max_pairs",
+        )
+        if count_inconclusive:
+            raw_streak = status.get("consecutive_terminal_rejections", 0)
+        else:
+            raw_streak = status.get(
+                "consecutive_conclusive_rejections",
+                status.get("consecutive_terminal_rejections", 0),
+            )
+        streak = (
+            raw_streak
+            if isinstance(raw_streak, int) and not isinstance(raw_streak, bool)
+            else 0
+        )
+        return terminal_rejection, streak
+
+    def _promotion_contract_metadata(self) -> dict[str, str]:
+        identity = getattr(self, "expected_promotion_contract_identity", None)
+        return (
+            {"evaluation_contract_identity": identity} if identity is not None else {}
+        )
+
+    def _learning_rate_at_floor(self, configured) -> bool:
+        governor = getattr(self, "_lr_governor", None)
+        if governor is None:
+            return False
+        return (
+            float(governor.multiplier)
+            <= float(configured.minimum_learning_rate_scale) + 1e-9
+        )
+
+    def _control_model_manifest(self, path: Path) -> ModelManifest:
+        cache = getattr(self, "_control_manifest_cache", None)
+        if cache is None:
+            cache = self._control_manifest_cache = ControlManifestCache()
+        return cache.load(path)
+
+    def _rank_zero_plateau_action(self, configured) -> dict[str, object]:
+        if not self.publisher.champion_path.is_file():
+            return {"kind": "proceed"}
+        champion = self._control_model_manifest(self.publisher.champion_path)
+        lag = self.step - champion.model_step
+        keep_weights = configured.action == "reduce_lr_keep_weights"
+        if not keep_weights and lag < configured.max_learner_champion_lag_steps:
+            return {"kind": "proceed"}
+        candidate = (
+            self._control_model_manifest(self.publisher.candidate_path)
+            if self.publisher.candidate_path.is_file()
+            else None
+        )
+        status: dict[str, object] = {}
+        if (
+            self.promotion_status_path is not None
+            and self.promotion_status_path.is_file()
+        ):
+            try:
+                with self.promotion_status_path.open("r", encoding="utf-8") as stream:
+                    loaded = json.load(stream)
+                if isinstance(loaded, dict):
+                    status = loaded
+            except (OSError, json.JSONDecodeError):
+                status = {}
+        expected_contract = getattr(self, "expected_promotion_contract_identity", None)
+        if (
+            expected_contract is not None
+            and status.get("evaluation_contract_identity") != expected_contract
+        ):
+            # Status from a retired evaluation must not cut the learning rate
+            # while the same candidate is being measured under a new contract.
+            status = {}
+        status_matches = (
+            candidate is not None
+            and status.get("candidate_identity") == candidate.model_identity
+        )
+        terminal_rejection, streak = self._promotion_status_rejection(
+            status,
+            count_inconclusive=configured.count_inconclusive_rejections,
+        )
+        reset_token = (
+            champion.model_identity,
+            candidate.model_identity if candidate is not None else "",
+        )
+        decision = plateau_policy_decision(
+            lag_steps=lag,
+            soft_lag_steps=configured.max_learner_champion_lag_steps,
+            hard_replay_lag_steps=self.learner_config.max_replay_lag_steps,
+            status_matches_candidate=status_matches,
+            terminal_rejection=terminal_rejection,
+            rejection_streak=streak,
+            reset_after_rejections=(configured.consecutive_terminal_rejections),
+            action=configured.action,
+            reset_already_applied=self._last_plateau_reset == reset_token,
+            at_rate_floor=self._learning_rate_at_floor(configured),
+        )
+        if decision in ("reset", "recover"):
+            if candidate is None:
+                return {
+                    "kind": "pause",
+                    "reason": "awaiting_candidate",
+                    "champion_step": champion.model_step,
+                }
+            recovery_kind = "reset" if decision == "reset" else "recover"
+            return {
+                "kind": recovery_kind,
+                "reset_reason": (
+                    "hard_replay_lag"
+                    if lag >= self.learner_config.max_replay_lag_steps
+                    and streak < configured.consecutive_terminal_rejections
+                    else "terminal_rejection_streak"
+                ),
+                "champion_identity": champion.model_identity,
+                "champion_step": champion.model_step,
+                "candidate_identity": candidate.model_identity,
+                "candidate_step": candidate.model_step,
+                **(
+                    {
+                        "checkpoint": str(champion.checkpoint),
+                        "sha256": champion.checkpoint_sha256,
+                        "bytes": champion.checkpoint_bytes,
+                    }
+                    if decision == "reset"
+                    else {}
+                ),
+            }
+        if decision == "proceed":
+            return {"kind": "proceed"}
+        return {
+            "kind": "pause",
+            "reason": (
+                "candidate_inconclusive"
+                if status_matches and not bool(status.get("terminal"))
+                else "awaiting_terminal_promotion"
+            ),
+            "champion_step": champion.model_step,
+        }
+
+    def _collective_stop(self, local_stop: bool) -> bool:
+        stop, _ = self._collective_flags(local_stop, True)
+        return stop
+
+    def _collective_any(self, value: bool) -> bool:
+        if self.world_size == 1:
+            return value
+        device = next(self.model.parameters()).device
+        tensor = torch.tensor(int(value), device=device, dtype=torch.int32)
+        torch.distributed.all_reduce(tensor, op=torch.distributed.ReduceOp.MAX)
+        return bool(tensor.item())
+
+    def _collective_min_int(self, value: int) -> int:
+        if self.world_size == 1:
+            return value
+        device = next(self.model.parameters()).device
+        tensor = torch.tensor(value, device=device, dtype=torch.int64)
+        torch.distributed.all_reduce(tensor, op=torch.distributed.ReduceOp.MIN)
+        return int(tensor.item())
+
+    def _collective_error_messages(self, local_error: str | None) -> tuple[str, ...]:
+        if self.world_size == 1:
+            return (local_error,) if local_error is not None else ()
+        if not torch.distributed.is_initialized():
+            raise RuntimeError("distributed learner process group is not initialized")
+        gathered: list[object] = [None] * self.world_size
+        torch.distributed.all_gather_object(gathered, local_error)
+        return tuple(str(error) for error in gathered if error is not None)
+
+    def _broadcast_object(self, value: object) -> object:
+        if self.world_size == 1:
+            return value
+        payload = [value]
+        torch.distributed.broadcast_object_list(
+            payload,
+            src=0,
+            device=next(self.model.parameters()).device,
+        )
+        return payload[0]
+
+    def _collective_flags(
+        self, local_stop: bool, local_ready: bool
+    ) -> tuple[bool, bool]:
+        if self.world_size == 1:
+            return local_stop, local_ready
+        if not torch.distributed.is_initialized():
+            raise RuntimeError("distributed learner process group is not initialized")
+        device = next(self.model.parameters()).device
+        values = torch.tensor(
+            [int(local_stop), int(local_ready)],
+            device=device,
+            dtype=torch.int32,
+        )
+        stop_value = values[:1]
+        ready_value = values[1:]
+        torch.distributed.all_reduce(stop_value, op=torch.distributed.ReduceOp.MAX)
+        torch.distributed.all_reduce(ready_value, op=torch.distributed.ReduceOp.MIN)
+        return bool(stop_value.item()), bool(ready_value.item())
+
+    def _distributed_barrier(self) -> None:
+        if self.world_size > 1:
+            if not torch.distributed.is_initialized():
+                raise RuntimeError(
+                    "distributed learner process group is not initialized"
+                )
+            torch.distributed.barrier()
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

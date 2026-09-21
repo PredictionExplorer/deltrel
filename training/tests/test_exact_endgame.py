@@ -2,9 +2,9 @@ from dataclasses import replace
 
 import pytest
 
-from startrain.replay_store import ReplayStore
-from startrain.runtime import RunIdentity
-from startrain.selfplay import (
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.selfplay import (
     GameVariant,
     SelfPlayActor,
     SelfPlayConfig,
@@ -29,7 +29,7 @@ from test_variant_selfplay import evaluator
 def test_exact_tail_completion_preserves_variant_pda_and_real_score_targets(
     tmp_path, mode, handicap, pie
 ):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     config = replace(
         SelfPlayConfig.cpu_smoke(seed=31),
         games=1,

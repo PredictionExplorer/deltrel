@@ -6,12 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from startrain.arena import ArenaRunner
-from startrain.baselines import create_frozen_baseline
-from startrain.cli import arena_main
-from startrain.config import ArenaConfig
-from startrain.inference import InferenceResponse
-from startrain.native import BITBOARD_WORDS
+from deltreltrain.arena import ArenaRunner
+from deltreltrain.baselines import create_frozen_baseline
+from deltreltrain.cli import arena_main
+from deltreltrain.config import ArenaConfig
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.native import BITBOARD_WORDS
 
 
 class GreedyStateBatch:
@@ -103,7 +103,7 @@ def test_frozen_evaluators_are_deterministic_and_versioned() -> None:
 
 @pytest.mark.native
 def test_frozen_baselines_are_deterministic_with_native_search() -> None:
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     for name in ("uniform", "greedy", "shallow-search"):
         baseline = create_frozen_baseline(name, native_module=native)
         selected = []
@@ -365,7 +365,7 @@ def test_arena_cli_preserves_checkpoint_baseline_and_selects_frozen_baseline(
     CapturingArenaRunner.calls.clear()
 
     monkeypatch.setattr(
-        "startrain.cli.load_config",
+        "deltreltrain.cli.load_config",
         lambda _path: SimpleNamespace(arena=SimpleNamespace(rings=(4, 6, 8, 10))),
     )
 
@@ -373,20 +373,20 @@ def test_arena_cli_preserves_checkpoint_baseline_and_selects_frozen_baseline(
         manifests.append(path)
         return f"manifest:{path}"
 
-    monkeypatch.setattr("startrain.cli.load_model_manifest", load_manifest)
+    monkeypatch.setattr("deltreltrain.cli.load_model_manifest", load_manifest)
     monkeypatch.setattr(
-        "startrain.cli.load_manifest_evaluator",
+        "deltreltrain.cli.load_manifest_evaluator",
         lambda _experiment, manifest, *, device: SimpleNamespace(
             model_version=f"{manifest}@{device}"
         ),
     )
     monkeypatch.setattr(
-        "startrain.cli.load_star_native",
+        "deltreltrain.cli.load_deltrel_native",
         lambda *, required: GreedyNative,
     )
-    monkeypatch.setattr("startrain.cli.ArenaRunner", CapturingArenaRunner)
+    monkeypatch.setattr("deltreltrain.cli.ArenaRunner", CapturingArenaRunner)
     monkeypatch.setattr(
-        "startrain.cli.atomic_json",
+        "deltreltrain.cli.atomic_json",
         lambda path, payload: writes.append((path, payload)),
     )
 

@@ -4,9 +4,9 @@ import hashlib
 import torch
 
 from scripts.run_lineage_arena import load_candidate
-from startrain.checkpoint import ExponentialMovingAverage, save_checkpoint
-from startrain.config import GameConfig
-from startrain.model import GraphResTNet, ModelConfig
+from deltreltrain.checkpoint import ExponentialMovingAverage, save_checkpoint
+from deltreltrain.config import GameConfig
+from deltreltrain.model import GraphResTNet, ModelConfig
 
 
 def test_diagnostic_defaults_override_large_production_continuation_budget(

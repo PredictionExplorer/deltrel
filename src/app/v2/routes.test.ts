@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const proxy = vi.hoisted(() => vi.fn());
 
-vi.mock('@/lib/star/ai/server-proxy', () => ({
-  STAR_AI_PROXY_ANALYZE_PATH: '/v2/analyze',
-  STAR_AI_PROXY_HEALTH_PATH: '/v2/health',
-  STAR_AI_PROXY_MOVE_PATH: '/v2/move',
-  proxyStarAiRequest: proxy,
+vi.mock('@/lib/deltrel/ai/server-proxy', () => ({
+  DELTREL_AI_PROXY_ANALYZE_PATH: '/v2/analyze',
+  DELTREL_AI_PROXY_HEALTH_PATH: '/v2/health',
+  DELTREL_AI_PROXY_MOVE_PATH: '/v2/move',
+  proxyDeltrelAiRequest: proxy,
 }));
 
 import {

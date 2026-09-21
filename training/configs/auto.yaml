@@ -1,6 +1,6 @@
 # Hardware-adaptive continuous profile.
 #
-# `startrain-orchestrate --config configs/auto.yaml` detects this host's
+# `deltreltrain-orchestrate --config configs/auto.yaml` detects this host's
 # compute (CUDA GPU count, Apple Metal, or CPU-only), generates a matching
 # learner/actor/arena topology, and freezes the resolution into
 # `<run-root>/resolved-config.yaml` for every child worker:

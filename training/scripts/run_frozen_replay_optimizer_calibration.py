@@ -20,7 +20,7 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     ModelManifest,
     extract_verified_manifest_config,
@@ -32,37 +32,37 @@ from startrain.checkpoint import (
     sha256_file,
     verify_file,
 )
-from startrain.config import ExperimentConfig, load_config
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, RULES_HASH_WIRE
-from startrain.device import (
+from deltreltrain.config import ExperimentConfig, load_config
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, RULES_HASH_WIRE
+from deltreltrain.device import (
     enable_fast_math,
     resolve_device_string,
     resolve_precision,
     seed_all,
     synchronize_device,
 )
-from startrain.losses import compute_losses
-from startrain.model import GraphResTNet
-from startrain.optim import (
+from deltreltrain.losses import compute_losses
+from deltreltrain.model import GraphResTNet
+from deltreltrain.optim import (
     OptimizerRoutingMetadata,
     build_optimizer,
     optimizer_routing_metadata,
 )
-from startrain.replay import (
+from deltreltrain.replay import (
     DecodedReplayShard,
     ReplayBatch,
     augment_sample,
     collate_replay_samples,
     decode_replay_shard,
 )
-from startrain.replay_store import (
+from deltreltrain.replay_store import (
     MANIFEST_SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
     SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
     validate_game_publications,
 )
-from startrain.runtime import atomic_json
-from startrain.symmetry import deterministic_transform
-from startrain.training import (
+from deltreltrain.runtime import atomic_json
+from deltreltrain.symmetry import deterministic_transform
+from deltreltrain.training import (
     CompileCacheProvenance,
     build_scheduler,
     configure_isolated_compile_cache,
@@ -82,13 +82,13 @@ else:
         RING10_OPTIMIZER_CALIBRATION_TREATMENTS,
     )
 
-FORMAT = "startrain.frozen-replay-optimizer-calibration"
+FORMAT = "deltreltrain.frozen-replay-optimizer-calibration"
 SCHEMA_VERSION = 1
-STATE_FORMAT = "startrain.frozen-replay-optimizer-calibration-state"
+STATE_FORMAT = "deltreltrain.frozen-replay-optimizer-calibration-state"
 MAX_H100_HOURS_PER_ARM = 2.0
 CONTROL_ARM = "ring10-optimizer-runtime-effective-control"
 FOLLOW_ON_ARM = "ring10-optimizer-0.5x-effective-lr"
-PREIMPORT_CACHE_BOOTSTRAP_ENV = "STARTRAIN_COMPILE_CACHE_BOOTSTRAP"
+PREIMPORT_CACHE_BOOTSTRAP_ENV = "DELTRELTRAIN_COMPILE_CACHE_BOOTSTRAP"
 
 
 @dataclass(frozen=True, slots=True)
@@ -898,9 +898,9 @@ def _bind_compile_cache(
 ) -> dict[str, object]:
     marker = compile_cache.root / "cache-owner.json"
     expected = {
-        "format": "startrain.compile-cache-owner",
+        "format": "deltreltrain.compile-cache-owner",
         "schema_version": 1,
-        "layout": "startrain-isolated-compile-cache-v1",
+        "layout": "deltreltrain-isolated-compile-cache-v1",
         "arm": settings.arm,
         "run_contract_sha256": contract_sha256,
         "root": str(compile_cache.root),

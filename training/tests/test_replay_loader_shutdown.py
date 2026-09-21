@@ -6,8 +6,8 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-import startrain.learner as learner_module
-from startrain.learner import RebindableReplayBatchSampler, SpawnedReplayLoaderPool
+import deltreltrain.learner as learner_module
+from deltreltrain.learner import RebindableReplayBatchSampler, SpawnedReplayLoaderPool
 
 
 def pool_with_loader(loader):

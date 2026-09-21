@@ -4,9 +4,9 @@ from pathlib import Path
 import pytest
 
 from scripts.validate_continuous_profile import validate_continuous_config
-from startrain.config import ArenaConfig, ConfigError, RingWeightStage, load_config
-from startrain.config_compatibility import compatible_config_epoch_payloads
-from startrain.model import model_parameter_count
+from deltreltrain.config import ArenaConfig, ConfigError, RingWeightStage, load_config
+from deltreltrain.config_compatibility import compatible_config_epoch_payloads
+from deltreltrain.model import model_parameter_count
 
 CONFIGS = Path(__file__).parents[1] / "configs"
 

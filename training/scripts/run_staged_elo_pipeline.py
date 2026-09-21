@@ -13,7 +13,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from startrain.runtime import atomic_json
+from deltreltrain.runtime import atomic_json
 
 if __package__:
     from .compare_elo_ablation_seeds import (
@@ -63,13 +63,13 @@ else:
     )
 
 SCHEMA_VERSION = 1
-PIPELINE_REPORT = "startrain-staged-elo-pipeline"
-PIPELINE_STATE_REPORT = "startrain-staged-elo-pipeline-state"
-FUTILITY_REPORT = "startrain-elo-futility-policy"
-FUTILITY_EVALUATION_REPORT = "startrain-elo-futility-evaluation"
-CONFIRMATION_CAMPAIGN_REPORT = "startrain-elo-confirmation-campaign"
-CONFIRMATION_CAMPAIGN_STATE_REPORT = "startrain-elo-confirmation-campaign-state"
-CONFIRMATION_HOLD_REPORT = "startrain-elo-seed-boundary-hold"
+PIPELINE_REPORT = "deltreltrain-staged-elo-pipeline"
+PIPELINE_STATE_REPORT = "deltreltrain-staged-elo-pipeline-state"
+FUTILITY_REPORT = "deltreltrain-elo-futility-policy"
+FUTILITY_EVALUATION_REPORT = "deltreltrain-elo-futility-evaluation"
+CONFIRMATION_CAMPAIGN_REPORT = "deltreltrain-elo-confirmation-campaign"
+CONFIRMATION_CAMPAIGN_STATE_REPORT = "deltreltrain-elo-confirmation-campaign-state"
+CONFIRMATION_HOLD_REPORT = "deltreltrain-elo-seed-boundary-hold"
 
 QueueRunner = Callable[..., dict[str, object]]
 CrossSeedBuilder = Callable[..., dict[str, object]]
@@ -1354,7 +1354,7 @@ def _verified_completed_queue(
     source = persisted_handoff.get("source")
     if (
         persisted_handoff.get("schema_version") != SCHEMA_VERSION
-        or persisted_handoff.get("report") != "startrain-continuity-handoff-request"
+        or persisted_handoff.get("report") != "deltreltrain-continuity-handoff-request"
         or persisted_handoff.get("requested") is not True
         or persisted_handoff.get("status") != "requested"
         or persisted_handoff.get("action") != "request_fallback"

@@ -39,7 +39,7 @@ from scripts.training_disaster_recovery import (
     _validate_object,
 )
 
-CONTROL_REPORT = "startrain-control-plane-snapshot"
+CONTROL_REPORT = "deltreltrain-control-plane-snapshot"
 CONTROL_FAMILY = "control-plane-v1"
 _CAPTURE_ATTEMPTS = 4
 

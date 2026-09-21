@@ -20,10 +20,10 @@ import time
 from types import SimpleNamespace
 from typing import Any, Callable, cast
 
-from startrain.arena import ArenaGame, ArenaPair, ArenaRunner
-from startrain.config import ArenaConfig
-from startrain.selfplay import GameVariant
-from startrain.topology import get_topology
+from deltreltrain.arena import ArenaGame, ArenaPair, ArenaRunner
+from deltreltrain.config import ArenaConfig
+from deltreltrain.selfplay import GameVariant
+from deltreltrain.topology import get_topology
 
 
 def legacy_snapshot(subject: ArenaRunner) -> dict[str, Any]:
@@ -145,7 +145,7 @@ def benchmark(*, repeats: int, iterations: int) -> dict[str, Any]:
         "python": platform.python_version(),
         "platform": platform.platform(),
         "arena_source_sha256": hashlib.sha256(
-            Path(__file__).parents[1].joinpath("startrain/arena.py").read_bytes()
+            Path(__file__).parents[1].joinpath("deltreltrain/arena.py").read_bytes()
         ).hexdigest(),
         "snapshot_sha256": hashlib.sha256(expected.encode()).hexdigest(),
         "snapshot_bytes": len(expected.encode()),

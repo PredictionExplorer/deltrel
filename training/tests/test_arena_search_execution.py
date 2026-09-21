@@ -4,9 +4,9 @@ import threading
 
 import pytest
 
-from startrain.arena import ArenaRunner
-from startrain.config import ArenaConfig
-from startrain.search_options import SearchExecutionConfig
+from deltreltrain.arena import ArenaRunner
+from deltreltrain.config import ArenaConfig
+from deltreltrain.search_options import SearchExecutionConfig
 from test_balanced_arena_batching import evaluator
 
 
@@ -24,7 +24,7 @@ def config(execution):
 
 @pytest.mark.native
 def test_arena_first_visit_batching_preserves_fixed_search_results():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     results = []
     for execution in (
         SearchExecutionConfig(),
@@ -49,7 +49,7 @@ def test_arena_first_visit_batching_preserves_fixed_search_results():
 
 @pytest.mark.native
 def test_arena_pooled_reuse_is_bounded_and_released_after_producers_drain(monkeypatch):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     adapter = evaluator()
     runner = ArenaRunner(
         native_module=native,
@@ -95,7 +95,7 @@ def test_arena_pooled_reuse_is_bounded_and_released_after_producers_drain(monkey
 @pytest.mark.native
 @pytest.mark.parametrize("failed", [False, True])
 def test_interrupted_or_failed_arena_does_not_retain_search_sessions(failed):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     adapter = evaluator()
     adapter.model.started = threading.Event()
     adapter.model.release = threading.Event()

@@ -12,10 +12,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from startrain.actor_pause import ActorPauseGate
-from startrain.inference import InferenceResponse
-from startrain.runtime import RunIdentity
-from startrain.selfplay import SelfPlayActor, SelfPlayConfig, SelfPlayIdentity
+from deltreltrain.actor_pause import ActorPauseGate
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.selfplay import SelfPlayActor, SelfPlayConfig, SelfPlayIdentity
 
 
 class _PauseHarness:
@@ -414,7 +414,7 @@ class _CapturingSink:
     "pause_at", [1, 2, 12], ids=["root-initialized", "leaf-submitted", "mid-game"]
 )
 def test_native_pause_preserves_search_replay_and_evaluation_counts(pause, pause_at):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     config = SelfPlayConfig(
         rings=4,
         batch_size=1,

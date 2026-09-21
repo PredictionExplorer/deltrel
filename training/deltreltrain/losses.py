@@ -1,0 +1,811 @@
+"""Masked multi-head losses with equal per-sample spatial weighting."""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Callable
+from dataclasses import dataclass
+
+import torch
+import torch.nn.functional as functional
+from torch import Tensor
+
+from .contracts import SCORE_MARGIN_MAX, SCORE_MARGIN_MIN
+from .model import DeltrelModelOutput
+
+
+@dataclass(frozen=True, slots=True)
+class LossWeights:
+    policy: float = 1.0
+    outcome: float = 1.0
+    score_margin: float = 0.25
+    ownership: float = 0.25
+    alive: float = 0.1
+    soft_policy: float = 0.25
+    # Per-head KL to stored teacher distributions (lineage transfer). Samples
+    # without teacher targets contribute nothing, so fresh self-play data
+    # trains on its search targets alone even when these weights are positive.
+    teacher_policy: float = 0.0
+    teacher_outcome: float = 0.0
+    teacher_score_margin: float = 0.0
+    opponent_reply: float = 0.0
+    second_stone: float = 0.0
+    final_shores: float = 0.0
+    final_networks: float = 0.0
+    final_capes: float = 0.0
+
+    def __post_init__(self) -> None:
+        values = (
+            self.policy,
+            self.outcome,
+            self.score_margin,
+            self.ownership,
+            self.alive,
+            self.soft_policy,
+            self.teacher_policy,
+            self.teacher_outcome,
+            self.teacher_score_margin,
+            self.opponent_reply,
+            self.second_stone,
+            self.final_shores,
+            self.final_networks,
+            self.final_capes,
+        )
+        if any(not math.isfinite(value) or value < 0 for value in values):
+            raise ValueError("loss weights must be finite and non-negative")
+        if not any(value > 0 for value in (*values[:6], *values[9:])):
+            raise ValueError("at least one loss weight must be positive")
+
+    @property
+    def uses_teacher(self) -> bool:
+        return (
+            self.teacher_policy > 0
+            or self.teacher_outcome > 0
+            or self.teacher_score_margin > 0
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TrainingTargets:
+    policy: Tensor
+    outcome: Tensor
+    score_margin: Tensor
+    ownership: Tensor
+    alive: Tensor
+    soft_policy: Tensor
+    policy_mask: Tensor
+    outcome_mask: Tensor
+    score_margin_mask: Tensor
+    ownership_mask: Tensor
+    alive_mask: Tensor
+    soft_policy_mask: Tensor
+    sample_weight: Tensor | None = None
+    policy_weight: Tensor | None = None
+    clinch_mask: Tensor | None = None
+    # Stored teacher distributions (probabilities) and their availability mask.
+    teacher_policy: Tensor | None = None
+    teacher_outcome: Tensor | None = None
+    teacher_score_margin: Tensor | None = None
+    teacher_mask: Tensor | None = None
+    # Optional future actions and official final-score components. Count columns
+    # are always current-player, opponent, regardless of absolute stone color.
+    opponent_reply: Tensor | None = None
+    second_stone: Tensor | None = None
+    final_shores: Tensor | None = None
+    final_networks: Tensor | None = None
+    final_capes: Tensor | None = None
+    opponent_reply_mask: Tensor | None = None
+    second_stone_mask: Tensor | None = None
+    final_shores_mask: Tensor | None = None
+    final_networks_mask: Tensor | None = None
+    final_capes_mask: Tensor | None = None
+
+    def _optional(
+        self,
+        name: str,
+        transform: "Callable[[Tensor], Tensor]",
+    ) -> Tensor | None:
+        value = getattr(self, name)
+        return transform(value) if value is not None else None
+
+    def to(
+        self,
+        device: torch.device | str,
+        *,
+        non_blocking: bool = False,
+    ) -> "TrainingTargets":
+        return TrainingTargets(
+            policy=self.policy.to(device, non_blocking=non_blocking),
+            outcome=self.outcome.to(device, non_blocking=non_blocking),
+            score_margin=self.score_margin.to(device, non_blocking=non_blocking),
+            ownership=self.ownership.to(device, non_blocking=non_blocking),
+            alive=self.alive.to(device, non_blocking=non_blocking),
+            soft_policy=self.soft_policy.to(device, non_blocking=non_blocking),
+            policy_mask=self.policy_mask.to(device, non_blocking=non_blocking),
+            outcome_mask=self.outcome_mask.to(device, non_blocking=non_blocking),
+            score_margin_mask=self.score_margin_mask.to(
+                device, non_blocking=non_blocking
+            ),
+            ownership_mask=self.ownership_mask.to(device, non_blocking=non_blocking),
+            alive_mask=self.alive_mask.to(device, non_blocking=non_blocking),
+            soft_policy_mask=self.soft_policy_mask.to(
+                device, non_blocking=non_blocking
+            ),
+            sample_weight=(
+                self.sample_weight.to(device, non_blocking=non_blocking)
+                if self.sample_weight is not None
+                else None
+            ),
+            policy_weight=(
+                self.policy_weight.to(device, non_blocking=non_blocking)
+                if self.policy_weight is not None
+                else None
+            ),
+            clinch_mask=(
+                self.clinch_mask.to(device, non_blocking=non_blocking)
+                if self.clinch_mask is not None
+                else None
+            ),
+            teacher_policy=self._optional(
+                "teacher_policy", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            teacher_outcome=self._optional(
+                "teacher_outcome", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            teacher_score_margin=self._optional(
+                "teacher_score_margin",
+                lambda t: t.to(device, non_blocking=non_blocking),
+            ),
+            teacher_mask=self._optional(
+                "teacher_mask", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            opponent_reply=self._optional(
+                "opponent_reply", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            second_stone=self._optional(
+                "second_stone", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            final_shores=self._optional(
+                "final_shores", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            final_networks=self._optional(
+                "final_networks", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            final_capes=self._optional(
+                "final_capes", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            opponent_reply_mask=self._optional(
+                "opponent_reply_mask", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            second_stone_mask=self._optional(
+                "second_stone_mask", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            final_shores_mask=self._optional(
+                "final_shores_mask", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            final_networks_mask=self._optional(
+                "final_networks_mask", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+            final_capes_mask=self._optional(
+                "final_capes_mask", lambda t: t.to(device, non_blocking=non_blocking)
+            ),
+        )
+
+    def pin_memory(self) -> "TrainingTargets":
+        return TrainingTargets(
+            policy=self.policy.pin_memory(),
+            outcome=self.outcome.pin_memory(),
+            score_margin=self.score_margin.pin_memory(),
+            ownership=self.ownership.pin_memory(),
+            alive=self.alive.pin_memory(),
+            soft_policy=self.soft_policy.pin_memory(),
+            policy_mask=self.policy_mask.pin_memory(),
+            outcome_mask=self.outcome_mask.pin_memory(),
+            score_margin_mask=self.score_margin_mask.pin_memory(),
+            ownership_mask=self.ownership_mask.pin_memory(),
+            alive_mask=self.alive_mask.pin_memory(),
+            soft_policy_mask=self.soft_policy_mask.pin_memory(),
+            sample_weight=(
+                self.sample_weight.pin_memory()
+                if self.sample_weight is not None
+                else None
+            ),
+            policy_weight=(
+                self.policy_weight.pin_memory()
+                if self.policy_weight is not None
+                else None
+            ),
+            clinch_mask=(
+                self.clinch_mask.pin_memory() if self.clinch_mask is not None else None
+            ),
+            teacher_policy=self._optional("teacher_policy", lambda t: t.pin_memory()),
+            teacher_outcome=self._optional("teacher_outcome", lambda t: t.pin_memory()),
+            teacher_score_margin=self._optional(
+                "teacher_score_margin", lambda t: t.pin_memory()
+            ),
+            teacher_mask=self._optional("teacher_mask", lambda t: t.pin_memory()),
+            opponent_reply=self._optional("opponent_reply", lambda t: t.pin_memory()),
+            second_stone=self._optional("second_stone", lambda t: t.pin_memory()),
+            final_shores=self._optional("final_shores", lambda t: t.pin_memory()),
+            final_networks=self._optional("final_networks", lambda t: t.pin_memory()),
+            final_capes=self._optional("final_capes", lambda t: t.pin_memory()),
+            opponent_reply_mask=self._optional(
+                "opponent_reply_mask", lambda t: t.pin_memory()
+            ),
+            second_stone_mask=self._optional(
+                "second_stone_mask", lambda t: t.pin_memory()
+            ),
+            final_shores_mask=self._optional(
+                "final_shores_mask", lambda t: t.pin_memory()
+            ),
+            final_networks_mask=self._optional(
+                "final_networks_mask", lambda t: t.pin_memory()
+            ),
+            final_capes_mask=self._optional(
+                "final_capes_mask", lambda t: t.pin_memory()
+            ),
+        )
+
+    def record_stream(self, stream: torch.Stream) -> None:
+        tensors = (
+            self.policy,
+            self.outcome,
+            self.score_margin,
+            self.ownership,
+            self.alive,
+            self.soft_policy,
+            self.policy_mask,
+            self.outcome_mask,
+            self.score_margin_mask,
+            self.ownership_mask,
+            self.alive_mask,
+            self.soft_policy_mask,
+        )
+        for tensor in tensors:
+            tensor.record_stream(stream)
+        if self.sample_weight is not None:
+            self.sample_weight.record_stream(stream)
+        if self.policy_weight is not None:
+            self.policy_weight.record_stream(stream)
+        if self.clinch_mask is not None:
+            self.clinch_mask.record_stream(stream)
+        for name in (
+            "teacher_policy",
+            "teacher_outcome",
+            "teacher_score_margin",
+            "teacher_mask",
+            "opponent_reply",
+            "second_stone",
+            "final_shores",
+            "final_networks",
+            "final_capes",
+            "opponent_reply_mask",
+            "second_stone_mask",
+            "final_shores_mask",
+            "final_networks_mask",
+            "final_capes_mask",
+        ):
+            value = getattr(self, name)
+            if value is not None:
+                value.record_stream(stream)
+
+
+def _require_tensor(condition: Tensor, message: str) -> None:
+    if not bool(condition.all()):
+        raise ValueError(message)
+
+
+def _weighted_mean(values: Tensor, valid: Tensor, weights: Tensor) -> Tensor:
+    effective = valid.to(dtype=values.dtype) * weights.to(dtype=values.dtype)
+    numerator = (values * effective).sum()
+    denominator = effective.sum()
+    tiny = torch.finfo(values.dtype).tiny
+    return torch.where(
+        denominator > 0,
+        numerator / denominator.clamp_min(tiny),
+        numerator * 0.0,
+    )
+
+
+def _per_sample_masked_mean(values: Tensor, valid: Tensor) -> tuple[Tensor, Tensor]:
+    valid_float = valid.to(dtype=values.dtype)
+    counts = valid_float.sum(dim=1)
+    per_sample = (values * valid_float).sum(dim=1) / counts.clamp_min(1.0)
+    return per_sample, counts > 0
+
+
+def _kl_to_teacher(
+    logits: Tensor,
+    teacher: Tensor,
+    legal_mask: Tensor | None,
+) -> Tensor:
+    """Per-sample ``KL(teacher || student)`` from stored teacher probabilities."""
+
+    if legal_mask is not None:
+        logits = logits.masked_fill(~legal_mask, torch.finfo(logits.dtype).min)
+        teacher = teacher * legal_mask.to(dtype=teacher.dtype)
+    probabilities = teacher.float()
+    mass = probabilities.sum(dim=-1, keepdim=True)
+    probabilities = probabilities / mass.clamp_min(torch.finfo(torch.float32).tiny)
+    log_student = functional.log_softmax(logits.float(), dim=-1)
+    log_teacher = torch.log(probabilities.clamp_min(torch.finfo(torch.float32).tiny))
+    kl = (probabilities * (log_teacher - log_student)).sum(dim=-1)
+    return torch.where(mass.squeeze(-1) > 0, kl, torch.zeros_like(kl))
+
+
+def _soft_cross_entropy(
+    logits: Tensor,
+    targets: Tensor,
+    legal_mask: Tensor,
+) -> tuple[Tensor, Tensor]:
+    legal_targets = targets.to(dtype=logits.dtype) * legal_mask.to(dtype=logits.dtype)
+    mass = legal_targets.sum(dim=-1)
+    valid = mass > 0
+    normalized = legal_targets / mass.unsqueeze(-1).clamp_min(
+        torch.finfo(logits.dtype).tiny
+    )
+    masked_logits = logits.masked_fill(~legal_mask, torch.finfo(logits.dtype).min)
+    log_probabilities = functional.log_softmax(masked_logits.float(), dim=-1)
+    losses = -(normalized.float() * log_probabilities).sum(dim=-1)
+    return losses, valid
+
+
+def _validate_shapes(
+    output: DeltrelModelOutput,
+    targets: TrainingTargets,
+    *,
+    legal_action_mask: Tensor,
+    node_mask: Tensor,
+    margin_bins: int,
+) -> None:
+    if legal_action_mask.ndim != 2 or node_mask.ndim != 2:
+        raise ValueError("legal and node masks must be rank-two tensors")
+    if legal_action_mask.dtype != torch.bool or node_mask.dtype != torch.bool:
+        raise ValueError("legal and node masks must be boolean")
+    batch_size, actions = legal_action_mask.shape
+    node_batch, nodes = node_mask.shape
+    if batch_size != node_batch:
+        raise ValueError("legal and node mask batch dimensions disagree")
+    expected_outputs = (
+        (output.policy_logits, (batch_size, actions), "policy logits"),
+        (output.outcome_logits, (batch_size, 2), "outcome logits"),
+        (
+            output.score_margin_logits,
+            (batch_size, margin_bins),
+            "score-margin logits",
+        ),
+        (output.ownership_logits, (batch_size, nodes, 3), "ownership logits"),
+        (output.alive_logits, (batch_size, nodes), "alive logits"),
+        (output.soft_policy_logits, (batch_size, actions), "soft-policy logits"),
+    )
+    for tensor, shape, name in expected_outputs:
+        if tensor.shape != shape:
+            raise ValueError(f"{name} must have shape {shape}")
+    expected_targets = (
+        (targets.policy, (batch_size, actions), "policy target"),
+        (targets.outcome, (batch_size,), "outcome target"),
+        (targets.score_margin, (batch_size,), "score-margin target"),
+        (targets.ownership, (batch_size, nodes), "ownership target"),
+        (targets.alive, (batch_size, nodes), "alive target"),
+        (targets.soft_policy, (batch_size, actions), "soft-policy target"),
+        (targets.policy_mask, (batch_size,), "policy mask"),
+        (targets.outcome_mask, (batch_size,), "outcome mask"),
+        (targets.score_margin_mask, (batch_size,), "score-margin mask"),
+        (targets.ownership_mask, (batch_size,), "ownership mask"),
+        (targets.alive_mask, (batch_size,), "alive mask"),
+        (targets.soft_policy_mask, (batch_size,), "soft-policy mask"),
+    )
+    for tensor, shape, name in expected_targets:
+        if tensor.shape != shape:
+            raise ValueError(f"{name} must have shape {shape}")
+    for name, target_shape, output_shape in (
+        ("opponent_reply", (batch_size, nodes + 1), (batch_size, nodes + 1)),
+        ("second_stone", (batch_size, nodes), (batch_size, nodes)),
+        ("final_shores", (batch_size, 2), (batch_size, 2, 51)),
+        ("final_networks", (batch_size, 2), (batch_size, 2, 26)),
+        ("final_capes", (batch_size, 2), (batch_size, 2, 6)),
+    ):
+        logits = getattr(output, f"{name}_logits")
+        if logits is not None and logits.shape != output_shape:
+            raise ValueError(f"{name} logits must have shape {output_shape}")
+        target = getattr(targets, name)
+        mask = getattr(targets, f"{name}_mask")
+        if (target is None) != (mask is None):
+            raise ValueError(f"{name} target and availability mask must occur together")
+        if target is not None:
+            if target.shape != target_shape:
+                raise ValueError(f"{name} target must have shape {target_shape}")
+            if mask.shape != (batch_size,) or mask.dtype != torch.bool:
+                raise ValueError(
+                    f"{name} mask must be boolean with shape ({batch_size},)"
+                )
+    for weights, name in (
+        (targets.sample_weight, "sample weights"),
+        (targets.policy_weight, "policy weights"),
+    ):
+        if weights is not None and weights.shape != (batch_size,):
+            raise ValueError(f"{name} must have shape ({batch_size},)")
+    if targets.clinch_mask is not None and targets.clinch_mask.shape != (batch_size,):
+        raise ValueError(f"clinch mask must have shape ({batch_size},)")
+    if targets.teacher_mask is not None:
+        if targets.teacher_mask.shape != (batch_size,):
+            raise ValueError(f"teacher mask must have shape ({batch_size},)")
+        for tensor, shape, name in (
+            (targets.teacher_policy, (batch_size, actions), "teacher policy"),
+            (targets.teacher_outcome, (batch_size, 2), "teacher outcome"),
+            (
+                targets.teacher_score_margin,
+                (batch_size, margin_bins),
+                "teacher score margin",
+            ),
+        ):
+            if tensor is None or tensor.shape != shape:
+                raise ValueError(f"{name} must have shape {shape}")
+
+
+def _auxiliary_loss(
+    name: str,
+    logits: Tensor,
+    targets: TrainingTargets,
+    *,
+    legal_action_mask: Tensor,
+    node_mask: Tensor,
+    sample_weight: Tensor,
+    validate_targets: bool,
+) -> Tensor:
+    """Optional supervision; missing rows produce finite, differentiable zero."""
+
+    target = getattr(targets, name)
+    mask = getattr(targets, f"{name}_mask")
+    if target is None or mask is None:
+        # Multiplying before reducing avoids overflow of summed mask sentinels.
+        return (logits.float() * 0.0).sum()
+    if name in ("opponent_reply", "second_stone"):
+        legal = legal_action_mask & node_mask
+        if name == "opponent_reply":
+            legal = torch.cat(
+                (legal, torch.ones_like(legal[:, :1], dtype=torch.bool)), dim=-1
+            )
+        safe_target = torch.where(mask[:, None], target, torch.zeros_like(target))
+        if validate_targets:
+            _require_tensor(
+                torch.isfinite(safe_target) & (safe_target >= 0),
+                f"available {name} targets must be finite and non-negative",
+            )
+            _require_tensor(
+                (safe_target == 0) | legal,
+                f"available {name} targets must use currently empty nodes",
+            )
+            _require_tensor(
+                ~mask
+                | torch.isclose(
+                    safe_target.sum(dim=-1), torch.ones_like(sample_weight)
+                ),
+                f"available {name} targets must sum to one",
+            )
+        values, has_mass = _soft_cross_entropy(logits, safe_target, legal)
+        return _weighted_mean(values, mask & has_mass, sample_weight)
+
+    if target.dtype not in (
+        torch.int8,
+        torch.uint8,
+        torch.int16,
+        torch.int32,
+        torch.int64,
+    ):
+        raise ValueError(f"{name} targets must contain integer count classes")
+    safe_target = torch.where(mask[:, None], target, torch.zeros_like(target)).long()
+    if validate_targets:
+        _require_tensor(
+            (safe_target >= 0) & (safe_target < logits.shape[-1]),
+            f"available {name} counts are outside the supported range",
+        )
+        selected_logits = logits.gather(-1, safe_target.unsqueeze(-1)).squeeze(-1)
+        _require_tensor(
+            ~mask[:, None] | (selected_logits > torch.finfo(logits.dtype).min),
+            f"available {name} counts are impossible for the board size",
+        )
+    values = (
+        functional.cross_entropy(
+            logits.float().flatten(0, 1), safe_target.flatten(), reduction="none"
+        )
+        .reshape_as(safe_target)
+        .mean(dim=-1)
+    )
+    return _weighted_mean(values, mask, sample_weight)
+
+
+def compute_losses(
+    output: DeltrelModelOutput,
+    targets: TrainingTargets,
+    *,
+    legal_action_mask: Tensor,
+    node_mask: Tensor,
+    score_margin_min: int = SCORE_MARGIN_MIN,
+    score_margin_max: int = SCORE_MARGIN_MAX,
+    weights: LossWeights = LossWeights(),
+    validate_targets: bool = True,
+    include_diagnostics: bool = False,
+) -> dict[str, Tensor]:
+    """Compute losses using explicit availability masks.
+
+    Score margin ``-100`` is a real label. Missing margins are represented only
+    by ``score_margin_mask=False`` and never by a colliding sentinel.
+    """
+
+    margin_bins = score_margin_max - score_margin_min + 1
+    _validate_shapes(
+        output,
+        targets,
+        legal_action_mask=legal_action_mask,
+        node_mask=node_mask,
+        margin_bins=margin_bins,
+    )
+    batch_size = output.policy_logits.shape[0]
+    sample_weight = (
+        targets.sample_weight
+        if targets.sample_weight is not None
+        else torch.ones(batch_size, device=output.policy_logits.device)
+    )
+    if validate_targets:
+        _require_tensor(
+            (sample_weight >= 0) & torch.isfinite(sample_weight),
+            "sample weights must be finite and non-negative",
+        )
+    policy_weight = (
+        targets.policy_weight
+        if targets.policy_weight is not None
+        else torch.ones_like(sample_weight)
+    )
+    if validate_targets:
+        _require_tensor(
+            (policy_weight >= 0) & torch.isfinite(policy_weight),
+            "policy weights must be finite and non-negative",
+        )
+    policy_sample_weight = sample_weight * policy_weight
+    policy_values, policy_has_mass = _soft_cross_entropy(
+        output.policy_logits, targets.policy, legal_action_mask
+    )
+    policy_valid = policy_has_mass & targets.policy_mask.bool()
+    policy_loss = _weighted_mean(policy_values, policy_valid, policy_sample_weight)
+
+    outcome_mask = targets.outcome_mask.bool()
+    if validate_targets:
+        _require_tensor(
+            (targets.outcome[outcome_mask] >= 0) & (targets.outcome[outcome_mask] <= 1),
+            "available outcome labels must be loss=0 or win=1",
+        )
+    safe_outcome = torch.where(
+        outcome_mask, targets.outcome, torch.zeros_like(targets.outcome)
+    )
+    outcome_values = functional.cross_entropy(
+        output.outcome_logits.float(), safe_outcome.long(), reduction="none"
+    )
+    outcome_loss = _weighted_mean(outcome_values, outcome_mask, sample_weight)
+
+    margin_mask = targets.score_margin_mask.bool()
+    if validate_targets:
+        available_margin = targets.score_margin[margin_mask]
+        _require_tensor(
+            (available_margin >= score_margin_min)
+            & (available_margin <= score_margin_max),
+            f"available score margins must be in "
+            f"[{score_margin_min}, {score_margin_max}]",
+        )
+    safe_margin = torch.where(
+        margin_mask,
+        targets.score_margin,
+        torch.full_like(targets.score_margin, score_margin_min),
+    )
+    margin_classes = safe_margin.long() - score_margin_min
+    margin_values = functional.cross_entropy(
+        output.score_margin_logits.float(), margin_classes, reduction="none"
+    )
+    score_margin_loss = _weighted_mean(margin_values, margin_mask, sample_weight)
+
+    ownership_sample_mask = targets.ownership_mask.bool()
+    ownership_valid = (
+        node_mask & ownership_sample_mask.unsqueeze(1) & (targets.ownership != -100)
+    )
+    if validate_targets:
+        available_ownership = targets.ownership[ownership_valid]
+        _require_tensor(
+            (available_ownership >= 0) & (available_ownership <= 2),
+            "available ownership labels must be in 0..2",
+        )
+    safe_ownership = torch.where(
+        ownership_valid,
+        targets.ownership,
+        torch.full_like(targets.ownership, -100),
+    )
+    ownership_values = functional.cross_entropy(
+        output.ownership_logits.float().transpose(1, 2),
+        safe_ownership.long(),
+        reduction="none",
+        ignore_index=-100,
+    )
+    ownership_per_sample, ownership_has_nodes = _per_sample_masked_mean(
+        ownership_values, ownership_valid
+    )
+    ownership_loss = _weighted_mean(
+        ownership_per_sample,
+        ownership_has_nodes & ownership_sample_mask,
+        sample_weight,
+    )
+
+    alive_sample_mask = targets.alive_mask.bool()
+    alive_valid = node_mask & alive_sample_mask.unsqueeze(1) & (targets.alive >= 0)
+    if validate_targets:
+        available_alive = targets.alive[alive_valid]
+        _require_tensor(
+            (available_alive >= 0) & (available_alive <= 1),
+            "available alive labels must be in [0, 1]",
+        )
+    alive_target = targets.alive.float().clamp(0, 1)
+    alive_values = functional.binary_cross_entropy_with_logits(
+        output.alive_logits.float(), alive_target, reduction="none"
+    )
+    alive_per_sample, alive_has_nodes = _per_sample_masked_mean(
+        alive_values, alive_valid
+    )
+    alive_loss = _weighted_mean(
+        alive_per_sample,
+        alive_has_nodes & alive_sample_mask,
+        sample_weight,
+    )
+
+    soft_values, soft_has_mass = _soft_cross_entropy(
+        output.soft_policy_logits, targets.soft_policy, legal_action_mask
+    )
+    soft_valid = soft_has_mass & targets.soft_policy_mask.bool()
+    soft_policy_loss = _weighted_mean(
+        soft_values,
+        soft_valid,
+        policy_sample_weight,
+    )
+
+    total = (
+        weights.policy * policy_loss
+        + weights.outcome * outcome_loss
+        + weights.score_margin * score_margin_loss
+        + weights.ownership * ownership_loss
+        + weights.alive * alive_loss
+        + weights.soft_policy * soft_policy_loss
+    )
+    losses = {
+        "total": total,
+        "policy": policy_loss,
+        "outcome": outcome_loss,
+        "score_margin": score_margin_loss,
+        "ownership": ownership_loss,
+        "alive": alive_loss,
+        "soft_policy": soft_policy_loss,
+    }
+    if targets.teacher_mask is not None and weights.uses_teacher:
+        teacher_mask = targets.teacher_mask.bool()
+        assert targets.teacher_policy is not None
+        assert targets.teacher_outcome is not None
+        assert targets.teacher_score_margin is not None
+        teacher_policy_values = _kl_to_teacher(
+            output.policy_logits, targets.teacher_policy, legal_action_mask
+        )
+        teacher_policy_loss = _weighted_mean(
+            teacher_policy_values,
+            teacher_mask & policy_has_mass,
+            policy_sample_weight,
+        )
+        teacher_outcome_loss = _weighted_mean(
+            _kl_to_teacher(output.outcome_logits, targets.teacher_outcome, None),
+            teacher_mask,
+            sample_weight,
+        )
+        teacher_margin_loss = _weighted_mean(
+            _kl_to_teacher(
+                output.score_margin_logits, targets.teacher_score_margin, None
+            ),
+            teacher_mask,
+            sample_weight,
+        )
+        losses["teacher_policy"] = teacher_policy_loss
+        losses["teacher_outcome"] = teacher_outcome_loss
+        losses["teacher_score_margin"] = teacher_margin_loss
+        losses["teacher_samples"] = teacher_mask.sum()
+        losses["total"] = (
+            total
+            + weights.teacher_policy * teacher_policy_loss
+            + weights.teacher_outcome * teacher_outcome_loss
+            + weights.teacher_score_margin * teacher_margin_loss
+        )
+    for name in (
+        "opponent_reply",
+        "second_stone",
+        "final_shores",
+        "final_networks",
+        "final_capes",
+    ):
+        logits = getattr(output, f"{name}_logits")
+        weight = getattr(weights, name)
+        if logits is None:
+            if weight:
+                raise ValueError(f"positive {name} loss weight requires its model head")
+            continue
+        value = (
+            _auxiliary_loss(
+                name,
+                logits,
+                targets,
+                legal_action_mask=legal_action_mask,
+                node_mask=node_mask,
+                sample_weight=sample_weight,
+                validate_targets=validate_targets,
+            )
+            if weight
+            else (logits.float() * 0.0).sum()
+        )
+        losses[name] = value
+        losses["total"] = losses["total"] + weight * value
+        if include_diagnostics:
+            mask = getattr(targets, f"{name}_mask")
+            with torch.no_grad():
+                losses[f"{name}_available"] = (
+                    (mask & (sample_weight > 0)).sum()
+                    if weight > 0 and mask is not None
+                    else torch.zeros((), device=logits.device, dtype=torch.int64)
+                )
+    if include_diagnostics:
+        clinch_mask = (
+            targets.clinch_mask.bool()
+            if targets.clinch_mask is not None
+            else torch.zeros(
+                batch_size,
+                device=output.policy_logits.device,
+                dtype=torch.bool,
+            )
+        )
+        with torch.no_grad():
+            losses.update(
+                {
+                    "clinch_policy": _weighted_mean(
+                        policy_values,
+                        policy_valid & clinch_mask,
+                        policy_sample_weight,
+                    ),
+                    "clinch_outcome": _weighted_mean(
+                        outcome_values,
+                        outcome_mask & clinch_mask,
+                        sample_weight,
+                    ),
+                    "clinch_score_margin": _weighted_mean(
+                        margin_values,
+                        margin_mask & clinch_mask,
+                        sample_weight,
+                    ),
+                    "clinch_ownership": _weighted_mean(
+                        ownership_per_sample,
+                        ownership_has_nodes & ownership_sample_mask & clinch_mask,
+                        sample_weight,
+                    ),
+                    "clinch_alive": _weighted_mean(
+                        alive_per_sample,
+                        alive_has_nodes & alive_sample_mask & clinch_mask,
+                        sample_weight,
+                    ),
+                    "clinch_soft_policy": _weighted_mean(
+                        soft_values,
+                        soft_valid & clinch_mask,
+                        policy_sample_weight,
+                    ),
+                    "clinch_samples": clinch_mask.sum(),
+                    "clinch_policy_available": (policy_valid & clinch_mask).sum(),
+                    "clinch_outcome_available": (outcome_mask & clinch_mask).sum(),
+                    "clinch_score_margin_available": (margin_mask & clinch_mask).sum(),
+                    "clinch_ownership_available": (
+                        ownership_has_nodes & ownership_sample_mask & clinch_mask
+                    ).sum(),
+                    "clinch_alive_available": (
+                        alive_has_nodes & alive_sample_mask & clinch_mask
+                    ).sum(),
+                    "clinch_soft_policy_available": (soft_valid & clinch_mask).sum(),
+                }
+            )
+    return losses

@@ -28,7 +28,7 @@ from typing import Protocol
 
 import torch
 
-from startrain.topology import SUPPORTED_RINGS
+from deltreltrain.topology import SUPPORTED_RINGS
 
 SCHEMA_VERSION = 1
 BENCHMARK_NAME = "h100-system-inference-sweep"

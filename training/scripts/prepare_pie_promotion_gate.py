@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Sequence
 
 from scripts.prepare_pie_policy_gate import _publish, _reference
-from startrain.config import load_config
-from startrain.pie_promotion import validate_pie_promotion_transition
-from startrain import search_allocation_gate as admission
+from deltreltrain.config import load_config
+from deltreltrain.pie_promotion import validate_pie_promotion_transition
+from deltreltrain import search_allocation_gate as admission
 
 
 def prepare_promotion_gate(source_path: Path, target_path: Path) -> dict[str, object]:

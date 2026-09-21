@@ -6,19 +6,19 @@ from pathlib import Path
 import pytest
 import yaml
 
-from startrain import learner as learner_module
-from startrain.config import (
+from deltreltrain import learner as learner_module
+from deltreltrain.config import (
     ConfigError,
     LearnerConfig,
     SchedulerConfig,
     TrainConfig,
     load_config,
 )
-from startrain.config_compatibility import (
+from deltreltrain.config_compatibility import (
     compatible_config_epoch_payloads,
     without_training_execution_defaults,
 )
-from startrain.replay_store import ReplayStore
+from deltreltrain.replay_store import ReplayStore
 from test_pipeline_core import (
     append_replay,
     make_replay_sample,

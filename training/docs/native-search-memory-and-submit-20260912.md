@@ -85,15 +85,15 @@ The child-index test verifies zero and large index round trips and the 32-byte
 Build baseline and candidate separately with:
 
 ```text
-maturin build --release --locked --manifest-path crates/star-py/Cargo.toml
+maturin build --release --locked --manifest-path crates/deltrel-py/Cargo.toml
 ```
 
-Extract each wheel's `star_native.abi3.so` into its own directory, then run:
+Extract each wheel's `deltrel_native.abi3.so` into its own directory, then run:
 
 ```text
 python scripts/benchmark_native_submit.py \
-  --baseline /absolute/baseline/star_native.abi3.so \
-  --candidate /absolute/candidate/star_native.abi3.so \
+  --baseline /absolute/baseline/deltrel_native.abi3.so \
+  --candidate /absolute/candidate/deltrel_native.abi3.so \
   --roots 1 8 32 128 --budgets 27 640 --pairs 2 --repeats 2 \
   --output /absolute/native-comparison.json
 ```

@@ -23,10 +23,10 @@ from typing import Any, NoReturn, TypeGuard
 
 import torch
 
-from startrain.checkpoint import CHECKPOINT_FORMAT, CHECKPOINT_VERSION
-from startrain.config import ExperimentConfig, load_config
-from startrain.config_compatibility import compatible_config_epoch_payloads
-from startrain.auxiliary_upgrade import AUXILIARY_LOSSES, is_auxiliary_extension
+from deltreltrain.checkpoint import CHECKPOINT_FORMAT, CHECKPOINT_VERSION
+from deltreltrain.config import ExperimentConfig, load_config
+from deltreltrain.config_compatibility import compatible_config_epoch_payloads
+from deltreltrain.auxiliary_upgrade import AUXILIARY_LOSSES, is_auxiliary_extension
 
 if __package__:
     from scripts.validate_continuous_profile import validate_continuous_config
@@ -675,7 +675,7 @@ def _validate_profile_pair(
             "loss configuration is immutable except auxiliary prediction weights"
         )
     if old.game != new.game:
-        from startrain.checkpoint import game_configs_compatible
+        from deltreltrain.checkpoint import game_configs_compatible
 
         if "ring10_pie" not in (
             old.orchestration.training_objective,
@@ -814,7 +814,7 @@ def _plan_utd_segment(
     def scoped_count(scope: str | None) -> int:
         if scope is None:
             return committed_replay_samples
-        from startrain.replay_store import training_committed_sample_count
+        from deltreltrain.replay_store import training_committed_sample_count
 
         path = run_root / "replay" / "manifest.sqlite3"
         with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True) as db:
@@ -1184,7 +1184,7 @@ def _validate_recovery(
     generation_family: str,
 ) -> tuple[int, int, str, int, Path]:
     if (
-        payload.get("format") != "startrain.recovery-pointer"
+        payload.get("format") != "deltreltrain.recovery-pointer"
         or payload.get("schema_version") != 1
         or payload.get("run_id") != run_id
         or payload.get("generation_family") != generation_family
@@ -1235,7 +1235,7 @@ def _validate_resume_cutover(
     generation_family: str,
 ) -> tuple[int, int, str]:
     if (
-        payload.get("format") != "startrain.resume-cutover"
+        payload.get("format") != "deltreltrain.resume-cutover"
         or payload.get("schema_version") != 1
         or payload.get("run_id") != run_id
         or payload.get("generation_family") != generation_family
@@ -1298,7 +1298,7 @@ def _validate_recovery_checkpoint_payload(
         raise MigrationError("recovery checkpoint payload run identity is incompatible")
     checkpoint_config = payload.get("config")
     serialized = config.as_dict()
-    from startrain.checkpoint import normalize_model_config
+    from deltreltrain.checkpoint import normalize_model_config
 
     if not isinstance(checkpoint_config, Mapping):
         raise MigrationError(
@@ -1321,7 +1321,7 @@ def _validate_recovery_checkpoint_payload(
         raise MigrationError(
             "recovery checkpoint experiment configuration is incompatible"
         )
-    from startrain.checkpoint import game_configs_compatible
+    from deltreltrain.checkpoint import game_configs_compatible
 
     actual_game = checkpoint_config.get("game")
     if not isinstance(actual_game, Mapping) or not game_configs_compatible(
@@ -1344,7 +1344,7 @@ def _validate_champion(
     generation_family: str,
 ) -> tuple[int, str, str, Path]:
     if (
-        payload.get("format") != "startrain.model-pointer"
+        payload.get("format") != "deltreltrain.model-pointer"
         or payload.get("schema_version") != 2
         or payload.get("role") != "champion"
         or payload.get("run_id") != run_id
@@ -1692,7 +1692,7 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
         )
     )
     if balanced_scope_change:
-        from startrain.balanced_evaluation import evaluation_contract
+        from deltreltrain.balanced_evaluation import evaluation_contract
 
         if evaluation_contract(old_config.arena) == evaluation_contract(
             new_config.arena
@@ -1775,7 +1775,7 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
     strength_epoch_payload = None
     if old_config.arena.variant_policy != new_config.arena.variant_policy:
         from dataclasses import replace
-        from startrain.balanced_evaluation import evaluation_contract
+        from deltreltrain.balanced_evaluation import evaluation_contract
 
         simulations, candidates = (
             new_config.orchestration.historical_evaluation.search_budget(
@@ -1845,7 +1845,7 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
             ],
         }
     elif balanced_scope_change:
-        from startrain.balanced_evaluation import evaluation_contract
+        from deltreltrain.balanced_evaluation import evaluation_contract
 
         migration_record["evaluation_contract_transition"] = {
             "kind": "balanced_scope_change",
@@ -2231,7 +2231,7 @@ def _assert_inputs_unchanged(plan: MigrationPlan, *, check_lock: bool) -> None:
         plan.utd_segment_payload is not None
         and plan.utd_segment_payload.get("training_objective") == "ring10_pie"
     ):
-        from startrain.replay_store import training_committed_sample_count
+        from deltreltrain.replay_store import training_committed_sample_count
 
         path = plan.run_root / "replay" / "manifest.sqlite3"
         with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True) as db:

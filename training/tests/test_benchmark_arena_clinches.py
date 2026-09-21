@@ -8,10 +8,10 @@ from types import SimpleNamespace
 import pytest
 
 import scripts.benchmark_arena_clinches as benchmark
-from startrain.arena import ArenaRunner
-from startrain.config import ArenaConfig
-from startrain.inference import InferenceResponse
-from startrain.selfplay import GameVariant
+from deltreltrain.arena import ArenaRunner
+from deltreltrain.config import ArenaConfig
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.selfplay import GameVariant
 
 
 class Evaluator:
@@ -39,7 +39,7 @@ class FrozenConfig:
 
 @pytest.fixture
 def native_inputs():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     cfg = ArenaConfig(
         rings=(4,),
         balanced_cells=True,
@@ -149,11 +149,11 @@ def test_prepare_uses_frozen_promotion_seed_before_strict_snapshot_validation(
     )
     paths["proof"].write_text(json.dumps(proof))
     monkeypatch.setattr(
-        "startrain.config.load_config",
+        "deltreltrain.config.load_config",
         lambda _path: FrozenConfig(replace(cfg, seed=17)),
     )
     monkeypatch.setattr(
-        "startrain.checkpoint.load_model_manifest",
+        "deltreltrain.checkpoint.load_model_manifest",
         lambda path: SimpleNamespace(
             model_identity=path.name,
             model_step=1,

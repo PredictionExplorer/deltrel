@@ -11,7 +11,7 @@ import threading
 import pytest
 
 import scripts.training_disaster_recovery as recovery
-from startrain.replay_store import ReplayStore
+from deltreltrain.replay_store import ReplayStore
 from test_training_disaster_recovery import _fixture, _snapshot, _snapshot_payload
 
 

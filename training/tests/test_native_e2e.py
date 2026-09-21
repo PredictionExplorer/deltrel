@@ -1,21 +1,21 @@
 import pytest
 
-from startrain.arena import ArenaRunner
-from startrain.config import ArenaConfig
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.native import validate_native_module
-from startrain.optim import OptimizerConfig, build_optimizer
-from startrain.replay import collate_replay_samples
-from startrain.replay_store import ReplayStore
-from startrain.runtime import RunIdentity
-from startrain.selfplay import SelfPlayActor, SelfPlayConfig, SelfPlayIdentity
-from startrain.training import train_step
+from deltreltrain.arena import ArenaRunner
+from deltreltrain.config import ArenaConfig
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.native import validate_native_module
+from deltreltrain.optim import OptimizerConfig, build_optimizer
+from deltreltrain.replay import collate_replay_samples
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.selfplay import SelfPlayActor, SelfPlayConfig, SelfPlayIdentity
+from deltreltrain.training import train_step
 
 
 @pytest.mark.native
 def test_true_native_tiny_game_replay_and_train_step_when_available(tmp_path) -> None:
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     validate_native_module(native)
     model = GraphResTNet(
         ModelConfig(
@@ -71,7 +71,7 @@ def test_true_native_tiny_game_replay_and_train_step_when_available(tmp_path) ->
 
 @pytest.mark.native
 def test_true_native_tiny_paired_arena_when_available() -> None:
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     validate_native_module(native)
     model = GraphResTNet(
         ModelConfig(

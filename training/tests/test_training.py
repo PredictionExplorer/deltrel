@@ -8,12 +8,12 @@ import pytest
 import torch
 
 from scripts.validate_continuous_profile import validate_continuous_config
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     load_checkpoint,
     save_checkpoint,
 )
-from startrain.config import (
+from deltreltrain.config import (
     ConfigError,
     DataConfig,
     HistoricalEvaluationConfig,
@@ -22,20 +22,20 @@ from startrain.config import (
     SchedulerConfig,
     load_config,
 )
-from startrain.export import ONNX_INPUT_NAMES, ONNXStarModel, export_onnx
-from startrain.features import DoubleStarPosition, encode_batch
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.optim import (
+from deltreltrain.export import ONNX_INPUT_NAMES, ONNXDeltrelModel, export_onnx
+from deltreltrain.features import DoubleDeltrelPosition, encode_batch
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.optim import (
     MuonAdamW,
     OptimizerConfig,
     build_optimizer,
     split_decay_parameters,
 )
-from startrain.replay import ReplayBatch, ReplaySample, collate_replay_samples
-from startrain.sampling import RingStratifiedSampler
-from startrain.scoring import PlayerScore, ScoreResult
-from startrain.topology import get_topology
-from startrain.training import (
+from deltreltrain.replay import ReplayBatch, ReplaySample, collate_replay_samples
+from deltreltrain.sampling import RingStratifiedSampler
+from deltreltrain.scoring import PlayerScore, ScoreResult
+from deltreltrain.topology import get_topology
+from deltreltrain.training import (
     DeviceBatchPrefetcher,
     NonFiniteTrainingError,
     TrainMetricAccumulator,
@@ -121,7 +121,7 @@ def sample(rings: int = 4) -> ReplaySample:
     topology = get_topology(rings)
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
     stones[0] = 0
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=rings,
         stones=stones,
         to_move=1,
@@ -142,7 +142,7 @@ def sample(rings: int = 4) -> ReplaySample:
             ),
             node_owner=torch.zeros(topology.n, dtype=torch.int8),
             alive_stone=torch.zeros(topology.n, dtype=torch.bool),
-            contested_peries=0,
+            contested_shores=0,
             leader=0,
         ),
         search_provenance="mcts:test",
@@ -1172,7 +1172,7 @@ def test_onnx_parity_when_runtime_is_available(tmp_path) -> None:
     path = export_onnx(model, batch, tmp_path / "model.onnx")
     session = runtime.InferenceSession(str(path), providers=["CPUExecutionProvider"])
     topology4 = get_topology(4)
-    position4 = DoubleStarPosition(
+    position4 = DoubleDeltrelPosition(
         rings=4,
         stones=torch.full((topology4.n,), -1, dtype=torch.int8),
         to_move=0,
@@ -1189,7 +1189,7 @@ def test_onnx_parity_when_runtime_is_available(tmp_path) -> None:
         }
         actual = session.run(None, feed)
         with torch.no_grad():
-            expected = ONNXStarModel(model)(*inference_batch.model_args())
+            expected = ONNXDeltrelModel(model)(*inference_batch.model_args())
         for expected_tensor, actual_array in zip(expected, actual, strict=True):
             np.testing.assert_allclose(
                 expected_tensor.numpy(), actual_array, atol=2e-4, rtol=2e-4

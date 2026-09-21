@@ -4,7 +4,7 @@ Deployed on September 14, 2026 UTC, following local implementation on September
 13. See the [verified deployment record](pie-policy-deployment-20260913.md).
 
 The `ring10_pie` objective trains both classic (one stone per turn) and Double
-*Star (two stones per turn). Every even game uses the pie rule: the responder
+Deltrel (two stones per turn). Every even game uses the pie rule: the responder
 can keep the opening or swap sides. Handicap games never use pie and are
 restricted to the largest board, ring 10. No no-pie even games or smaller-board
 handicap games enter this objective's self-play or learner replay.

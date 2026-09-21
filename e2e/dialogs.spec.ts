@@ -19,7 +19,7 @@ test.beforeEach(async ({ page }) => {
 test('opens and closes the rules dialog through named controls', async ({ page }) => {
   await page.getByRole('button', { name: 'Rules' }).click();
 
-  const dialog = page.getByRole('dialog', { name: 'How to play *Star' });
+  const dialog = page.getByRole('dialog', { name: 'How to play Deltrel' });
   await expect(dialog).toBeVisible();
   await expect(
     dialog.getByRole('heading', { level: 2, name: 'How to play' }),

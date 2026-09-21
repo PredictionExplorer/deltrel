@@ -16,9 +16,9 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from startrain.checkpoint import load_model_manifest
-from startrain.config import load_config
-from startrain.runtime import SignalLatch, atomic_json, load_run_identity
+from deltreltrain.checkpoint import load_model_manifest
+from deltreltrain.config import load_config
+from deltreltrain.runtime import SignalLatch, atomic_json, load_run_identity
 
 if __package__:
     from .compare_architecture_ablation import (
@@ -41,8 +41,8 @@ else:
     from run_elo_ablation_queue import exclusive_execution_lock, exclusive_queue_lock
 
 SCHEMA_VERSION = 1
-QUEUE_REPORT = "startrain-architecture-ablation-queue"
-ARM_REPORT = "startrain-scratch-architecture-run"
+QUEUE_REPORT = "deltreltrain-architecture-ablation-queue"
+ARM_REPORT = "deltreltrain-scratch-architecture-run"
 
 
 class ArchitectureQueueError(RuntimeError):
@@ -155,7 +155,7 @@ def _verify_scratch_authority(
     if (
         initialization.get("schema_version") != SCHEMA_VERSION
         or initialization.get("report")
-        != "startrain-scratch-architecture-initialization"
+        != "deltreltrain-scratch-architecture-initialization"
         or initialization.get("status") != "prepared"
         or initialization.get("treatment") != label
         or initialization.get("plan") != str(plan_path)
@@ -508,7 +508,7 @@ def _run_architecture_queue_locked(
     plan_sha256 = _sha256(plan_file)
     if (
         plan.get("schema_version") != SCHEMA_VERSION
-        or plan.get("report") != "startrain-elo-ablation-plan"
+        or plan.get("report") != "deltreltrain-elo-ablation-plan"
         or plan.get("initialization") != "scratch"
     ):
         raise ArchitectureQueueError("plan is not a scratch architecture plan")
@@ -738,8 +738,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--evidence-directory", required=True, type=Path)
     parser.add_argument("--execution-lock-path", required=True, type=Path)
-    parser.add_argument("--orchestrator", default="startrain-orchestrate")
-    parser.add_argument("--arena-executable", default="startrain-arena")
+    parser.add_argument("--orchestrator", default="deltreltrain-orchestrate")
+    parser.add_argument("--arena-executable", default="deltreltrain-arena")
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--poll-seconds", type=float, default=5.0)
     arguments = parser.parse_args(argv)

@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 import torch
 
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     CHECKPOINT_FORMAT,
     CHECKPOINT_VERSION,
     EMA_VERSION,
@@ -22,7 +22,7 @@ from startrain.checkpoint import (
     load_legacy_ema_checkpoint,
     save_checkpoint,
 )
-from startrain.contracts import (
+from deltreltrain.contracts import (
     ACTION_LAYOUT_SCHEMA_ID,
     ACTION_LAYOUT_VERSION,
     FEATURE_SCHEMA_HASH,
@@ -33,7 +33,7 @@ from startrain.contracts import (
     RULES_HASH,
     TARGET_TEACHER,
 )
-from startrain.lineage import (
+from deltreltrain.lineage import (
     LINEAGE_TRANSFER_REPORT,
     TRANSFER_ACTOR_ID,
     LineageTransferError,
@@ -46,10 +46,10 @@ from startrain.lineage import (
     transfer_lineage_parallel,
     write_transfer_report,
 )
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.replay import collate_replay_samples
-from startrain.replay_store import ReplayStore
-from startrain.runtime import RunIdentity, load_run_identity
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.replay import collate_replay_samples
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import RunIdentity, load_run_identity
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_replay import legacy_v4_shard, sample_for  # noqa: E402
@@ -537,7 +537,7 @@ def test_parallel_lineage_transfer_matches_the_serial_store(tmp_path) -> None:
 def test_lineage_arena_pits_the_candidate_against_the_legacy_teacher(
     tmp_path, capsys
 ) -> None:
-    pytest.importorskip("star_native")
+    pytest.importorskip("deltrel_native")
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
     import run_lineage_arena
 
@@ -548,7 +548,7 @@ def test_lineage_arena_pits_the_candidate_against_the_legacy_teacher(
     ema.update(candidate_model)
     from dataclasses import asdict
 
-    from startrain.config import GameConfig
+    from deltreltrain.config import GameConfig
 
     candidate = tmp_path / "candidate.pt"
     save_checkpoint(
@@ -612,7 +612,7 @@ def test_lineage_arena_pits_the_candidate_against_the_legacy_teacher(
 def write_legacy_publication(root: Path) -> Path:
     """A previous-lineage learner directory: champion pointer -> manifest -> checkpoint."""
 
-    from startrain.checkpoint import sha256_file
+    from deltreltrain.checkpoint import sha256_file
 
     learner = root / "learner"
     (learner / "checkpoints").mkdir(parents=True)
@@ -622,7 +622,7 @@ def write_legacy_publication(root: Path) -> Path:
     checkpoint = learner / "checkpoints" / f"sha256-{digest}.pt"
     staged.rename(checkpoint)
     manifest_payload = {
-        "format": "startrain.model-manifest",
+        "format": "deltreltrain.model-manifest",
         "schema_version": 3,
         "rules_hash": LEGACY_RULES_HASH_WIRE,
         "feature_schema_hash": f"{LEGACY_FEATURE_SCHEMA_HASH:016x}",
@@ -646,7 +646,7 @@ def write_legacy_publication(root: Path) -> Path:
     pointer.write_text(
         json.dumps(
             {
-                "format": "startrain.model-pointer",
+                "format": "deltreltrain.model-pointer",
                 "schema_version": 2,
                 "role": "champion",
                 "manifest": f"manifests/{manifest.name}",
@@ -664,7 +664,7 @@ def write_legacy_publication(root: Path) -> Path:
 
 
 def test_legacy_champion_pointer_resolves_to_a_verified_checkpoint(tmp_path) -> None:
-    from startrain.lineage import resolve_legacy_champion
+    from deltreltrain.lineage import resolve_legacy_champion
 
     pointer = write_legacy_publication(tmp_path / "legacy")
     checkpoint = resolve_legacy_champion(pointer)

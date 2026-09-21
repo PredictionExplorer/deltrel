@@ -73,7 +73,7 @@ and other processes using the same account also apply.
 The default durable journal is:
 
 ```text
-~/.local/state/edgeconnect/lambda-b200-watch.json
+~/.local/state/deltrel/lambda-b200-watch.json
 ```
 
 Its adjacent lock file prevents two local copies using this journal from

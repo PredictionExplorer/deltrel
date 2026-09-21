@@ -8,8 +8,8 @@ import pytest
 import torch
 
 from scripts import benchmark_training_shared_geometry as benchmark
-from startrain.config import load_config
-from startrain.model import model_parameter_count
+from deltreltrain.config import load_config
+from deltreltrain.model import model_parameter_count
 
 
 def test_plan_import_does_not_load_torch_or_initialize_devices():
@@ -136,10 +136,10 @@ def test_owned_child_timeout_is_enforced():
 
 def test_manifest_loads_verified_ema_and_rejects_checkpoint_drift(tmp_path):
     from dataclasses import replace
-    from startrain.checkpoint import ExponentialMovingAverage
-    from startrain.learner import ImmutableModelPublisher
-    from startrain.model import GraphResTNet, ModelConfig
-    from startrain.runtime import RunIdentity
+    from deltreltrain.checkpoint import ExponentialMovingAverage
+    from deltreltrain.learner import ImmutableModelPublisher
+    from deltreltrain.model import GraphResTNet, ModelConfig
+    from deltreltrain.runtime import RunIdentity
 
     config = replace(
         load_config(Path(__file__).parents[1] / "configs/small.yaml"),
@@ -170,7 +170,7 @@ def test_manifest_loads_verified_ema_and_rejects_checkpoint_drift(tmp_path):
         torch.testing.assert_close(tensor, ema.shadow[name], rtol=0, atol=0)
     assert not torch.equal(next(model.parameters()), next(restored.parameters()))
     with patch(
-        "startrain.checkpoint.load_model_manifest",
+        "deltreltrain.checkpoint.load_model_manifest",
         return_value=replace(manifest, model_step=8),
     ):
         with pytest.raises(ValueError, match="step disagree"):
@@ -320,9 +320,9 @@ def test_oracle_disables_tf32_and_measured_math_uses_production_flags():
             "cudnn_allow_tf32": False,
         }
         with patch(
-            "startrain.device.enable_fast_math",
+            "deltreltrain.device.enable_fast_math",
             wraps=__import__(
-                "startrain.device", fromlist=["enable_fast_math"]
+                "deltreltrain.device", fromlist=["enable_fast_math"]
             ).enable_fast_math,
         ) as fast_math:
             measured = benchmark.configure_math(oracle=False, device="cuda:2")
@@ -343,7 +343,7 @@ def test_compile_matches_static_learner_with_room_for_both_arms():
         ["--config", "offline.yaml", "--compile", "--device", "cpu"]
     )
     with patch(
-        "startrain.training.maybe_compile_model",
+        "deltreltrain.training.maybe_compile_model",
         side_effect=lambda model, **kwargs: model,
     ) as compile_model:
         model, runner = benchmark._execution(args, torch.nn.Linear(4, 4))

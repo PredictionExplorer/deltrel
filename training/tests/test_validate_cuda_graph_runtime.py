@@ -7,8 +7,8 @@ import pytest
 import torch
 
 from scripts import validate_cuda_graph_runtime as probe
-from startrain.config import load_config
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.config import load_config
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
 
 
 def production_config():
@@ -42,7 +42,7 @@ def test_probe_changes_only_explicit_inference_controls():
 
 
 def test_production_contract_rejects_wrong_size_precision_and_compiler(monkeypatch):
-    from startrain import model
+    from deltreltrain import model
 
     config = production_config()
     monkeypatch.setattr(model, "model_parameter_count", lambda _: 17402775)
@@ -93,7 +93,7 @@ def test_output_cannot_touch_production_or_existing_artifacts(tmp_path):
 
 
 def test_regular_reference_keeps_exact_graph_padding_policy(monkeypatch):
-    from startrain import inference
+    from deltreltrain import inference
 
     cleared = []
 
@@ -244,16 +244,16 @@ def test_shape_order_accepts_only_a_permutation_of_existing_buckets():
 
 
 def test_native_identity_hashes_loaded_binary_not_just_python_wrapper(tmp_path):
-    from startrain.checkpoint import sha256_file
+    from deltreltrain.checkpoint import sha256_file
 
     wrapper = tmp_path / "__init__.py"
-    wrapper.write_bytes(b"from .star_native import *")
-    binary = tmp_path / "star_native.abi3.so"
+    wrapper.write_bytes(b"from .deltrel_native import *")
+    binary = tmp_path / "deltrel_native.abi3.so"
     binary.write_bytes(b"compiled implementation")
-    module = SimpleNamespace(__name__="star_native", __file__=str(wrapper))
+    module = SimpleNamespace(__name__="deltrel_native", __file__=str(wrapper))
     modules = {
-        "star_native": module,
-        "star_native.star_native": SimpleNamespace(__file__=str(binary)),
+        "deltrel_native": module,
+        "deltrel_native.deltrel_native": SimpleNamespace(__file__=str(binary)),
         "unrelated": SimpleNamespace(__file__=str(tmp_path / "unrelated.so")),
     }
     identity = probe.native_artifacts(module, modules)
@@ -346,10 +346,10 @@ def test_cli_forwards_initialization_order_to_child_probe(monkeypatch, order):
 def test_source_identity_uses_imported_runtime_when_probe_is_outside_release(
     monkeypatch, tmp_path
 ):
-    import startrain
-    from startrain.checkpoint import sha256_file
+    import deltreltrain
+    from deltreltrain.checkpoint import sha256_file
 
-    runtime = tmp_path / "release" / "startrain"
+    runtime = tmp_path / "release" / "deltreltrain"
     runtime.mkdir(parents=True)
     for name in (
         "__init__.py",
@@ -365,14 +365,14 @@ def test_source_identity_uses_imported_runtime_when_probe_is_outside_release(
     copied_probe = tmp_path / "rollout" / "probe.py"
     copied_probe.parent.mkdir()
     copied_probe.write_text("updated validation tool")
-    monkeypatch.setattr(startrain, "__file__", str(runtime / "__init__.py"))
+    monkeypatch.setattr(deltreltrain, "__file__", str(runtime / "__init__.py"))
     monkeypatch.setattr(probe, "__file__", str(copied_probe))
     monkeypatch.setattr(probe, "native_artifacts", lambda native: {})
     native = SimpleNamespace(
         native_rules_hash=lambda: 7, native_feature_schema_version=lambda: 4
     )
     identity = probe._source_identity(native)
-    assert identity["startrain_source_root"] == str(runtime)
+    assert identity["deltreltrain_source_root"] == str(runtime)
     sources = identity["source_files"]
     assert sources[str(copied_probe)] == sha256_file(copied_probe)
     assert sources[str(runtime / "inference.py")] == sha256_file(
@@ -386,9 +386,9 @@ def test_source_identity_uses_imported_runtime_when_probe_is_outside_release(
 @pytest.mark.native
 @pytest.mark.parametrize("variant", probe.VARIANTS)
 def test_changed_inputs_cover_all_six_native_variants(variant):
-    from startrain.native import positions_from_native
+    from deltreltrain.native import positions_from_native
 
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     config = production_config()
     first = probe.make_requests(
         native, config, rows=3, version=0, variant_label=variant

@@ -1,37 +1,37 @@
 @import "tailwindcss";
 
 :root {
-  --night-deep: #04050c;
-  --night: #0a0d1d;
-  --night-raise: #12162b;
-  --night-surface: rgba(16, 21, 42, 0.88);
-  --night-surface-strong: rgba(20, 26, 50, 0.96);
-  --ink: #f4eede;
-  --muted: #aaa4b8;
-  --gold: #e8c48b;
-  --gold-strong: #f7dca6;
-  --gold-faint: rgba(232, 196, 139, 0.16);
-  --hairline: rgba(255, 255, 255, 0.11);
-  --hairline-strong: rgba(255, 255, 255, 0.18);
-  --focus-ring: #f7dca6;
-  --p1: #ffb958;
-  --p1-soft: rgba(255, 185, 88, 0.18);
-  --p2: #62c6ff;
-  --p2-soft: rgba(98, 198, 255, 0.18);
-  --danger: #ff7d68;
+  --estuary-deep: #062e32;
+  --estuary: #0b393c;
+  --estuary-raise: #103e40;
+  --estuary-surface: rgba(8, 43, 46, 0.9);
+  --estuary-surface-strong: rgba(9, 45, 48, 0.97);
+  --ink: #f5f1e5;
+  --muted: #a9c1bd;
+  --sand: #e4c9a1;
+  --sand-strong: #f1dec0;
+  --sand-faint: rgba(228, 201, 161, 0.10);
+  --hairline: rgba(198, 226, 211, 0.13);
+  --hairline-strong: rgba(198, 226, 211, 0.25);
+  --focus-ring: #edddbd;
+  --p1: #ed9b76;
+  --p1-soft: rgba(237, 155, 118, 0.18);
+  --p2: #77d8c0;
+  --p2-soft: rgba(119, 216, 192, 0.18);
+  --danger: #ffab95;
 }
 
 @theme inline {
-  --color-night-deep: var(--night-deep);
-  --color-night: var(--night);
-  --color-night-raise: var(--night-raise);
-  --color-night-surface: var(--night-surface);
-  --color-night-surface-strong: var(--night-surface-strong);
+  --color-estuary-deep: var(--estuary-deep);
+  --color-estuary: var(--estuary);
+  --color-estuary-raise: var(--estuary-raise);
+  --color-estuary-surface: var(--estuary-surface);
+  --color-estuary-surface-strong: var(--estuary-surface-strong);
   --color-ink: var(--ink);
   --color-muted: var(--muted);
-  --color-gold: var(--gold);
-  --color-gold-strong: var(--gold-strong);
-  --color-gold-faint: var(--gold-faint);
+  --color-sand: var(--sand);
+  --color-sand-strong: var(--sand-strong);
+  --color-sand-faint: var(--sand-faint);
   --color-p1: var(--p1);
   --color-p1-soft: var(--p1-soft);
   --color-p2: var(--p2);
@@ -43,15 +43,12 @@
 
 html {
   color-scheme: dark;
-  background: var(--night-deep);
+  background: var(--estuary-deep);
   scrollbar-gutter: stable;
 }
 
 body {
-  background:
-    radial-gradient(1200px 800px at 70% -10%, rgba(84, 66, 132, 0.35), transparent 60%),
-    radial-gradient(900px 700px at 12% 110%, rgba(32, 68, 116, 0.30), transparent 60%),
-    linear-gradient(180deg, var(--night) 0%, var(--night-deep) 100%);
+  background: linear-gradient(135deg, #235c59 0%, var(--estuary) 55%, var(--estuary-deep) 100%);
   color: var(--ink);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   min-height: 100svh;
@@ -79,35 +76,11 @@ summary {
 }
 
 ::selection {
-  background: rgba(232, 196, 139, 0.35);
+  background: rgba(228, 201, 161, 0.3);
 }
 
 .font-display {
   font-family: var(--font-fraunces), Georgia, serif;
-}
-
-.text-shimmer {
-  background: linear-gradient(
-    100deg,
-    var(--gold) 20%,
-    #fff6e0 40%,
-    var(--gold-strong) 55%,
-    var(--gold) 80%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: shimmer 1.8s ease-out 0.2s 1 both;
-}
-
-@keyframes shimmer {
-  from {
-    background-position: 100% 0;
-  }
-  to {
-    background-position: -100% 0;
-  }
 }
 
 /* Stone placement pop. Even if animations are paused or throttled, the
@@ -187,30 +160,14 @@ summary {
   }
 }
 
-@keyframes twinkle {
-  0%,
-  100% {
-    opacity: 0.72;
-  }
-  50% {
-    opacity: 0.46;
-  }
-}
-
-.star-layer-a,
-.star-layer-b {
-  animation: twinkle 12s ease-in-out infinite;
-}
-
-.star-layer-b {
-  animation-duration: 17s;
-  animation-delay: -5s;
-}
+/* The large contours suggest moving water without particles or costly filters. */
+.water-scene { pointer-events: none; position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.water-drift { transform-origin: center; animation: tidal-drift 28s ease-in-out infinite alternate; animation-play-state: var(--scene-play-state, running); }
+.water-caustics { animation-duration: 19s; animation-direction: alternate-reverse; }
+@keyframes tidal-drift { from { transform: translate(-8px, -6px) scale(1.02); } to { transform: translate(11px, 8px) scale(1.045); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .text-shimmer,
-  .star-layer-a,
-  .star-layer-b,
+  .water-drift,
   .stone-pop,
   .last-move-pulse {
     animation: none;
@@ -242,18 +199,18 @@ summary {
 /* Panel scrollbars */
 .thin-scroll {
   scrollbar-width: thin;
-  scrollbar-color: rgba(232, 196, 139, 0.25) transparent;
+  scrollbar-color: rgba(176, 214, 196, 0.3) transparent;
 }
 
 .panel-surface {
   border: 1px solid var(--hairline);
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.035), transparent 46%),
-    var(--night-surface);
+    linear-gradient(145deg, rgba(177, 220, 197, 0.055), transparent 46%),
+    var(--estuary-surface);
   box-shadow:
-    0 24px 80px rgba(0, 0, 0, 0.24),
+    0 24px 70px rgba(0, 20, 23, 0.24),
     inset 0 1px 0 rgba(255, 255, 255, 0.035);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(16px);
 }
 
 .control-surface {
@@ -263,8 +220,8 @@ summary {
 }
 
 .control-surface:focus-within {
-  border-color: rgba(232, 196, 139, 0.55);
-  box-shadow: 0 0 0 3px rgba(232, 196, 139, 0.1);
+  border-color: rgba(228, 201, 161, 0.55);
+  box-shadow: 0 0 0 3px rgba(228, 201, 161, 0.1);
 }
 
 .screen-safe {

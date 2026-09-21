@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from startrain.balanced_evaluation import evaluation_contract
-from startrain.config import ArenaConfig, ConfigError, load_config
-from startrain.config_compatibility import (
+from deltreltrain.balanced_evaluation import evaluation_contract
+from deltreltrain.config import ArenaConfig, ConfigError, load_config
+from deltreltrain.config_compatibility import (
     compatible_config_epoch_payloads,
     without_arena_clinch_default,
 )
@@ -110,7 +110,7 @@ def test_disabled_clinch_preserves_existing_search_admission_fingerprint():
     import hashlib
     import json
 
-    from startrain.search_allocation_gate import canonical_config_sha256
+    from deltreltrain.search_allocation_gate import canonical_config_sha256
 
     config = load_config(
         Path(__file__).parents[1] / "configs/h100-8gpu-largest-board-priority.yaml"

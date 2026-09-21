@@ -15,8 +15,8 @@ import torch
 import yaml
 
 from scripts import migrate_continuous_profile as migration
-from startrain.config import load_config
-from startrain.config_compatibility import (
+from deltreltrain.config import load_config
+from deltreltrain.config_compatibility import (
     without_arena_clinch_default,
     without_fresh_data_defaults,
 )
@@ -123,7 +123,7 @@ def _fixture(
     checkpoint_config = load_config(old_profile).as_dict()
     torch.save(
         {
-            "format": "startrain.checkpoint",
+            "format": "deltreltrain.checkpoint",
             "version": 3,
             "step": step,
             "epoch": 7,
@@ -150,7 +150,7 @@ def _fixture(
     _write_json(
         root / "learner" / "recovery.json",
         {
-            "format": "startrain.recovery-pointer",
+            "format": "deltreltrain.recovery-pointer",
             "schema_version": 1,
             "checkpoint": f"recovery/{checkpoint.name}",
             "checkpoint_sha256": checkpoint_sha256,
@@ -166,7 +166,7 @@ def _fixture(
 
     champion_identity = f"sha256-{'c' * 64}"
     champion_manifest_payload = {
-        "format": "startrain.model-manifest",
+        "format": "deltreltrain.model-manifest",
         "schema_version": 3,
         "model_identity": champion_identity,
         "model_version": champion_identity,
@@ -191,7 +191,7 @@ def _fixture(
     _write_json(
         root / "learner" / "champion.json",
         {
-            "format": "startrain.model-pointer",
+            "format": "deltreltrain.model-pointer",
             "schema_version": 2,
             "role": "champion",
             "manifest": f"manifests/{champion_manifest.name}",
@@ -468,7 +468,7 @@ def test_source_only_records_chain_into_another_source_and_profile_change(tmp_pa
 def test_source_only_run_passes_startup_preflight_and_disaster_snapshot(tmp_path):
     from scripts.preflight_run_state import run_state_preflight
     from scripts.training_disaster_recovery import create_snapshot, verify_snapshot
-    from startrain.config_compatibility import compatible_config_epoch_payloads
+    from deltreltrain.config_compatibility import compatible_config_epoch_payloads
     from test_run_state_preflight import _fixture as populated_run
 
     state = populated_run(tmp_path)
@@ -1035,7 +1035,7 @@ def test_chained_migration_accepts_verified_plateau_cutover(tmp_path: Path) -> N
     _write_json(
         fixture.root / "learner" / "resume-cutover.json",
         {
-            "format": "startrain.resume-cutover",
+            "format": "deltreltrain.resume-cutover",
             "schema_version": 1,
             "checkpoint": f"recovery/{cutover_checkpoint.name}",
             "checkpoint_sha256": cutover_checkpoint.stem.removeprefix("sha256-"),
@@ -1049,7 +1049,7 @@ def test_chained_migration_accepts_verified_plateau_cutover(tmp_path: Path) -> N
     _write_json(
         fixture.root / "learner" / "recovery.json",
         {
-            "format": "startrain.recovery-pointer",
+            "format": "deltreltrain.recovery-pointer",
             "schema_version": 1,
             "checkpoint": f"recovery/{recovery_checkpoint.name}",
             "checkpoint_sha256": recovery_checkpoint.stem.removeprefix("sha256-"),
@@ -1186,7 +1186,7 @@ def test_gate_budget_and_measurement_crossplay_are_migratable(tmp_path: Path) ->
 def test_evaluation_scheduling_migration_preserves_contract_and_pending_evidence(
     tmp_path: Path,
 ) -> None:
-    from startrain.balanced_evaluation import evaluation_contract
+    from deltreltrain.balanced_evaluation import evaluation_contract
 
     fixture = _fixture(tmp_path, "h100-8gpu-variant-efficiency-stage-b.yaml")
     old_config = load_config(fixture.old_profile)
@@ -1624,7 +1624,7 @@ def test_apply_rolls_back_all_partial_writes_on_failure(
 
 
 def test_largest_board_cutover_preserves_pending_evidence_and_training_state(tmp_path):
-    from startrain.balanced_evaluation import evaluation_contract
+    from deltreltrain.balanced_evaluation import evaluation_contract
 
     fixture = _fixture(tmp_path, "h100-8gpu-variant-efficiency-stage-b.yaml")
     old = load_config(fixture.old_profile)
@@ -1782,7 +1782,7 @@ def _pie_cutover_fixture(tmp_path):
 def test_pie_cutover_preserves_weights_and_evidence_and_resets_scoped_accounting(
     tmp_path,
 ):
-    from startrain.balanced_evaluation import evaluation_contract
+    from deltreltrain.balanced_evaluation import evaluation_contract
 
     fixture = _pie_cutover_fixture(tmp_path)
     old_epoch = (fixture.root / "strength-epoch.json").read_bytes()
@@ -1866,7 +1866,7 @@ def test_inference_execution_cutover_is_reversible_and_preserves_pending_work(
 ):
     from dataclasses import replace
 
-    from startrain.balanced_evaluation import evaluation_contract
+    from deltreltrain.balanced_evaluation import evaluation_contract
 
     fixture = _fixture(tmp_path, "h100-8gpu-largest-board-priority.yaml")
     original = load_config(fixture.old_profile)

@@ -4,8 +4,8 @@ import pytest
 import yaml
 
 from scripts import training_disaster_recovery as recovery
-from startrain import search_allocation_gate as gate
-from startrain.pie_policy import pie_training_config
+from deltreltrain import search_allocation_gate as gate
+from deltreltrain.pie_policy import pie_training_config
 from test_allocation_gate_disaster_recovery import prepared
 from test_search_allocation_gate import reference, write_json
 from test_training_disaster_recovery import _snapshot, _snapshot_payload
@@ -132,7 +132,7 @@ def test_dependency_closure_retains_controlled_graph_live_evidence_and_rejects_c
         "status/transition.json": receipt,
         "status/search-allocation-gates/" + "b" * 64 + ".json": source,
         "status/activation.json": {
-            "format": "startrain.graph-cache-controlled-activation",
+            "format": "deltreltrain.graph-cache-controlled-activation",
             "schema_version": 1,
             "live_workload_evidence": ref("live-workload"),
         },

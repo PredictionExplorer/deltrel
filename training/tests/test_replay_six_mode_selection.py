@@ -5,8 +5,8 @@ from dataclasses import replace
 
 import pytest
 
-from startrain.learner import LazyShardReplayDataset, UniqueReplayBatchSampler
-from startrain.replay_store import ReplaySelection, ReplaySpan, ReplayStore
+from deltreltrain.learner import LazyShardReplayDataset, UniqueReplayBatchSampler
+from deltreltrain.replay_store import ReplaySelection, ReplaySpan, ReplayStore
 from test_pipeline_core import append_replay, make_replay_sample, run_identity
 
 

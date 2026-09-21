@@ -4,8 +4,8 @@ import math
 
 import pytest
 
-from startrain.inference import InferenceResponse
-from startrain.native import BITBOARD_WORDS
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.native import BITBOARD_WORDS
 
 
 def response(requests, *, concentrated=False):
@@ -88,7 +88,7 @@ def fingerprint(result):
 def test_prefetch_preserves_native_results_with_global_caps(
     mode, handicap, pie, width, cap
 ):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     states = native.StateBatch(
         4, 3, mode="classic" if mode == 0 else "double", handicap=handicap, pie=pie
     )
@@ -119,7 +119,7 @@ def test_prefetch_preserves_native_results_with_global_caps(
 
 @pytest.mark.native
 def test_single_root_prefetch_reduces_round_trips_without_extra_evaluations():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     states = native.StateBatch(4, 1)
     options = dict(simulations=16, max_considered=16, deterministic_seed=17)
     baseline, old_sizes = complete(native.SearchBatch(states, **options))
@@ -136,7 +136,7 @@ def test_single_root_prefetch_reduces_round_trips_without_extra_evaluations():
     "invalidate", [None, "model", "pda", "parameters", "cap", "same-root"]
 )
 def test_reuse_keeps_work_separate_and_invalidates_unsafe_context(invalidate):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     states = native.StateBatch(4, 1)
     states.apply_many([0], [0])
     options = dict(
@@ -180,7 +180,7 @@ def test_reuse_keeps_work_separate_and_invalidates_unsafe_context(invalidate):
 
 @pytest.mark.native
 def test_experimental_responses_are_atomic_and_cancellation_rejects_stale_tokens():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     states = native.StateBatch(4, 2)
     options = dict(
         simulations=8, max_considered=8, deterministic_seed=17, first_visit_batch_size=4
@@ -233,7 +233,7 @@ def reversed_response(value):
 @pytest.mark.parametrize("cap", [3, 32, 256])
 @pytest.mark.parametrize("invalid", ["last-policy", "first-value", "last-value"])
 def test_parallel_session_submit_is_atomic_with_sparse_and_reordered_rows(cap, invalid):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     states = native.StateBatch(10, 40, mode="double", pie=True)
     states.apply_many(list(range(40)), list(range(40)))
     options = dict(
@@ -276,7 +276,7 @@ def test_parallel_session_submit_is_atomic_with_sparse_and_reordered_rows(cap, i
 
 @pytest.mark.native
 def test_budget_overrides_only_before_initialization_and_advance_is_atomic():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     states = native.StateBatch(4, 1)
     search = native.SearchBatch(
         states, simulations=16, first_visit_batch_size=8, model_context="a"

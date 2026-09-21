@@ -12,7 +12,7 @@ import pytest
 import yaml
 
 from scripts import migrate_autonomous_profile as migration
-from startrain.config import load_config
+from deltreltrain.config import load_config
 
 
 @dataclass(frozen=True)
@@ -160,7 +160,7 @@ def _fixture(tmp_path: Path) -> _Fixture:
     _write_json(
         root / "learner" / "recovery.json",
         {
-            "format": "startrain.recovery-pointer",
+            "format": "deltreltrain.recovery-pointer",
             "schema_version": 1,
             "checkpoint": f"recovery/{checkpoint.name}",
             "checkpoint_sha256": checkpoint_sha256,
@@ -188,7 +188,7 @@ def _fixture(tmp_path: Path) -> _Fixture:
     _write_json(
         root / "learner" / "champion.json",
         {
-            "format": "startrain.model-pointer",
+            "format": "deltreltrain.model-pointer",
             "schema_version": 2,
             "role": "champion",
             "manifest": "manifests/manifest.json",

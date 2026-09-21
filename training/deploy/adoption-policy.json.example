@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "report": "startrain-elo-ablation-adoption-policy",
+  "report": "deltreltrain-elo-ablation-adoption-policy",
   "source_commit": "@SOURCE_COMMIT@",
   "seeds": [
     17,

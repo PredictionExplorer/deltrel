@@ -7,8 +7,8 @@ from dataclasses import asdict, replace
 import numpy as np
 import pytest
 
-from startrain.arena import ArenaPair
-from startrain.balanced_evaluation import (
+from deltreltrain.arena import ArenaPair
+from deltreltrain.balanced_evaluation import (
     balanced_categories,
     balanced_cell_weights,
     balanced_cells,
@@ -21,10 +21,10 @@ from startrain.balanced_evaluation import (
     evaluation_contract,
     summarize_balanced_pairs,
 )
-from startrain.balanced_strength import balanced_strength_summary
-from startrain.config import ArenaConfig
-from startrain.promotion import _balanced_round_plan
-from startrain.selfplay import GameVariant
+from deltreltrain.balanced_strength import balanced_strength_summary
+from deltreltrain.config import ArenaConfig
+from deltreltrain.promotion import _balanced_round_plan
+from deltreltrain.selfplay import GameVariant
 
 from test_arena_resume import Clock, runner
 from test_balanced_strength import frontier, measurement
@@ -250,7 +250,7 @@ def test_strength_recomputes_weighted_metrics_and_isolates_legacy_epoch(tmp_path
 
 @pytest.mark.native
 def test_runner_uses_new_cells_reverses_roles_and_resumes_exactly():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     cfg = config(rings=(4, 10), simulations=2, max_considered=2)
     counts = {4: 1, 10: 1}
     complete = runner(native, cfg).run(pair_counts=counts, checkpoint=lambda _: None)

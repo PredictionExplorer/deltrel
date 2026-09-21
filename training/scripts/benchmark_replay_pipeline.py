@@ -10,7 +10,7 @@ import statistics
 import time
 from pathlib import Path
 
-from startrain.replay import decode_replay_shard
+from deltreltrain.replay import decode_replay_shard
 
 SCHEMA_VERSION = 1
 BENCHMARK_NAME = "replay-decode-selected-rows"

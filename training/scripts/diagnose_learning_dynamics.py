@@ -17,7 +17,7 @@ from typing import Any
 import yaml
 
 SCHEMA_VERSION = 1
-REPORT = "startrain-learning-dynamics-diagnosis"
+REPORT = "deltreltrain-learning-dynamics-diagnosis"
 CLINCH_AVAILABILITY = {
     "losses.clinch_policy": "losses.clinch_policy_available",
     "losses.clinch_outcome": "losses.clinch_outcome_available",

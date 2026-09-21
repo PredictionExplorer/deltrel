@@ -6,12 +6,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from startrain.arena import ArenaRunner
-from startrain.config import ArenaConfig
-from startrain.contracts import OUTCOME_WIN, SEARCH_ALGORITHM_ID
-from startrain.inference import InferenceResponse
-from startrain.native import validate_native_module
-from startrain.selfplay import (
+from deltreltrain.arena import ArenaRunner
+from deltreltrain.config import ArenaConfig
+from deltreltrain.contracts import OUTCOME_WIN, SEARCH_ALGORITHM_ID
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.native import validate_native_module
+from deltreltrain.selfplay import (
     GameVariant,
     SelfPlayActor,
     SelfPlayConfig,
@@ -85,7 +85,7 @@ def native_with_conflicting_mean(native, keep_value):
 def test_selfplay_pie_uses_selected_keep_value_and_preserves_replay_labels(
     mode, keep_value, swaps
 ):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     validate_native_module(native)
     config = replace(
         SelfPlayConfig.cpu_smoke(seed=17),
@@ -122,7 +122,7 @@ def test_selfplay_pie_uses_selected_keep_value_and_preserves_replay_labels(
     "keep_value,swaps", [(1.0, False), (-0.01, False), (-1.0, True)]
 )
 def test_arena_pie_uses_selected_keep_value(mode, keep_value, swaps):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     validate_native_module(native)
     states = native.StateBatch(4, 1, mode=mode, pie=True)
     states.apply_many([0], [0])

@@ -3,8 +3,8 @@
   "status": "deployed_verified",
   "training_source_commit": "7a077107b1ebba55494b09f80689989e773b9dde",
   "operator_tool_source_commit": "28410aff86d6a15f5fce7c98b295df7222f4ff6d",
-  "active_profile_authority": "4de5716c57cbcaeff6c7d1f28dc34fecdba2cf2ae50b7739672aaf39736c6b37  /home/ubuntu/edgeconnect-runs/variant-network/profile-auxiliary-predictions-20260918.yaml",
-  "release": "/home/ubuntu/edgeconnect-releases/variant-auxiliary-predictions-20260918-v3",
+  "active_profile_authority": "4de5716c57cbcaeff6c7d1f28dc34fecdba2cf2ae50b7739672aaf39736c6b37  /home/ubuntu/deltrel-runs/variant-network/profile-auxiliary-predictions-20260918.yaml",
+  "release": "/home/ubuntu/deltrel-releases/variant-auxiliary-predictions-20260918-v3",
   "completed_ns": 1789770908307645448,
   "observed_ns": 1789772024707806969,
   "checkpoint_preservation": {
@@ -122,17 +122,17 @@
       }
     ],
     "target_masks": {
-      "final_peries": 512,
-      "final_quarks": 512,
-      "final_stars": 512,
+      "final_shores": 512,
+      "final_capes": 512,
+      "final_networks": 512,
       "opponent_reply": 512,
       "second_stone": 64
     },
     "learner_losses": {
       "alive": 0.22124424576759338,
-      "final_peries": 3.929006814956665,
-      "final_quarks": 1.7881184816360474,
-      "final_stars": 3.260762929916382,
+      "final_shores": 3.929006814956665,
+      "final_capes": 1.7881184816360474,
+      "final_networks": 3.260762929916382,
       "opponent_reply": 5.697869777679443,
       "outcome": 0.5565336346626282,
       "ownership": 0.6669519543647766,
@@ -143,12 +143,12 @@
       "total": 6.969040870666504
     },
     "auxiliary_gradient_norms": {
-      "final_peries_head.bias": 0.003351102350279689,
-      "final_peries_head.weight": 0.006388593930751085,
-      "final_quarks_head.bias": 0.0012089292285963893,
-      "final_quarks_head.weight": 0.002573370933532715,
-      "final_stars_head.bias": 0.0037398594431579113,
-      "final_stars_head.weight": 0.006425732746720314,
+      "final_shores_head.bias": 0.003351102350279689,
+      "final_shores_head.weight": 0.006388593930751085,
+      "final_capes_head.bias": 0.0012089292285963893,
+      "final_capes_head.weight": 0.002573370933532715,
+      "final_networks_head.bias": 0.0037398594431579113,
+      "final_networks_head.weight": 0.006425732746720314,
       "opponent_reply_head.bias": 6.778490933356807e-05,
       "opponent_reply_head.weight": 0.17434771358966827,
       "opponent_reply_swap_head.bias": 6.508209480671212e-05,
@@ -173,7 +173,7 @@
     "step": 426181,
     "epoch": 11008,
     "examples_consumed": 218204672,
-    "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-fd886b27b9b5a56a1cb98c018621f4157e49e178eb4d7b5583bdbdbbdc2c65e1.pt",
+    "resumed_from": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-fd886b27b9b5a56a1cb98c018621f4157e49e178eb4d7b5583bdbdbbdc2c65e1.pt",
     "phase": "training"
   },
   "first_observed_auxiliary_supervision": {
@@ -189,19 +189,19 @@
       "rows": 3.0,
       "loss": 4.893802165985107
     },
-    "final_peries": {
+    "final_shores": {
       "step": 425630,
       "timestamp_ns": 1789770440228538677,
       "rows": 512.0,
       "loss": 3.710672616958618
     },
-    "final_stars": {
+    "final_networks": {
       "step": 425630,
       "timestamp_ns": 1789770440228538677,
       "rows": 512.0,
       "loss": 3.052706718444824
     },
-    "final_quarks": {
+    "final_capes": {
       "step": 425630,
       "timestamp_ns": 1789770440228538677,
       "rows": 512.0,
@@ -226,12 +226,12 @@
       "clinch_score_margin_available": 113.0,
       "clinch_soft_policy": 3.79312801361084,
       "clinch_soft_policy_available": 113.0,
-      "final_peries": 2.6947524547576904,
-      "final_peries_available": 113.0,
-      "final_quarks": 1.2333709001541138,
-      "final_quarks_available": 113.0,
-      "final_stars": 1.4489954710006714,
-      "final_stars_available": 113.0,
+      "final_shores": 2.6947524547576904,
+      "final_shores_available": 113.0,
+      "final_capes": 1.2333709001541138,
+      "final_capes_available": 113.0,
+      "final_networks": 1.4489954710006714,
+      "final_networks_available": 113.0,
       "opponent_reply": 3.599388837814331,
       "opponent_reply_available": 103.0,
       "outcome": 0.858299195766449,
@@ -364,7 +364,7 @@
   "preserved_snapshot": {
     "checkpoint_sha256": "fd886b27b9b5a56a1cb98c018621f4157e49e178eb4d7b5583bdbdbbdc2c65e1",
     "checkpoint_step": 425629,
-    "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/auxiliary-predictions-cutover-20260918-v3",
+    "destination": "/home/ubuntu/deltrel-preserved/variant-network/auxiliary-predictions-cutover-20260918-v3",
     "files": 56637,
     "replay_shards": 56153,
     "status": "verified"
@@ -385,7 +385,7 @@
     ],
     "source": {
       "legacy_initialized_missing": false,
-      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-auxiliary-predictions-20260918.yaml",
+      "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-auxiliary-predictions-20260918.yaml",
       "profile_logical_path": "profile-auxiliary-predictions-20260918.yaml",
       "replay_backup": {
         "bytes": 1164886016,
@@ -393,7 +393,7 @@
         "cutoff_started_ns": 1789770913402990360,
         "sha256": "cc02f756f8ccab1ee4104b938e42c3cdb2642477a5e1ced88daf503093b2b4bb"
       },
-      "run_root": "/home/ubuntu/edgeconnect-runs/variant-network"
+      "run_root": "/home/ubuntu/deltrel-runs/variant-network"
     },
     "service": "Result=success\nExecMainStartTimestamp=Fri 2026-09-18 22:51:40 UTC\nExecMainExitTimestamp=\nExecMainStatus=0\nActiveState=activating\n"
   },

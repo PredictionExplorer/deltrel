@@ -105,7 +105,7 @@ Distillation accepts the same fields under `export.recommended_search` and
 omits default execution fields from exported manifests. Browser adaptive
 budgets are unsupported. Enabled experiments require execution API version 1
 and `WasmSearchSession`; rebuild assets from the repository root with
-`npm run build:star-wasm`. The implementation URL revision prevents stale
+`npm run build:deltrel-wasm`. The implementation URL revision prevents stale
 WASM assets from silently supplying the older API.
 
 The retained-node limit defaults to 4,096 and accepts `1..65536`. It applies to
@@ -141,7 +141,7 @@ enforces a process deadline, and reports cost, action disagreement, policy L1
 difference and selected-value differences against the deeper reference. It
 does not measure subtree reuse across games or production compiled throughput.
 For CPU bookkeeping parity, use
-`cargo run --release -p star-search --example benchmark_search -- --repeats 5`;
+`cargo run --release -p deltrel-search --example benchmark_search -- --repeats 5`;
 `--trace /absolute/path/search.trace` writes a complete comparison trace and
 forces one repeat.
 

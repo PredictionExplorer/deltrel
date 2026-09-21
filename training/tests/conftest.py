@@ -7,14 +7,14 @@ import os
 import pytest
 import torch
 
-_RULES_HASH = 0xA5D932B0EF8354E8
+_RULES_HASH = 0x46E4FBCFF4E17FD3
 
 
 def _native_compatible() -> bool:
-    if importlib.util.find_spec("star_native") is None:
+    if importlib.util.find_spec("deltrel_native") is None:
         return False
     try:
-        native = importlib.import_module("star_native")
+        native = importlib.import_module("deltrel_native")
         fingerprint = getattr(native, "native_rules_hash", None)
         complete_clinches = getattr(
             getattr(native, "StateBatch", None),
@@ -34,12 +34,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--require-native",
         action="store_true",
-        help="fail collection unless the compiled star_native extension is importable",
+        help="fail collection unless the compiled deltrel_native extension is importable",
     )
     parser.addoption(
         "--run-soak",
         action="store_true",
-        default=os.environ.get("STARTRAIN_RUN_SOAK") == "1",
+        default=os.environ.get("DELTRELTRAIN_RUN_SOAK") == "1",
         help="run long target-host reliability tests",
     )
 
@@ -47,7 +47,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def pytest_configure(config: pytest.Config) -> None:
     if config.getoption("--require-native") and not _native_compatible():
         raise pytest.UsageError(
-            "--require-native was set but the rules-v3 star_native extension "
+            "--require-native was set but the rules-v3 deltrel_native extension "
             "is not importable"
         )
 
@@ -60,10 +60,10 @@ def pytest_collection_modifyitems(
     run_soak = bool(config.getoption("--run-soak"))
 
     skips = {
-        "native": pytest.mark.skip(reason="requires compiled star_native extension"),
+        "native": pytest.mark.skip(reason="requires compiled deltrel_native extension"),
         "cuda": pytest.mark.skip(reason="requires a CUDA-capable GPU"),
         "multi_gpu": pytest.mark.skip(reason="requires at least two CUDA-capable GPUs"),
-        "soak": pytest.mark.skip(reason="requires --run-soak or STARTRAIN_RUN_SOAK=1"),
+        "soak": pytest.mark.skip(reason="requires --run-soak or DELTRELTRAIN_RUN_SOAK=1"),
     }
     for item in items:
         if item.get_closest_marker("native") and not native_available:

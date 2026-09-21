@@ -10,10 +10,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from startrain.arena import ArenaPair, ArenaRunner
-from startrain.config import ArenaConfig
-from startrain.inference import InferenceResponse
-from startrain.selfplay import GameVariant
+from deltreltrain.arena import ArenaPair, ArenaRunner
+from deltreltrain.config import ArenaConfig
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.selfplay import GameVariant
 
 
 class Clock:
@@ -69,7 +69,7 @@ def runner(native, cfg=None, clock=None):
 
 @pytest.mark.native
 def test_deadline_preserves_moves_and_resumes_across_rings():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     cfg = config(rings=(4, 6))
     expected = runner(native, cfg).run(checkpoint=lambda _snapshot: None)
     clock = Clock()
@@ -103,7 +103,7 @@ def test_deadline_preserves_moves_and_resumes_across_rings():
 
 @pytest.mark.native
 def test_lone_finished_seat_survives_and_is_never_a_statistical_pair():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     # Exercise the single-game compatibility path with real, replayable states.
     sequential = SimpleNamespace(
         StateBatch=lambda *args, **kwargs: native.StateBatch(*args, **kwargs),
@@ -145,7 +145,7 @@ def test_lone_finished_seat_survives_and_is_never_a_statistical_pair():
 
 @pytest.mark.native
 def test_repeated_short_sessions_eventually_complete_without_replaying_old_moves():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     cfg = config()
     clock = Clock()
     saved = None
@@ -173,7 +173,7 @@ def test_repeated_short_sessions_eventually_complete_without_replaying_old_moves
 
 @pytest.mark.native
 def test_finished_later_pair_survives_an_unfinished_earlier_pair():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     # This seed schedule gives pair 3 a forced opening and pairs 0..2 none,
     # so pair 3 finishes one search move before the earlier pairs.
     cfg = config(pairs_per_ring=4, minimum_pairs_per_ring=4)
@@ -199,7 +199,7 @@ def test_finished_later_pair_survives_an_unfinished_earlier_pair():
 
 @pytest.mark.native
 def test_resume_contract_rejects_changed_identity_budget_seed_and_malformed_games():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     original = runner(native)
     saved = original.run(checkpoint=lambda _snapshot: None)["resume_state"]
     for changed in (
@@ -224,7 +224,7 @@ def test_resume_contract_rejects_changed_identity_budget_seed_and_malformed_game
 
 @pytest.mark.native
 def test_parallel_variant_checkpoints_are_serialized_and_keep_all_games():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
 
     class ParallelRunner(ArenaRunner):
         @contextmanager
@@ -293,7 +293,7 @@ def test_parallel_variant_checkpoints_are_serialized_and_keep_all_games():
     ],
 )
 def test_resumed_native_positions_preserve_pie_and_severe_handicap(mode, pie, handicap):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     variant = GameVariant(mode=mode, pie=pie, handicap=handicap)
 
     class NegativeEvaluator(Evaluator):
@@ -346,7 +346,7 @@ def test_resumability_requires_independent_pair_seed_streams():
 
 @pytest.mark.native
 def test_balanced_resume_skips_durable_pairs_without_counting_them_twice():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     cfg = config(
         balanced_cells=True,
         rings=(4, 6, 8, 10),

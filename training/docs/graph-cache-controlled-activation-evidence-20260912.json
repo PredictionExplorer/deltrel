@@ -5,7 +5,7 @@
   },
   "backup": {
     "exact_snapshot_pin": {
-      "backup_root": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network",
+      "backup_root": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network",
       "boundary": {
         "checkpoint_step": 213452,
         "files": {
@@ -36,9 +36,9 @@
           }
         },
         "generation_family": "variant-network-a",
-        "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-efficiency-v2-20260912.yaml",
+        "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-efficiency-v2-20260912.yaml",
         "run_id": "variant-network",
-        "run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+        "run_root": "/home/ubuntu/deltrel-runs/variant-network",
         "source_commit": "99ef5a43088d68e481492471d0b27226be4dd42e"
       },
       "commit_marker_sha256": "f03422f63632d31a6575556e51547c0a94fa007ff3093a242b679046ebd0ab95",
@@ -47,7 +47,7 @@
       "invocation_started_ns": 1789198644181654159,
       "pointer_sha256": "eb0b4ed002ae0c1a21e36196b6876a028993e9df7e3a62710bda4a02211e6973",
       "run_id": "variant-network",
-      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789199160358505137-5da0946f565ae233a5f91f39f0954b137c530a44a6fcf776b6cd3f3a0a9acd43.json",
+      "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789199160358505137-5da0946f565ae233a5f91f39f0954b137c530a44a6fcf776b6cd3f3a0a9acd43.json",
       "snapshot_bytes": 5262031,
       "snapshot_sha256": "5da0946f565ae233a5f91f39f0954b137c530a44a6fcf776b6cd3f3a0a9acd43"
     },
@@ -62,7 +62,7 @@
         "source_hash_seconds": 0.0,
         "store_seconds": 0.0
       },
-      "path": "/home/ubuntu/edgeconnect-rollouts/cache-activation-20260912/verified-objects-final.json",
+      "path": "/home/ubuntu/deltrel-rollouts/cache-activation-20260912/verified-objects-final.json",
       "seconds": 62.644090293,
       "sha256": "d2ad6913c11edd35a58bb5b649073f2f2679343180eceff56485ce3af4ae3eb6"
     },
@@ -80,7 +80,7 @@
       "mode": "exact-stopped-snapshot",
       "proof": {
         "age_seconds": 2035.960395046,
-        "path": "/home/ubuntu/edgeconnect-rollouts/cache-activation-20260912/verified-objects-final.json",
+        "path": "/home/ubuntu/deltrel-rollouts/cache-activation-20260912/verified-objects-final.json",
         "reused": true,
         "sha256": "d2ad6913c11edd35a58bb5b649073f2f2679343180eceff56485ce3af4ae3eb6"
       },
@@ -92,7 +92,7 @@
         "generation_family": "variant-network-a",
         "objects": 27171,
         "run_id": "variant-network",
-        "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789199160358505137-5da0946f565ae233a5f91f39f0954b137c530a44a6fcf776b6cd3f3a0a9acd43.json",
+        "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789199160358505137-5da0946f565ae233a5f91f39f0954b137c530a44a6fcf776b6cd3f3a0a9acd43.json",
         "snapshot_bytes": 5262031,
         "snapshot_sha256": "5da0946f565ae233a5f91f39f0954b137c530a44a6fcf776b6cd3f3a0a9acd43",
         "status": "ok"
@@ -304,7 +304,7 @@
     "scope": "Pre-deployment observational baseline; no admission/threshold change or causal performance claim. Counter scope is GPU process; cohort model-step/ring metadata only corroborates mixed workload.",
     "source": {
       "bytes": 22959,
-      "path": "/tmp/edgeconnect-cache-assessment-20260912/predeployment-cache16-summary.json",
+      "path": "/tmp/deltrel-cache-assessment-20260912/predeployment-cache16-summary.json",
       "sha256": "2492baab35cbb2968577f706069dbe8ec043cf601e9132b0065b065beedc9bd6"
     }
   },
@@ -317,19 +317,19 @@
       }
     ],
     "gate": {
-      "path": "/home/ubuntu/edgeconnect-runs/variant-network/status/search-allocation-gates/7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3.json",
+      "path": "/home/ubuntu/deltrel-runs/variant-network/status/search-allocation-gates/7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3.json",
       "sha256": "1133b04604a8f6a93804064aece054450c1764f32c09cbad824e031d1a8569b3"
     },
     "record_strength_epoch": false,
     "source": {
       "config_sha256": "2443d35fa7447777beb68f58d47a334bf85d9b3c590daedb5c34718c96aafd6e",
-      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-efficiency-v2-20260912.yaml",
+      "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-efficiency-v2-20260912.yaml",
       "profile_sha256": "2cb05ebdc385fc92bb8ce99b109928e22409fac96b829c5a4f44cfb40f44d978",
       "source_commit": "99ef5a43088d68e481492471d0b27226be4dd42e"
     },
     "target": {
       "config_sha256": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3",
-      "profile": "/home/ubuntu/edgeconnect-rollouts/cache-activation-20260912/profile-efficiency-graph32-candidate.yaml",
+      "profile": "/home/ubuntu/deltrel-rollouts/cache-activation-20260912/profile-efficiency-graph32-candidate.yaml",
       "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a"
     }
   },
@@ -339,7 +339,7 @@
     "checkpoint_sha256": "60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01",
     "epoch": 2150,
     "examples_consumed": 109287424,
-    "format": "startrain.recovery-pointer",
+    "format": "deltreltrain.recovery-pointer",
     "generation_family": "variant-network-a",
     "run_id": "variant-network",
     "schema_version": 1,
@@ -350,7 +350,7 @@
   "deployment_completion": {
     "completed_ns": 1789201137194250085,
     "migration": {
-      "backup_bundle": "/home/ubuntu/edgeconnect-runs/variant-network/migration-backups/1789199555758524330-profile-cache-activation-20260912",
+      "backup_bundle": "/home/ubuntu/deltrel-runs/variant-network/migration-backups/1789199555758524330-profile-cache-activation-20260912",
       "boundary": {
         "champion_model_identity": "sha256-0763b4281cf3c933996663c43ea96163f1275e8251cddccab16594ed81aacb4a",
         "committed_replay_samples": 79571915,
@@ -387,14 +387,14 @@
       },
       "utd_segment": null,
       "writes": [
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.yaml",
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.sha256",
-        "/home/ubuntu/edgeconnect-runs/variant-network/continuous-migrations.jsonl",
-        "/home/ubuntu/edgeconnect-runs/variant-network/profile.sha256",
-        "/home/ubuntu/edgeconnect-runs/variant-network/source-commit.txt"
+        "/home/ubuntu/deltrel-runs/variant-network/profile-cache-activation-20260912.yaml",
+        "/home/ubuntu/deltrel-runs/variant-network/profile-cache-activation-20260912.sha256",
+        "/home/ubuntu/deltrel-runs/variant-network/continuous-migrations.jsonl",
+        "/home/ubuntu/deltrel-runs/variant-network/profile.sha256",
+        "/home/ubuntu/deltrel-runs/variant-network/source-commit.txt"
       ]
     },
-    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.yaml",
+    "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-cache-activation-20260912.yaml",
     "receipt_sha256": "dfe450b7a1bf97b0bb2b290d241dfe7dfac163963fca5c2cb7442c1a54664109",
     "source": "b21e120418f41ca5402ff4dfb034dd96396e9f14"
   },
@@ -405,7 +405,7 @@
     "config_sha256": "7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3",
     "current_step": 214099,
     "examples_consumed": 109618688,
-    "learner_resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01.pt",
+    "learner_resumed_from": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01.pt",
     "main_pid": 2275828,
     "migration": {
       "champion_manifest_sha256": "be4ecd6f7905b954e2ba4c3b66d742cb1cc80ebc8143c5037f79a213a5af2e64",
@@ -445,7 +445,7 @@
       "to_source_commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14"
     },
     "observed_ns": 1789201198250682127,
-    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.yaml",
+    "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-cache-activation-20260912.yaml",
     "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a",
     "resumed_step": 213452,
     "settings": {
@@ -457,19 +457,19 @@
     "source_commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14",
     "status": "healthy-cache32-deployment-complete",
     "support_services": {
-      "edgeconnect-startrain-variant-network-backup.timer": {
+      "deltrel-deltreltrain-variant-network-backup.timer": {
         "enabled": "enabled",
         "state": "active"
       },
-      "edgeconnect-startrain-variant-network-disaster-backup.timer": {
+      "deltrel-deltreltrain-variant-network-disaster-backup.timer": {
         "enabled": "enabled",
         "state": "active"
       },
-      "edgeconnect-startrain-variant-network-monitor.service": {
+      "deltrel-deltreltrain-variant-network-monitor.service": {
         "enabled": "enabled",
         "state": "active"
       },
-      "edgeconnect-startrain-variant-network-report.timer": {
+      "deltrel-deltreltrain-variant-network-report.timer": {
         "enabled": "enabled",
         "state": "active"
       }
@@ -481,7 +481,7 @@
       "generation_family": "variant-network-a",
       "objects": 28005,
       "run_id": "variant-network",
-      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789200394881943732-c3bd8613ea81623260e061a10c4d402ab207528ab27481189fdb5d4e4c458320.json",
+      "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789200394881943732-c3bd8613ea81623260e061a10c4d402ab207528ab27481189fdb5d4e4c458320.json",
       "snapshot_bytes": 5422926,
       "snapshot_sha256": "c3bd8613ea81623260e061a10c4d402ab207528ab27481189fdb5d4e4c458320",
       "status": "ok"
@@ -976,20 +976,20 @@
     }
   },
   "fleet_speedup_measured": null,
-  "format": "startrain.controlled-graph-cache-deployment-evidence",
+  "format": "deltreltrain.controlled-graph-cache-deployment-evidence",
   "h100_smoke": {
     "report": {
       "bytes": 3666,
-      "path": "/tmp/edgeconnect-cache-activation-20260912/h100-smoke.json",
+      "path": "/tmp/deltrel-cache-activation-20260912/h100-smoke.json",
       "sha256": "dbfa82bdeb4705859af23490fa830df969f77c1a720d9af246d6cee07f215cce"
     },
     "status": "passed"
   },
   "initial_live_verification": {
     "observed_ns": 1789199950606048672,
-    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-cache-activation-20260912.yaml",
+    "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-cache-activation-20260912.yaml",
     "profile_sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a",
-    "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01.pt",
+    "resumed_from": "recovery:/home/ubuntu/deltrel-runs/variant-network/learner/recovery/sha256-60dc55f59c7d9ed50365b91a862d5aaaa1b6728efb3bc9d3e945810a19f96f01.pt",
     "source_commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14",
     "status": "healthy-live-cache32",
     "step": 213544,
@@ -1743,11 +1743,11 @@
     "observed_from": "2026-09-12T07:57:04Z",
     "observed_until": "2026-09-12T08:07:09Z",
     "raw_observations": {
-      "path": "/tmp/edgeconnect-cache-assessment-20260912/post-cache32-monitor-raw.jsonl",
+      "path": "/tmp/deltrel-cache-assessment-20260912/post-cache32-monitor-raw.jsonl",
       "sha256": "a82946dc3165be3829f39714c19772c67163cb95a7950eaa35167b90a3bf2c35"
     },
     "raw_residency_samples": {
-      "path": "/tmp/edgeconnect-cache-assessment-20260912/post-cache32-residency-samples.jsonl",
+      "path": "/tmp/deltrel-cache-assessment-20260912/post-cache32-residency-samples.jsonl",
       "sha256": "be5fa8600c2e485c9f9c51a175d61cf640559e5206b320528a6f62f4ff89c480"
     },
     "scope": "Observational only. Cohort metadata corroborates model-step/ring contexts; GPU-process counters aggregate models. Workloads, models, game phases and arena occupancy differ from prewindow. No causal fleet-throughput or Elo claim.",
@@ -1839,7 +1839,7 @@
   },
   "post_observation_plan": {
     "comparison_contract": "Use deltas only within unchanged process counter lifetimes; label changed model/ring composition and startup periods. A row-count or capture reduction is not a measured fleet speedup or Elo gain.",
-    "format": "startrain.graph-cache-post-activation-observation-plan",
+    "format": "deltreltrain.graph-cache-post-activation-observation-plan",
     "mechanism_check": "Look for a live model serving rings6+10 or8+10 retaining more than16 graphs within the original byte cap; compare capture/eviction and warmup-row rates against the same-workload baseline after startup.",
     "observation_seconds_after_readiness": 600,
     "required_health": [
@@ -1861,16 +1861,16 @@
     "commit": "b21e120418f41ca5402ff4dfb034dd96396e9f14",
     "native_sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b",
     "qualification_note": "User-requested controlled cache16-to32 activation; original failed policy reports retained, full execution and teacher-rate checks, live mixed-board churn, exact checkpoint and rollback required.",
-    "release": "/home/ubuntu/edgeconnect-releases/variant-cache-activation-20260912",
+    "release": "/home/ubuntu/deltrel-releases/variant-cache-activation-20260912",
     "source_files": 559
   },
-  "retained_server_directory": "/home/ubuntu/edgeconnect-rollouts/cache-activation-20260912",
+  "retained_server_directory": "/home/ubuntu/deltrel-rollouts/cache-activation-20260912",
   "schema_version": 1,
   "source_authority": {
     "config_sha256": "2443d35fa7447777beb68f58d47a334bf85d9b3c590daedb5c34718c96aafd6e",
-    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-efficiency-v2-20260912.yaml",
+    "profile": "/home/ubuntu/deltrel-runs/variant-network/profile-efficiency-v2-20260912.yaml",
     "profile_sha256": "2cb05ebdc385fc92bb8ce99b109928e22409fac96b829c5a4f44cfb40f44d978",
-    "release": "/home/ubuntu/edgeconnect-releases/variant-efficiency-v2-20260912",
+    "release": "/home/ubuntu/deltrel-releases/variant-efficiency-v2-20260912",
     "source_commit": "99ef5a43088d68e481492471d0b27226be4dd42e"
   },
   "status": "complete_healthy_cache32",
@@ -1880,7 +1880,7 @@
       "failures": 0,
       "junit": {
         "bytes": 9251,
-        "path": "/tmp/edgeconnect-cache-activation-20260912/controller-tests-server.xml",
+        "path": "/tmp/deltrel-cache-activation-20260912/controller-tests-server.xml",
         "sha256": "c92692d010f20396d0702a9f229bff2eb7e945051edde192b85f77f44e84a6d7"
       },
       "tests": 70
@@ -1890,7 +1890,7 @@
       "failures": 0,
       "junit": {
         "bytes": 30458,
-        "path": "/tmp/edgeconnect-cache-activation-20260912/core-tests-server.xml",
+        "path": "/tmp/deltrel-cache-activation-20260912/core-tests-server.xml",
         "sha256": "aeaad1be0f14781690508493cd8494d1e1111d82fae46b90d440876f9a7133d8"
       },
       "tests": 196
@@ -1899,7 +1899,7 @@
     "pyright": "0 errors, 0 warnings",
     "ruff": "passed",
     "runtime_parity": {
-      "native_path": "/home/ubuntu/edgeconnect-releases/variant-cache-activation-20260912/training/.venv/lib/python3.11/site-packages/star_native/star_native.abi3.so",
+      "native_path": "/home/ubuntu/deltrel-releases/variant-cache-activation-20260912/training/.venv/lib/python3.11/site-packages/deltrel_native/deltrel_native.abi3.so",
       "native_sha256": "a860d66c128cedbd3429765180459bdcdad34104d4ec520633f1025ff26abf1b",
       "package_count": 103,
       "packages": [
@@ -2248,7 +2248,7 @@
           "2.4.0"
         ],
         [
-          "star-native",
+          "deltrel-native",
           "0.1.0"
         ],
         [
@@ -2256,7 +2256,7 @@
           "1.3.1"
         ],
         [
-          "startrain",
+          "deltreltrain",
           "0.3.0"
         ],
         [
@@ -2317,13 +2317,13 @@
         ]
       ],
       "unchanged_execution_files": {
-        "startrain/actor.py": "f4fd76bdc46def4dba16016085bda047aa4fc1fcf278d598273582c957baf57c",
-        "startrain/arena.py": "873eec5a8ab27dcc7ada590cf045ee782ba4d39b271705315b86b7dbfcee066d",
-        "startrain/inference.py": "990644e48db6cac27f682b5ce602a226289490f91c291aadee6f458ca6357a15",
-        "startrain/inference_batching.py": "0f0e7c42636c07eeafec009b21d41204582a02a4bb4319b0ef3be3ee5eb458f9",
-        "startrain/inference_graphs.py": "02ec378de2e5eacbeea149f2b50f511ff2f2fbfbf39c3b4a7aee7449ddb8ff8d",
-        "startrain/learner.py": "0dea3a85eb8540c28b393845a5e0f248f8f0ea5522129f24eccf2612351bfe92",
-        "startrain/model.py": "7c53f459698b0257a4fb5a266c1dd9956cf5dd5611d5d2d9c497756380f85a29"
+        "deltreltrain/actor.py": "f4fd76bdc46def4dba16016085bda047aa4fc1fcf278d598273582c957baf57c",
+        "deltreltrain/arena.py": "873eec5a8ab27dcc7ada590cf045ee782ba4d39b271705315b86b7dbfcee066d",
+        "deltreltrain/inference.py": "990644e48db6cac27f682b5ce602a226289490f91c291aadee6f458ca6357a15",
+        "deltreltrain/inference_batching.py": "0f0e7c42636c07eeafec009b21d41204582a02a4bb4319b0ef3be3ee5eb458f9",
+        "deltreltrain/inference_graphs.py": "02ec378de2e5eacbeea149f2b50f511ff2f2fbfbf39c3b4a7aee7449ddb8ff8d",
+        "deltreltrain/learner.py": "0dea3a85eb8540c28b393845a5e0f248f8f0ea5522129f24eccf2612351bfe92",
+        "deltreltrain/model.py": "7c53f459698b0257a4fb5a266c1dd9956cf5dd5611d5d2d9c497756380f85a29"
       }
     }
   },
@@ -2334,7 +2334,7 @@
     "generation_family": "variant-network-a",
     "objects": 28005,
     "run_id": "variant-network",
-    "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1789200394881943732-c3bd8613ea81623260e061a10c4d402ab207528ab27481189fdb5d4e4c458320.json",
+    "snapshot": "/lambda/nfs/texas-north-fs/deltrel-dr/variant-network/snapshots/variant-network/1789200394881943732-c3bd8613ea81623260e061a10c4d402ab207528ab27481189fdb5d4e4c458320.json",
     "snapshot_bytes": 5422926,
     "snapshot_sha256": "c3bd8613ea81623260e061a10c4d402ab207528ab27481189fdb5d4e4c458320",
     "status": "ok"

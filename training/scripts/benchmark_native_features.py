@@ -17,14 +17,14 @@ from dataclasses import fields
 
 import torch
 
-from startrain.features import EncodedBatch, encode_batch
-from startrain.features_v3 import encode_legacy_batch
-from startrain.native import (
+from deltreltrain.features import EncodedBatch, encode_batch
+from deltreltrain.features_v3 import encode_legacy_batch
+from deltreltrain.native import (
     encode_native_state_data,
-    load_star_native,
+    load_deltrel_native,
     positions_from_native,
 )
-from startrain.topology import SUPPORTED_RINGS
+from deltreltrain.topology import SUPPORTED_RINGS
 
 
 def _time(operation, iterations: int) -> list[float]:
@@ -72,7 +72,7 @@ def main() -> int:
     ):
         raise SystemExit("invalid benchmark dimensions")
 
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     assert native is not None
     if arguments.native_threads is not None:
         native.configure_rayon_threads(arguments.native_threads)

@@ -2,7 +2,7 @@
 """Alternate two exact native binaries on deterministic CPU search workloads.
 
 Build each revision with ``maturin build --release --locked --manifest-path
-crates/star-py/Cargo.toml`` and extract each wheel's star_native.abi3.so to a
+crates/deltrel-py/Cargo.toml`` and extract each wheel's deltrel_native.abi3.so to a
 separate directory. Pass those
 paths as --baseline/--candidate; no installed extension is replaced. This uses
 a cheap synthetic evaluator, not a trained network or an H100 throughput test.
@@ -30,7 +30,7 @@ def digest(value: Any) -> str:
 
 
 def load_native(path: Path, threads: int) -> Any:
-    spec = importlib.util.spec_from_file_location("star_native", path)
+    spec = importlib.util.spec_from_file_location("deltrel_native", path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load native extension {path}")
     native = importlib.util.module_from_spec(spec)

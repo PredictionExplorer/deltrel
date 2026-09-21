@@ -6,8 +6,8 @@ import json
 import numpy as np
 import pytest
 
-from startrain.native import positions_from_native, score_results_from_native
-from startrain.replay import (
+from deltreltrain.native import positions_from_native, score_results_from_native
+from deltreltrain.replay import (
     ReplaySample,
     ReplaySchemaError,
     _AUXILIARY_SAMPLE_ARRAY_NAMES,
@@ -18,16 +18,16 @@ from startrain.replay import (
     read_replay_shard,
     write_replay_shard,
 )
-from startrain.replay_publication import _digest_rows, _validate_future_policies
-from startrain.selfplay import _Decision, _future_policy_targets
-from startrain.symmetry import D5Transform
-from startrain.topology import get_topology
+from deltreltrain.replay_publication import _digest_rows, _validate_future_policies
+from deltreltrain.selfplay import _Decision, _future_policy_targets
+from deltreltrain.symmetry import D5Transform
+from deltreltrain.topology import get_topology
 
 
 def trajectory(
     *, mode="double", pie=False, handicap=1, actions=(0, 1, 2, 3, 4), rings=4
 ):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     state = native.StateBatch(rings, 1, mode=mode, pie=pie, handicap=handicap)
     decisions = []
     for ply, action in enumerate(actions):
@@ -136,21 +136,21 @@ def test_replay_capability_roundtrip_d5_padding_and_cached_components(tmp_path):
     state.apply_many([0] * (nodes - 4), list(range(4, nodes)))
     final = score_results_from_native(state.score_data())[0]
     rows = samples_from(decisions, final)
-    expected_peries = [p.peries for p in final.players]
-    expected_stars = [p.stars for p in final.players]
-    assert rows[0].final_peries.tolist() == expected_peries
-    assert rows[0].final_stars.tolist() == expected_stars
+    expected_shores = [p.shores for p in final.players]
+    expected_networks = [p.networks for p in final.players]
+    assert rows[0].final_shores.tolist() == expected_shores
+    assert rows[0].final_networks.tolist() == expected_networks
     path = write_replay_shard(tmp_path / "aux.npz", rows)
     restored = read_replay_shard(path)
     assert decode_replay_shard(path).metadata["auxiliary_targets_version"] == 1
     for a, b in zip(rows, restored, strict=True):
-        for name in ("opponent_reply", "second_stone", "final_peries", "final_stars"):
+        for name in ("opponent_reply", "second_stone", "final_shores", "final_networks"):
             np.testing.assert_array_equal(getattr(a, name), getattr(b, name))
     misses = _final_components.cache_info().misses
     augmented = augment_sample(restored[0], D5Transform(1, True))
     assert _final_components.cache_info().misses == misses
     assert augmented.opponent_reply[-1] == 1
-    assert augmented.final_stars.tolist() == expected_stars
+    assert augmented.final_networks.tolist() == expected_networks
     permutation = get_topology(4).d5_permutation(1, True).numpy()
     np.testing.assert_array_equal(
         augmented.final_ownership[permutation], restored[0].final_ownership
@@ -162,15 +162,15 @@ def test_replay_capability_roundtrip_d5_padding_and_cached_components(tmp_path):
     assert batch.targets.opponent_reply.shape == (3, get_topology(6).n + 1)
     assert batch.targets.opponent_reply[0, -1] == 1
     assert batch.targets.opponent_reply[0, nodes] == 0
-    assert batch.targets.final_peries.tolist()[:2] == [
-        expected_peries,
-        expected_peries[::-1],
+    assert batch.targets.final_shores.tolist()[:2] == [
+        expected_shores,
+        expected_shores[::-1],
     ]
-    assert batch.targets.final_quarks.tolist()[:2] == [
-        [p.quarks for p in final.players],
-        [p.quarks for p in reversed(final.players)],
+    assert batch.targets.final_capes.tolist()[:2] == [
+        [p.capes for p in final.players],
+        [p.capes for p in reversed(final.players)],
     ]
-    assert batch.targets.final_peries_mask.tolist() == [True, True, False]
+    assert batch.targets.final_shores_mask.tolist() == [True, True, False]
     assert _final_components.cache_info().misses == misses
 
 
@@ -197,8 +197,8 @@ def test_historical_v5_derives_counts_but_keeps_future_targets_unavailable(tmp_p
     assert all(row.opponent_reply is None and row.second_stone is None for row in rows)
     assert not batch.targets.opponent_reply_mask.any()
     assert not batch.targets.second_stone_mask.any()
-    assert batch.targets.final_stars_mask.all()
-    assert rows[0].final_stars.tolist() == [p.stars for p in final.players]
+    assert batch.targets.final_networks_mask.all()
+    assert rows[0].final_networks.tolist() == [p.networks for p in final.players]
 
 
 @pytest.mark.native
@@ -231,7 +231,7 @@ def test_stored_component_counts_require_available_spatial_labels(tmp_path):
     path = write_replay_shard(tmp_path / "masked-counts.npz", samples_from(decisions))
     with np.load(path, allow_pickle=False) as archive:
         arrays = {name: archive[name] for name in archive.files}
-    arrays["final_peries"][0] = [1, 1]
+    arrays["final_shores"][0] = [1, 1]
     np.savez(path, **arrays)
     with pytest.raises(ReplaySchemaError, match="requires available spatial"):
         read_replay_shard(path)
@@ -270,7 +270,7 @@ def test_growing_prefix_digests_allow_only_newly_observed_future_labels():
 @pytest.mark.native
 def test_live_prefix_enrichment_rolling_stop_is_immutable_and_never_recredits(tmp_path):
     from test_live_policy_publication import credit, setup
-    from startrain.replay_publication import validate_publications
+    from deltreltrain.replay_publication import validate_publications
 
     actor, store, identity = setup(tmp_path, games=7, rolling=True)
     snapshots = []
@@ -319,7 +319,7 @@ def test_live_prefix_enrichment_rolling_stop_is_immutable_and_never_recredits(tm
 def test_clinch_official_completion_counts_and_no_unobserved_future():
     from test_selfplay_streaming import Sink, actor, config
 
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     sink = Sink()
     worker = actor(
         native, config(games=2, batch_size=2, clinch_finalization="loser-fill"), sink
@@ -330,11 +330,11 @@ def test_clinch_official_completion_counts_and_no_unobserved_future():
     ]
     assert clinched
     for row in clinched:
-        assert row.final_peries is not None and row.final_stars is not None
+        assert row.final_shores is not None and row.final_networks is not None
         for player in (0, 1):
-            assert row.final_scores[player] == row.final_peries[player] + int(
-                row.final_quarks[player] >= 3
-            ) + 2 * (int(row.final_stars[1 - player]) - int(row.final_stars[player]))
+            assert row.final_scores[player] == row.final_shores[player] + int(
+                row.final_capes[player] >= 3
+            ) + 2 * (int(row.final_networks[1 - player]) - int(row.final_networks[player]))
     for game in {s.game_id for s in sink.samples}:
         last = max((s for s in sink.samples if s.game_id == game), key=lambda s: s.ply)
         assert last.opponent_reply is None and last.second_stone is None
@@ -343,10 +343,10 @@ def test_clinch_official_completion_counts_and_no_unobserved_future():
 @pytest.mark.native
 @pytest.mark.parametrize("omit_swap", [False, True])
 def test_interrupted_filtered_policy_rows_remap_future_destinations(omit_swap):
-    from startrain.selfplay import GameVariant
+    from deltreltrain.selfplay import GameVariant
     from test_selfplay_streaming import Sink, actor, config
 
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     actions = (0, get_topology(4).n, 1, 2, 3, 4) if omit_swap else tuple(range(6))
     decisions, _ = trajectory(pie=omit_swap, actions=actions)
     decisions[1].policy = None

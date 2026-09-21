@@ -11,9 +11,9 @@ import sys
 import time
 from pathlib import Path
 
-from startrain.config import load_config
-from startrain.device import normalize_device_string
-from startrain.hardware_health import query_gpu_health, unhealthy_reasons
+from deltreltrain.config import load_config
+from deltreltrain.device import normalize_device_string
+from deltreltrain.hardware_health import query_gpu_health, unhealthy_reasons
 
 
 def _atomic_json(path: Path, payload: object) -> None:

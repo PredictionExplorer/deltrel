@@ -9,8 +9,8 @@ import {
   ShieldCheck,
   Trophy,
 } from 'lucide-react';
-import type { GameState } from '@/lib/star/game';
-import type { ScoreResult } from '@/lib/star/scoring';
+import type { GameState } from '@/lib/deltrel/game';
+import type { ScoreResult } from '@/lib/deltrel/scoring';
 import type { EarlyGameOutcome } from '@/lib/store';
 import { ModalDialog } from './ModalDialog';
 import { PLAYER_COLORS } from './theme';
@@ -48,7 +48,7 @@ export function GameOverOverlay({
   const { winner } = result;
   const eyebrow =
     result.reason === 'full-board'
-      ? 'the sky is settled'
+      ? 'the shoreline is settled'
       : result.reason === 'clinch'
         ? 'result clinched'
         : 'by resignation';
@@ -65,10 +65,10 @@ export function GameOverOverlay({
     >
       <div className="thin-scroll panel-surface max-h-[calc(100dvh-2rem)] w-full overflow-y-auto rounded-3xl p-5 text-center shadow-[0_0_80px_rgba(232,196,139,0.18)] sm:p-8">
         <div
-          className="pop-in mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full border border-gold/50 bg-gold-faint"
+          className="pop-in mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full border border-sand/50 bg-sand-faint"
           style={delay()}
         >
-          <Trophy className="h-7 w-7 text-gold-strong" aria-hidden />
+          <Trophy className="h-7 w-7 text-sand-strong" aria-hidden />
         </div>
 
         <p className="fade-in text-xs uppercase tracking-[0.16em] text-muted" style={delay()}>
@@ -111,17 +111,19 @@ export function GameOverOverlay({
                     style={delay()}
                   >
                     <div className="flex justify-between">
-                      <dt>peries</dt>
-                      <dd className="text-ink/90">{s.peries}</dd>
+                      <dt>shores</dt>
+                      <dd className="text-ink/90">{s.shores}</dd>
                     </div>
                     <div className="flex justify-between">
-                      <dt>quark peri</dt>
-                      <dd className="text-ink/90">{s.quarkPeri ? '+1' : '0'}</dd>
+                      <dt>cape bonus</dt>
+                      <dd className="text-ink/90">{s.capeBonus ? '+1' : '0'}</dd>
                     </div>
                     <div className="flex justify-between">
-                      <dt>
-                        award ({s.stars} star{s.stars === 1 ? '' : 's'})
-                      </dt>
+                      <dt>networks</dt>
+                      <dd className="text-ink/90">{s.networks}</dd>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <dt>connection award</dt>
                       <dd className="text-ink/90">
                         {s.award > 0 ? `+${s.award}` : s.award}
                       </dd>
@@ -135,7 +137,7 @@ export function GameOverOverlay({
           <div className="fade-up mt-6 rounded-2xl border border-white/10 bg-white/[0.035] p-5 text-left">
             <div className="flex items-start gap-3">
               <span
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gold/35 bg-gold-faint text-gold-strong"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sand/35 bg-sand-faint text-sand-strong"
                 aria-hidden
               >
                 {result.reason === 'clinch' ? (
@@ -164,13 +166,13 @@ export function GameOverOverlay({
         )}
 
         <div
-          className="sticky bottom-0 z-10 -mx-2 mt-5 flex flex-wrap justify-center gap-2.5 rounded-2xl bg-night-surface-strong/95 px-2 py-3 backdrop-blur-md"
+          className="sticky bottom-0 z-10 -mx-2 mt-5 flex flex-wrap justify-center gap-2.5 rounded-2xl bg-estuary-surface-strong/95 px-2 py-3 backdrop-blur-md"
           style={delay()}
         >
           <button
             type="button"
             onClick={onReview}
-            className="flex min-h-11 items-center gap-2 rounded-xl border border-white/15 px-4 py-2 text-sm text-ink transition-colors hover:border-gold/50"
+            className="flex min-h-11 items-center gap-2 rounded-xl border border-white/15 px-4 py-2 text-sm text-ink transition-colors hover:border-sand/50"
           >
             <Eye className="h-4 w-4" aria-hidden />{' '}
             {result.reason === 'clinch' ? 'Review proof' : 'Review board'}
@@ -179,14 +181,14 @@ export function GameOverOverlay({
             ref={rematchButton}
             type="button"
             onClick={onRematch}
-            className="flex min-h-11 items-center gap-2 rounded-xl border border-gold/60 bg-gold-faint px-4 py-2 text-sm font-medium text-gold-strong transition-colors hover:bg-gold/25"
+            className="flex min-h-11 items-center gap-2 rounded-xl border border-sand/60 bg-sand-faint px-4 py-2 text-sm font-medium text-sand-strong transition-colors hover:bg-sand/25"
           >
             <RotateCcw className="h-4 w-4" aria-hidden /> Rematch
           </button>
           <button
             type="button"
             onClick={onSetup}
-            className="flex min-h-11 items-center gap-2 rounded-xl border border-white/15 px-4 py-2 text-sm text-ink transition-colors hover:border-gold/50"
+            className="flex min-h-11 items-center gap-2 rounded-xl border border-white/15 px-4 py-2 text-sm text-ink transition-colors hover:border-sand/50"
           >
             <Settings2 className="h-4 w-4" aria-hidden /> New setup
           </button>

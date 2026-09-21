@@ -17,13 +17,13 @@ from typing import cast
 
 import yaml
 
-from startrain.autonomous_elo import DecisiveMatch, fit_bradley_terry_elo
-from startrain.runtime import atomic_json
-from startrain.balanced_strength import balanced_strength_summary
-from startrain.config import ArenaConfig, load_config
+from deltreltrain.autonomous_elo import DecisiveMatch, fit_bradley_terry_elo
+from deltreltrain.runtime import atomic_json
+from deltreltrain.balanced_strength import balanced_strength_summary
+from deltreltrain.config import ArenaConfig, load_config
 
 SCHEMA_VERSION = 1
-REPORT_NAME = "startrain-strength-efficiency"
+REPORT_NAME = "deltreltrain-strength-efficiency"
 AUTONOMOUS_ELO_SCHEMA_VERSION = 1
 AUTONOMOUS_ELO_CONFIDENCE = 0.95
 PRIMARY_ELO_RING = 10

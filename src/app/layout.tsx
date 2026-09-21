@@ -18,14 +18,35 @@ const fraunces = Fraunces({
   axes: ["opsz"],
 });
 
+const siteUrl = process.env.DELTREL_SITE_URL ?? (
+  process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : `http://localhost:${process.env.PORT || '3000'}`
+);
+const metadataBase = new URL(siteUrl);
+if (!['http:', 'https:'].includes(metadataBase.protocol)) {
+  throw new Error('DELTREL_SITE_URL must be an absolute HTTP or HTTPS URL.');
+}
+
 export const metadata: Metadata = {
-  title: "✳Star — a connection game",
+  metadataBase,
+  title: "Deltrel — Connection runs deep",
   description:
-    "Play *Star, Ea Ea's connection game of peries, quarks and stars, for two players on one screen. Classic and Double *Star variants on boards of any size.",
+    "Reach the shore. Join your networks. Deltrel is a thoughtful connection game for two, set where the river meets the sea. Play Classic or Double on four board sizes.",
+  applicationName: "Deltrel",
+  appleWebApp: { capable: true, title: "Deltrel", statusBarStyle: "default" },
+  openGraph: {
+    title: "Deltrel — Connection runs deep",
+    description: "A game of connection. A world between you.",
+    siteName: "Deltrel",
+    type: "website",
+    locale: "en_US",
+  },
+  twitter: { card: "summary_large_image", title: "Deltrel — Connection runs deep" },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0d1d",
+  themeColor: "#0b393c",
   colorScheme: "dark",
 };
 

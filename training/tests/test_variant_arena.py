@@ -6,7 +6,7 @@ import pytest
 from dataclasses import replace
 from collections import Counter
 
-from startrain.arena import (
+from deltreltrain.arena import (
     ARENA_RESULT_SCHEMA_VERSION,
     ArenaGame,
     ArenaPair,
@@ -17,11 +17,11 @@ from startrain.arena import (
     summarize_arena_pairs,
     summarize_completed_arena_pairs,
 )
-from startrain.config import ArenaConfig, ConfigError
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.native import validate_native_module
-from startrain.selfplay import GameVariant
+from deltreltrain.config import ArenaConfig, ConfigError
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.native import validate_native_module
+from deltreltrain.selfplay import GameVariant
 
 
 def _pairs(
@@ -203,7 +203,7 @@ def test_segment_floors_veto_only_proven_regressions() -> None:
 
 @pytest.mark.native
 def test_native_arena_plays_every_segment_with_variant_provenance() -> None:
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     validate_native_module(native)
     identity = "sha256-" + "d" * 64
     evaluator = GraphInferenceAdapter(

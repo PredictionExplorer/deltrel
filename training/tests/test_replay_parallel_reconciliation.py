@@ -7,8 +7,8 @@ import threading
 
 import pytest
 
-import startrain.replay_store as replay_module
-from startrain.replay_store import ReplayStore, ReplayStoreCancelled
+import deltreltrain.replay_store as replay_module
+from deltreltrain.replay_store import ReplayStore, ReplayStoreCancelled
 from test_pipeline_core import append_replay, make_replay_sample, run_identity
 from test_replay_startup_cancellation import replay_files
 

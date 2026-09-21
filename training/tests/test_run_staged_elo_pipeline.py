@@ -94,7 +94,7 @@ def _pipeline(
         comparison,
         {
             "schema_version": 1,
-            "report": "startrain-elo-ablation-comparison",
+            "report": "deltreltrain-elo-ablation-comparison",
             "status": "complete",
             "selector": {
                 "status": selector_status,
@@ -107,7 +107,7 @@ def _pipeline(
         deployment,
         {
             "schema_version": 1,
-            "report": "startrain-elo-ablation-deployment",
+            "report": "deltreltrain-elo-ablation-deployment",
             "queue": {"comparison_output": str(comparison)},
         },
     )
@@ -117,7 +117,7 @@ def _pipeline(
         pipeline,
         {
             "schema_version": 1,
-            "report": "startrain-staged-elo-pipeline",
+            "report": "deltreltrain-staged-elo-pipeline",
             "state_path": str(tmp_path / "pipeline-state.json"),
             "stages": [
                 {
@@ -178,7 +178,7 @@ def _confirmation_campaign(tmp_path: Path) -> tuple[Path, Path]:
             manifest,
             {
                 "schema_version": 1,
-                "report": "startrain-elo-ablation-deployment",
+                "report": "deltreltrain-elo-ablation-deployment",
                 "queue": {
                     "seed": seed,
                     "execution_lock_path": str(execution_lock),
@@ -227,7 +227,7 @@ def _winner_warm_start(
         (run_root / "learner" / "champion.json").read_text(encoding="utf-8")
     )
     marker = {
-        "format": "startrain.champion-warm-start",
+        "format": "deltreltrain.champion-warm-start",
         "schema_version": 1,
         "status": "active",
         "source_model_identity": champion["model_identity"],
@@ -471,7 +471,7 @@ def test_confirmation_campaign_runs_pinned_seeds_without_idle_handoff(
         _write_json(Path(queue["comparison_output"]), {"seed": seed})
         handoff = {
             "schema_version": 1,
-            "report": "startrain-continuity-handoff-request",
+            "report": "deltreltrain-continuity-handoff-request",
             "status": "requested",
             "requested": True,
             "action": "request_fallback",
@@ -515,7 +515,7 @@ def test_confirmation_campaign_runs_pinned_seeds_without_idle_handoff(
         assert hashlib.sha256(policy_path.read_bytes()).hexdigest() == policy_sha256
         return {
             "schema_version": 1,
-            "report": "startrain-elo-ablation-cross-seed-comparison",
+            "report": "deltreltrain-elo-ablation-cross-seed-comparison",
             "status": "eligible",
             "eligible": True,
         }
@@ -562,7 +562,7 @@ def test_confirmation_campaign_pauses_and_resumes_at_seed_boundary(
         _write_json(Path(queue["comparison_output"]), {"seed": seed})
         handoff = {
             "schema_version": 1,
-            "report": "startrain-continuity-handoff-request",
+            "report": "deltreltrain-continuity-handoff-request",
             "status": "requested",
             "requested": True,
             "action": "request_fallback",
@@ -644,7 +644,7 @@ def test_confirmation_campaign_pauses_and_resumes_at_seed_boundary(
         queue_runner=queue_runner,
         cross_seed_builder=lambda *_args, **_kwargs: {
             "schema_version": 1,
-            "report": "startrain-elo-ablation-cross-seed-comparison",
+            "report": "deltreltrain-elo-ablation-cross-seed-comparison",
             "status": "eligible",
             "eligible": True,
         },
@@ -668,7 +668,7 @@ def test_confirmation_campaign_pauses_and_resumes_at_seed_boundary(
         ),
         cross_seed_builder=lambda *_args, **_kwargs: {
             "schema_version": 1,
-            "report": "startrain-elo-ablation-cross-seed-comparison",
+            "report": "deltreltrain-elo-ablation-cross-seed-comparison",
             "status": "eligible",
             "eligible": True,
         },
@@ -796,7 +796,7 @@ def test_confirmation_campaign_recovers_published_output_after_state_crash(
         _write_json(Path(queue["comparison_output"]), {"seed": seed})
         handoff = {
             "schema_version": 1,
-            "report": "startrain-continuity-handoff-request",
+            "report": "deltreltrain-continuity-handoff-request",
             "status": "requested",
             "requested": True,
             "action": "request_fallback",
@@ -838,7 +838,7 @@ def test_confirmation_campaign_recovers_published_output_after_state_crash(
         assert hashlib.sha256(policy_path.read_bytes()).hexdigest() == policy_sha256
         return {
             "schema_version": 1,
-            "report": "startrain-elo-ablation-cross-seed-comparison",
+            "report": "deltreltrain-elo-ablation-cross-seed-comparison",
             "status": "eligible",
             "eligible": True,
         }
@@ -901,7 +901,7 @@ def test_campaign_accepts_verified_post_cutoff_teardown_warning(
     handoff_path = tmp_path / "handoff.json"
     handoff = {
         "schema_version": 1,
-        "report": "startrain-continuity-handoff-request",
+        "report": "deltreltrain-continuity-handoff-request",
         "status": "requested",
         "requested": True,
         "action": "request_fallback",

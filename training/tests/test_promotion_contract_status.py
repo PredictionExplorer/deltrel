@@ -7,11 +7,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from startrain.balanced_evaluation import evaluation_contract
-from startrain.config import ArenaConfig, PlateauConfig, load_config
-from startrain.learner import LearnerLoop
-from startrain.promotion import PromotionSupervisor
-from startrain.runtime import RunIdentity
+from deltreltrain.balanced_evaluation import evaluation_contract
+from deltreltrain.config import ArenaConfig, PlateauConfig, load_config
+from deltreltrain.learner import LearnerLoop
+from deltreltrain.promotion import PromotionSupervisor
+from deltreltrain.runtime import RunIdentity
 
 
 def experiment():

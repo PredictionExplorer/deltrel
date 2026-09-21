@@ -1,0 +1,55 @@
+[Unit]
+Description=Deltrel terminal-boundary calibration cutover
+Wants=network-online.target
+After=network-online.target remote-fs.target @SOURCE_UNIT@
+ConditionFileNotEmpty=@POLICY_MANIFEST@
+RequiresMountsFor=@DISASTER_BACKUP_MOUNT@
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+User=@ORCHESTRATION_USER@
+WorkingDirectory=@TRAINING_DIR@
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONPATH=@TRAINING_DIR@
+Environment=PATH=@TRAINING_DIR@/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=HOME=@FROZEN_CALIBRATION_OUTPUT_ROOT@/runtime-home
+Environment=XDG_CACHE_HOME=@FROZEN_CALIBRATION_OUTPUT_ROOT@/runtime-cache/xdg
+Environment=TORCHINDUCTOR_CACHE_DIR=@FROZEN_CALIBRATION_OUTPUT_ROOT@/runtime-cache/inductor
+Environment=TORCHINDUCTOR_PERSISTENT_AUTOTUNE_DIR=@FROZEN_CALIBRATION_OUTPUT_ROOT@/runtime-cache/inductor-autotune
+Environment=TRITON_HOME=@FROZEN_CALIBRATION_OUTPUT_ROOT@/runtime-cache/triton-home
+Environment=TRITON_CACHE_DIR=@FROZEN_CALIBRATION_OUTPUT_ROOT@/runtime-cache/triton
+Environment=TRITON_DUMP_DIR=@FROZEN_CALIBRATION_OUTPUT_ROOT@/runtime-cache/triton-dump
+Environment=TRITON_OVERRIDE_DIR=@FROZEN_CALIBRATION_OUTPUT_ROOT@/runtime-cache/triton-override
+Environment=CUDA_CACHE_PATH=@FROZEN_CALIBRATION_OUTPUT_ROOT@/runtime-cache/cuda
+UnsetEnvironment=TRITON_CACHE_MANAGER TRITON_REMOTE_CACHE_BACKEND TORCHINDUCTOR_FX_GRAPH_REMOTE_CACHE TORCHINDUCTOR_AUTOTUNE_REMOTE_CACHE TORCHINDUCTOR_AUTOGRAD_REMOTE_CACHE TORCHINDUCTOR_FORCE_DISABLE_CACHES TORCHINDUCTOR_BUNDLED_AUTOTUNE_REMOTE_CACHE TORCHINDUCTOR_FX_GRAPH_CACHE TORCHINDUCTOR_AUTOGRAD_CACHE TORCH_DYNAMO_AUTOMATIC_DYNAMIC_LOCAL_PGO TORCH_DYNAMO_AUTOMATIC_DYNAMIC_REMOTE_PGO TORCH_COMPILE_JOB_ID TORCH_COMPILE_FORCE_DISABLE_CACHES CUDA_CACHE_DISABLE
+ExecCondition=@TRAINING_DIR@/.venv/bin/python @TRAINING_DIR@/scripts/run_terminal_boundary_pipeline.py probe --manifest @POLICY_MANIFEST@
+ExecStartPre=@TRAINING_DIR@/.venv/bin/python @TRAINING_DIR@/scripts/run_terminal_boundary_pipeline.py verify --manifest @POLICY_MANIFEST@
+ExecStart=@TRAINING_DIR@/.venv/bin/python @TRAINING_DIR@/scripts/run_terminal_boundary_pipeline.py run --manifest @POLICY_MANIFEST@
+ExecStopPost=-@TRAINING_DIR@/.venv/bin/python @TRAINING_DIR@/scripts/run_terminal_boundary_pipeline.py recover --manifest @POLICY_MANIFEST@
+Restart=no
+KillSignal=SIGTERM
+KillMode=control-group
+TimeoutStartSec=infinity
+TimeoutStopSec=60
+OOMPolicy=stop
+LimitNOFILE=1048576
+NoNewPrivileges=true
+UMask=0027
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=@STATE_ROOT@ @CONTINUITY_STATE_ROOT@ @RUN_ROOT@/replay @RUN_ROOT@/recovery/replay-manifest @DISASTER_BACKUP_ROOT@ @CHAMPION_SNAPSHOT_PARENT@ @CALIBRATION_OUTPUT_PARENT@ @FROZEN_CALIBRATION_OUTPUT_ROOT@ @SCREEN_PLAN_PARENT@ @CALIBRATION_RUN_PARENT@
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native

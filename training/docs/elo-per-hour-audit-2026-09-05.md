@@ -284,7 +284,7 @@ mechanisms; their benefit here remains to be measured.
 [PyTorch CPU tuning](https://docs.pytorch.org/tutorials/recipes/recipes/tuning_guide.html).
 
 Local evidence: `variant-capable-network-plan.md`, `model-improvement-roadmap.md`
-(UTD, cadence, gate and clipping experiment records), `startrain/model.py`,
-`startrain/actor.py`, `startrain/learner.py`, `startrain/replay_store.py`, and
+(UTD, cadence, gate and clipping experiment records), `deltreltrain/model.py`,
+`deltreltrain/actor.py`, `deltreltrain/learner.py`, `deltreltrain/replay_store.py`, and
 `scripts/strength_efficiency_report.py`. Live evidence: active profile, replay
 ledger opened in read-only mode, learner metrics and existing monitor telemetry.

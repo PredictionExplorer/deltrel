@@ -54,9 +54,9 @@ def main(argv=None):
         or not 1 <= args.timeout_seconds <= 900
     ):
         parser.error("invalid bounded benchmark dimensions or deadline")
-    from startrain.checkpoint import load_model_manifest
-    from startrain.config import load_config
-    import startrain.model as model_module
+    from deltreltrain.checkpoint import load_model_manifest
+    from deltreltrain.config import load_config
+    import deltreltrain.model as model_module
 
     config = load_config(args.config)
     manifest = load_model_manifest(args.checkpoint)
@@ -126,9 +126,9 @@ def main(argv=None):
         return
 
     import torch
-    from startrain.checkpoint import load_ema_checkpoint
-    from startrain.native import encode_native_feature_data, load_star_native
-    from startrain.inference import resolve_precision
+    from deltreltrain.checkpoint import load_ema_checkpoint
+    from deltreltrain.native import encode_native_feature_data, load_deltrel_native
+    from deltreltrain.inference import resolve_precision
 
     started = time.monotonic()
     torch.set_num_threads(2)
@@ -138,7 +138,7 @@ def main(argv=None):
         torch.cuda.set_device(device)
         torch.cuda.set_per_process_memory_fraction(0.15, device)
         torch.cuda.reset_peak_memory_stats(device)
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     assert native is not None
     precision = resolve_precision(config.train.precision, device)
     dtype = {"bf16": torch.bfloat16, "fp16": torch.float16, "fp32": torch.float32}[

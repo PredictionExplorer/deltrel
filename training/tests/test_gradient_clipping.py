@@ -5,7 +5,7 @@ import pytest
 import torch
 from torch import nn
 
-from startrain.gradient_clipping import GradientClipper, GradientClippingConfig
+from deltreltrain.gradient_clipping import GradientClipper, GradientClippingConfig
 
 
 def parameters(*, dtype=torch.float64):

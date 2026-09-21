@@ -41,10 +41,10 @@ The newly restarted run was observed separately. Its initial scarcity of complet
 
 The producer and consumer disagree about storage granularity:
 
-1. Self-play finalizes completed games and flushes them immediately when streaming is enabled. A flush may contain one or several games; it does not wait for the configured 4,096-row shard target. See [streaming publication](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/selfplay.py:946).
-2. The learner creates chunks using the integer quotient of each selected span's row count and the full batch size. A span below 512 contributes zero chunks. See [chunk construction](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/learner.py:305).
-3. The sampler passes batch size 512 to that routine, even though it subsequently takes only 128 rows from each of four chunks. Both persistent and ordinary loaders use this sampler. See [sampler construction](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/learner.py:448) and [row selection](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/learner.py:515).
-4. All committed rows still increase the UTD allowance, whether or not the sampler can select them. See [allowance calculation](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/learner.py:3577).
+1. Self-play finalizes completed games and flushes them immediately when streaming is enabled. A flush may contain one or several games; it does not wait for the configured 4,096-row shard target. See [streaming publication](../deltreltrain/selfplay.py#L946).
+2. The learner creates chunks using the integer quotient of each selected span's row count and the full batch size. A span below 512 contributes zero chunks. See [chunk construction](../deltreltrain/learner.py#L305).
+3. The sampler passes batch size 512 to that routine, even though it subsequently takes only 128 rows from each of four chunks. Both persistent and ordinary loaders use this sampler. See [sampler construction](../deltreltrain/learner.py#L448) and [row selection](../deltreltrain/learner.py#L515).
+4. All committed rows still increase the UTD allowance, whether or not the sampler can select them. See [allowance calculation](../deltreltrain/learner.py#L3577).
 
 The read-only selection snapshot produced:
 
@@ -70,7 +70,7 @@ The 91,136 surviving ring-10 rows form 178 full chunks. Four-chunk grouping can 
 
 **Proposed repair:** preserve durable streaming and assemble homogeneous-ring batches across arbitrary short spans and partial tails. Treat shard diversity as a goal or minimum where feasible, rather than requiring exactly four files. Four ring-4 games cannot fill a 512-position batch. Changing the threshold from 512 to 128 would therefore leave another exclusion problem.
 
-Unify readiness, capacity calculation and actual sampling. Currently, [readiness](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/learner.py:3150) can count aggregate rows while [capacity](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/learner.py:3045) floors each span separately.
+Unify readiness, capacity calculation and actual sampling. Currently, [readiness](../deltreltrain/learner.py#L3150) can count aggregate rows while [capacity](../deltreltrain/learner.py#L3045) floors each span separately.
 
 **Acceptance evidence:** run real streamed game shards through the actual 512-row loader; cover all-short, mixed-size, partially selected and multi-ring data; verify row identity, uniqueness, model-age filters, mode exposure, distributed partitioning and GC protection. Measure which game IDs and model versions are actually consumed. Existing streaming tests and sampler tests each covered their own contracts but missed this combination.
 
@@ -80,7 +80,7 @@ This finding changes how other diagnostics should be interpreted. Nominal UTD, t
 
 **Confidence: confirmed retention policy; capacity estimates are conditional.**
 
-[Garbage collection](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/replay_store.py:887) retains a number of files per ring. It does not enforce a minimum retained position count or consult the learner's million-position target. The live setting remains 3,000 files per ring.
+[Garbage collection](../deltreltrain/replay_store.py#L887) retains a number of files per ring. It does not enforce a minimum retained position count or consult the learner's million-position target. The live setting remains 3,000 files per ring.
 
 | Average positions/file | Nominal positions in 3,000 files |
 | --- | ---: |
@@ -90,7 +90,7 @@ This finding changes how other diagnostics should be interpreted. Nominal UTD, t
 
 The observed-size comparison is approximately **16.8× less nominal capacity** than full 4,096-row files. It is not evidence of a 16.8× strength loss, nor a measurement that old files always reached 4,096 rows.
 
-Active selections have protected ID ranges, so the cap can temporarily be exceeded. The learner [clears its watermark before periodic GC](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/learner.py:2360). These pins protect in-flight reads; they do not guarantee a persistent million-position history.
+Active selections have protected ID ranges, so the cap can temporarily be exceeded. The learner [clears its watermark before periodic GC](../deltreltrain/learner.py#L2360). These pins protect in-flight reads; they do not guarantee a persistent million-position history.
 
 **Proposed repair:** retain coverage by eligible positions and relevant mode/ring cells, subject to a separate byte budget. Optional immutable compaction can reduce file overhead, but must preserve logical sample identities, timestamps, checksums and model provenance. Compaction must not re-credit old positions as newly generated experience.
 
@@ -100,7 +100,7 @@ This is a second producer–consumer contract issue to resolve alongside samplin
 
 **Confidence: measured waste and concrete code path; whole-system speedup unmeasured.**
 
-Every native request is scored and feature-packed before the prediction cache is consulted. Python then validates, clones and serializes the complete inputs into a bytes key. Static topology appears repeatedly inside those keys. See [native packing](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/crates/star-py/src/lib.rs:3066), [preparation](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/inference.py:515), [serialization](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/inference.py:638), and [lookup](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/inference.py:891).
+Every native request is scored and feature-packed before the prediction cache is consulted. Python then validates, clones and serializes the complete inputs into a bytes key. Static topology appears repeatedly inside those keys. See [native packing](../crates/deltrel-py/src/lib.rs#L3066), [preparation](../deltreltrain/inference.py#L515), [serialization](../deltreltrain/inference.py#L638), and [lookup](../deltreltrain/inference.py#L891).
 
 A local ring-10 dimension inspection produced a **54,629-byte key with a short dummy namespace**, for a **2,320-byte prediction payload**. The actual namespace adds a small amount. Much of the storage and copying describes the input rather than the answer.
 
@@ -116,7 +116,7 @@ D5-canonical caching is a later extension. The architecture has tested symmetry,
 
 **Confidence: padding measured; optimal batching policy unknown.**
 
-The current [CUDA bucket rule](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/inference.py:780) uses powers of two, with intermediate buckets above 64 for graph inference. Missing rows are padded with repeated inputs. They do not become extra search results.
+The current [CUDA bucket rule](../deltreltrain/inference.py#L780) uses powers of two, with intermediate buckets above 64 for graph inference. Missing rows are padded with repeated inputs. They do not become extra search results.
 
 The observed 13–17% padding corresponds to a theoretical 1.15–1.21× reduction in physical row work if removed without any other cost. Actual speed depends on kernel shapes, graph residency and queue delay. That ceiling is not a whole-training speedup prediction.
 
@@ -128,13 +128,13 @@ The freshly installed first-visit batching is useful for testing this interactio
 
 **Confidence: eager dtype behavior confirmed; compiled H100 materialization needs profiling.**
 
-BF16 autocast applies to eligible operations, not every tensor. The [initial node projection](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/model.py:707) is multiplied by an FP32 mask. FP32 embeddings and residual layer scales promote later values. A small CPU autocast inspection confirmed FP32 normalization/gather inputs and BF16 projection outputs.
+BF16 autocast applies to eligible operations, not every tensor. The [initial node projection](../deltreltrain/model.py#L707) is multiplied by an FP32 mask. FP32 embeddings and residual layer scales promote later values. A small CPU autocast inspection confirmed FP32 normalization/gather inputs and BF16 projection outputs.
 
 At batch 128, ring 10 and width 384, a fully materialized FP32 neighbor tensor with padded degree seven is approximately **360.94 MiB**. There are sixteen local blocks. Compilers can fuse away some intermediates, so this is an eager tensor-size calculation, not a claim that all those buffers coexist on the H100.
 
 The promising target is fused normalization/projection/gather/nonlinearity/reduction, with deliberate lower-precision storage where validated and safe accumulation where needed. [Graphiler](https://proceedings.mlsys.org/paper_files/paper/2022/hash/a1126573153ad7e9f44ba80e99316482-Abstract.html) provides relevant compiler precedent, but its gains against generic GNN frameworks do not transfer directly to this compiled model.
 
-An important rejected shortcut: projecting before gathering was already tested. Its compiled ring-10 local-block result regressed, with an old/new latency ratio of 0.71 under contention. Do not redeploy that rewrite based on algebra alone. See [prior experiment](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/docs/elo-per-hour-audit-2026-09-05.md:185).
+An important rejected shortcut: projecting before gathering was already tested. Its compiled ring-10 local-block result regressed, with an old/new latency ratio of 0.71 under contention. Do not redeploy that rewrite based on algebra alone. See [prior experiment](elo-per-hour-audit-2026-09-05.md:185).
 
 Selective FP8 hidden linears are also worth profiling after this audit. H100 supports ordinary FP8, but conversion/scaling overhead and relatively small matrix shapes can erase the benefit. NVIDIA documents this shape dependence in [Transformer Engine performance guidance](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/features/low_precision_training/speedups.html). Keep sensitive normalization and prediction operations at appropriate precision, and charge quantization overhead and search-quality changes.
 
@@ -146,7 +146,7 @@ Ring-10 scaling gives 53 fast simulations, 640 full simulations, and 53 consider
 
 **0.65 × 53 + 0.35 × 640 = 258.45 simulations per searched atomic decision.**
 
-Full searches consume approximately **86.7%** of this work. See [budget scaling](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/selfplay.py:458).
+Full searches consume approximately **86.7%** of this work. See [budget scaling](../deltreltrain/selfplay.py#L458).
 
 | Effective ring-10 fast/full budgets | Nominal mean simulations | Reduction in simulation work |
 | --- | ---: | ---: |
@@ -170,7 +170,7 @@ The current system applies the same 17.4-million-parameter model to enormous num
 
 For illustration, reducing width from 384 to 256 and groups from eight to four gives a rough quadratic dense-compute ratio of 2/9; width 192 and four groups gives roughly 1/8. Those are architecture arithmetic scenarios. They do not establish 4.5× or 8× latency or retained strength.
 
-The existing search computes action Q values, but [replay fields](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/replay.py:226) and [decision recording](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/selfplay.py:1317) do not preserve action-specific Q supervision. Distilling visited Q values with visit/confidence information could teach an inexpensive per-action value head and reduce future leaf evaluations.
+The existing search computes action Q values, but [replay fields](../deltreltrain/replay.py#L226) and [decision recording](../deltreltrain/selfplay.py#L1317) do not preserve action-specific Q supervision. Distilling visited Q values with visit/confidence information could teach an inexpensive per-action value head and reduce future leaf evaluations.
 
 For non-PDA states with at least 53 legal placements, fast search spends its 53 visits on 53 candidates, leaving no budget for explicit deeper exploration of those candidates. Smaller legal sets and PDA-adjusted budgets can permit deeper exploration. An action-value head is especially relevant to the one-visit case, although eliminating fast-search work alone removes only 13.3% of nominal work.
 
@@ -180,11 +180,11 @@ Domain-aligned representations can produce large gains: [Chessformer, ICLR 2026]
 
 **Confidence: strong research directions after the data-path repair.**
 
-Self-play [starts from empty boards](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/selfplay.py:908). Surprise weighting affects training weights, but does not start new games from important intermediate positions.
+Self-play [starts from empty boards](../deltreltrain/selfplay.py#L908). Surprise weighting affects training weights, but does not start new games from important intermediate positions.
 
 [Regret-Guided Search Control, ICLR 2026](https://arxiv.org/abs/2602.20809) collects trajectory and search-tree states, estimates which states contain learning opportunities, and revisits them as new starting positions. It reports mean gains of 77 Elo over AlphaZero across Go, Othello and Hex. These are different games, limited repetitions and a different compute profile; its additional inference cost must be charged.
 
-A practical progression is a small fraction of uniformly selected intermediate starts, followed by disagreement/regret-based prioritization. Keep ordinary opening games for distribution coverage. Star's exact semantic state and history must be preserved; turn ownership, handicap and pie state cannot be approximated.
+A practical progression is a small fraction of uniformly selected intermediate starts, followed by disagreement/regret-based prioritization. Keep ordinary opening games for distribution coverage. Deltrel's exact semantic state and history must be preserved; turn ownership, handicap and pie state cannot be approximated.
 
 Selective reanalysis can refresh stale policy targets with the current model while preserving factual terminal outcomes separately. [MuZero Unplugged](https://arxiv.org/abs/2104.06294) established this broader idea; [ReZero, 2024](https://arxiv.org/abs/2404.16364) specifically addresses reanalysis cost through backward reuse and periodic sweeps.
 
@@ -198,7 +198,7 @@ Use idle learner capacity through bounded, coordinated work rather than launchin
 
 This is a legitimate alternative to assuming every useful training decision needs hundreds of full-network evaluations. A hybrid path could learn action values from the search data already available, use cheap policies for some training games, and preserve search for evaluation and selected difficult states.
 
-Adapting temporal-difference returns requires care: consecutive atomic placements in Double Star can belong to the same player. Blindly alternating the sign every step would introduce an error. Classic, handicap and pie transitions must retain their exact semantics.
+Adapting temporal-difference returns requires care: consecutive atomic placements in Double Deltrel can belong to the same player. Blindly alternating the sign every step would introduce an error. Classic, handicap and pie transitions must retain their exact semantics.
 
 The broader compute-optimal question is whether more cheap, diverse experience can outperform fewer expensive searches after equal wall time. It cannot be answered from simulator counts alone.
 
@@ -206,13 +206,13 @@ The broader compute-optimal question is whether more cheap, diverse experience c
 
 The sampled steady-window ring-10 training diagnostics contained 88,576 rows. Pie-double received 7.51%, while handicap-classic received 22.83%, against an equal-six-mode evaluation objective. Diagnostics are sampled, and chunk exclusion is a confound, so this is not a complete all-batch exposure census.
 
-[Replay selection](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/replay_store.py:1579) enforces four aggregate segments, not six modes. Its shortfall redistribution is greedy rather than proportional as the docstring describes. After fixing packing, measure complete consumed distributions and allocate generation/sampling to deficient cells. A curriculum should optimize learning progress while preserving evaluation coverage.
+[Replay selection](../deltreltrain/replay_store.py#L1579) enforces four aggregate segments, not six modes. Its shortfall redistribution is greedy rather than proportional as the docstring describes. After fixing packing, measure complete consumed distributions and allocate generation/sampling to deficient cells. A curriculum should optimize learning progress while preserving evaluation coverage.
 
 Historical-model work is also different from opponent diversity. A selected older evaluator plays both sides of a cohort. These are older-model self-play games, not current-versus-history matches. In the approximately one-day finished-task sample, history and champion cohorts consumed 42.7% of neural rows. In the shorter steady publication window, candidate-generated positions dominated. Planned role probabilities must not substitute for measured shares, and age filtering is already implemented.
 
 At 839 learner steps/hour, EMA decay 0.9999 implies approximately an 8.26-hour half-life and 11.92-hour mean weight age. Snapshot and promotion-candidate cadences imply approximately 3.49 and 17.46 hours respectively at that rate. These are cadence calculations, not proof that raw weights are better.
 
-Earlier EMA/freshness/clinch screens did not establish promoted gains, and a corrected held-out screen favored EMA over raw weights. See [experiment history](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/docs/model-improvement-roadmap.md:78) and [EMA comparison evidence](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/docs/gradient-clipping-rollout-20260908.md:113). Revisit them only after fresh-data flow is working and with current common-checkpoint comparisons.
+Earlier EMA/freshness/clinch screens did not establish promoted gains, and a corrected held-out screen favored EMA over raw weights. See [experiment history](model-improvement-roadmap.md:78) and [EMA comparison evidence](gradient-clipping-rollout-20260908.md:113). Revisit them only after fresh-data flow is working and with current common-checkpoint comparisons.
 
 Higher UTD—such as 1.5 versus 3 or 6—could use idle learner capacity afterward. It means sample presentations per fresh committed position, not optimizer steps per transition. Preserve publication cadence per fresh data and explicitly define EMA/LR clocks. More updates on unchanged, stale targets can worsen overfitting.
 
@@ -222,7 +222,7 @@ In 625 finished GPU-task records over approximately one day, 552,990 of 7,260,91
 
 The latest shutdown alone dropped 145,852 decisions across 1,644 unfinished games. Graceful deployment preserved learner checkpoints, but the actor's in-flight trajectories existed only in memory. Perfect recovery of the whole-day dropped-decision fraction corresponds to approximately 1.082× decision yield, not 10×.
 
-The shortest salvage path is to persist already-computed policy supervision with unavailable outcomes masked. [Replay already supports policy-only samples](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/replay.py:565). A stronger design checkpoints per-game state, completed-move trajectory, immutable model/configuration identity and random streams, then resumes to obtain exact terminal outcomes.
+The shortest salvage path is to persist already-computed policy supervision with unavailable outcomes masked. [Replay already supports policy-only samples](../deltreltrain/replay.py#L565). A stronger design checkpoints per-game state, completed-move trajectory, immutable model/configuration identity and random streams, then resumes to obtain exact terminal outcomes.
 
 Preserve model artifacts needed by resumable games, avoid duplicate publication, and retain distinct provenance for policy-only salvage. Pin expiry itself is not a discard deadline: it stops refills and drains games.
 
@@ -244,7 +244,7 @@ For the attention workaround, [FlexAttention's trainable-bias support](https://p
 
 ## Measurement and experiment order
 
-There is not yet a clean measured 10× target baseline. Current reports contain historical workers and multiple search/evaluation epochs. A rating epoch's new-anchor gain divided by whole-run elapsed time is not the current release's Elo/hour. Also, [balanced-strength contract reconstruction](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/balanced_strength.py:48) omits the new optional execution settings and rejects nondefault execution contracts. The default live setting is unaffected; experimental evidence needs compatible accounting before those settings are enabled.
+There is not yet a clean measured 10× target baseline. Current reports contain historical workers and multiple search/evaluation epochs. A rating epoch's new-anchor gain divided by whole-run elapsed time is not the current release's Elo/hour. Also, [balanced-strength contract reconstruction](../deltreltrain/balanced_strength.py#L48) omits the new optional execution settings and rejects nondefault execution contracts. The default live setting is unaffected; experimental evidence needs compatible accounting before those settings are enabled.
 
 The current balanced promotion test also has limited power for small improvements. At six cells times 40 pairs, its implemented boundary needs an observed score near 59.94%, approximately +70 Elo. An expected +35-Elo score does not pass that deterministic boundary calculation. This is not a probability-of-promotion calculation. Better calibrated paired/stratified sequential inference may improve feedback latency without lowering evidence standards; more frequent promotions alone would not establish stronger learning.
 
@@ -284,4 +284,4 @@ The literature inventory emphasizes primary sources:
 11. Dong et al. **FlexAttention Part II: FlexAttention for Inference**. PyTorch, 2025. [Trainable-bias documentation](https://pytorch.org/blog/flexattention-for-inference/).
 12. NVIDIA. **GEMM Speedups Across Precisions**. Transformer Engine documentation, accessed September 10, 2026. [Guidance](https://docs.nvidia.com/deeplearning/transformer-engine/user-guide/features/low_precision_training/speedups.html).
 
-The accompanying [evidence summary](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/docs/training-performance-evidence-20260910.json) records the measurements and their scope. No proposed treatment has yet demonstrated an EdgeConnect Elo/hour multiplier.
+The accompanying [evidence summary](training-performance-evidence-20260910.json) records the measurements and their scope. No proposed treatment has yet demonstrated an Deltrel Elo/hour multiplier.

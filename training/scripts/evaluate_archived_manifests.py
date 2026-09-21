@@ -15,15 +15,15 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
-from startrain.arena import ArenaPair, ArenaRunner, summarize_arena_pairs
-from startrain.checkpoint import load_model_manifest
-from startrain.config import ArenaConfig, ExperimentConfig, load_config
-from startrain.device import (
+from deltreltrain.arena import ArenaPair, ArenaRunner, summarize_arena_pairs
+from deltreltrain.checkpoint import load_model_manifest
+from deltreltrain.config import ArenaConfig, ExperimentConfig, load_config
+from deltreltrain.device import (
     empty_device_cache,
     resolve_device_string,
     synchronize_device,
 )
-from startrain.manifest_selection import (
+from deltreltrain.manifest_selection import (
     RESULT_KIND,
     ManifestEvidence,
     ManifestSelectionError,
@@ -41,9 +41,9 @@ from startrain.manifest_selection import (
     verify_selection_plan,
     verify_selection_snapshot,
 )
-from startrain.native import load_star_native
-from startrain.promotion import load_manifest_evaluator
-from startrain.runtime import atomic_json, load_run_identity
+from deltreltrain.native import load_deltrel_native
+from deltreltrain.promotion import load_manifest_evaluator
+from deltreltrain.runtime import atomic_json, load_run_identity
 
 DEFAULT_DISCOVERED_SHORTLIST_SIZE = 8
 PLAN_NAME = "selection-plan.json"
@@ -507,7 +507,7 @@ def _evaluate_device_lane_process(
         raise ManifestSelectionError(
             f"device lane references an unknown candidate: {exc.args[0]}"
         ) from exc
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     assert native is not None
     return _evaluate_device_lane(
         experiment=load_config(profile),
@@ -656,7 +656,7 @@ def evaluate_archived_manifests(
         assignments = static_device_assignments(tuple(pending), resolved_devices)
         if len(assignments) == 1:
             experiment = load_config(profile)
-            native = load_star_native(required=True)
+            native = load_deltrel_native(required=True)
             assert native is not None
             device, candidates = assignments[0]
             result_paths.update(

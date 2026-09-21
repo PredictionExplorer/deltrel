@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from startrain.runtime import (
+from deltreltrain.runtime import (
     CHAMPION_WARM_START_FORMAT,
     CHAMPION_WARM_START_SCHEMA_VERSION,
     CUTOVER_STAGING_FORMAT,
@@ -18,7 +18,7 @@ from startrain.runtime import (
 
 
 def test_systemd_notifier_emits_ready_watchdog_and_stopping() -> None:
-    socket_path = Path("/tmp") / f"startrain-notify-{os.getpid()}.sock"
+    socket_path = Path("/tmp") / f"deltreltrain-notify-{os.getpid()}.sock"
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as server:
             server.bind(str(socket_path))

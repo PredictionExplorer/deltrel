@@ -59,10 +59,10 @@ Subsequent profile migrations must use the updated migrator, which understands
 the source-only records in the existing migration history.
 
 The final immutable runtime is
-`/home/ubuntu/edgeconnect-releases/variant-mcts-corrections-f414829`.
+`/home/ubuntu/deltrel-releases/variant-mcts-corrections-f414829`.
 It launched at 04:41:45 UTC on September 10 and passed the sustained readiness
 check at 04:46:58 UTC. Its frozen profile is
-`/home/ubuntu/edgeconnect-runs/variant-network/profile-mcts-corrections-20260910.yaml`.
+`/home/ubuntu/deltrel-runs/variant-network/profile-mcts-corrections-20260910.yaml`.
 The stop and recovery checkpoint both recorded step 162,155; no uncheckpointed
 learner updates were discarded. All 54 captured learner/arena control files
 retained identical hashes through migration. The configuration hash remains
@@ -73,7 +73,7 @@ with zero restarts. GPU 7's actor was normally paused while the arena used that
 GPU. The final cutover used a separate fully verified snapshot namespace,
 reusing immutable objects from the prior verified backup to avoid repeatedly
 scanning the historical snapshot archive. Its directory is
-`/lambda/nfs/texas-north-fs/edgeconnect-dr/manual/mcts-cutover-20260910`, and its
+`/lambda/nfs/texas-north-fs/deltrel-dr/manual/mcts-cutover-20260910`, and its
 snapshot SHA-256 is
 `f08dd040d937933fd72603ed4e6a062c9de8b8ba7ef1c9f5b1b9741f349e60d6`.
 Regular backup timers retain their original production namespace.
@@ -86,7 +86,7 @@ neural requests with zero failed requests and zero inference-worker failures;
 the captured evidence is `final-health.json` in the rollout directory.
 
 Operational evidence, prior units, failed-attempt records and rollback material
-are retained under `/home/ubuntu/edgeconnect-rollouts/mcts-corrections-20260910`.
+are retained under `/home/ubuntu/deltrel-rollouts/mcts-corrections-20260910`.
 
 Subtree visit reuse, multiple outstanding leaves in one tree, alternative graph
 backups, Q normalization and evaluation-noise tuning remain research comparisons.

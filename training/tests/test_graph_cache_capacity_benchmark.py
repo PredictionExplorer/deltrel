@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts import benchmark_graph_cache_capacity as benchmark
-from startrain.graph_cache_evidence import (
+from deltreltrain.graph_cache_evidence import (
     ACTOR_INFERENCE_MATH,
     BOUNDED_NONINFERIORITY_POLICY,
     STRICT_PERFORMANCE_POLICY,
@@ -20,7 +20,7 @@ from startrain.graph_cache_evidence import (
     validate_graph_cache_execution_report,
     validate_graph_cache_report,
 )
-from startrain.inference import InferenceMetrics, InferenceResponse
+from deltreltrain.inference import InferenceMetrics, InferenceResponse
 
 SNAPSHOT_STAMPS = itertools.count(1)
 

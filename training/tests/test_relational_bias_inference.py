@@ -3,9 +3,9 @@ from copy import deepcopy
 import pytest
 import torch
 
-from startrain.features import encode_batch
-from startrain.model import GraphResTNet, ModelConfig, model_parameter_count
-from startrain.topology import SUPPORTED_RINGS
+from deltreltrain.features import encode_batch
+from deltreltrain.model import GraphResTNet, ModelConfig, model_parameter_count
+from deltreltrain.topology import SUPPORTED_RINGS
 from test_inference_efficiency import position
 
 

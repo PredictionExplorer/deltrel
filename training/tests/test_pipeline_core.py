@@ -17,13 +17,13 @@ import pytest
 import torch
 from torch import nn
 
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     load_model_manifest,
     save_checkpoint,
     write_model_pointer,
 )
-from startrain.config import (
+from deltreltrain.config import (
     CurriculumStage,
     DataConfig,
     LearnerConfig,
@@ -33,21 +33,21 @@ from startrain.config import (
     SchedulerConfig,
     TrainConfig,
 )
-from startrain.contracts import (
+from deltreltrain.contracts import (
     TARGET_ALIVE,
     TARGET_OUTCOME,
     TARGET_OWNERSHIP,
     TARGET_POLICY,
     TARGET_SCORE_MARGIN,
 )
-from startrain.features import DoubleStarPosition
-from startrain.inference import (
+from deltreltrain.features import DoubleDeltrelPosition
+from deltreltrain.inference import (
     GraphInferenceAdapter,
     InferenceConfig,
     InferenceMetrics,
     InferenceResponse,
 )
-from startrain.learner import (
+from deltreltrain.learner import (
     LOADER_LIFECYCLE_ENV,
     LazyShardReplayDataset,
     LearnerLoop,
@@ -62,12 +62,12 @@ from startrain.learner import (
     plateau_policy_decision,
     resolve_loader_lifecycle,
 )
-from startrain.losses import LossWeights
-from startrain.model import GraphResTNet, ModelConfig, StarModelOutput
-from startrain.native import BITBOARD_WORDS
-from startrain.optim import OptimizerConfig, build_optimizer
-from startrain.replay import ReplaySample, write_replay_shard
-from startrain.replay_store import (
+from deltreltrain.losses import LossWeights
+from deltreltrain.model import GraphResTNet, ModelConfig, DeltrelModelOutput
+from deltreltrain.native import BITBOARD_WORDS
+from deltreltrain.optim import OptimizerConfig, build_optimizer
+from deltreltrain.replay import ReplaySample, write_replay_shard
+from deltreltrain.replay_store import (
     DuplicateGameError,
     ReplayCursor,
     ReplaySelection,
@@ -75,15 +75,15 @@ from startrain.replay_store import (
     ReplayStore,
     ShardRecord,
 )
-from startrain.runtime import RunIdentity, atomic_json
-from startrain.scoring import PlayerScore, ScoreResult, score_position
-from startrain.selfplay import (
+from deltreltrain.runtime import RunIdentity, atomic_json
+from deltreltrain.scoring import PlayerScore, ScoreResult, score_position
+from deltreltrain.selfplay import (
     SelfPlayActor,
     SelfPlayConfig,
     SelfPlayMetrics,
 )
-from startrain.topology import SUPPORTED_RINGS, get_topology
-from startrain.training import DeviceBatchPrefetcher, build_scheduler
+from deltreltrain.topology import SUPPORTED_RINGS, get_topology
+from deltreltrain.training import DeviceBatchPrefetcher, build_scheduler
 
 
 def pack_mask(mask: torch.Tensor) -> list[int]:
@@ -115,7 +115,7 @@ class FakeStateData:
             self.swap_available = [False] * self.batch_size
 
 
-def state_data(positions: list[DoubleStarPosition]) -> FakeStateData:
+def state_data(positions: list[DoubleDeltrelPosition]) -> FakeStateData:
     assert positions and len({position.rings for position in positions}) == 1
     zero_bits: list[int] = []
     one_bits: list[int] = []
@@ -159,7 +159,7 @@ class FixedNetwork(nn.Module):
         super().__init__()
         self.anchor = nn.Parameter(torch.zeros(()))
 
-    def forward(self, *arguments: torch.Tensor) -> StarModelOutput:
+    def forward(self, *arguments: torch.Tensor) -> DeltrelModelOutput:
         node_features = arguments[0]
         legal = arguments[6]
         batch, nodes = node_features.shape[:2]
@@ -171,7 +171,7 @@ class FixedNetwork(nn.Module):
         )
         margin = torch.zeros(batch, 303, device=node_features.device)
         margin[:, 151] = 4
-        return StarModelOutput(
+        return DeltrelModelOutput(
             policy_logits=policy,
             outcome_logits=torch.tensor(
                 [[0.0, 2.0]], device=node_features.device
@@ -183,9 +183,9 @@ class FixedNetwork(nn.Module):
         )
 
 
-def opening_position() -> DoubleStarPosition:
+def opening_position() -> DoubleDeltrelPosition:
     topology = get_topology(4)
-    return DoubleStarPosition(
+    return DoubleDeltrelPosition(
         rings=4,
         stones=torch.full((topology.n,), -1, dtype=torch.int8),
         to_move=0,
@@ -199,7 +199,7 @@ def test_inference_maps_node_logits_to_native_legal_order() -> None:
     first = opening_position()
     second_stones = first.stones.clone()
     second_stones[0] = 0
-    second = DoubleStarPosition(
+    second = DoubleDeltrelPosition(
         rings=4,
         stones=second_stones,
         to_move=1,
@@ -236,7 +236,7 @@ def test_inference_preserves_uneven_multirow_node_csr_and_metrics() -> None:
     first = opening_position()
     second_stones = first.stones.clone()
     second_stones[[0, 3]] = torch.tensor([0, 1], dtype=torch.int8)
-    second = DoubleStarPosition(
+    second = DoubleDeltrelPosition(
         rings=4,
         stones=second_stones,
         to_move=0,
@@ -298,7 +298,7 @@ def test_inference_validates_configuration_metrics_and_empty_batches() -> None:
         adapter.evaluate(malformed)
 
 
-def decisive_score(position: DoubleStarPosition) -> ScoreResult:
+def decisive_score(position: DoubleDeltrelPosition) -> ScoreResult:
     topology = get_topology(position.rings)
     return ScoreResult(
         players=(
@@ -307,7 +307,7 @@ def decisive_score(position: DoubleStarPosition) -> ScoreResult:
         ),
         node_owner=torch.zeros(topology.n, dtype=torch.int8),
         alive_stone=torch.zeros(topology.n, dtype=torch.bool),
-        contested_peries=0,
+        contested_shores=0,
         leader=0,
     )
 
@@ -415,7 +415,7 @@ def make_replay_sample(
     model_identity: str = "sha256-" + "1" * 64,
 ) -> ReplaySample:
     topology = get_topology(rings)
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=rings,
         stones=torch.full((topology.n,), -1, dtype=torch.int8),
         to_move=0,
@@ -1247,7 +1247,7 @@ def test_persistent_replay_window_reuses_loader_across_utd_waits(
         monkeypatch.setattr(learner, "_utd_step_budget", utd_budget)
         monkeypatch.setattr(learner, "_gpu_pause_control", gpu_pause_control)
         monkeypatch.setattr(UniqueReplayBatchSampler, "__iter__", capture_sampler)
-        monkeypatch.setattr("startrain.learner.time.sleep", lambda _seconds: None)
+        monkeypatch.setattr("deltreltrain.learner.time.sleep", lambda _seconds: None)
 
         assert learner.run(steps=4, progress=progress) == 4
 
@@ -1587,12 +1587,12 @@ def test_spawned_loader_pool_multi_window_subprocess_soak(tmp_path) -> None:
             import sys
             from pathlib import Path
 
-            from startrain.learner import (
+            from deltreltrain.learner import (
                 LazyShardReplayDataset,
                 SpawnedReplayLoaderPool,
                 UniqueReplayBatchSampler,
             )
-            from startrain.replay_store import ReplaySelection, ReplaySpan, ShardRecord
+            from deltreltrain.replay_store import ReplaySelection, ReplaySpan, ShardRecord
 
 
             def main() -> None:
@@ -3116,7 +3116,7 @@ def _governed_learner(
     *,
     minimum_scale: float = 0.25,
 ) -> LearnerLoop:
-    from startrain.lr_governor import LearningRateGovernorState
+    from deltreltrain.lr_governor import LearningRateGovernorState
 
     learner = object.__new__(LearnerLoop)
     learner.optimizer = optimizer
@@ -3214,8 +3214,8 @@ def test_plateau_learning_rate_governor_survives_checkpoint_round_trip(
     their stored rates without any jump.
     """
 
-    from startrain.checkpoint import load_checkpoint, save_checkpoint
-    from startrain.lr_governor import (
+    from deltreltrain.checkpoint import load_checkpoint, save_checkpoint
+    from deltreltrain.lr_governor import (
         LEARNING_RATE_GOVERNOR_KEY,
         apply_governor,
         governor_from_checkpoint_extra,
@@ -3298,7 +3298,7 @@ def test_plateau_recovery_preserves_weights_and_creates_durable_cutover(
     before = parameter.detach().clone()
     events = []
     cutovers = []
-    from startrain.lr_governor import LearningRateGovernorState
+    from deltreltrain.lr_governor import LearningRateGovernorState
 
     learner = object.__new__(LearnerLoop)
     learner.rank = 0
@@ -3342,7 +3342,7 @@ def test_plateau_recovery_preserves_weights_and_creates_durable_cutover(
         checkpoint_sha256="a" * 64
     )
     monkeypatch.setattr(
-        "startrain.learner.write_resume_cutover",
+        "deltreltrain.learner.write_resume_cutover",
         lambda *args, **kwargs: cutovers.append((args, kwargs)),
     )
 
@@ -3407,7 +3407,7 @@ def _plateau_policy_fixture(tmp_path, monkeypatch):
         path.write_text(json.dumps({"model_identity": identity, "model_step": step}))
 
     monkeypatch.setattr(
-        "startrain.learner.LearnerLoop._control_model_manifest",
+        "deltreltrain.learner.LearnerLoop._control_model_manifest",
         lambda self, path: SimpleNamespace(
             **json.loads(Path(path).read_text()),
             checkpoint=Path(path).with_suffix(".pt"),
@@ -3453,7 +3453,7 @@ def test_keep_weights_plateau_policy_ignores_champion_lag(
     sits at its floor there is nothing left to do.
     """
 
-    from startrain.lr_governor import LearningRateGovernorState
+    from deltreltrain.lr_governor import LearningRateGovernorState
 
     learner, status, status_path = _plateau_policy_fixture(tmp_path, monkeypatch)
     learner._lr_governor = LearningRateGovernorState(reference_base_lrs=(1.0,))
@@ -3652,7 +3652,7 @@ def test_reset_from_champion_plateau_policy_keeps_lag_gating(
 
 
 def test_plateau_scale_restores_after_promotion(tmp_path, monkeypatch) -> None:
-    from startrain.lr_governor import LearningRateGovernorState
+    from deltreltrain.lr_governor import LearningRateGovernorState
 
     parameter = torch.nn.Parameter(torch.tensor(2.0))
     optimizer = torch.optim.SGD([parameter], lr=1.0)
@@ -3699,7 +3699,7 @@ def test_plateau_scale_restores_after_promotion(tmp_path, monkeypatch) -> None:
         )
 
     monkeypatch.setattr(
-        "startrain.learner.LearnerLoop._control_model_manifest",
+        "deltreltrain.learner.LearnerLoop._control_model_manifest",
         lambda self, path: SimpleNamespace(
             model_identity=json.loads(Path(path).read_text())["model_identity"]
         ),
@@ -3776,7 +3776,7 @@ class OneMoveStateBatch:
         self.node_count = topology.n
         stones = torch.zeros(topology.n, dtype=torch.int8)
         stones[-1] = -1
-        self.position = DoubleStarPosition(
+        self.position = DoubleDeltrelPosition(
             rings=4,
             stones=stones,
             to_move=0,
@@ -3795,7 +3795,7 @@ class OneMoveStateBatch:
         self.last_action = actions[0]
         stones = self.position.stones.clone()
         stones[self.last_action] = 0
-        self.position = DoubleStarPosition(
+        self.position = DoubleDeltrelPosition(
             rings=4,
             stones=stones,
             to_move=0,
@@ -3811,15 +3811,15 @@ class OneMoveStateBatch:
         for player in score.players:
             components.extend(
                 [
-                    player.peries,
-                    player.quarks,
-                    player.stars,
-                    player.quark_peri,
+                    player.shores,
+                    player.capes,
+                    player.networks,
+                    player.cape_bonus,
                     player.award,
                     player.total,
                 ]
             )
-        components.extend([score.contested_peries, score.leader])
+        components.extend([score.contested_shores, score.leader])
         margin = score.players[0].total - score.players[1].total
         return SimpleNamespace(
             batch_size=1,

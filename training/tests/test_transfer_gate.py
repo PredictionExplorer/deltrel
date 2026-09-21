@@ -3,9 +3,9 @@ import sqlite3
 
 import pytest
 
-from startrain.arena import ArenaPair
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH
-from startrain.transfer_gate import assess_lineage_result, recent_teacher_counts
+from deltreltrain.arena import ArenaPair
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH
+from deltreltrain.transfer_gate import assess_lineage_result, recent_teacher_counts
 
 
 def test_teacher_exclusion_tracks_recency_and_full_eligibility_not_step_zero():

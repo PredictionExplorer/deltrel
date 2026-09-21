@@ -11,7 +11,7 @@ import re
 import sys
 from pathlib import Path
 
-from startrain.continuity import (
+from deltreltrain.continuity import (
     ContinuityError,
     ContinuityManifest,
     Workload,
@@ -23,12 +23,12 @@ from startrain.continuity import (
 _USER = re.compile(r"^[a-z_][a-z0-9_-]{0,63}\$?$")
 _PLACEHOLDER = re.compile(r"@[A-Z][A-Z0-9_]*@")
 _TEMPLATES = {
-    "replay_service": "edgeconnect-startrain-backup.service.example",
-    "replay_timer": "edgeconnect-startrain-backup.timer.example",
-    "disaster_service": "edgeconnect-startrain-disaster-backup.service.example",
-    "disaster_timer": "edgeconnect-startrain-disaster-backup.timer.example",
-    "report_service": "edgeconnect-startrain-report.service.example",
-    "report_timer": "edgeconnect-startrain-report.timer.example",
+    "replay_service": "deltrel-deltreltrain-backup.service.example",
+    "replay_timer": "deltrel-deltreltrain-backup.timer.example",
+    "disaster_service": "deltrel-deltreltrain-disaster-backup.service.example",
+    "disaster_timer": "deltrel-deltreltrain-disaster-backup.timer.example",
+    "report_service": "deltrel-deltreltrain-report.service.example",
+    "report_timer": "deltrel-deltreltrain-report.timer.example",
 }
 
 
@@ -51,7 +51,7 @@ def _template(path: Path, replacements: dict[str, str]) -> str:
 
 
 def _owner(timer: str, *, suffix: str) -> str:
-    prefix = "edgeconnect-startrain-"
+    prefix = "deltrel-deltreltrain-"
     if not timer.startswith(prefix) or not timer.endswith(suffix):
         raise RenderProtectionError(f"unsupported protection timer name: {timer}")
     owner = timer[len(prefix) : -len(suffix)]
@@ -72,7 +72,7 @@ def _monitor_unit(
     command = commands[protection.telemetry_service]
     return (
         "[Unit]\n"
-        f"Description=EdgeConnect StarTrain 5s monitor ({workload.workload_id})\n"
+        f"Description=Deltrel DeltrelTrain 5s monitor ({workload.workload_id})\n"
         "Wants=network-online.target\n"
         "After=network-online.target\n"
         f"ConditionPathIsDirectory={workload.run_root}\n"
@@ -154,11 +154,11 @@ def rendered_workload_protection_units(
     )
     report_service = (
         protection.report_service
-        or f"edgeconnect-startrain-{verification.run_id}-report.service"
+        or f"deltrel-deltreltrain-{verification.run_id}-report.service"
     )
     report_timer = (
         protection.report_timer
-        or f"edgeconnect-startrain-{verification.run_id}-report.timer"
+        or f"deltrel-deltreltrain-{verification.run_id}-report.timer"
     )
     if (
         protection.report_provisioned_gpus is not None

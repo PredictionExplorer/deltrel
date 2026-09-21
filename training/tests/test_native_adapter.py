@@ -4,9 +4,9 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, SEARCH_ALGORITHM_ID
-from startrain.features import DoubleStarPosition, encode_batch
-from startrain.native import (
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, SEARCH_ALGORITHM_ID
+from deltreltrain.features import DoubleDeltrelPosition, encode_batch
+from deltreltrain.native import (
     BITBOARD_WORDS,
     NativeCompatibilityError,
     NativeStateDataProtocol,
@@ -15,7 +15,7 @@ from startrain.native import (
     positions_from_native,
     validate_native_module,
 )
-from startrain.topology import get_topology
+from deltreltrain.topology import get_topology
 
 
 def pack_mask(mask: torch.Tensor) -> list[int]:
@@ -61,9 +61,9 @@ class FakeStateData(FakeLegacyStateData):
     turn_count: list[int] = field(default_factory=list)
 
 
-def fake_positions() -> list[DoubleStarPosition]:
+def fake_positions() -> list[DoubleDeltrelPosition]:
     topology = get_topology(4)
-    opening = DoubleStarPosition(
+    opening = DoubleDeltrelPosition(
         rings=4,
         stones=torch.full((topology.n,), -1, dtype=torch.int8),
         to_move=0,
@@ -79,7 +79,7 @@ def fake_positions() -> list[DoubleStarPosition]:
     previous[0] = True
     current = torch.zeros(topology.n, dtype=torch.bool)
     current[7] = True
-    live = DoubleStarPosition(
+    live = DoubleDeltrelPosition(
         rings=4,
         stones=stones,
         to_move=1,
@@ -94,7 +94,7 @@ def fake_positions() -> list[DoubleStarPosition]:
     return [opening, live]
 
 
-def fake_legacy_data(positions: list[DoubleStarPosition]) -> FakeLegacyStateData:
+def fake_legacy_data(positions: list[DoubleDeltrelPosition]) -> FakeLegacyStateData:
     topology = get_topology(4)
     zero_bits: list[int] = []
     one_bits: list[int] = []
@@ -122,7 +122,7 @@ def fake_legacy_data(positions: list[DoubleStarPosition]) -> FakeLegacyStateData
     )
 
 
-def fake_native_data() -> tuple[FakeStateData, list[DoubleStarPosition]]:
+def fake_native_data() -> tuple[FakeStateData, list[DoubleDeltrelPosition]]:
     positions = fake_positions()
     legacy = fake_legacy_data(positions)
     data = FakeStateData(**legacy.__dict__)

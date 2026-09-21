@@ -8,13 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 
-import startrain.checkpoint as checkpoints
-import startrain.checkpoint_manifest_cache as caching
-from startrain.checkpoint_manifest_cache import ControlManifestCache
-from startrain.config import PlateauConfig
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
-from startrain.learner import LearnerLoop
-from startrain.model import MODEL_SCHEMA_VERSION
+import deltreltrain.checkpoint as checkpoints
+import deltreltrain.checkpoint_manifest_cache as caching
+from deltreltrain.checkpoint_manifest_cache import ControlManifestCache
+from deltreltrain.config import PlateauConfig
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
+from deltreltrain.learner import LearnerLoop
+from deltreltrain.model import MODEL_SCHEMA_VERSION
 
 
 def publication(root: Path, step: int, *, role: str = "candidate") -> Path:

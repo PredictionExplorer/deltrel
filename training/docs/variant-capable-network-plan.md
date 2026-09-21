@@ -13,29 +13,29 @@ Status: implemented on branch `variant-capable-network` (2026-09-03) and running
 Stage A on the H100 host since 2026-09-04 01:27 UTC. Every phase below is code-complete
 and tested (Rust, Python, TypeScript). The live gates of Section 11 become roadmap
 registry entries with pre-registered thresholds (`model-improvement-roadmap.md`), in
-the same form as R10-LR-RECOVERY-01 through R10-ANNEAL-HOVER-05.
+the same form as E-LR-RECOVERY-01 through E-ANNEAL-HOVER-05.
 
 Deployment record (2026-09-04):
 
-- The previous lineage (`lr-recovery-742979`, run `star-warmstart-20260719T042241Z`)
+- The previous lineage (`lr-recovery-742979`, run `deltrel-warmstart-20260719T042241Z`)
   was stopped gracefully at learner step ~877,800 with champion step 864,090 after a
   replay-ledger backup, a verified DR snapshot, a control-plane backup, and a manual
   copy of its learner pointers, manifests, checkpoints, and profiles to
-  `/lambda/nfs/texas-north-fs/edgeconnect-dr/manual/lr-recovery-742979-<utc>/`. Its
+  `/lambda/nfs/texas-north-fs/deltrel-dr/manual/lr-recovery-742979-<utc>/`. Its
   units, the fallback workload, and the continuity timer are disabled; the continuity
   operator hold is in place. The champion snapshot lives in
   `training/runs/server-champion-864090-37c38c80/` on the development machine and is
-  served locally by the `main` worktree (`../EdgeConnect-legacy`, rules v2).
-- Immutable release `/home/ubuntu/edgeconnect-releases/variant-f36dc87-384x8` (commit
-  `f36dc87`, uv-locked venv, `star_native` rules `fnv1a64:a5d932b0ef8354e8`).
+  served locally by the `main` worktree (`../Deltrel-legacy`, rules v2).
+- Immutable release `/home/ubuntu/deltrel-releases/variant-f36dc87-384x8` (commit
+  `f36dc87`, uv-locked venv, `deltrel_native` rules `fnv1a64:a5d932b0ef8354e8`).
 - Lineage transfer: 4,806,026 samples (1.2 M most recent per ring, 1,353 shards)
   labelled by the step-864,090 champion with 32 worker processes over eight GPUs in
-  about eleven minutes; report `/home/ubuntu/edgeconnect-runs/variant-network/
+  about eleven minutes; report `/home/ubuntu/deltrel-runs/variant-network/
   lineage-transfer.json` (digest `686a76d4…`).
-- Workload `edgeconnect-startrain-variant-network.service` runs the Stage A profile
+- Workload `deltrel-deltreltrain-variant-network.service` runs the Stage A profile
   (`profile.yaml`, sha256 `7b0ab365…`) as a standalone continuous unit with hourly
   replay-ledger backups, 14-minute DR snapshots to
-  `/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network`, and the 5 s monitor.
+  `/lambda/nfs/texas-north-fs/deltrel-dr/variant-network`, and the 5 s monitor.
   `profile-stage-b.yaml` sits beside it for the Stage B migration.
 - Measured on the host at batch 512, ring 10: compiled learner step 0.395 s, peak
   62.6 GiB; eager inference 96 ms per 128 positions. First minutes: 0.27–0.29 s per
@@ -51,7 +51,7 @@ Implementation summary:
 
 - Phase 0 — rules v3 (`fnv1a64:a5d932b0ef8354e8`): `Variant`, `Action::Swap`, retained
   placement history in `GameState`/`StateKey`, regenerated `conformance-v3.json`
-  consumed by Rust, Python, and TypeScript; `star_native`/`star_wasm` variant APIs;
+  consumed by Rust, Python, and TypeScript; `deltrel_native`/`deltrel_wasm` variant APIs;
   web `game.ts` handicap and the setup handicap selector.
 - Phase 1 — feature schema v4 (19 node planes, 25 scalars, `fnv1a64:cb0e1e89a6ce3540`),
   frozen `features_v3.py` for the previous lineage, D5-invariant pairwise relations in
@@ -66,9 +66,9 @@ Implementation summary:
 - Phase 3 — `scripts/prepare_lineage_transfer.py` (legacy champion as frozen teacher,
   v4→v5 replay upgrade with soft targets, new run identity) and
   `scripts/run_lineage_arena.py` (cross-schema arena against the legacy champion).
-- Phase 4 — starserve API schema v3 (`swap_recommended`, `root_value`, variant,
+- Phase 4 — deltrelserve API schema v3 (`swap_recommended`, `root_value`, variant,
   optional history, `pda`), web protocol v3 with swap dispatch in both AI controllers,
-  browser features v4 pinned to Python via `testdata/star/features-v4.json`, browser
+  browser features v4 pinned to Python via `testdata/deltrel/features-v4.json`, browser
   manifest v3 with the `rings` input, `configs/h100-8gpu-variant-stage-a.yaml` and
   `-stage-b.yaml`, `configs/distill-browser.yaml` v3.
 - Capacity (Section 7, item 5) was decided at Stage A rather than deferred to Stage B:
@@ -101,7 +101,7 @@ Design decisions taken during implementation that refine the text below:
   paired e-process and vetoes (`reject_ring_regression` with
   `regression_source = "segment"`) only once the candidate is provably below the
   segment floor.
-- The starserve endpoint namespace stays `/v2/*`; the wire schema and
+- The deltrelserve endpoint namespace stays `/v2/*`; the wire schema and
   `api_schema_version` are 3, and v2 bodies are rejected.
 - The lineage transfer keeps `model_step = 0` on transferred shards so they age out
   through `learner.max_replay_lag_steps` without a special retention rule, and the
@@ -121,9 +121,9 @@ Design decisions taken during implementation that refine the text below:
 
 ## 1. Requirements
 
-One neural network must play, and be trained on, four rule variants of *Star:
+One neural network must play, and be trained on, four rule variants of Deltrel:
 
-- Standard Double *Star: one stone on the opening turn, then two stones per turn.
+- Standard Double Deltrel: one stone on the opening turn, then two stones per turn.
 - Classic: one stone every turn (the web client already calls this mode
   `classic`).
 - Handicap: the first player places up to nine stones consecutively before the
@@ -139,20 +139,20 @@ motivates the architecture changes.
 
 ## 2. Facts about the current system that shape the design
 
-- The training engine supports exactly one protocol. `training/crates/star-engine/src/lib.rs`
+- The training engine supports exactly one protocol. `training/crates/deltrel-engine/src/lib.rs`
   lines 1-5 state it; `GameState::end_turn` hard-codes `moves_left = 2`
   (`game.rs` line 516); `GameConfig` rejects anything but `mode == "double"` and
-  `pie_rule == False` (`training/startrain/config.py` lines 57-71); the canonical
+  `pie_rule == False` (`training/deltreltrain/config.py` lines 57-71); the canonical
   rules string pins `opening-placements=1; later-turn-placements=2; pie=false`
-  (`training/startrain/contracts.py`, `RULES_CANONICAL`).
+  (`training/deltreltrain/contracts.py`, `RULES_CANONICAL`).
 - The web engine already defines two of the three missing rules with exact
-  semantics. `src/lib/star/game.ts` has `Mode = 'classic' | 'double'`
+  semantics. `src/lib/deltrel/game.ts` has `Mode = 'classic' | 'double'`
   (`turnSize`, line 60) and the pie swap (lines 145-158): recolor the single
   opening stone to player 1, set `toMove = 0`, advance `turnCount`, and give the
   opener a full turn. The training contract adopts these semantics unchanged so
   web and engine stay in parity; only handicap is new to both.
 - Replay shards store raw semantic positions plus targets, not encoded feature
-  tensors (`training/startrain/replay.py` lines 551-628; features are encoded at
+  tensors (`training/deltreltrain/replay.py` lines 551-628; features are encoded at
   collate, lines 860-886). A new feature schema can therefore re-encode the
   existing corpus through an upgrade adapter instead of discarding it. The
   ~600M committed standard-variant samples remain valid standard-variant data.
@@ -166,7 +166,7 @@ motivates the architecture changes.
   (distillation warm start) and a cross-schema evaluation contract rather than
   forcing the change through the in-place migration path.
 - The search already signs values by `to_move` changes rather than by atomic
-  stones (`training/crates/star-search/src/tree.rs` lines 560-585), so
+  stones (`training/crates/deltrel-search/src/tree.rs` lines 560-585), so
   consecutive placements by one player and one-stone turns back up correctly
   without algorithm changes.
 
@@ -177,7 +177,7 @@ motivates the architecture changes.
 - Search: Gumbel AlphaZero with Gumbel top-k root sampling, Sequential Halving,
   the sigma(Q) transform (`c_visit` 50, `c_scale` 1.0), completed-Q in-tree
   policies, and completed-Q improved policies as training targets
-  (`crates/star-search/src/gumbel.rs`, `tree.rs`). No Dirichlet noise or move
+  (`crates/deltrel-search/src/gumbel.rs`, `tree.rs`). No Dirichlet noise or move
   temperature is needed. This is the best practice for low-simulation self-play.
 - Data generation: KataGo-style playout-cap randomization (25% full at 256
   simulations, 75% fast at 32), fast-ply policy targets at weight 0.25,
@@ -241,9 +241,9 @@ half the reference and the floor.
 One `rules_hash` identifies the whole variant family; per-game parameters live in
 the semantic key and in every sample.
 
-- Extend `RULES_CANONICAL` to `double-star/rules-v3` in `src/lib/star/rules.ts`
+- Extend `RULES_CANONICAL` to `double-deltrel/rules-v3` in `src/lib/deltrel/rules.ts`
   (the canonical bytes live there) and mirror it in
-  `training/startrain/contracts.py` and `training/crates/star-engine/src/lib.rs`
+  `training/deltreltrain/contracts.py` and `training/crates/deltrel-engine/src/lib.rs`
   (`RULES_VERSION`, `RULES_SCHEMA`, `RULES_HASH`, `RULES_HASH_VALUE`).
 - New clauses, in this order after `bridge=...`:
   `modes={classic:turn-size-1,double:opening-1-then-2};`
@@ -255,13 +255,13 @@ the semantic key and in every sample.
 - Sites that compare or persist the hash keep working with the single new
   constant: `replay.py`, `replay_store.py`, `checkpoint.py` (manifest wire and
   payload), `learner.py` manifests, `native.py`, `distill.py`,
-  `starserve/config.py`, `starserve/schemas.py`, `starserve/snapshot.py`,
-  `starserve/app.py`, `publish.py` asset names, and the conformance fixtures.
+  `deltrelserve/config.py`, `deltrelserve/schemas.py`, `deltrelserve/snapshot.py`,
+  `deltrelserve/app.py`, `publish.py` asset names, and the conformance fixtures.
 - `GameConfig` gains `variants` (allowed modes, handicap range, pie allowed) and
   drops the `mode == "double" and not pie_rule` lock; `mode` remains as the
   default for contexts that need one.
 
-### 4.2 Engine (`training/crates/star-engine`)
+### 4.2 Engine (`training/crates/deltrel-engine`)
 
 - `GameState` gains `mode`, `handicap: u8` (1..=9), `pie: bool`,
   `swap_available: bool`, `swapped: bool`, and `previous_turn_moves` (the last
@@ -285,12 +285,12 @@ the semantic key and in every sample.
   placement sets, because history planes make positions that differ only in
   history distinct inputs. The transposition table keys on it (`tree.rs` lines
   420-437); `{a,b} == {b,a}` within a turn still merges.
-- `star-py`: `StateBatch(rings, batch_size, variant=...)` and `from_semantic`
+- `deltrel-py`: `StateBatch(rings, batch_size, variant=...)` and `from_semantic`
   accept the new fields, `StateData` exposes them, `apply_many` accepts the swap
   code.
-- Web parity: `src/lib/star/game.ts` adds handicap (opening `movesLeft =
+- Web parity: `src/lib/deltrel/game.ts` adds handicap (opening `movesLeft =
   handicap`, `canSwap` only when `handicap == 1`), `conformance.ts` accepts swap
-  and variants, `src/lib/star/ai/protocol.ts` and `controllers.ts` stop
+  and variants, `src/lib/deltrel/ai/protocol.ts` and `controllers.ts` stop
   rejecting pie and classic for the AI.
 
 ### 4.3 Tests
@@ -305,7 +305,7 @@ the semantic key and in every sample.
 
 ## 5. Feature contract v4 (Phase 1)
 
-`startrain/features/v4`, `FEATURE_SCHEMA_VERSION = 4`, computed at collate from
+`deltreltrain/features/v4`, `FEATURE_SCHEMA_VERSION = 4`, computed at collate from
 the semantic key as today (`features.py`, `encode_position`).
 
 - Node planes (15 to 20). Keep the fifteen existing planes. Add
@@ -350,7 +350,7 @@ the search value, for the side to move, of the position after the opening stone
 swapping, so the swap is taken exactly when v < 0. The opener therefore faces
 payoff -|v| for each opening candidate and should play the most balanced stone.
 
-- Root transform. When the root is a pie-pending empty board, `star-search` maps
+- Root transform. When the root is a pie-pending empty board, `deltrel-search` maps
   each root child's backed-up value q to `-|q|` for selection and for the
   completed-Q policy target. Deeper nodes are unchanged; this is the exact
   minimax value under an optimal swap decision.
@@ -415,7 +415,7 @@ Adopt KataGo's two remedies.
 
 ## 7. Architecture v3 (Phase 1; capacity in Stage B)
 
-The GraphResTNet family in `training/startrain/model.py` stays. A graph-native
+The GraphResTNet family in `training/deltreltrain/model.py` stays. A graph-native
 trunk is the right family for a pentagonal ring board, and its global token is
 exactly where rule context belongs. Changes in priority order:
 
@@ -487,12 +487,12 @@ exactly where rule context belongs. Changes in priority order:
 
 ## 9. Serving and clients (Phase 4)
 
-- `starserve/schemas.py` request v3: `mode`, `handicap`, `pie`,
+- `deltrelserve/schemas.py` request v3: `mode`, `handicap`, `pie`,
   `swap_available`, `swapped`, turn-history sets, optional `pda`. Health
   advertises rules v3 and feature v4; `snapshot.py` and `app.py` validate against
   the new constants.
 - Browser distillation exports (`distill.py`, `publish.py`) carry the new input
-  layout; `src/lib/star/ai/features.ts` mirrors feature v4.
+  layout; `src/lib/deltrel/ai/features.ts` mirrors feature v4.
 - The swap decision is exposed as a server-side recommendation
   (`swap_recommended` from selected keep Q, with root-value diagnostics) so clients never need a swap logit.
 
@@ -571,37 +571,37 @@ untouched until the cutover.
 ## Appendix A. Files by phase
 
 Phase 0
-- `src/lib/star/rules.ts`, `src/lib/star/game.ts`, `src/lib/star/conformance.ts`,
-  `src/lib/star/ai/protocol.ts`, `src/lib/star/ai/controllers.ts`
-- `training/startrain/contracts.py`, `training/startrain/config.py`
-- `training/crates/star-engine/src/lib.rs`, `game.rs`, `scoring.rs` (unchanged
-  semantics, new tests), `training/crates/star-py/src/lib.rs`
+- `src/lib/deltrel/rules.ts`, `src/lib/deltrel/game.ts`, `src/lib/deltrel/conformance.ts`,
+  `src/lib/deltrel/ai/protocol.ts`, `src/lib/deltrel/ai/controllers.ts`
+- `training/deltreltrain/contracts.py`, `training/deltreltrain/config.py`
+- `training/crates/deltrel-engine/src/lib.rs`, `game.rs`, `scoring.rs` (unchanged
+  semantics, new tests), `training/crates/deltrel-py/src/lib.rs`
 - Conformance fixtures and `test_native_e2e.py`
 
 Phase 1
-- `training/startrain/features.py`, `topology.py` (relation index),
+- `training/deltreltrain/features.py`, `topology.py` (relation index),
   `symmetry.py`, `replay.py` (versioned decoder), `replay_store.py`
-- `training/startrain/model.py` (`GraphResTNet` v3, `GlobalGQABlock` bias,
+- `training/deltreltrain/model.py` (`GraphResTNet` v3, `GlobalGQABlock` bias,
   adaLN), `checkpoint.py` (`MODEL_SCHEMA_VERSION` 3)
 - `tests/test_topology_features.py`, `tests/test_pipeline_core.py`, new model
   tests
 
 Phase 2
-- `training/crates/star-search/src/gumbel.rs`, `tree.rs`, `batch.rs` (pie root
+- `training/crates/deltrel-search/src/gumbel.rs`, `tree.rs`, `batch.rs` (pie root
   transform, pda budgets)
-- `training/startrain/selfplay.py`, `actor.py`, `inference.py`,
+- `training/deltreltrain/selfplay.py`, `actor.py`, `inference.py`,
   `learner.py` (sampler quotas), `arena.py`, `promotion.py`,
   `historical_evaluation.py`, `strength_efficiency_report.py`,
   `scripts/monitor_run.py`, `scripts/validate_continuous_profile.py`,
   `scripts/migrate_continuous_profile.py` (allowlist)
 
 Phase 3
-- `scripts/prepare_lineage_transfer.py` (new), `training/startrain/distill.py`,
+- `scripts/prepare_lineage_transfer.py` (new), `training/deltreltrain/distill.py`,
   `checkpoint.py` (evaluation contract split), `arena.py`, `cli.py`
 
 Phase 4
-- `training/starserve/schemas.py`, `config.py`, `snapshot.py`, `app.py`,
-  `runtime.py`; `scripts/publish.py`; `src/lib/star/ai/features.ts`;
+- `training/deltrelserve/schemas.py`, `config.py`, `snapshot.py`, `app.py`,
+  `runtime.py`; `scripts/publish.py`; `src/lib/deltrel/ai/features.ts`;
   `docs/serving-and-distillation.md`, `docs/production-h100-training-runbook.md`
 
 ## Appendix B. Pre-registration template for each phase

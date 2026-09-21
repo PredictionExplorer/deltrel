@@ -10,18 +10,18 @@ import pytest
 import torch
 from torch import nn
 
-import startrain.actor as actor_module
-from startrain.actor import ActorSupervisor, HistoricalModelPool, ManifestModelProvider
-from startrain.config import (
+import deltreltrain.actor as actor_module
+from deltreltrain.actor import ActorSupervisor, HistoricalModelPool, ManifestModelProvider
+from deltreltrain.config import (
     ConfigError,
     GPUWorkerConfig,
     ModelRefreshConfig,
     load_config,
 )
-from startrain.features import EncodedBatch
-from startrain.model import StarModelOutput
-from startrain.runtime import RunIdentity
-from startrain.selfplay import RingSearchAllocation, SelfPlayMetrics
+from deltreltrain.features import EncodedBatch
+from deltreltrain.model import DeltrelModelOutput
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.selfplay import RingSearchAllocation, SelfPlayMetrics
 
 
 @pytest.mark.parametrize("games_override", [None, 2])
@@ -130,8 +130,8 @@ def test_actor_supervisor_refreshes_only_at_batch_boundaries_and_emits_metrics(
                 clinch_empty_nodes=5,
             )
 
-    monkeypatch.setattr("startrain.actor.ManifestModelProvider", FakeProvider)
-    monkeypatch.setattr("startrain.actor.SelfPlayActor", FakeSelfPlayActor)
+    monkeypatch.setattr("deltreltrain.actor.ManifestModelProvider", FakeProvider)
+    monkeypatch.setattr("deltreltrain.actor.SelfPlayActor", FakeSelfPlayActor)
     supervisor = ActorSupervisor(
         native_module=object(),
         experiment=experiment,
@@ -297,8 +297,8 @@ def test_champion_selfplay_falls_back_to_candidate_beyond_replay_window(
         def metrics_snapshot(self) -> SelfPlayMetrics:
             return SelfPlayMetrics(completed_decisions=3)
 
-    monkeypatch.setattr("startrain.actor.ManifestModelProvider", FakeProvider)
-    monkeypatch.setattr("startrain.actor.SelfPlayActor", FakeSelfPlayActor)
+    monkeypatch.setattr("deltreltrain.actor.ManifestModelProvider", FakeProvider)
+    monkeypatch.setattr("deltreltrain.actor.SelfPlayActor", FakeSelfPlayActor)
     learner_heartbeat = tmp_path / "learner.heartbeat.json"
     learner_heartbeat.write_text(json.dumps({"step": learner_step}), encoding="utf-8")
     supervisor = ActorSupervisor(
@@ -420,9 +420,9 @@ def test_actor_supervisor_records_interrupted_cohort_metrics(
                 salvaged_games=int(salvaged > 0),
             )
 
-    monkeypatch.setattr("startrain.actor.ManifestModelProvider", FakeProvider)
+    monkeypatch.setattr("deltreltrain.actor.ManifestModelProvider", FakeProvider)
     monkeypatch.setattr(
-        "startrain.actor.SelfPlayActor",
+        "deltreltrain.actor.SelfPlayActor",
         InterruptedSelfPlayActor,
     )
     supervisor = ActorSupervisor(
@@ -522,7 +522,7 @@ def test_manifest_provider_reuses_compiled_evaluator_and_refreshes_weights(
     )
     manifests = {"first": first_manifest, "second-manifest": second_manifest}
     monkeypatch.setattr(
-        "startrain.actor.load_model_manifest",
+        "deltreltrain.actor.load_model_manifest",
         lambda path: manifests[Path(path).read_text(encoding="utf-8")],
     )
 
@@ -532,7 +532,7 @@ def test_manifest_provider_reuses_compiled_evaluator_and_refreshes_weights(
             self.config = _config
             self.weight = nn.Parameter(torch.zeros(()))
 
-        def forward(self, *arguments: torch.Tensor) -> StarModelOutput:
+        def forward(self, *arguments: torch.Tensor) -> DeltrelModelOutput:
             node_features = arguments[0]
             legal_actions = arguments[6]
             batch, nodes = node_features.shape[:2]
@@ -540,7 +540,7 @@ def test_manifest_provider_reuses_compiled_evaluator_and_refreshes_weights(
             policy = self.weight.expand(batch, nodes).masked_fill(
                 ~legal_actions, torch.finfo(node_features.dtype).min
             )
-            return StarModelOutput(
+            return DeltrelModelOutput(
                 policy_logits=policy,
                 outcome_logits=torch.stack((torch.zeros_like(value), value), dim=-1),
                 score_margin_logits=torch.zeros(batch, 303, dtype=node_features.dtype),
@@ -557,7 +557,7 @@ def test_manifest_provider_reuses_compiled_evaluator_and_refreshes_weights(
             self.raw_model = raw_model
             self.train(raw_model.training)
 
-        def forward(self, *arguments: torch.Tensor) -> StarModelOutput:
+        def forward(self, *arguments: torch.Tensor) -> DeltrelModelOutput:
             return self.raw_model(*arguments)
 
     checkpoint_weights = {
@@ -587,9 +587,9 @@ def test_manifest_provider_reuses_compiled_evaluator_and_refreshes_weights(
         compile_calls.append((model, options))
         return CompiledGraphModel(model)
 
-    monkeypatch.setattr("startrain.actor.GraphResTNet", TinyGraphModel)
-    monkeypatch.setattr("startrain.actor.load_ema_checkpoint", load_checkpoint)
-    monkeypatch.setattr("startrain.actor.maybe_compile_model", compile_model)
+    monkeypatch.setattr("deltreltrain.actor.GraphResTNet", TinyGraphModel)
+    monkeypatch.setattr("deltreltrain.actor.load_ema_checkpoint", load_checkpoint)
+    monkeypatch.setattr("deltreltrain.actor.maybe_compile_model", compile_model)
     encoded = EncodedBatch(
         node_features=torch.zeros(1, 1, 1),
         global_features=torch.zeros(1, 1),
@@ -601,7 +601,7 @@ def test_manifest_provider_reuses_compiled_evaluator_and_refreshes_weights(
         rings=torch.tensor([4], dtype=torch.int64),
     )
     monkeypatch.setattr(
-        "startrain.inference.encode_native_state_data",
+        "deltreltrain.inference.encode_native_state_data",
         lambda _states: encoded,
     )
 
@@ -707,7 +707,7 @@ def test_manifest_provider_fails_closed_after_in_place_reload_error(
     )
     manifests = {"first": first_manifest, "broken": broken_manifest}
     monkeypatch.setattr(
-        "startrain.actor.load_model_manifest",
+        "deltreltrain.actor.load_model_manifest",
         lambda path: manifests[Path(path).read_text(encoding="utf-8")],
     )
 
@@ -735,9 +735,9 @@ def test_manifest_provider_fails_closed_after_in_place_reload_error(
         compile_calls += 1
         return model
 
-    monkeypatch.setattr("startrain.actor.GraphResTNet", TinyGraphModel)
-    monkeypatch.setattr("startrain.actor.load_ema_checkpoint", load_checkpoint)
-    monkeypatch.setattr("startrain.actor.maybe_compile_model", compile_model)
+    monkeypatch.setattr("deltreltrain.actor.GraphResTNet", TinyGraphModel)
+    monkeypatch.setattr("deltreltrain.actor.load_ema_checkpoint", load_checkpoint)
+    monkeypatch.setattr("deltreltrain.actor.maybe_compile_model", compile_model)
     provider = ManifestModelProvider(
         experiment,
         pointer,
@@ -865,7 +865,7 @@ def test_historical_pool_excludes_manifests_before_resume_cutover(
     cutover.write_text(
         json.dumps(
             {
-                "format": "startrain.resume-cutover",
+                "format": "deltreltrain.resume-cutover",
                 "schema_version": 1,
                 "checkpoint": "recovery/checkpoint.pt",
                 "checkpoint_sha256": "a" * 64,

@@ -14,8 +14,8 @@ import threading
 import pytest
 
 from scripts import benchmark_actor_throughput as benchmark
-from startrain.config import load_config
-from startrain.inference import InferenceResponse
+from deltreltrain.config import load_config
+from deltreltrain.inference import InferenceResponse
 
 
 def _arguments(tmp_path: Path) -> list[str]:
@@ -45,7 +45,7 @@ def test_arm_rejects_invalid_resource_budgets(value):
 
 
 def test_plan_does_not_load_checkpoint_or_create_output(tmp_path, monkeypatch, capsys):
-    import startrain.checkpoint as checkpoint
+    import deltreltrain.checkpoint as checkpoint
 
     monkeypatch.setattr(
         checkpoint, "load_model_manifest", lambda _: pytest.fail("loaded model")
@@ -169,8 +169,8 @@ def test_independent_reports_rank_only_exact_isolated_cases_against_first_baseli
 
 @pytest.mark.native
 def test_warmup_exercises_all_physical_buckets_with_unique_positions_and_cold_cache():
-    native = pytest.importorskip("star_native")
-    from startrain.native import positions_from_native
+    native = pytest.importorskip("deltrel_native")
+    from deltreltrain.native import positions_from_native
 
     class Adapter:
         rows = 0
@@ -256,7 +256,7 @@ def test_gpu_ownership_gate_requires_current_process_only(monkeypatch, other_pid
 
 
 def test_controller_passes_barrier_and_total_timeout_to_child(tmp_path, monkeypatch):
-    import startrain.checkpoint as checkpoints
+    import deltreltrain.checkpoint as checkpoints
 
     manifest = SimpleNamespace(
         artifact_manifest=tmp_path / "model",
@@ -302,7 +302,7 @@ def test_controller_passes_barrier_and_total_timeout_to_child(tmp_path, monkeypa
 def test_parent_pins_checkpoint_starts_fresh_process_and_keeps_timeout_diagnostic(
     tmp_path, monkeypatch, timed_out
 ):
-    import startrain.checkpoint as checkpoints
+    import deltreltrain.checkpoint as checkpoints
 
     pinned = SimpleNamespace(
         artifact_manifest=tmp_path / "pinned.json",
@@ -343,7 +343,7 @@ def test_parent_pins_checkpoint_starts_fresh_process_and_keeps_timeout_diagnosti
 def test_controller_interruption_records_logs_and_does_not_start_more_arms(
     tmp_path, monkeypatch
 ):
-    import startrain.checkpoint as checkpoints
+    import deltreltrain.checkpoint as checkpoints
 
     manifest = SimpleNamespace(
         artifact_manifest=tmp_path / "model",
@@ -449,7 +449,7 @@ def test_real_timeout_and_sigterm_kill_owned_child_and_grandchild(
 def test_native_prefix_finishes_searches_preserves_task_seeds_and_never_emits_samples(
     variant,
 ):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
 
     class UniformEvaluator:
         model_version = model_identity = "uniform"

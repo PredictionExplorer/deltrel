@@ -10,14 +10,14 @@ import pytest
 import torch
 
 from scripts import smoke_auxiliary_predictions_cuda as smoke
-from startrain.auxiliary_upgrade import AUXILIARY_LOSSES
-from startrain.checkpoint import ExponentialMovingAverage, save_checkpoint, sha256_file
-from startrain.config import load_config
-from startrain.model import GraphResTNet
-from startrain.native import score_results_from_native
-from startrain.optim import build_optimizer
-from startrain.replay import write_replay_shard
-from startrain.training import build_scheduler, train_step
+from deltreltrain.auxiliary_upgrade import AUXILIARY_LOSSES
+from deltreltrain.checkpoint import ExponentialMovingAverage, save_checkpoint, sha256_file
+from deltreltrain.config import load_config
+from deltreltrain.model import GraphResTNet
+from deltreltrain.native import score_results_from_native
+from deltreltrain.optim import build_optimizer
+from deltreltrain.replay import write_replay_shard
+from deltreltrain.training import build_scheduler, train_step
 from test_auxiliary_replay import samples_from, trajectory
 
 
@@ -121,7 +121,7 @@ def replay_fixture(root):
 
 @pytest.mark.native
 def test_core_upgrade_parity_native_search_and_real_replay_backward(tmp_path):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     config, checkpoint = source_checkpoint(tmp_path)
     original = sha256_file(checkpoint)
     model, reference, optimizer, scheduler, ema, clipper, proof = (

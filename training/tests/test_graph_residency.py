@@ -6,10 +6,10 @@ import threading
 import pytest
 import torch
 
-from startrain.features import encode_batch
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.inference_batching import BoundedInferenceBroker
-from startrain.inference_graphs import _graph_storage_breakdown
+from deltreltrain.features import encode_batch
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.inference_batching import BoundedInferenceBroker
+from deltreltrain.inference_graphs import _graph_storage_breakdown
 from test_inference_efficiency import ObservedNetwork, encoded_requests, position
 from test_inference_graphs import FakeBackend, cache
 
@@ -172,7 +172,7 @@ def test_broker_residency_is_per_adapter_json_safe_and_separate_from_numeric_met
     monkeypatch,
 ):
     monkeypatch.setattr(
-        "startrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
+        "deltreltrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
     )
     graph = GraphInferenceAdapter(
         ObservedNetwork(),

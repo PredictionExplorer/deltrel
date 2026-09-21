@@ -9,8 +9,8 @@ import pytest
 
 from scripts.fork_elo_ablation import fork_elo_ablation, main
 from scripts.prepare_elo_ablation import prepare_elo_ablation
-from startrain.replay_store import ReplayStore
-from startrain.runtime import load_run_identity
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import load_run_identity
 
 CONFIGS = Path(__file__).parents[1] / "configs"
 
@@ -51,7 +51,7 @@ def _source_run(tmp_path: Path) -> Path:
         source / "learner" / "recovery.json",
         {
             "schema_version": 1,
-            "format": "startrain.recovery-pointer",
+            "format": "deltreltrain.recovery-pointer",
             "run_id": "shared-run",
             "generation_family": "shared-family",
             "examples_consumed": 100,

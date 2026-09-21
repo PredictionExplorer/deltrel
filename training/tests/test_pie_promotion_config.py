@@ -5,10 +5,10 @@ import pytest
 
 from scripts.prepare_pie_training_profile import prepare_profile
 from scripts.strength_efficiency_report import _active_strength_config
-from startrain.balanced_evaluation import evaluation_contract
-from startrain.config import ArenaConfig, ConfigError, load_config
-from startrain.config_compatibility import without_search_execution_defaults
-from startrain.pie_promotion import (
+from deltreltrain.balanced_evaluation import evaluation_contract
+from deltreltrain.config import ArenaConfig, ConfigError, load_config
+from deltreltrain.config_compatibility import without_search_execution_defaults
+from deltreltrain.pie_promotion import (
     pie_promotion_config,
     validate_pie_promotion_transition,
 )

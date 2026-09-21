@@ -15,8 +15,8 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH
-from startrain.replay_store import ReplayStore
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH
+from deltreltrain.replay_store import ReplayStore
 
 
 def populate_manifest(store: ReplayStore, shards: int) -> None:

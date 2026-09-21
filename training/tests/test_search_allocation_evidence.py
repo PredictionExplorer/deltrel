@@ -4,8 +4,8 @@ from copy import deepcopy
 
 import pytest
 
-from startrain.contracts import SEARCH_ALGORITHM_ID
-from startrain.search_allocation_evidence import (
+from deltreltrain.contracts import SEARCH_ALGORITHM_ID
+from deltreltrain.search_allocation_evidence import (
     analyze_search_allocation_report,
     TIMING_SETUP_COUNTERS,
 )

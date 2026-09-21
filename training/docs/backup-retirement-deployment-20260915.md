@@ -7,7 +7,7 @@ validates snapshot documents before publication.
 
 The deployed backup-tool commit is
 `c796ba9a61e208e2ad2a263b63dc427e856a38e5`, staged at
-`/home/ubuntu/edgeconnect-releases/backup-retirement-20260915`.
+`/home/ubuntu/deltrel-releases/backup-retirement-20260915`.
 The release contains 634 tracked source files verified against the source
 archive. Its 103 dependency versions and native binary are identical to the
 running training release. Both local and server suites passed 134 tests with
@@ -15,7 +15,7 @@ no failures or skips. Formatting, Ruff, and full-project Pyright also passed
 locally.
 
 The deployment changes only
-`edgeconnect-startrain-variant-network-disaster-backup.service`.
+`deltrel-deltreltrain-variant-network-disaster-backup.service`.
 Training and the other support services remain on
 `variant-adaptive-promotion-20260914-v3`, runtime commit
 `4f6027c50117eee8b66b59dfebbef7257d47fe12`.
@@ -39,7 +39,7 @@ verification of an existing offsite snapshot: 48,289 catalog files,
 Verification took approximately 157 seconds.
 
 Operational scripts and original unit bytes are retained at
-`/home/ubuntu/edgeconnect-rollouts/backup-retirement-20260915`.
+`/home/ubuntu/deltrel-rollouts/backup-retirement-20260915`.
 The frozen deployment-controller SHA256 is
 `9166e1efe272a78bcfbe9791f4a55635a9ffce2c5a254632bc8ce2e0e29e32b3`.
 

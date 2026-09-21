@@ -1,0 +1,1300 @@
+import type * as Ort from 'onnxruntime-web';
+import { getBoard } from '@/lib/deltrel/board';
+import {
+  DELTREL_MAX_HANDICAP,
+  DELTREL_RULES_HASH,
+  DELTREL_RULES_SCHEMA_ID,
+} from '@/lib/deltrel/rules';
+import { DeltrelAiError, asDeltrelAiError } from '@/lib/deltrel/ai/errors';
+import {
+  DELTREL_SCORE_MARGIN_MIN,
+  parseDeltrelAiDecision,
+  type DeltrelAiOutcomeBelief,
+  type DeltrelAiSearchBudget,
+  type DeltrelAiTiming,
+} from '@/lib/deltrel/ai/decision';
+import {
+  DELTREL_GLOBAL_FEATURE_DIM,
+  DELTREL_MODEL_INPUT_NAMES,
+  DELTREL_MODEL_OUTPUT_NAMES,
+  DELTREL_NODE_FEATURE_DIM,
+  actionCodeToModelIndex,
+  encodeDeltrelFeatures,
+  float16ToFloat32Array,
+  float32ToFloat16Array,
+} from '@/lib/deltrel/ai/features';
+import {
+  DEFAULT_BROWSER_AI_SUBTREE_REUSE_MAX_NODES,
+  MAX_BROWSER_AI_FIRST_VISIT_BATCH_SIZE,
+  DELTREL_BROWSER_MODEL_MANIFEST_PATH,
+  parseDeltrelBrowserModelManifest,
+  type DeltrelBrowserModelManifest,
+} from '@/lib/deltrel/ai/manifest';
+import {
+  codeToAction,
+  makeAiResponse,
+  type DeltrelAiRequest,
+  type DeltrelAiSemanticState,
+} from '@/lib/deltrel/ai/protocol';
+import {
+  DELTREL_AI_WORKER_PROTOCOL_VERSION,
+  parseWorkerCommand,
+  workerErrorEvent,
+  type DeltrelAiWorkerCommand,
+  type DeltrelAiWorkerEvent,
+} from '@/lib/deltrel/ai/worker-protocol';
+
+interface WorkerScope {
+  addEventListener(type: 'message', listener: (event: MessageEvent<unknown>) => void): void;
+  postMessage(message: DeltrelAiWorkerEvent): void;
+}
+
+export interface WasmState {
+  readonly to_move: number;
+  readonly moves_left: number;
+  readonly opening: boolean;
+  readonly terminal: boolean;
+  readonly mode: string;
+  readonly handicap: number;
+  readonly pie: boolean;
+  readonly swap_available: boolean;
+  readonly swapped: boolean;
+  apply(action: number): void;
+  swap(): void;
+  zero_bits(): BigUint64Array;
+  one_bits(): BigUint64Array;
+  current_turn_bits(): BigUint64Array;
+  previous_turn_bits(): BigUint64Array;
+  own_previous_turn_bits(): BigUint64Array;
+  handicap_bits(): BigUint64Array;
+  legal_actions(): Int32Array;
+  hash64(): bigint;
+  free?(): void;
+}
+
+interface WasmStateConstructor {
+  new (rings: number, mode: string, handicap: number, pie: boolean): WasmState;
+  rules_hash_tag(): string;
+  rules_schema(): string;
+  max_handicap(): number;
+}
+
+interface WasmSearchTree {
+  root_actions(): Int32Array;
+  root_token(): bigint;
+  pie_root_transform(): boolean;
+  root_value(): number | undefined;
+  initialize_root(token: bigint, value: number, policyLogits: Float32Array): void;
+  start(rootAction: number): boolean;
+  pending_state(): WasmState;
+  pending_actions(): Int32Array;
+  pending_token(): bigint;
+  finish(token: bigint, value: number, policyLogits: Float32Array): void;
+  actions(): Int32Array;
+  visits(): Uint32Array;
+  completed_q(): Float32Array;
+  policy_target(): Float32Array;
+  free?(): void;
+}
+
+interface WasmSearchTreeConstructor {
+  new (state: WasmState, cVisit: number, cScale: number): WasmSearchTree;
+}
+
+interface WasmGumbel {
+  next(completedQ: Float32Array, visits: Uint32Array): number;
+  next_scheduled?(): number | undefined;
+  record(candidate: number): void;
+  done(): boolean;
+  selected(completedQ: Float32Array, visits: Uint32Array): number;
+  free?(): void;
+}
+
+interface WasmGumbelConstructor {
+  new (
+    logits: Float32Array,
+    simulations: number,
+    maxConsidered: number,
+    cVisit: number,
+    cScale: number,
+    seed: bigint,
+  ): WasmGumbel;
+}
+
+interface DeltrelWasmModule {
+  default(input?: string | URL | BufferSource): Promise<unknown>;
+  search_algorithm_id(): string;
+  WasmState: WasmStateConstructor;
+  WasmSearchTree: WasmSearchTreeConstructor;
+  WasmGumbel: WasmGumbelConstructor;
+  search_execution_version?(): number;
+  WasmSearchSession?: new (
+    state: WasmState, simulations: number, maxConsidered: number,
+    cVisit: number, cScale: number, seed: bigint, firstVisitBatchSize: number,
+  ) => WasmSearchSession;
+}
+
+export interface WasmSearchSession {
+  restart(state: WasmState, simulations: number, maxConsidered: number,
+    cVisit: number, cScale: number, seed: bigint, firstVisitBatchSize: number,
+    allowReuse: boolean, maxNodes: number): void;
+  root_actions(): Int32Array;
+  root_token(): bigint;
+  initialize_root(token: bigint, value: number, logits: Float32Array): void;
+  next_requests(): number;
+  pending_tokens(): BigUint64Array;
+  pending_state(row: number): WasmState;
+  pending_actions(row: number): Int32Array;
+  submit(tokens: BigUint64Array, values: Float32Array, offsets: Uint32Array, logits: Float32Array): void;
+  done(): boolean;
+  simulations(): number;
+  unique_nodes(): number;
+  complete(): void;
+  selected_action(): number | undefined;
+  selected_action_value(): number | undefined;
+  root_value(): number | undefined;
+  actions(): Int32Array;
+  visits(): Uint32Array;
+  inherited_visits(): Uint32Array;
+  total_visits(): Uint32Array;
+  q_values(): Float32Array;
+  policy_target(): Float32Array;
+  reused_visits(): number;
+  reused_nodes(): number;
+  free?(): void;
+}
+
+export const DELTREL_LOCAL_SEARCH_ALGORITHM_ID =
+  'gumbel-completed-q-v2-finite-noise-selected-keep';
+
+export function hasExpectedWasmSearch(wasm: Partial<DeltrelWasmModule>): boolean {
+  try {
+    return typeof wasm.search_algorithm_id === 'function' &&
+      wasm.search_algorithm_id() === DELTREL_LOCAL_SEARCH_ALGORITHM_ID;
+  } catch {
+    // A new JS wrapper paired with an old binary can lack the exported function.
+    return false;
+  }
+}
+
+export function versionedWasmUrl(url: string): string {
+  return `${url}?search=${encodeURIComponent(DELTREL_LOCAL_SEARCH_ALGORITHM_ID)}&implementation=search-session-v1`;
+}
+
+export function hasExpectedWasmExecution(wasm: Partial<DeltrelWasmModule>): boolean {
+  try {
+    return wasm.search_execution_version?.() === 1 && typeof wasm.WasmSearchSession === 'function';
+  } catch { return false; }
+}
+
+export function usesExperimentalSearch(manifest: DeltrelBrowserModelManifest): boolean {
+  return (manifest.search.firstVisitBatchSize ?? 1) > 1 || manifest.search.subtreeReuse === true;
+}
+
+interface LocalRuntime {
+  manifest: DeltrelBrowserModelManifest;
+  ort: typeof Ort;
+  session: Ort.InferenceSession;
+  wasm: DeltrelWasmModule;
+  predictions: PredictionCache;
+  completedSearch?: { session: WasmSearchSession; context: string };
+}
+
+interface Evaluation {
+  value: number;
+  outcome: DeltrelAiOutcomeBelief;
+  expectedMargin: number;
+  logits: Float32Array;
+}
+
+function cloneEvaluation(evaluation: Evaluation): Evaluation {
+  return {
+    ...evaluation,
+    outcome: { ...evaluation.outcome },
+    logits: evaluation.logits.slice(),
+  };
+}
+
+/** Retains decoded predictions only; every search still starts with fresh statistics. */
+export class PredictionCache {
+  private readonly entries = new Map<string, Evaluation>();
+
+  constructor(private readonly capacity = 1_024) {
+    if (!Number.isInteger(capacity) || capacity <= 0) {
+      throw new Error('Prediction cache capacity must be a positive integer.');
+    }
+  }
+
+  get(key: string): Evaluation | undefined {
+    const evaluation = this.entries.get(key);
+    if (!evaluation) return undefined;
+    this.entries.delete(key);
+    this.entries.set(key, evaluation);
+    return cloneEvaluation(evaluation);
+  }
+
+  set(key: string, evaluation: Evaluation): void {
+    this.entries.delete(key);
+    this.entries.set(key, cloneEvaluation(evaluation));
+    if (this.entries.size > this.capacity) {
+      this.entries.delete(this.entries.keys().next().value!);
+    }
+  }
+}
+
+interface LocalSearchResult {
+  actionCode: number;
+  swapRecommended: boolean;
+  outcome: DeltrelAiOutcomeBelief;
+  modelValue: number;
+  searchValue: number;
+  rootValue: number;
+  expectedMargin: number;
+  rootActions: number[];
+  rootPolicy: number[];
+  rootQ: number[];
+  rootVisits: number[];
+  modelVersion: string;
+  modelIdentity: string;
+  search: DeltrelAiSearchBudget;
+  timingMs: Pick<DeltrelAiTiming, 'modelLoad' | 'inferenceSearch'>;
+}
+
+const scope = globalThis as unknown as WorkerScope;
+const cancelled = new Set<string>();
+const knownTasks = new Set<string>();
+const taskControllers = new Map<string, AbortController>();
+let runtimePromise: Promise<LocalRuntime> | null = null;
+let queue = Promise.resolve();
+
+export function arraysEqual(left: ArrayLike<number>, right: ArrayLike<number>): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index++) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+function ensureNotCancelled(taskId: string): void {
+  if (cancelled.has(taskId)) {
+    throw new DeltrelAiError('cancelled', 'Local AI request cancelled.');
+  }
+}
+
+async function fetchJson(url: string, signal: AbortSignal): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetch(url, { cache: 'no-cache', signal });
+  } catch (error) {
+    throw new DeltrelAiError('unavailable', 'Local AI assets could not be loaded.', true, error);
+  }
+  if (!response.ok) {
+    throw new DeltrelAiError(
+      'unavailable',
+      response.status === 404
+        ? 'Local AI model is not installed.'
+        : `Local AI manifest returned HTTP ${response.status}.`,
+      response.status >= 500,
+    );
+  }
+  try {
+    return await response.json();
+  } catch (error) {
+    throw new DeltrelAiError('unavailable', 'Local AI model manifest is invalid.', false, error);
+  }
+}
+
+async function fetchBytes(
+  url: string,
+  label: string,
+  signal: AbortSignal,
+): Promise<ArrayBuffer> {
+  let response: Response;
+  try {
+    response = await fetch(url, { cache: 'force-cache', signal });
+  } catch (error) {
+    throw new DeltrelAiError('unavailable', `${label} could not be loaded.`, true, error);
+  }
+  if (!response.ok) {
+    throw new DeltrelAiError(
+      'unavailable',
+      `${label} is unavailable (HTTP ${response.status}).`,
+      response.status >= 500,
+    );
+  }
+  return response.arrayBuffer();
+}
+
+async function sha256(buffer: ArrayBuffer): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  const bytes = new Uint8Array(digest);
+  return `sha256:${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
+
+async function importWasm(
+  manifest: DeltrelBrowserModelManifest,
+  signal: AbortSignal,
+): Promise<DeltrelWasmModule> {
+  let wasmModule: DeltrelWasmModule;
+  try {
+    wasmModule = (await import(
+      /* webpackIgnore: true */
+      /* turbopackIgnore: true */
+      versionedWasmUrl(manifest.wasm.moduleUrl)
+    )) as unknown as DeltrelWasmModule;
+    const binary = await fetchBytes(
+      versionedWasmUrl(manifest.wasm.binaryUrl),
+      'Local AI WASM binary',
+      signal,
+    );
+    await wasmModule.default(binary);
+  } catch (error) {
+    throw new DeltrelAiError(
+      'unavailable',
+      'Local AI WASM package is not installed. Run npm run build:deltrel-wasm.',
+      false,
+      error,
+    );
+  }
+  if (
+    typeof wasmModule.WasmState !== 'function' ||
+    typeof wasmModule.WasmSearchTree !== 'function' ||
+    typeof wasmModule.WasmGumbel !== 'function' ||
+    wasmModule.WasmState.rules_hash_tag() !== DELTREL_RULES_HASH ||
+    wasmModule.WasmState.rules_schema() !== DELTREL_RULES_SCHEMA_ID ||
+    wasmModule.WasmState.max_handicap() !== DELTREL_MAX_HANDICAP
+  ) {
+    throw new DeltrelAiError('unavailable', 'Local AI WASM rules are incompatible.');
+  }
+  if (!hasExpectedWasmSearch(wasmModule)) {
+    throw new DeltrelAiError(
+      'unavailable',
+      'Local AI WASM search is incompatible. Rebuild and publish the current WASM package.',
+    );
+  }
+  if (usesExperimentalSearch(manifest) && !hasExpectedWasmExecution(wasmModule)) {
+    throw new DeltrelAiError('unavailable', 'Experimental local search requires the current WASM execution package.');
+  }
+  return wasmModule;
+}
+
+function sameNames(actual: readonly string[], expected: readonly string[]): boolean {
+  return (
+    actual.length === expected.length &&
+    actual.every((name, index) => name === expected[index])
+  );
+}
+
+export function tensorMetadataMatches(
+  metadata: Ort.InferenceSession.ValueMetadata,
+  type: Ort.Tensor.Type,
+  rank: number,
+  lastDimension?: number,
+): boolean {
+  return (
+    metadata.isTensor &&
+    metadata.type === type &&
+    metadata.shape.length === rank &&
+    (lastDimension === undefined || metadata.shape[rank - 1] === lastDimension)
+  );
+}
+
+export function hasExpectedOnnxSchema(session: Ort.InferenceSession): boolean {
+  const inputSchema = [
+    ['float16', 3, DELTREL_NODE_FEATURE_DIM],
+    ['float16', 2, DELTREL_GLOBAL_FEATURE_DIM],
+    ['int64', 3],
+    ['bool', 3],
+    ['int64', 3],
+    ['bool', 2],
+    ['bool', 2],
+    ['int64', 1],
+  ] as const;
+  const outputSchema = [
+    ['float16', 2],
+    ['float16', 2, 2],
+    ['float16', 2, 303],
+    ['float16', 3, 3],
+    ['float16', 2],
+    ['float16', 2],
+  ] as const;
+  return (
+    sameNames(session.inputNames, DELTREL_MODEL_INPUT_NAMES) &&
+    sameNames(session.outputNames, DELTREL_MODEL_OUTPUT_NAMES) &&
+    session.inputMetadata.length === inputSchema.length &&
+    session.outputMetadata.length === outputSchema.length &&
+    inputSchema.every(([type, rank, last], index) =>
+      tensorMetadataMatches(session.inputMetadata[index], type, rank, last),
+    ) &&
+    outputSchema.every(([type, rank, last], index) =>
+      tensorMetadataMatches(session.outputMetadata[index], type, rank, last),
+    )
+  );
+}
+
+async function createSession(
+  ort: typeof Ort,
+  model: ArrayBuffer,
+): Promise<Ort.InferenceSession> {
+  ort.env.wasm.numThreads = 1;
+  let webGpuFailure: unknown;
+  if ('gpu' in navigator) {
+    try {
+      return await ort.InferenceSession.create(model, {
+        executionProviders: ['webgpu'],
+        executionMode: 'sequential',
+        graphOptimizationLevel: 'all',
+      });
+    } catch (error) {
+      webGpuFailure = error;
+    }
+  }
+  try {
+    return await ort.InferenceSession.create(model, {
+      executionProviders: ['wasm'],
+      executionMode: 'sequential',
+      graphOptimizationLevel: 'all',
+    });
+  } catch (error) {
+    throw new DeltrelAiError(
+      'unavailable',
+      'Local AI model is unsupported by WebGPU and WASM.',
+      false,
+      webGpuFailure ?? error,
+    );
+  }
+}
+
+async function loadRuntime(signal: AbortSignal): Promise<LocalRuntime> {
+  const manifest = parseDeltrelBrowserModelManifest(
+    await fetchJson(DELTREL_BROWSER_MODEL_MANIFEST_PATH, signal),
+  );
+  const [wasm, model] = await Promise.all([
+    importWasm(manifest, signal),
+    fetchBytes(manifest.model.url, 'Local AI ONNX model', signal),
+  ]);
+  if (model.byteLength !== manifest.model.bytes) {
+    throw new DeltrelAiError('unavailable', 'Local AI model size does not match its manifest.');
+  }
+  if ((await sha256(model)) !== manifest.model.sha256) {
+    throw new DeltrelAiError('unavailable', 'Local AI model checksum does not match its manifest.');
+  }
+
+  const ort = await import('onnxruntime-web/webgpu');
+  const session = await createSession(ort, model);
+  if (!hasExpectedOnnxSchema(session)) {
+    await session.release();
+    throw new DeltrelAiError('unavailable', 'Local AI ONNX schema is incompatible.');
+  }
+  return { manifest, ort, session, wasm, predictions: new PredictionCache() };
+}
+
+function getRuntime(signal: AbortSignal): Promise<LocalRuntime> {
+  if (!runtimePromise) {
+    runtimePromise = loadRuntime(signal).catch((error) => {
+      runtimePromise = null;
+      throw error;
+    });
+  }
+  return runtimePromise;
+}
+
+export function nodesFromBits(words: BigUint64Array, nodeCount: number, label: string): number[] {
+  const nodes: number[] = [];
+  for (let wordIndex = 0; wordIndex < words.length; wordIndex++) {
+    const word = words[wordIndex];
+    const first = wordIndex * 64;
+    const valid = Math.min(64, Math.max(0, nodeCount - first));
+    for (let bit = 0; bit < valid; bit++) {
+      if ((word & (BigInt(1) << BigInt(bit))) !== BigInt(0)) nodes.push(first + bit);
+    }
+    if (valid < 64 && (word >> BigInt(valid)) !== BigInt(0)) {
+      throw new DeltrelAiError('protocol', `WASM ${label} contains off-board nodes.`);
+    }
+  }
+  return nodes;
+}
+
+export function stonesFromWasm(state: WasmState, nodeCount: number): number[] {
+  const stones = new Array<number>(nodeCount).fill(-1);
+  const players = [state.zero_bits(), state.one_bits()];
+  for (let player = 0; player < 2; player++) {
+    for (const node of nodesFromBits(players[player], nodeCount, 'state')) {
+      if (stones[node] !== -1) {
+        throw new DeltrelAiError('protocol', 'WASM state contains overlapping stones.');
+      }
+      stones[node] = player;
+    }
+  }
+  return stones;
+}
+
+export function semanticFromWasm(rings: number, state: WasmState): DeltrelAiSemanticState {
+  const nodeCount = getBoard(rings).n;
+  const stones = stonesFromWasm(state, nodeCount);
+  if (state.mode !== 'classic' && state.mode !== 'double') {
+    throw new DeltrelAiError('protocol', 'WASM state reports an unknown mode.');
+  }
+  return {
+    rings,
+    stones,
+    toMove: state.to_move as 0 | 1,
+    movesLeft: state.moves_left,
+    opening: state.opening,
+    terminal: state.terminal,
+    mode: state.mode,
+    handicap: state.handicap,
+    pie: state.pie,
+    swapAvailable: state.swap_available,
+    swapped: state.swapped,
+    history: {
+      currentTurn: nodesFromBits(state.current_turn_bits(), nodeCount, 'current turn'),
+      previousTurn: nodesFromBits(state.previous_turn_bits(), nodeCount, 'previous turn'),
+      ownPreviousTurn: nodesFromBits(
+        state.own_previous_turn_bits(),
+        nodeCount,
+        'own previous turn',
+      ),
+      handicapStones: nodesFromBits(state.handicap_bits(), nodeCount, 'handicap stones'),
+    },
+  };
+}
+
+function sameSemanticState(left: DeltrelAiSemanticState, right: DeltrelAiSemanticState): boolean {
+  return (
+    left.toMove === right.toMove &&
+    left.movesLeft === right.movesLeft &&
+    left.opening === right.opening &&
+    left.terminal === right.terminal &&
+    left.mode === right.mode &&
+    left.handicap === right.handicap &&
+    left.pie === right.pie &&
+    left.swapAvailable === right.swapAvailable &&
+    left.swapped === right.swapped &&
+    arraysEqual(left.stones, right.stones) &&
+    arraysEqual(left.history.currentTurn, right.history.currentTurn) &&
+    arraysEqual(left.history.previousTurn, right.history.previousTurn) &&
+    arraysEqual(left.history.ownPreviousTurn, right.history.ownPreviousTurn) &&
+    arraysEqual(left.history.handicapStones, right.history.handicapStones)
+  );
+}
+
+export function replayAndVerify(request: DeltrelAiRequest, wasm: DeltrelWasmModule): WasmState {
+  const { rings, mode, handicap, pie } = request.state;
+  const nodeCount = request.state.stones.length;
+  const state = new wasm.WasmState(rings, mode, handicap, pie);
+  try {
+    for (const action of request.actionLog) {
+      if (action === nodeCount) state.swap();
+      else state.apply(action);
+    }
+    const semantic = semanticFromWasm(rings, state);
+    if (
+      !sameSemanticState(semantic, request.state) ||
+      !arraysEqual(state.legal_actions(), request.legalActions) ||
+      `zobrist64:${state.hash64().toString(16).padStart(16, '0')}` !== request.stateHash
+    ) {
+      throw new DeltrelAiError('protocol', 'WASM replay disagrees with the AI request.');
+    }
+    return state;
+  } catch (error) {
+    state.free?.();
+    throw error;
+  }
+}
+
+function tensorFeeds(runtime: LocalRuntime, semantic: DeltrelAiSemanticState) {
+  const encoded = encodeDeltrelFeatures(semantic);
+  const { Tensor } = runtime.ort;
+  return {
+    node_features: new Tensor(
+      'float16',
+      float32ToFloat16Array(encoded.nodeFeatures),
+      [1, encoded.nodeCount, DELTREL_NODE_FEATURE_DIM],
+    ),
+    global_features: new Tensor(
+      'float16',
+      float32ToFloat16Array(encoded.globalFeatures),
+      [1, DELTREL_GLOBAL_FEATURE_DIM],
+    ),
+    neighbor_index: new Tensor(
+      'int64',
+      encoded.neighborIndex,
+      [1, encoded.nodeCount, encoded.maxDegree],
+    ),
+    neighbor_mask: new Tensor(
+      'bool',
+      encoded.neighborMask,
+      [1, encoded.nodeCount, encoded.maxDegree],
+    ),
+    neighbor_edge_type: new Tensor(
+      'int64',
+      encoded.neighborEdgeType,
+      [1, encoded.nodeCount, encoded.maxDegree],
+    ),
+    node_mask: new Tensor('bool', encoded.nodeMask, [1, encoded.nodeCount]),
+    legal_action_mask: new Tensor(
+      'bool',
+      encoded.legalActionMask,
+      [1, encoded.nodeCount],
+    ),
+    rings: new Tensor('int64', encoded.rings, [1]),
+  };
+}
+
+export function finiteFloatData(
+  value: Ort.OnnxValue | undefined,
+  name: string,
+): Float32Array {
+  if (!value || !('data' in value)) {
+    throw new DeltrelAiError('protocol', `ONNX output ${name} is invalid.`);
+  }
+  const data = value.data as unknown;
+  let decoded: Float32Array;
+  if (data instanceof Uint16Array) {
+    decoded = float16ToFloat32Array(data);
+  } else {
+    const Float16ArrayConstructor = (
+      globalThis as typeof globalThis & {
+        Float16Array?: new (
+          buffer: ArrayBufferLike,
+          byteOffset?: number,
+          length?: number,
+        ) => ArrayLike<number>;
+      }
+    ).Float16Array;
+    if (!Float16ArrayConstructor || !(data instanceof Float16ArrayConstructor)) {
+      throw new DeltrelAiError('protocol', `ONNX output ${name} is not FP16.`);
+    }
+    decoded = Float32Array.from(data as ArrayLike<number>);
+  }
+  if (Array.from(decoded).some((item) => !Number.isFinite(item))) {
+    throw new DeltrelAiError('protocol', `ONNX output ${name} contains non-finite values.`);
+  }
+  return decoded;
+}
+
+function normalizedProbabilities(
+  logits: Float32Array,
+  expectedLength: number,
+  label: string,
+): number[] {
+  if (logits.length !== expectedLength) {
+    throw new DeltrelAiError(
+      'protocol',
+      `ONNX ${label} output must contain ${expectedLength} logits.`,
+    );
+  }
+  const maximum = Math.max(...logits);
+  const probabilities = Array.from(logits, (logit) => Math.exp(logit - maximum));
+  const total = probabilities.reduce((sum, probability) => sum + probability, 0);
+  if (!Number.isFinite(total) || total <= 0) {
+    throw new DeltrelAiError('protocol', `ONNX ${label} output cannot be normalized.`);
+  }
+  return probabilities.map((probability) => probability / total);
+}
+
+export function outcomeBelief(logits: Float32Array): DeltrelAiOutcomeBelief {
+  if (logits.length !== 2) {
+    throw new DeltrelAiError('protocol', 'ONNX outcome output must contain two logits.');
+  }
+  const [loss, win] = normalizedProbabilities(logits, 2, 'outcome');
+  return { loss, win };
+}
+
+export function outcomeValue(logits: Float32Array): number {
+  const outcome = outcomeBelief(logits);
+  return outcome.win - outcome.loss;
+}
+
+export function expectedScoreMargin(logits: Float32Array): number {
+  const probabilities = normalizedProbabilities(logits, 303, 'score margin');
+  return probabilities.reduce(
+    (total, probability, index) =>
+      total + probability * (DELTREL_SCORE_MARGIN_MIN + index),
+    0,
+  );
+}
+
+function predictionKey(runtime: LocalRuntime, semantic: DeltrelAiSemanticState, legalActions: Int32Array): string {
+  return JSON.stringify([
+    runtime.manifest.model.sha256, runtime.manifest.featureSchemaHash,
+    semantic, Array.from(legalActions), 0,
+  ]);
+}
+
+export async function evaluate(
+  runtime: LocalRuntime,
+  semantic: DeltrelAiSemanticState,
+  legalActions: Int32Array,
+): Promise<Evaluation> {
+  // Include complete feature history and legal-action order, rather than a board hash.
+  // Browser inference always encodes a playout-doubling advantage of zero.
+  const key = predictionKey(runtime, semantic, legalActions);
+  const cached = runtime.predictions.get(key);
+  if (cached) return cached;
+
+  const feeds = tensorFeeds(runtime, semantic);
+  let outputs: Ort.InferenceSession.OnnxValueMapType | undefined;
+  try {
+    outputs = await runtime.session.run(feeds);
+    const evaluation = decodeEvaluation(outputs, semantic.stones.length, legalActions);
+    runtime.predictions.set(key, evaluation);
+    return evaluation;
+  } finally {
+    for (const tensor of Object.values(feeds)) tensor.dispose();
+    if (outputs) {
+      for (const tensor of Object.values(outputs)) tensor.dispose();
+    }
+  }
+}
+
+export interface EvaluationRow {
+  semantic: DeltrelAiSemanticState;
+  legalActions: Int32Array;
+}
+
+/** Stack every input, including topology, ring and per-row history/legal masks. */
+export function batchTensorFeeds(runtime: LocalRuntime, states: readonly DeltrelAiSemanticState[]): Record<string, Ort.Tensor> {
+  if (!states.length || states.length > MAX_BROWSER_AI_FIRST_VISIT_BATCH_SIZE ||
+      states.some((state) => state.rings !== states[0].rings)) {
+    throw new DeltrelAiError('protocol', 'Local inference batch must contain 1-64 rows on one board.');
+  }
+  const encoded = states.map(encodeDeltrelFeatures);
+  const rows = encoded.length;
+  const nodes = encoded[0].nodeCount;
+  const degree = encoded[0].maxDegree;
+  const nodeFeatures = new Float32Array(rows * nodes * DELTREL_NODE_FEATURE_DIM);
+  const globalFeatures = new Float32Array(rows * DELTREL_GLOBAL_FEATURE_DIM);
+  const neighborIndex = new BigInt64Array(rows * nodes * degree);
+  const neighborMask = new Uint8Array(rows * nodes * degree);
+  const edgeType = new BigInt64Array(rows * nodes * degree);
+  const nodeMask = new Uint8Array(rows * nodes);
+  const legalMask = new Uint8Array(rows * nodes);
+  const rings = new BigInt64Array(rows);
+  encoded.forEach((row, index) => {
+    if (row.nodeCount !== nodes || row.maxDegree !== degree) {
+      throw new DeltrelAiError('protocol', 'Local inference batch topology differs between rows.');
+    }
+    nodeFeatures.set(row.nodeFeatures, index * nodes * DELTREL_NODE_FEATURE_DIM);
+    globalFeatures.set(row.globalFeatures, index * DELTREL_GLOBAL_FEATURE_DIM);
+    neighborIndex.set(row.neighborIndex, index * nodes * degree);
+    neighborMask.set(row.neighborMask, index * nodes * degree);
+    edgeType.set(row.neighborEdgeType, index * nodes * degree);
+    nodeMask.set(row.nodeMask, index * nodes);
+    legalMask.set(row.legalActionMask, index * nodes);
+    rings.set(row.rings, index);
+  });
+  const { Tensor } = runtime.ort;
+  const feeds: Record<string, Ort.Tensor> = {};
+  try {
+    feeds.node_features = new Tensor('float16', float32ToFloat16Array(nodeFeatures), [rows, nodes, DELTREL_NODE_FEATURE_DIM]);
+    feeds.global_features = new Tensor('float16', float32ToFloat16Array(globalFeatures), [rows, DELTREL_GLOBAL_FEATURE_DIM]);
+    feeds.neighbor_index = new Tensor('int64', neighborIndex, [rows, nodes, degree]);
+    feeds.neighbor_mask = new Tensor('bool', neighborMask, [rows, nodes, degree]);
+    feeds.neighbor_edge_type = new Tensor('int64', edgeType, [rows, nodes, degree]);
+    feeds.node_mask = new Tensor('bool', nodeMask, [rows, nodes]);
+    feeds.legal_action_mask = new Tensor('bool', legalMask, [rows, nodes]);
+    feeds.rings = new Tensor('int64', rings, [rows]);
+    return feeds;
+  } catch (error) {
+    for (const tensor of Object.values(feeds)) tensor.dispose();
+    throw error;
+  }
+}
+
+function decodeBatch(outputs: Ort.InferenceSession.OnnxValueMapType, rows: readonly EvaluationRow[]): Evaluation[] {
+  const batch = rows.length;
+  const nodes = rows[0].semantic.stones.length;
+  const shapes = {
+    policy_logits: [batch, nodes], outcome_logits: [batch, 2], score_margin_logits: [batch, 303],
+    ownership_logits: [batch, nodes, 3], alive_logits: [batch, nodes], soft_policy_logits: [batch, nodes],
+  };
+  const decoded: Record<string, Float32Array> = {};
+  for (const [name, shape] of Object.entries(shapes)) {
+    const tensor = outputs[name];
+    if (!tensor || !('dims' in tensor) || !arraysEqual(tensor.dims, shape)) {
+      throw new DeltrelAiError('protocol', `ONNX batch output ${name} has the wrong shape.`);
+    }
+    const values = finiteFloatData(tensor, name);
+    if (values.length !== shape.reduce((product, dimension) => product * dimension, 1)) {
+      throw new DeltrelAiError('protocol', `ONNX batch output ${name} has the wrong data length.`);
+    }
+    decoded[name] = values;
+  }
+  return rows.map((row, index) => {
+    const logits = new Float32Array(row.legalActions.length);
+    row.legalActions.forEach((action, column) => {
+      logits[column] = decoded.policy_logits[index * nodes + actionCodeToModelIndex(action, nodes)];
+    });
+    const outcome = outcomeBelief(decoded.outcome_logits.subarray(index * 2, (index + 1) * 2));
+    return { logits, outcome, value: outcome.win - outcome.loss,
+      expectedMargin: expectedScoreMargin(decoded.score_margin_logits.subarray(index * 303, (index + 1) * 303)) };
+  });
+}
+
+/** Predict cache misses in one real ONNX batch, publishing only fully validated rows. */
+export async function evaluateBatch(runtime: LocalRuntime, rows: readonly EvaluationRow[]): Promise<Evaluation[]> {
+  if (!rows.length) return [];
+  if (rows.length > MAX_BROWSER_AI_FIRST_VISIT_BATCH_SIZE || rows.some((row) => row.semantic.rings !== rows[0].semantic.rings)) {
+    throw new DeltrelAiError('protocol', 'Local inference batch is too large or mixes boards.');
+  }
+  const keys = rows.map((row) => predictionKey(runtime, row.semantic, row.legalActions));
+  const resolved = new Map<string, Evaluation>();
+  const missing = new Map<string, EvaluationRow>();
+  rows.forEach((row, index) => {
+    const key = keys[index];
+    if (resolved.has(key) || missing.has(key)) return;
+    const cached = runtime.predictions.get(key);
+    if (cached) resolved.set(key, cached);
+    else missing.set(key, row);
+  });
+  if (missing.size) {
+    const uniqueRows = [...missing.values()];
+    const feeds = batchTensorFeeds(runtime, uniqueRows.map((row) => row.semantic));
+    let outputs: Ort.InferenceSession.OnnxValueMapType | undefined;
+    try {
+      outputs = await runtime.session.run(feeds);
+      const predictions = decodeBatch(outputs, uniqueRows);
+      [...missing.keys()].forEach((key, index) => {
+        runtime.predictions.set(key, predictions[index]);
+        resolved.set(key, predictions[index]);
+      });
+    } finally {
+      for (const tensor of Object.values(feeds)) tensor.dispose();
+      if (outputs) for (const tensor of Object.values(outputs)) tensor.dispose();
+    }
+  }
+  return keys.map((key) => cloneEvaluation(resolved.get(key)!));
+}
+
+function decodeEvaluation(
+  outputs: Ort.InferenceSession.OnnxValueMapType,
+  nodeCount: number,
+  legalActions: Int32Array,
+): Evaluation {
+  const densePolicy = finiteFloatData(outputs.policy_logits, 'policy_logits');
+  const outcomeLogits = finiteFloatData(outputs.outcome_logits, 'outcome_logits');
+  const scoreMarginLogits = finiteFloatData(
+    outputs.score_margin_logits,
+    'score_margin_logits',
+  );
+  if (densePolicy.length !== nodeCount) {
+    throw new DeltrelAiError('protocol', 'ONNX policy output has the wrong action layout.');
+  }
+  const logits = new Float32Array(legalActions.length);
+  for (let index = 0; index < legalActions.length; index++) {
+    const action = legalActions[index];
+    const modelIndex = actionCodeToModelIndex(action, nodeCount);
+    const logit = densePolicy[modelIndex];
+    if (!Number.isFinite(logit)) {
+      throw new DeltrelAiError('protocol', 'ONNX policy contains a non-finite legal logit.');
+    }
+    logits[index] = logit;
+  }
+  const outcome = outcomeBelief(outcomeLogits);
+  return {
+    value: outcome.win - outcome.loss,
+    outcome,
+    expectedMargin: expectedScoreMargin(scoreMarginLogits),
+    logits,
+  };
+}
+
+async function yieldToCancellation(taskId: string): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  ensureNotCancelled(taskId);
+}
+
+function nowMs(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+export function summarizeSearch(
+  tree: WasmSearchTree,
+  scheduler: WasmGumbel,
+  fallbackRootValue: number,
+  swapAvailable: boolean,
+  swapDeadZone: number,
+) {
+  const rootQ = Array.from(tree.completed_q());
+  const rootVisits = Array.from(tree.visits());
+  const selected = scheduler.selected(Float32Array.from(rootQ), Uint32Array.from(rootVisits));
+  const actions = tree.actions();
+  if (selected < 0 || selected >= actions.length) {
+    throw new DeltrelAiError('protocol', 'WASM search selected an invalid edge.');
+  }
+  const rawRootValue = tree.root_value();
+  const rootValue = Math.max(
+    -1,
+    Math.min(1, rawRootValue === undefined ? fallbackRootValue : rawRootValue),
+  );
+  const selectedActionValue = rootQ[selected];
+  if (!Number.isFinite(rootValue) || !Number.isFinite(selectedActionValue)) {
+    throw new DeltrelAiError('protocol', 'WASM search value is not finite.');
+  }
+  return {
+    actionCode: actions[selected],
+    // Compare the selected keep continuation with swapping. The exploration
+    // average can be negative even when search found a winning keep action.
+    swapRecommended: swapAvailable && selectedActionValue < -swapDeadZone,
+    rootValue,
+    rootActions: Array.from(actions),
+    rootPolicy: Array.from(tree.policy_target()),
+    rootQ,
+    rootVisits,
+  };
+}
+
+/** Own a session exclusively until completion; cached trees are never mutated in place. */
+export async function runSessionSearch(
+  runtime: LocalRuntime, root: WasmState, semantic: DeltrelAiSemanticState,
+  search: DeltrelAiSearchBudget, checkCancelled: () => void,
+  yieldControl: () => Promise<void>,
+) {
+  const previous = runtime.completedSearch;
+  delete runtime.completedSearch;
+  let owned: WasmSearchSession | null = previous?.session ?? null;
+  try {
+    checkCancelled();
+    if (!hasExpectedWasmExecution(runtime.wasm) || !runtime.wasm.WasmSearchSession) {
+      throw new DeltrelAiError('unavailable', 'Experimental local search requires WASM execution version 1.');
+    }
+    const options = runtime.manifest.search;
+    const batchSize = options.firstVisitBatchSize ?? 1;
+    const maxNodes = options.subtreeReuseMaxNodes ?? DEFAULT_BROWSER_AI_SUBTREE_REUSE_MAX_NODES;
+    const context = JSON.stringify([
+      runtime.manifest.model.sha256, runtime.manifest.featureSchemaHash,
+      DELTREL_LOCAL_SEARCH_ALGORITHM_ID, 'float16', 0, 0, options.cVisit, options.cScale,
+    ]);
+    if (owned && options.subtreeReuse && previous?.context === context && owned.done()) {
+      owned.restart(root, search.simulations, search.maxConsidered, options.cVisit,
+        options.cScale, root.hash64(), batchSize, true, maxNodes);
+    } else {
+      owned?.free?.();
+      owned = null;
+      owned = new runtime.wasm.WasmSearchSession(root, search.simulations, search.maxConsidered,
+        options.cVisit, options.cScale, root.hash64(), batchSize);
+    }
+    const rootActions = owned.root_actions();
+    if (!arraysEqual(rootActions, root.legal_actions())) {
+      throw new DeltrelAiError('protocol', 'WASM session root actions are incompatible.');
+    }
+    const token = owned.root_token();
+    const rootEvaluation = await evaluate(runtime, semantic, rootActions);
+    checkCancelled();
+    if (owned.root_token() !== token) throw new DeltrelAiError('stale', 'WASM session root token changed.');
+    owned.initialize_root(token, rootEvaluation.value, rootEvaluation.logits);
+    let iterations = 0;
+    let lastYield = 0;
+    while (!owned.done()) {
+      checkCancelled();
+      if (++iterations > search.simulations * 4 + 16) {
+        throw new DeltrelAiError('protocol', 'WASM session failed to make progress.');
+      }
+      const count = owned.next_requests();
+      const tokens = owned.pending_tokens();
+      if (count !== tokens.length || count > batchSize) {
+        throw new DeltrelAiError('protocol', 'WASM session returned an invalid batch size.');
+      }
+      if (count) {
+        const rows: EvaluationRow[] = [];
+        for (let row = 0; row < count; row++) {
+          const state = owned.pending_state(row);
+          try {
+            rows.push({ semantic: semanticFromWasm(semantic.rings, state), legalActions: owned.pending_actions(row) });
+          } finally { state.free?.(); }
+        }
+        const evaluations = await evaluateBatch(runtime, rows);
+        checkCancelled();
+        const currentTokens = owned.pending_tokens();
+        if (currentTokens.length !== tokens.length || tokens.some((value, index) => value !== currentTokens[index])) {
+          throw new DeltrelAiError('stale', 'WASM session pending tokens changed.');
+        }
+        const offsets = new Uint32Array(count + 1);
+        evaluations.forEach((evaluation, index) => { offsets[index + 1] = offsets[index] + evaluation.logits.length; });
+        const logits = new Float32Array(offsets[count]);
+        evaluations.forEach((evaluation, index) => logits.set(evaluation.logits, offsets[index]));
+        owned.submit(tokens, Float32Array.from(evaluations, (evaluation) => evaluation.value), offsets, logits);
+      }
+      const completed = owned.simulations();
+      if (completed - lastYield >= 8 || !count) {
+        await yieldControl();
+        checkCancelled();
+        lastYield = completed;
+      }
+    }
+    if (owned.simulations() !== search.simulations) {
+      throw new DeltrelAiError('protocol', 'WASM session did not consume its new simulation budget.');
+    }
+    owned.complete();
+    const rootActionsResult = Array.from(owned.actions());
+    const rootVisits = Array.from(owned.visits());
+    const rootQ = Array.from(owned.q_values());
+    const rootPolicy = Array.from(owned.policy_target());
+    const inheritedVisits = Array.from(owned.inherited_visits());
+    const totalVisits = Array.from(owned.total_visits());
+    const actionCode = owned.selected_action();
+    const selectedValue = owned.selected_action_value();
+    const rootValue = owned.root_value() ?? rootEvaluation.value;
+    const length = rootActions.length;
+    const nonnegativeInteger = (value: number) => Number.isInteger(value) && value >= 0;
+    if (!arraysEqual(rootActionsResult, rootActions) ||
+        [rootVisits, rootQ, rootPolicy, inheritedVisits, totalVisits].some((row) => row.length !== length) ||
+        ![...rootVisits, ...inheritedVisits, ...totalVisits].every(nonnegativeInteger) ||
+        !rootQ.every((value) => Number.isFinite(value) && Math.abs(value) <= 1) ||
+        !rootPolicy.every((value) => Number.isFinite(value) && value >= 0 && value <= 1) ||
+        Math.abs(rootPolicy.reduce((sum, value) => sum + value, 0) - 1) > 1e-4 ||
+        rootVisits.reduce((sum, value) => sum + value, 0) !== search.simulations ||
+        !totalVisits.every((value, index) => value === rootVisits[index] + inheritedVisits[index]) ||
+        actionCode === undefined || !rootActionsResult.includes(actionCode) ||
+        selectedValue === undefined || !Number.isFinite(selectedValue) || Math.abs(selectedValue) > 1 ||
+        rootQ[rootActionsResult.indexOf(actionCode)] !== selectedValue ||
+        !Number.isFinite(rootValue) || Math.abs(rootValue) > 1) {
+      throw new DeltrelAiError('protocol', 'WASM session result is malformed.');
+    }
+    const result = { actionCode, swapRecommended: semantic.swapAvailable && selectedValue < -options.swapDeadZone,
+      rootValue, rootActions: rootActionsResult, rootVisits, rootQ, rootPolicy, rootEvaluation,
+      inheritedVisits, totalVisits, reusedNodes: owned.reused_nodes(), reusedVisits: owned.reused_visits() };
+    checkCancelled();
+    if (options.subtreeReuse && owned.unique_nodes() <= maxNodes) {
+      runtime.completedSearch = { session: owned, context };
+      owned = null;
+    }
+    return result;
+  } finally { owned?.free?.(); }
+}
+
+async function chooseAction(
+  taskId: string,
+  request: DeltrelAiRequest,
+  requestedSearch: DeltrelAiSearchBudget | null,
+  signal: AbortSignal,
+): Promise<LocalSearchResult> {
+  ensureNotCancelled(taskId);
+  const runtimeStarted = nowMs();
+  const runtime = await getRuntime(signal);
+  const modelLoad = nowMs() - runtimeStarted;
+  ensureNotCancelled(taskId);
+  const search = requestedSearch ?? {
+    simulations: runtime.manifest.search.simulations,
+    maxConsidered: runtime.manifest.search.maxConsidered,
+  };
+  if (
+    search.simulations > runtime.manifest.search.maximumSimulations ||
+    search.maxConsidered > runtime.manifest.search.maximumMaxConsidered
+  ) {
+    throw new DeltrelAiError(
+      'protocol',
+      'Browser AI search budget exceeds the loaded runtime limits.',
+    );
+  }
+  const searchStarted = nowMs();
+  const root = replayAndVerify(request, runtime.wasm);
+  let tree: WasmSearchTree | null = null;
+  let scheduler: WasmGumbel | null = null;
+  try {
+    if (usesExperimentalSearch(runtime.manifest)) {
+      const result = await runSessionSearch(runtime, root, request.state, search,
+        () => { ensureNotCancelled(taskId); if (signal.aborted) throw new DeltrelAiError('cancelled', 'Local AI request cancelled.'); },
+        () => yieldToCancellation(taskId));
+      return { ...result, outcome: result.rootEvaluation.outcome,
+        modelValue: result.rootEvaluation.value, searchValue: result.rootEvaluation.value,
+        expectedMargin: result.rootEvaluation.expectedMargin, modelVersion: runtime.manifest.modelVersion,
+        modelIdentity: runtime.manifest.modelVersion, search,
+        timingMs: { modelLoad, inferenceSearch: nowMs() - searchStarted } };
+    }
+    tree = new runtime.wasm.WasmSearchTree(
+      root,
+      runtime.manifest.search.cVisit,
+      runtime.manifest.search.cScale,
+    );
+    const rootActions = tree.root_actions();
+    if (!arraysEqual(rootActions, request.legalActions)) {
+      throw new DeltrelAiError('protocol', 'WASM root action layout is incompatible.');
+    }
+    const rootToken = tree.root_token();
+    const rootEvaluation = await evaluate(runtime, request.state, rootActions);
+    ensureNotCancelled(taskId);
+    if (tree.root_token() !== rootToken) {
+      throw new DeltrelAiError('stale', 'WASM root evaluation token changed.');
+    }
+    tree.initialize_root(rootToken, rootEvaluation.value, rootEvaluation.logits);
+
+    scheduler = new runtime.wasm.WasmGumbel(
+      rootEvaluation.logits,
+      search.simulations,
+      search.maxConsidered,
+      runtime.manifest.search.cVisit,
+      runtime.manifest.search.cScale,
+      root.hash64(),
+    );
+    let simulations = 0;
+    const actions = tree.actions();
+    while (!scheduler.done()) {
+      ensureNotCancelled(taskId);
+      const candidate = scheduler.next_scheduled?.()
+        ?? scheduler.next(tree.completed_q(), tree.visits());
+      if (candidate < 0 || candidate >= actions.length) {
+        throw new DeltrelAiError('protocol', 'WASM Gumbel scheduler returned an invalid edge.');
+      }
+      const needsEvaluation = tree.start(actions[candidate]);
+      if (needsEvaluation) {
+        const token = tree.pending_token();
+        const leaf = tree.pending_state();
+        try {
+          const leafActions = tree.pending_actions();
+          const leafSemantic = semanticFromWasm(request.state.rings, leaf);
+          const leafEvaluation = await evaluate(runtime, leafSemantic, leafActions);
+          ensureNotCancelled(taskId);
+          if (tree.pending_token() !== token) {
+            throw new DeltrelAiError('stale', 'WASM leaf evaluation token changed.');
+          }
+          tree.finish(token, leafEvaluation.value, leafEvaluation.logits);
+        } finally {
+          leaf.free?.();
+        }
+      }
+      scheduler.record(candidate);
+      simulations += 1;
+      if (simulations % 8 === 0) await yieldToCancellation(taskId);
+    }
+    if (simulations !== search.simulations) {
+      throw new DeltrelAiError('protocol', 'WASM search did not consume its exact budget.');
+    }
+    return {
+      ...summarizeSearch(
+        tree,
+        scheduler,
+        rootEvaluation.value,
+        request.state.swapAvailable,
+        runtime.manifest.search.swapDeadZone,
+      ),
+      outcome: rootEvaluation.outcome,
+      modelValue: rootEvaluation.value,
+      searchValue: rootEvaluation.value,
+      expectedMargin: rootEvaluation.expectedMargin,
+      modelVersion: runtime.manifest.modelVersion,
+      modelIdentity: runtime.manifest.modelVersion,
+      search,
+      timingMs: {
+        modelLoad,
+        inferenceSearch: nowMs() - searchStarted,
+      },
+    };
+  } finally {
+    scheduler?.free?.();
+    tree?.free?.();
+    root.free?.();
+  }
+}
+
+async function runChoose(
+  command: Extract<DeltrelAiWorkerCommand, { type: 'choose' }>,
+  queuedAt: number,
+) {
+  const taskController = taskControllers.get(command.taskId);
+  try {
+    if (!taskController) throw new DeltrelAiError('cancelled', 'Local AI request cancelled.');
+    const startedAt = nowMs();
+    const result = await chooseAction(
+      command.taskId,
+      command.request,
+      command.search,
+      taskController.signal,
+    );
+    ensureNotCancelled(command.taskId);
+    const nodeCount = command.request.state.stones.length;
+    const response = makeAiResponse(
+      command.request,
+      result.swapRecommended
+        ? { type: 'swap' }
+        : codeToAction(result.actionCode, nodeCount),
+    );
+    const decision = parseDeltrelAiDecision(command.request, {
+      response,
+      analysis: {
+        perspective: command.request.state.toMove,
+        stateHash: command.request.stateHash,
+        outcome: result.outcome,
+        modelValue: result.modelValue,
+        searchValue: result.searchValue,
+        rootValue: result.rootValue,
+        swapRecommended: result.swapRecommended,
+        expectedMargin: result.expectedMargin,
+        rootActions: result.rootActions.map((code) => codeToAction(code, nodeCount)),
+        rootPolicy: result.rootPolicy,
+        rootQ: result.rootQ,
+        rootVisits: result.rootVisits,
+        modelVersion: result.modelVersion,
+        modelStep: null,
+        modelIdentity: result.modelIdentity,
+        simulations: result.search.simulations,
+        maxConsidered: result.search.maxConsidered,
+        timingMs: {
+          queue: startedAt - queuedAt,
+          modelLoad: result.timingMs.modelLoad,
+          inferenceSearch: result.timingMs.inferenceSearch,
+          total: nowMs() - queuedAt,
+        },
+      },
+    });
+    scope.postMessage({
+      type: 'result',
+      taskId: command.taskId,
+      decision,
+    });
+  } catch (error) {
+    const aiError = asDeltrelAiError(error);
+    if (aiError.code !== 'cancelled') {
+      scope.postMessage(workerErrorEvent(command.taskId, aiError));
+    }
+  } finally {
+    knownTasks.delete(command.taskId);
+    cancelled.delete(command.taskId);
+    taskControllers.delete(command.taskId);
+  }
+}
+
+scope.addEventListener('message', (event) => {
+  let command: DeltrelAiWorkerCommand;
+  try {
+    command = parseWorkerCommand(event.data);
+  } catch (error) {
+    const taskId =
+      typeof event.data === 'object' &&
+      event.data !== null &&
+      'taskId' in event.data &&
+      typeof event.data.taskId === 'string'
+        ? event.data.taskId
+        : 'invalid';
+    scope.postMessage(workerErrorEvent(taskId, error));
+    return;
+  }
+
+  if (command.type === 'cancel') {
+    if (knownTasks.has(command.taskId)) {
+      cancelled.add(command.taskId);
+      taskControllers.get(command.taskId)?.abort();
+    }
+    return;
+  }
+  if (knownTasks.has(command.taskId)) {
+    scope.postMessage(
+      workerErrorEvent(
+        command.taskId,
+        new DeltrelAiError('protocol', 'Duplicate local AI worker task id.'),
+      ),
+    );
+    return;
+  }
+
+  knownTasks.add(command.taskId);
+  taskControllers.set(command.taskId, new AbortController());
+  const queuedAt = nowMs();
+  queue = queue.then(() => runChoose(command, queuedAt)).catch(() => {
+    // runChoose contains its own typed error boundary; keep the queue usable.
+  });
+});
+
+scope.postMessage({ type: 'ready', protocolVersion: DELTREL_AI_WORKER_PROTOCOL_VERSION });

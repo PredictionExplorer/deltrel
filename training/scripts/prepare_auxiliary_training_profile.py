@@ -14,12 +14,12 @@ from typing import Sequence
 import yaml
 
 from scripts.prepare_pie_policy_gate import _publish, _reference
-from startrain import search_allocation_gate as admission
-from startrain.auxiliary_policy import (
+from deltreltrain import search_allocation_gate as admission
+from deltreltrain.auxiliary_policy import (
     auxiliary_training_config,
     validate_auxiliary_prediction_transition,
 )
-from startrain.config import load_config
+from deltreltrain.config import load_config
 
 
 def prepare_auxiliary_gate(

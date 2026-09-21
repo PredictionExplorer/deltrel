@@ -8,20 +8,20 @@ import re
 import pytest
 import torch
 
-from startrain.actor_publication import PublicationProgress
-from startrain.losses import LossWeights
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.replay import (
+from deltreltrain.actor_publication import PublicationProgress
+from deltreltrain.losses import LossWeights
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.replay import (
     MISSING_OUTCOME,
     TARGET_POLICY,
     TARGET_SOFT_POLICY,
     collate_replay_samples,
     read_replay_shard,
 )
-from startrain.replay_store import ReplayStore
-from startrain.runtime import RunIdentity
-from startrain.selfplay import SelfPlayActor, SelfPlayConfig, SelfPlayIdentity
-from startrain.training import train_step
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.selfplay import SelfPlayActor, SelfPlayConfig, SelfPlayIdentity
+from deltreltrain.training import train_step
 from test_selfplay_streaming import Evaluator, Sink, near_terminal_native
 
 
@@ -82,7 +82,7 @@ VALUE_HEADS = ("outcome_head.", "score_margin_head.", "ownership_head.", "alive_
 def test_clean_stop_salvages_policy_masks_without_completing_games(
     enabled, fast, source_role
 ):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     sink = Sink()
     actor = make_actor(
         native,
@@ -130,7 +130,7 @@ def test_clean_stop_salvages_policy_masks_without_completing_games(
 
 @pytest.mark.native
 def test_sparse_recorded_policies_have_contiguous_storage_and_original_move_provenance():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     sink = Sink()
     actor = make_actor(
         native,
@@ -163,7 +163,7 @@ def test_sparse_recorded_policies_have_contiguous_storage_and_original_move_prov
 
 @pytest.mark.native
 def test_no_recorded_policy_and_evaluator_failure_do_not_salvage():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     sink = Sink()
     actor = make_actor(
         native,
@@ -202,7 +202,7 @@ def test_no_recorded_policy_and_evaluator_failure_do_not_salvage():
 
 @pytest.mark.native
 def test_mixed_completed_and_salvaged_publications_do_not_inflate_games():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     snapshots = []
     sink = Sink()
     records = []
@@ -249,7 +249,7 @@ def test_real_replay_accepts_abandoned_policy_group_and_preserves_missing_labels
     tmp_path,
     precision,
 ):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
 
     class StoredEvaluator(Evaluator):
         model_identity = model_version = "sha256-" + "b" * 64
@@ -326,7 +326,7 @@ def test_real_replay_accepts_abandoned_policy_group_and_preserves_missing_labels
 
 @pytest.mark.native
 def test_weighted_mixed_batches_get_value_gradients_only_from_completed_games():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     normal_sink = Sink()
     normal_actor = make_actor(
         near_terminal_native(native, []), configuration(), normal_sink
@@ -395,7 +395,7 @@ def test_salvage_is_disabled_by_default_and_flag_is_strict_boolean():
 
 @pytest.mark.native
 def test_failed_durable_append_does_not_report_salvaged_rows():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
 
     class FailingSink(Sink):
         def append(self, samples, **metadata):

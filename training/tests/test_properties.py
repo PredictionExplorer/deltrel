@@ -4,9 +4,9 @@ import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from startrain.actions import extract_sample_actions, relocate_sample_actions
-from startrain.losses import LossWeights, TrainingTargets, compute_losses
-from startrain.model import StarModelOutput
+from deltreltrain.actions import extract_sample_actions, relocate_sample_actions
+from deltreltrain.losses import LossWeights, TrainingTargets, compute_losses
+from deltreltrain.model import DeltrelModelOutput
 
 
 @settings(max_examples=100, deadline=None)
@@ -51,7 +51,7 @@ def test_masked_policy_loss_is_finite_and_never_trains_illegal_logits(
     legal[:, selected] = True
     policy = torch.zeros(batch_size, actions)
     policy[:, selected] = 1.0
-    output = StarModelOutput(
+    output = DeltrelModelOutput(
         policy_logits=policy_logits,
         outcome_logits=torch.zeros(batch_size, 2, requires_grad=True),
         score_margin_logits=torch.zeros(batch_size, 303, requires_grad=True),

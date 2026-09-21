@@ -38,8 +38,8 @@ else:
     from prepare_elo_ablation import verify_winner_snapshot
 
 SCHEMA_VERSION = 1
-REPORT_NAME = "startrain-elo-ablation-cross-seed-comparison"
-POLICY_REPORT = "startrain-elo-ablation-adoption-policy"
+REPORT_NAME = "deltreltrain-elo-ablation-cross-seed-comparison"
+POLICY_REPORT = "deltreltrain-elo-ablation-adoption-policy"
 REQUIRED_SEEDS = (17, 18, 19)
 RANKING_OBJECTIVE = "ring_10_only"
 TRAINING_OBJECTIVE = "ring10_only"
@@ -548,7 +548,7 @@ def _validate_queue_deployment(
         raise _ConfirmationError(str(error)) from error
     if (
         manifest.get("schema_version") != SCHEMA_VERSION
-        or manifest.get("report") != "startrain-elo-ablation-deployment"
+        or manifest.get("report") != "deltreltrain-elo-ablation-deployment"
     ):
         raise _ConfirmationError("per-seed deployment manifest is unsupported")
     manifest_source = _mapping(manifest.get("source"), "deployment source")

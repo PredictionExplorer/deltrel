@@ -125,7 +125,7 @@ def _deployment(
             _write_json(
                 root / "learner" / "champion-warm-start.json",
                 {
-                    "format": "startrain.champion-warm-start",
+                    "format": "deltreltrain.champion-warm-start",
                     "schema_version": 1,
                     "status": "active",
                     "source_model_identity": "seed-champion",
@@ -167,7 +167,7 @@ def _deployment(
         f"[Timer]\nOnUnitActiveSec=3600s\nUnit={backup_service_unit.name}\n",
         encoding="utf-8",
     )
-    environment = tmp_path / "edgeconnect-ablation.env"
+    environment = tmp_path / "deltrel-ablation.env"
     environment.write_text("CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7\n", encoding="utf-8")
     comparison = tmp_path / "reports" / "comparison.json"
     manifest = tmp_path / "deployment" / "manifest.json"
@@ -530,11 +530,11 @@ def test_manifest_pins_active_champion_warm_start_artifacts(tmp_path: Path) -> N
 
 
 def test_systemd_queue_triggers_finalizer_for_both_outcomes() -> None:
-    queue = (DEPLOY / "edgeconnect-startrain-ablation-queue.service.example").read_text(
+    queue = (DEPLOY / "deltrel-deltreltrain-ablation-queue.service.example").read_text(
         encoding="utf-8"
     )
     finalizer = (
-        DEPLOY / "edgeconnect-startrain-ablation-finalize.service.example"
+        DEPLOY / "deltrel-deltreltrain-ablation-finalize.service.example"
     ).read_text(encoding="utf-8")
 
     assert "OnSuccess=@FINALIZE_UNIT@" in queue
@@ -544,15 +544,15 @@ def test_systemd_queue_triggers_finalizer_for_both_outcomes() -> None:
     assert "RestartPreventExitStatus=2 3" in queue
     assert "run_elo_ablation_queue.py finalize" in finalizer
     backup_service = (
-        DEPLOY / "edgeconnect-startrain-ablation-replay-backup.service.example"
+        DEPLOY / "deltrel-deltreltrain-ablation-replay-backup.service.example"
     ).read_text(encoding="utf-8")
     backup_timer = (
-        DEPLOY / "edgeconnect-startrain-ablation-replay-backup.timer.example"
+        DEPLOY / "deltrel-deltreltrain-ablation-replay-backup.timer.example"
     ).read_text(encoding="utf-8")
     assert "backup-active-arm" in backup_service
     assert "--queue-state @QUEUE_STATE@" in backup_service
     assert "Persistent=true" in backup_timer
-    assert "edgeconnect-startrain-@QUEUE_ID@-replay-backup.service" in backup_timer
+    assert "deltrel-deltreltrain-@QUEUE_ID@-replay-backup.service" in backup_timer
 
 
 @pytest.mark.parametrize(
@@ -647,7 +647,7 @@ def test_queue_runs_exclusively_persists_completion_and_finalizes(
     assert persisted["finalization"]["status"] == "completed"
     assert persisted["finalization"]["comparison_status"] == "incomplete"
     handoff = json.loads(deployment.handoff.read_text(encoding="utf-8"))
-    assert handoff["report"] == "startrain-continuity-handoff-request"
+    assert handoff["report"] == "deltreltrain-continuity-handoff-request"
     assert handoff["requested"] is True
     assert handoff["action"] == "request_fallback"
     assert handoff["requested_action"] == "reconcile_training_continuity"
@@ -735,7 +735,7 @@ def test_verified_single_seed_winner_still_requests_only_fallback(
     ) -> dict[str, object]:
         return {
             "schema_version": 1,
-            "report": "startrain-elo-ablation-comparison",
+            "report": "deltreltrain-elo-ablation-comparison",
             "status": "complete",
             "ranking_objective": "ring_10_only",
             "ranking_metric": (

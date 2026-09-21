@@ -9,8 +9,8 @@ import yaml
 
 from scripts import training_disaster_recovery as recovery
 from scripts.validate_continuous_profile import validate_continuous_config
-from startrain import search_allocation_gate as gate
-from startrain.config import load_config
+from deltreltrain import search_allocation_gate as gate
+from deltreltrain.config import load_config
 from test_graph_cache_controlled_activation import controlled_admission_fixture
 from test_search_allocation_gate import reference, write_json
 from test_training_disaster_recovery import _fixture, _snapshot, _snapshot_payload
@@ -29,7 +29,7 @@ def test_controlled_receipt_rejects_invalid_live_dependency(reference):
     with pytest.raises(recovery.DisasterRecoveryError):
         recovery._controlled_graph_activation_references(
             {
-                "format": "startrain.graph-cache-controlled-activation",
+                "format": "deltreltrain.graph-cache-controlled-activation",
                 "schema_version": 1,
                 "live_workload_evidence": reference,
             }
@@ -38,7 +38,7 @@ def test_controlled_receipt_rejects_invalid_live_dependency(reference):
 
 def test_controlled_receipt_enumerates_only_its_pinned_live_dependency():
     payload = {
-        "format": "startrain.graph-cache-controlled-activation",
+        "format": "deltreltrain.graph-cache-controlled-activation",
         "schema_version": 1,
         "live_workload_evidence": {"path": "evidence/live.json", "sha256": "a" * 64},
     }

@@ -15,8 +15,8 @@ from scripts.replay_manifest_backup import (
     backup_lock,
     create_backup_with_evidence,
 )
-from startrain.replay_store import ReplayStore
-from startrain.runtime import RunIdentity, atomic_json
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import RunIdentity, atomic_json
 
 
 def _database(run_root: Path, value: str) -> None:
@@ -341,7 +341,7 @@ def test_active_arm_backup_obeys_queue_state_and_interval(tmp_path) -> None:
         queue_state,
         {
             "schema_version": 1,
-            "report": "startrain-elo-ablation-queue",
+            "report": "deltreltrain-elo-ablation-queue",
             "queue_status": "running",
             "arms": [
                 {

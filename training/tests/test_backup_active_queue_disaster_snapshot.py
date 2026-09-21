@@ -35,7 +35,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
         mapping,
         {
             "schema_version": 1,
-            "report": "startrain-active-queue-disaster-backup-map",
+            "report": "deltreltrain-active-queue-disaster-backup-map",
             "queue_state": str(state),
             "backup_mount": str(mount),
             "arms": {

@@ -38,17 +38,17 @@ An offline native replay of the current saved arena checked **192 completed game
 
 That is approximately **1.51× arena search-work headroom**, not a measured wall-time or Elo multiplier. It also removes expensive tails when few games remain active. Faster evaluation can advance the champion sooner and release the shared GPU sooner.
 
-Implementation: reuse [native complete_clinches](../crates/star-py/src/lib.rs#L891) in the [arena move loop](../startrain/arena.py#L2255), backed by [the existing proof](../crates/star-engine/src/scoring.rs#L301). Preserve actual move histories and reconstruct proof finalization during resume. Explicitly guard pending pie swaps and keep statistical stopping on completed balanced cycles. Do not substitute the optimal-play endgame solver: unlike a proven clinch, optimal play can change the winner relative to the actual agents' continuations.
+Implementation: reuse [native complete_clinches](../crates/deltrel-py/src/lib.rs#L891) in the [arena move loop](../deltreltrain/arena.py#L2255), backed by [the existing proof](../crates/deltrel-engine/src/scoring.rs#L301). Preserve actual move histories and reconstruct proof finalization during resume. Explicitly guard pending pie swaps and keep statistical stopping on completed balanced cycles. Do not substitute the optimal-play endgame solver: unlike a proven clinch, optimal play can change the winner relative to the actual agents' continuations.
 
 Validation: exact outcome and pair-accounting tests, interruption/resume and pie tests, followed by a fixed-model H100 comparison over identical games. Charge proof overhead and complete arena elapsed time.
 
 **2. Cache verification of unchanged learner checkpoints — smallest substantial code cleanup**
 
-Every outer learner loop calls plateau control. Under the live `reduce_lr_keep_weights` setting, [the plateau decision](../startrain/learner.py#L4763) loads both champion and candidate manifests even when neither has changed. [Manifest loading](../startrain/checkpoint.py#L1732) hashes the entire referenced checkpoint.
+Every outer learner loop calls plateau control. Under the live `reduce_lr_keep_weights` setting, [the plateau decision](../deltreltrain/learner.py#L4763) loads both champion and candidate manifests even when neither has changed. [Manifest loading](../deltreltrain/checkpoint.py#L1732) hashes the entire referenced checkpoint.
 
 Both live checkpoints are about **212.7 MB**. Three warm, read-only server repeats measured approximately **0.192 seconds each**, or **0.384 seconds and 425.4 MB of cached file reads per plateau pass**. The three-hour logs contain at least 7,159 corresponding loop passes. Multiplying the isolated measurement by those events suggests about **2,749 seconds, or 25% of elapsed time**, and about **3 TB of cached bytes processed**. This is a cost extrapolation, not direct profiling of the production process, and these bytes should not be called physical disk I/O.
 
-Keep verification, but reuse verified immutable manifests while the pointer, manifest, and checkpoint file identities remain unchanged. Reverify on change or replacement; retain explicit verification at actual load/recovery boundaries. Actors already have a related changed-pointer cache at [actor.py](../startrain/actor.py#L1983).
+Keep verification, but reuse verified immutable manifests while the pointer, manifest, and checkpoint file identities remain unchanged. Reverify on change or replacement; retain explicit verification at actual load/recovery boundaries. Actors already have a related changed-pointer cache at [actor.py](../deltreltrain/actor.py#L1983).
 
 This is an excellent engineering fix, but removing it alone need not increase training steps: the current 1.5 UTD cap still limits updates to available new data. It removes needless latency and increases capacity available for a subsequent UTD experiment.
 
@@ -66,11 +66,11 @@ The history selector checks whether a model is eligible now, without enough allo
 
 Of its 22,135 published positions, five-second telemetry brackets place publication callbacks for **21,623 after expiry** and 512 before. Callbacks follow durable commits, so the exact number committed after expiry still needs ledger verification. The task-completion metric labels the entire task ineligible. The implicated rows represent about **1.75%** of completed-task volume; that is an indicative waste estimate, not a proven discard count.
 
-At [history selection](../startrain/actor.py#L1813), require age headroom based on measured task duration and learner progress; stop refilling an expiring task and select younger history while preserving the role mix. Do not increase the global replay-age limit to hide the waste. Validate publication-time eligibility, historical diversity, and policy provenance.
+At [history selection](../deltreltrain/actor.py#L1813), require age headroom based on measured task duration and learner progress; stop refilling an expiring task and select younger history while preserving the role mix. Do not increase the global replay-age limit to hide the waste. Validate publication-time eligibility, historical diversity, and policy provenance.
 
 **5. Give arena the existing fast inference path and keep its batches populated**
 
-Actors enable CUDA graphs through per-actor overrides; [arena evaluator construction](../startrain/promotion.py#L170) inherits global `cuda_graphs: false`. Arena also retains first-visit width 1 while actors use 8.
+Actors enable CUDA graphs through per-actor overrides; [arena evaluator construction](../deltreltrain/promotion.py#L170) inherits global `cuda_graphs: false`. Arena also retains first-visit width 1 while actors use 8.
 
 One current 300.8-second arena slice had **zero graph replays**, 17,839 physical neural calls, **31% padding**, and about 1,421 logical evaluator rows/second. Its preparation and return counters are large, although overlapping counters must not be added as a clean wall-time decomposition.
 
@@ -80,11 +80,11 @@ First screen arena-specific cached graph execution and first-visit batching with
 
 **6. Remove repeated replay scans and redundant trusted-batch work**
 
-[Window validation](../startrain/learner.py#L2743) sums eligible replay and checks every selected path, often at least twice per outer loop. A current window contains approximately **23,641 spans**. Warm read-only probes measured **0.087 seconds per eligibility/path sweep**. Bound these checks by revision, relevant step boundaries, and a validation cadence; maintain GC pins and fail correctly on missing data.
+[Window validation](../deltreltrain/learner.py#L2743) sums eligible replay and checks every selected path, often at least twice per outer loop. A current window contains approximately **23,641 spans**. Warm read-only probes measured **0.087 seconds per eligibility/path sweep**. Bound these checks by revision, relevant step boundaries, and a validation cadence; maintain GC pins and fail correctly on missing data.
 
-The freshness check [constructs a successor selection](../startrain/learner.py#L2857), discards it, and then selects again when opening the new window. Warm selection cost was **0.60–0.62 seconds**. The pinning selection runs under a write transaction. Reuse a safely validated successor or shorten transactional work. A first 4.66-second probe included cold topology construction and is **not** the production steady-state cost.
+The freshness check [constructs a successor selection](../deltreltrain/learner.py#L2857), discards it, and then selects again when opening the new window. Warm selection cost was **0.60–0.62 seconds**. The pinning selection runs under a write transaction. Reuse a safely validated successor or shorten transactional work. A first 4.66-second probe included cold topology construction and is **not** the production steady-state cost.
 
-There are also three unused Boolean-index tensors in [loss validation](../startrain/losses.py#L412), constructed even for trusted batches. Move them inside the validation branch. Native first-visit submission also validates/submits independent sessions serially at [star-py](../crates/star-py/src/lib.rs#L2126), unlike the legacy parallel path. An alternating CPU probe found 38.7% more submit time for width 8, but the native time is small relative to neural inference; this is a lower-priority cleanup, not a major fleet multiplier.
+There are also three unused Boolean-index tensors in [loss validation](../deltreltrain/losses.py#L412), constructed even for trusted batches. Move them inside the validation branch. Native first-visit submission also validates/submits independent sessions serially at [deltrel-py](../crates/deltrel-py/src/lib.rs#L2126), unlike the legacy parallel path. An alternating CPU probe found 38.7% more submit time for width 8, but the native time is small relative to neural inference; this is a lower-priority cleanup, not a major fleet multiplier.
 
 **7. Establish a usable Elo/hour feedback loop, then tune learning reuse**
 
@@ -102,4 +102,4 @@ Implement exact arena clinches, learner manifest-verification caching, and the g
 
 Earlier improvements—live policy publication, shared scheduling, fast-27 allocation, first-visit width 8 for actors, four loader workers, lazy native state export, and shared geometry—are already deployed and are not new recommendations. The local-message prototypes that failed numerical gates remain unsuitable for immediate activation. No evidence supports calling the current learner a 10× easy kernel optimization opportunity.
 
-The compact [evidence record](training-efficiency-audit-evidence-20260912.json) retains measured summaries, source identities, and offline proofs. Full temporary observations are under `/tmp/edgeconnect-audit-20260912` on this workstation.
+The compact [evidence record](training-efficiency-audit-evidence-20260912.json) retains measured summaries, source identities, and offline proofs. Full temporary observations are under `/tmp/deltrel-audit-20260912` on this workstation.

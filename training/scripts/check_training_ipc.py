@@ -9,7 +9,7 @@ import pwd
 import subprocess
 
 SCHEMA_VERSION = 1
-REPORT_NAME = "startrain-training-ipc-preflight"
+REPORT_NAME = "deltreltrain-training-ipc-preflight"
 
 
 def _parser() -> argparse.ArgumentParser:

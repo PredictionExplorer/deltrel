@@ -5,8 +5,8 @@ from dataclasses import replace
 
 import pytest
 
-from startrain.selfplay import GameVariant, SelfPlayConfig, VariantMixtureConfig
-from startrain.variant_training import (
+from deltreltrain.selfplay import GameVariant, SelfPlayConfig, VariantMixtureConfig
+from deltreltrain.variant_training import (
     is_pie_training,
     training_mode_weights,
     training_segment_quotas,

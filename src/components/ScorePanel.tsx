@@ -1,8 +1,8 @@
 'use client';
 
-import type { GameState } from '@/lib/star/game';
-import type { ScoreResult } from '@/lib/star/scoring';
-import type { CompletionBounds } from '@/lib/star/completion-bounds';
+import type { GameState } from '@/lib/deltrel/game';
+import type { ScoreResult } from '@/lib/deltrel/scoring';
+import type { CompletionBounds } from '@/lib/deltrel/completion-bounds';
 import { PLAYER_COLORS } from './theme';
 
 interface ScorePanelProps {
@@ -34,7 +34,7 @@ function CompletionForecast({
   return (
     <section
       aria-labelledby="completion-forecast-heading"
-      className="rounded-2xl border border-white/10 bg-white/[0.025] px-4 py-3.5"
+      className="rounded-2xl border border-white/10 bg-estuary-surface px-4 py-3.5"
     >
       <header className="flex items-center justify-between gap-3">
         <h3
@@ -170,27 +170,27 @@ export function ScorePanel({
             : 'Current player scores';
   const rows: ScoreRow[] = [
     {
-      label: 'Peries',
-      values: [score.players[0].peries, score.players[1].peries],
+      label: 'Shores',
+      values: [score.players[0].shores, score.players[1].shores],
     },
     {
-      label: 'Quarks',
-      values: [`${score.players[0].quarks} / 5`, `${score.players[1].quarks} / 5`],
+      label: 'Capes',
+      values: [`${score.players[0].capes} / 5`, `${score.players[1].capes} / 5`],
     },
     {
-      label: 'Stars',
-      values: [score.players[0].stars, score.players[1].stars],
+      label: 'Networks',
+      values: [score.players[0].networks, score.players[1].networks],
     },
     {
-      label: 'Quark peri',
+      label: 'Cape bonus',
       values: [
-        score.players[0].quarkPeri ? '+1' : '—',
-        score.players[1].quarkPeri ? '+1' : '—',
+        score.players[0].capeBonus ? '+1' : '—',
+        score.players[1].capeBonus ? '+1' : '—',
       ],
-      accents: [score.players[0].quarkPeri === 1, score.players[1].quarkPeri === 1],
+      accents: [score.players[0].capeBonus === 1, score.players[1].capeBonus === 1],
     },
     {
-      label: 'Star award',
+      label: 'Connection award',
       values: [
         score.players[0].award > 0
           ? `+${score.players[0].award}`
@@ -214,7 +214,7 @@ export function ScorePanel({
 
       <section
         aria-label={scoreAriaLabel}
-        className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm"
+        className="overflow-hidden rounded-2xl border border-white/10 bg-estuary-surface backdrop-blur-sm"
       >
         <div className="grid grid-cols-[minmax(5.5rem,1fr)_minmax(4rem,5.25rem)_minmax(4rem,5.25rem)] items-stretch border-b border-white/10">
           <div className="flex items-end px-3 py-3 text-xs text-muted">Score</div>
@@ -272,7 +272,7 @@ export function ScorePanel({
                 <span
                   key={player}
                   className={`border-l border-white/[0.07] px-2 text-center tabular-nums ${
-                    row.accents?.[player] ? 'text-gold' : 'text-ink'
+                    row.accents?.[player] ? 'text-sand' : 'text-ink'
                   }`}
                 >
                   {row.values[player]}
@@ -287,7 +287,7 @@ export function ScorePanel({
         {view.kind === 'proof' ? (
           <>
             every open node is hypothetically assigned to{' '}
-            <span className="text-gold">
+            <span className="text-sand">
               {config.playerNames[view.fillPlayer]}
             </span>{' '}
             — this is not a final score
@@ -298,25 +298,25 @@ export function ScorePanel({
           ) : (
             <>
               projection as of move{' '}
-              <span className="text-gold">{view.ply}</span> — return to live to
+              <span className="text-sand">{view.ply}</span> — return to live to
               continue playing
             </>
           )
         ) : view.kind === 'ended' ? (
           <>this is the live position that was left on the board, not a final score</>
-        ) : score.contestedPeries > 0 ? (
+        ) : score.contestedShores > 0 ? (
           <>
-            <span className="text-gold">{score.contestedPeries}</span> per
-            {score.contestedPeries === 1 ? 'i is' : 'ies are'} still contested · totals reach{' '}
-            <span className="text-gold">{game.board.periCount + 1}</span> when decided
+            <span className="text-sand">{score.contestedShores}</span> shore
+            {score.contestedShores === 1 ? ' is' : 's are'} still contested · totals reach{' '}
+            <span className="text-sand">{game.board.shoreCount + 1}</span> when decided
           </>
         ) : game.over ? (
           <>
-            every peri is claimed — totals sum to{' '}
-            <span className="text-gold">{game.board.periCount + 1}</span>
+            every shore is claimed — totals sum to{' '}
+            <span className="text-sand">{game.board.shoreCount + 1}</span>
           </>
         ) : (
-          <>the current projection assigns every peri — play can still change it</>
+          <>the current projection assigns every shore — play can still change it</>
         )}
       </p>
 

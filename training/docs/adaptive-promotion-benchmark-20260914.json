@@ -6,8 +6,8 @@
   "simulation_wall_seconds": 1.4046073339413851,
   "source_sha256": {
     "scripts/benchmark_adaptive_promotion.py": "e1ceb29bc1840471f530d623a8d865373cfb058581358ed23040f3bf8d2879ef",
-    "startrain/balanced_evaluation.py": "ce6442cae0f11bf11c1c7672724646f4155077fcd4aff16365420277ec487e9f",
-    "startrain/adaptive_promotion.py": "6d1c6f15be88ce5a705c76c3a7fcd946172c3e7cdf093b82c9a988bce866c7aa"
+    "deltreltrain/balanced_evaluation.py": "ce6442cae0f11bf11c1c7672724646f4155077fcd4aff16365420277ec487e9f",
+    "deltreltrain/adaptive_promotion.py": "6d1c6f15be88ce5a705c76c3a7fcd946172c3e7cdf093b82c9a988bce866c7aa"
   },
   "revision_authority": "source-file-digests; no claim that current HEAD contains these edits",
   "budget": {

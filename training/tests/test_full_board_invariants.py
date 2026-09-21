@@ -5,10 +5,10 @@ import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from startrain.contracts import SCORE_MARGIN_MAX, SCORE_MARGIN_MIN
-from startrain.features import DoubleStarPosition, encode_position
-from startrain.scoring import score_position
-from startrain.topology import MAX_NODES, SUPPORTED_RINGS, get_topology
+from deltreltrain.contracts import SCORE_MARGIN_MAX, SCORE_MARGIN_MIN
+from deltreltrain.features import DoubleDeltrelPosition, encode_position
+from deltreltrain.scoring import score_position
+from deltreltrain.topology import MAX_NODES, SUPPORTED_RINGS, get_topology
 
 
 @st.composite
@@ -46,12 +46,12 @@ def assert_decisive_full_score(rings: int, stones: torch.Tensor) -> None:
     zero, one = score.players
     margin = zero.total - one.total
 
-    assert score.contested_peries == 0
-    assert zero.peries + one.peries == topology.peri_count
-    assert zero.quarks + one.quarks == 5
-    assert zero.quark_peri + one.quark_peri == 1
+    assert score.contested_shores == 0
+    assert zero.shores + one.shores == topology.shore_count
+    assert zero.capes + one.capes == 5
+    assert zero.cape_bonus + one.cape_bonus == 1
     assert zero.award + one.award == 0
-    assert zero.total + one.total == topology.peri_count + 1
+    assert zero.total + one.total == topology.shore_count + 1
     assert margin != 0
     assert abs(margin) % 2 == 1
     assert SCORE_MARGIN_MIN <= margin <= SCORE_MARGIN_MAX
@@ -70,7 +70,7 @@ def test_deterministic_full_board_patterns_are_terminal_and_bounded(
         stones = topology.ring_of.to(torch.int8) % 2
     else:
         stones = topology.sector_of.to(torch.int8) % 2
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=rings,
         stones=stones,
         to_move=1,
@@ -97,7 +97,7 @@ def test_every_full_board_has_a_decisive_binary_outcome(
     rings, stones = board
     assert_decisive_full_score(rings, stones)
     for to_move in (0, 1):
-        position = DoubleStarPosition(
+        position = DoubleDeltrelPosition(
             rings=rings,
             stones=stones,
             to_move=to_move,
@@ -139,7 +139,7 @@ def test_one_empty_position_has_one_legal_fill_and_then_terminates(
     empty = raw_empty % topology.n
     live_stones = full_stones.clone()
     live_stones[empty] = -1
-    live = DoubleStarPosition(
+    live = DoubleDeltrelPosition(
         rings=rings,
         stones=live_stones,
         to_move=0,
@@ -153,7 +153,7 @@ def test_one_empty_position_has_one_legal_fill_and_then_terminates(
 
     filled_stones = live_stones.clone()
     filled_stones[empty] = live.to_move
-    filled = DoubleStarPosition(
+    filled = DoubleDeltrelPosition(
         rings=rings,
         stones=filled_stones,
         to_move=live.to_move,

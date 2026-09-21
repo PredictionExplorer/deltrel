@@ -5,9 +5,9 @@ import pytest
 
 from scripts.prepare_pie_training_profile import pie_training_config, prepare_profile
 from scripts.validate_continuous_profile import validate_continuous_config
-from startrain.balanced_evaluation import balanced_cells, evaluation_contract
-from startrain.checkpoint import game_configs_compatible
-from startrain.config import ConfigError, RingWeightStage, load_config
+from deltreltrain.balanced_evaluation import balanced_cells, evaluation_contract
+from deltreltrain.checkpoint import game_configs_compatible
+from deltreltrain.config import ConfigError, RingWeightStage, load_config
 
 CONFIGS = Path(__file__).parents[1] / "configs"
 

@@ -8,7 +8,7 @@ from test_native_inference_keys import adapter
 
 
 def test_prediction_only_clear_forces_recomputation_preserves_namespace_and_graphs():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     inference = adapter()
     request = native.SearchBatch(native.StateBatch(4, 2), simulations=1).root_requests()
     first = inference.evaluate(request)

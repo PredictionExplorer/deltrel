@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 """Export schema-v4 feature vectors for positions of the conformance fixture.
 
-The browser encoder (``src/lib/star/ai/features.ts``) must reproduce
-``startrain.features.encode_position`` bit for bit, otherwise the published
+The browser encoder (``src/lib/deltrel/ai/features.ts``) must reproduce
+``deltreltrain.features.encode_position`` bit for bit, otherwise the published
 ONNX model sees inputs it was never trained on. This script replays the
 rules-v3 conformance games in Python, encodes a fixed set of positions, and
-writes ``testdata/star/features-v4.json``; ``tests/test_feature_fixture.py``
+writes ``testdata/deltrel/features-v4.json``; ``tests/test_feature_fixture.py``
 pins the checked-in file and ``features.test.ts`` compares against it.
 """
 
@@ -22,22 +22,22 @@ import torch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "training"))
 
-from startrain.contracts import (  # noqa: E402
+from deltreltrain.contracts import (  # noqa: E402
     EXTERNAL_FEATURE_SCHEMA_ID,
     FEATURE_SCHEMA_HASH,
     FEATURE_SCHEMA_VERSION,
     RULES_HASH_WIRE,
 )
-from startrain.features import (  # noqa: E402
+from deltreltrain.features import (  # noqa: E402
     GLOBAL_FEATURE_NAMES,
     NODE_FEATURE_NAMES,
-    DoubleStarPosition,
+    DoubleDeltrelPosition,
     encode_position,
 )
 
-CONFORMANCE_PATH = ROOT / "testdata" / "star" / "conformance-v3.json"
-FIXTURE_PATH = ROOT / "testdata" / "star" / "features-v4.json"
-FIXTURE_SCHEMA = "edgeconnect.star.model-features.fixture.v4"
+CONFORMANCE_PATH = ROOT / "testdata" / "deltrel" / "conformance-v3.json"
+FIXTURE_PATH = ROOT / "testdata" / "deltrel" / "features-v4.json"
+FIXTURE_SCHEMA = "deltrel.model-features.fixture.v4"
 # State indices sampled from every conformance game: the opening, an
 # early mid-game position, and a late position (clamped to the trace).
 SAMPLE_INDICES = (0, 1, 3, 9)
@@ -52,10 +52,10 @@ def _mask(nodes: list[int], count: int) -> torch.Tensor:
 
 def position_from_fixture(
     config: dict[str, Any], state: dict[str, Any]
-) -> DoubleStarPosition:
+) -> DoubleDeltrelPosition:
     stones = torch.tensor(state["stones"], dtype=torch.int8)
     count = stones.numel()
-    return DoubleStarPosition(
+    return DoubleDeltrelPosition(
         rings=int(config["rings"]),
         stones=stones,
         to_move=int(state["toMove"]),

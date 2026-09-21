@@ -8,26 +8,26 @@ import threading
 
 import pytest
 
-from startrain import actor as actors
-from startrain.actor import (
+from deltreltrain import actor as actors
+from deltreltrain.actor import (
     ActorSupervisor,
     SharedModelRegistry,
     resolve_actor_experiment,
 )
-from startrain.cohort_work import (
+from deltreltrain.cohort_work import (
     CompatibleWorkCoordinator,
     WeightedFairChoice,
     WorkBundle,
 )
-from startrain.config import (
+from deltreltrain.config import (
     ActorPipelineConfig,
     GPUWorkerConfig,
     RingWeightStage,
     load_config,
 )
-from startrain.runtime import RunIdentity
-from startrain.selfplay import SelfPlayMetrics, VariantMixtureConfig
-from startrain.variant_training import training_variant_allowed
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.selfplay import SelfPlayMetrics, VariantMixtureConfig
+from deltreltrain.variant_training import training_variant_allowed
 
 
 def metadata(role="candidate", ring=10, mode="double-standard", games=128):

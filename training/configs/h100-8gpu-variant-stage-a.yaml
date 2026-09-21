@@ -4,7 +4,7 @@
 # (run id variant-network). The replay store already holds the previous
 # lineage's positions labelled with the legacy champion's soft targets, so the
 # learner distils that knowledge through loss.teacher_* while the actors
-# generate standard Double *Star games with real history planes. The
+# generate standard Double Deltrel games with real history planes. The
 # transferred shards leave the replay window once the learner passes
 # learner.max_replay_lag_steps; migrate to the Stage B profile afterwards to
 # turn on the variant mixture.

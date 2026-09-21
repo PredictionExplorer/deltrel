@@ -7,13 +7,13 @@ import pytest
 import yaml
 
 from scripts import migrate_continuous_profile as migration
-from startrain.balanced_evaluation import evaluation_contract
-from startrain.config import load_config
-from startrain.config_compatibility import (
+from deltreltrain.balanced_evaluation import evaluation_contract
+from deltreltrain.config import load_config
+from deltreltrain.config_compatibility import (
     compatible_config_epoch_payloads,
     without_training_execution_defaults,
 )
-from startrain.selfplay import SelfPlayConfig
+from deltreltrain.selfplay import SelfPlayConfig
 from test_continuous_profile_migration import _fixture, _write_json
 
 

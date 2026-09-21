@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from scripts import benchmark_local_message_adapter as benchmark
-from startrain.config import ActorPipelineConfig, load_config
+from deltreltrain.config import ActorPipelineConfig, load_config
 from pathlib import Path
 
 
@@ -115,8 +115,8 @@ def test_gpu_pipeline_overrides_global_graph_and_plan_preserves_raw_pin(tmp_path
         checkpoint_sha256="checkpoint",
     )
     with (
-        patch("startrain.config.load_config", return_value=config),
-        patch("startrain.checkpoint.load_model_manifest", return_value=manifest),
+        patch("deltreltrain.config.load_config", return_value=config),
+        patch("deltreltrain.checkpoint.load_model_manifest", return_value=manifest),
     ):
         plan = benchmark.plan(args)
     assert plan["actor_gpu_id"] == 1
@@ -154,11 +154,11 @@ def test_explicit_actor_selection_does_not_apply_another_gpu_pipeline():
 
 @pytest.mark.native
 def test_benchmark_fixtures_are_real_distinct_native_requests():
-    import star_native
+    import deltrel_native
 
-    first = benchmark.requests(star_native, 10, 64, 91)
-    second = benchmark.requests(star_native, 10, 64, 91)
-    assert type(first) is star_native.EvalBatch
+    first = benchmark.requests(deltrel_native, 10, 64, 91)
+    second = benchmark.requests(deltrel_native, 10, 64, 91)
+    assert type(first) is deltrel_native.EvalBatch
     assert first is not second
     assert first.inference_keys() == second.inference_keys()
     assert len(set(first.inference_keys())) == 64

@@ -9,9 +9,9 @@ import pytest
 import torch
 
 from scripts import smoke_adaptive_promotion_cuda as smoke
-from startrain.config import ArenaConfig, load_config
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.model import GraphResTNet, ModelConfig
+from deltreltrain.config import ArenaConfig, load_config
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.model import GraphResTNet, ModelConfig
 
 
 def stopped_run(tmp_path, monkeypatch):
@@ -39,7 +39,7 @@ def stopped_run(tmp_path, monkeypatch):
     (root / "learner" / "recovery.json").write_text(
         json.dumps(
             {
-                "format": "startrain.recovery-pointer",
+                "format": "deltreltrain.recovery-pointer",
                 "schema_version": 1,
                 "run_id": "run",
                 "generation_family": "family",
@@ -266,7 +266,7 @@ def test_reused_shadow_failure_stays_failed_after_successful_cold_retry(monkeypa
 @pytest.mark.native
 @pytest.mark.parametrize("mode", ["classic", "double"])
 def test_eighteen_native_slots_stop_after_one_wave_and_resume_history(mode):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     model = GraphResTNet(
         ModelConfig(width=8, rrt_groups=1, attention_heads=2, kv_heads=1)
     ).eval()

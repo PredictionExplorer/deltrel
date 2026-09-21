@@ -54,7 +54,7 @@ its six-entry model registry; each adapter can retain up to eight graph shapes.
 Normal cooperative evaluation on GPU 7 remains enabled.
 
 Rollout evidence is retained under
-`/home/ubuntu/edgeconnect-rollouts/selfplay-pipeline-20260909`. A controlled stop
+`/home/ubuntu/deltrel-rollouts/selfplay-pipeline-20260909`. A controlled stop
 must save the latest learner heartbeat step, and the profile migrator must
 report zero discarded learner steps and preserve pending evaluation state.
 Operational canary gates require current worker identities, durable games,
@@ -71,7 +71,7 @@ when complete.
 
 The immutable runtime is commit
 `cb3d7ef616dcb9f785bc42628a692319ea778f68`, installed at
-`/home/ubuntu/edgeconnect-releases/variant-selfplay-pipeline-20260909`.
+`/home/ubuntu/deltrel-releases/variant-selfplay-pipeline-20260909`.
 The native artifact remains
 `8ac6163f61a8299d4fdbc1112746f2509dd48f341bb89450ba07e7bd9a19901a`.
 The final target-host runtime checks passed 126 tests in 27.41 seconds.
@@ -261,7 +261,7 @@ accepted report is preserved as `cohort-budget-canary-accepted.json`.
 
 The fleet became active at 07:46:36 UTC on immutable runtime
 `151f65a7c2969d134e44fc6e628963c4da49f92d`, installed at
-`/home/ubuntu/edgeconnect-releases/variant-selfplay-production-20260909`.
+`/home/ubuntu/deltrel-releases/variant-selfplay-production-20260909`.
 Profile `profile-selfplay-production-20260909.yaml` has SHA-256
 `8dc815f2f25790d882a690313857694b3c3c9d27ea58b5dcef64dd951e6a8a07`;
 its canonical configuration hash is

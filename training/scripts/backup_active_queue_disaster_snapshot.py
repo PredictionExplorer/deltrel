@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = 1
-REPORT_NAME = "startrain-active-queue-disaster-backup"
+REPORT_NAME = "deltreltrain-active-queue-disaster-backup"
 
 
 class ActiveQueueBackupError(RuntimeError):
@@ -47,7 +47,7 @@ def _absolute_path(value: object, *, name: str) -> Path:
 def _mapping_arms(mapping: Mapping[str, object]) -> Mapping[str, object]:
     if (
         mapping.get("schema_version") != SCHEMA_VERSION
-        or mapping.get("report") != "startrain-active-queue-disaster-backup-map"
+        or mapping.get("report") != "deltreltrain-active-queue-disaster-backup-map"
     ):
         raise ActiveQueueBackupError("backup mapping has an incompatible contract")
     arms = mapping.get("arms")

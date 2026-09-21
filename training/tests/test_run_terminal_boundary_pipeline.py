@@ -7,7 +7,7 @@ import os
 import pwd
 import stat
 
-from startrain.arena import ARENA_RESULT_SCHEMA_VERSION
+from deltreltrain.arena import ARENA_RESULT_SCHEMA_VERSION
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -55,7 +55,7 @@ def _artifact(path: Path) -> dict[str, object]:
 
 def test_terminal_boundary_unit_redirects_compile_caches() -> None:
     unit = (
-        DEPLOY / "edgeconnect-startrain-terminal-boundary.service.example"
+        DEPLOY / "deltrel-deltreltrain-terminal-boundary.service.example"
     ).read_text(encoding="utf-8")
 
     assert "ProtectHome=read-only" in unit
@@ -116,7 +116,7 @@ def _model_manifest(
     _write_json(
         path,
         {
-            "format": "startrain.model-manifest",
+            "format": "deltreltrain.model-manifest",
             "schema_version": 3,
             "model_identity": identity,
             "model_step": step,
@@ -140,7 +140,7 @@ def _model_pointer(
     promotion_result: Path | None = None,
 ) -> None:
     document = {
-        "format": "startrain.model-pointer",
+        "format": "deltreltrain.model-pointer",
         "schema_version": 2,
         "role": role,
         "manifest": str(manifest.relative_to(path.parent)),
@@ -258,14 +258,14 @@ class BoundaryFixture:
             "checkpoint.py",
             "continuity.py",
         ):
-            path = self.training_dir / "startrain" / name
+            path = self.training_dir / "deltreltrain" / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(f"# fixture {name}\n", encoding="utf-8")
-            runtime_paths[f"startrain/{name}"] = path
-        snapshot_module = self.training_dir / "starserve" / "snapshot.py"
+            runtime_paths[f"deltreltrain/{name}"] = path
+        snapshot_module = self.training_dir / "deltrelserve" / "snapshot.py"
         snapshot_module.parent.mkdir(parents=True, exist_ok=True)
         snapshot_module.write_text("# fixture snapshot.py\n", encoding="utf-8")
-        runtime_paths["starserve/snapshot.py"] = snapshot_module
+        runtime_paths["deltrelserve/snapshot.py"] = snapshot_module
         release_manifest = self.training_dir.parent / "release-manifest.json"
         _write_json(release_manifest, {"commit": "a" * 40})
         self.source_unit = tmp_path / "release" / "source.service"
@@ -317,16 +317,16 @@ class BoundaryFixture:
                 "warm_starter": _artifact(
                     runtime_paths["prepare_champion_warm_start.py"]
                 ),
-                "runtime_module": _artifact(runtime_paths["startrain/runtime.py"]),
-                "training_module": _artifact(runtime_paths["startrain/training.py"]),
-                "learner_module": _artifact(runtime_paths["startrain/learner.py"]),
+                "runtime_module": _artifact(runtime_paths["deltreltrain/runtime.py"]),
+                "training_module": _artifact(runtime_paths["deltreltrain/training.py"]),
+                "learner_module": _artifact(runtime_paths["deltreltrain/learner.py"]),
                 "checkpoint_module": _artifact(
-                    runtime_paths["startrain/checkpoint.py"]
+                    runtime_paths["deltreltrain/checkpoint.py"]
                 ),
                 "continuity_module": _artifact(
-                    runtime_paths["startrain/continuity.py"]
+                    runtime_paths["deltreltrain/continuity.py"]
                 ),
-                "snapshot_module": _artifact(runtime_paths["starserve/snapshot.py"]),
+                "snapshot_module": _artifact(runtime_paths["deltrelserve/snapshot.py"]),
                 "replay_backup": _artifact(runtime_paths["replay_manifest_backup.py"]),
                 "disaster_recovery": _artifact(
                     runtime_paths["training_disaster_recovery.py"]
@@ -351,7 +351,7 @@ class BoundaryFixture:
                 "profile": _artifact(self.profile),
                 "unit": {
                     **_artifact(self.source_unit),
-                    "name": "edgeconnect-source.service",
+                    "name": "deltrel-source.service",
                 },
                 "promotion_status": str(self.status_path),
                 "candidate_pointer": str(self.candidate_pointer),
@@ -415,7 +415,7 @@ class BoundaryFixture:
                 "activation_manifest": str(state_root / "queue-activation.json"),
                 "queue_unit": {
                     **_artifact(self.queue_unit),
-                    "name": "edgeconnect-calibration-queue.service",
+                    "name": "deltrel-calibration-queue.service",
                 },
                 "finalize_unit": _artifact(self.finalize_unit),
                 "environment": _artifact(self.environment),
@@ -426,7 +426,7 @@ class BoundaryFixture:
                 ),
                 "execution_lock_path": str(state_root / "execution.lock"),
                 "source_commit": "a" * 40,
-                "orchestrator": "startrain-orchestrate",
+                "orchestrator": "deltreltrain-orchestrate",
                 "poll_seconds": 1,
                 "launch_timeout_seconds": 30,
                 "max_transient_retries": 2,
@@ -690,7 +690,7 @@ class FakeAdapters:
         root = Path(calibration["run_root_parent"]) / "terminal-control-seed47"
         plan = {
             "schema_version": 1,
-            "report": "startrain-elo-ablation-plan",
+            "report": "deltreltrain-elo-ablation-plan",
             "initialization": "fork",
             "source_run_root": policy["source"]["run_root"],
             "source_winner_snapshot": dict(winner_snapshot),
@@ -766,7 +766,7 @@ class FakeAdapters:
         champion = winner_snapshot["champion"]
         metadata = {
             "schema_version": 1,
-            "report": "startrain-elo-ablation-branch",
+            "report": "deltreltrain-elo-ablation-branch",
             "treatment": label,
             "source_winner_snapshot": dict(winner_snapshot),
             "anchor": {
@@ -801,7 +801,7 @@ class FakeAdapters:
         _write_json(
             marker,
             {
-                "format": "startrain.champion-warm-start",
+                "format": "deltreltrain.champion-warm-start",
                 "schema_version": 1,
                 "status": "prepared" if prepare_only else "active",
                 "source_model_identity": champion["model_identity"],
@@ -846,7 +846,7 @@ class FakeAdapters:
             path,
             {
                 "schema_version": 1,
-                "report": "startrain-elo-ablation-deployment",
+                "report": "deltreltrain-elo-ablation-deployment",
                 "plan": plan["path"],
             },
         )
@@ -1403,7 +1403,7 @@ def test_default_fallback_releases_owned_operator_hold(
     _write_json(hold_path, {"policy_sha256": policy_sha256})
     reconciled: list[str] = []
     monkeypatch.setattr(
-        "startrain.continuity.reconcile_training_continuity",
+        "deltreltrain.continuity.reconcile_training_continuity",
         lambda path: reconciled.append(str(path)) or {"status": "active_fallback"},
     )
     request = {
@@ -1668,7 +1668,7 @@ def test_default_queue_launch_requires_pinned_unit_and_durable_state(
             )
 
     monkeypatch.setattr(
-        "startrain.continuity.SystemdUnitManager",
+        "deltreltrain.continuity.SystemdUnitManager",
         Manager,
     )
     result = DefaultTerminalBoundaryAdapters().launch_queue(

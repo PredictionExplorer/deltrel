@@ -12,14 +12,14 @@ from typing import cast
 from dataclasses import dataclass
 from pathlib import Path
 
-from startrain.arena import (
+from deltreltrain.arena import (
     ARENA_RESULT_SCHEMA_VERSION,
     ArenaGame,
     ArenaPair,
     elo_from_probability,
     pair_confidence_sequence,
 )
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     ModelManifest,
     VerifiedModelConfig,
     extract_verified_manifest_config,
@@ -28,12 +28,12 @@ from startrain.checkpoint import (
     sha256_file,
     verify_file,
 )
-from startrain.model import GraphResTNet
-from startrain.runtime import atomic_json
+from deltreltrain.model import GraphResTNet
+from deltreltrain.runtime import atomic_json
 
-SUITE_FORMAT = "startrain.architecture-ablation-suite"
+SUITE_FORMAT = "deltreltrain.architecture-ablation-suite"
 SUITE_SCHEMA_VERSION = 1
-EVIDENCE_FORMAT = "startrain.architecture-ablation-evidence"
+EVIDENCE_FORMAT = "deltreltrain.architecture-ablation-evidence"
 EVIDENCE_SCHEMA_VERSION = 1
 ARCHITECTURE_RESULT_KIND = "architecture_evaluation"
 PAIR_ERROR_PROBABILITY = 0.025

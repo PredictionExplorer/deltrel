@@ -9,14 +9,14 @@ import pytest
 import torch
 from torch.utils.data import DataLoader
 
-from startrain.losses import compute_losses
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.replay import (
+from deltreltrain.losses import compute_losses
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.replay import (
     ReplayBatch,
     _validate_homogeneous_geometry,
     collate_replay_samples,
 )
-from startrain.training import DeviceBatchPrefetcher, train_step
+from deltreltrain.training import DeviceBatchPrefetcher, train_step
 from test_training import sample
 
 
@@ -116,7 +116,7 @@ def test_mutated_cached_topology_is_replaced_from_validated_source():
 def test_pinning_rebinds_geometry_without_revalidation(monkeypatch):
     batch = collate_replay_samples([sample(4)] * 2)
     monkeypatch.setattr(torch.Tensor, "pin_memory", lambda tensor: tensor.clone())
-    with patch("startrain.replay._validate_homogeneous_geometry") as validate:
+    with patch("deltreltrain.replay._validate_homogeneous_geometry") as validate:
         pinned = batch.pin_memory()
     validate.assert_not_called()
     assert pinned.homogeneous_ring == 4

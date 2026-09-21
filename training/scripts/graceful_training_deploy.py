@@ -25,7 +25,7 @@ from typing import Any, cast
 
 import yaml
 
-from startrain.runtime import atomic_json
+from deltreltrain.runtime import atomic_json
 from scripts.migrate_continuous_profile import (
     MigrationRequest,
     apply_migration,
@@ -256,7 +256,7 @@ def reconcile_stopped_heartbeat(
         "reconciliation requires the exact stopped step and epoch",
     )
     require(
-        checkpoint.get("format") == "startrain.recovery-pointer"
+        checkpoint.get("format") == "deltreltrain.recovery-pointer"
         and type(checkpoint.get("schema_version")) is int
         and checkpoint["schema_version"] == 1
         and isinstance(checkpoint.get("checkpoint_sha256"), str)
@@ -282,8 +282,8 @@ def reconcile_stopped_heartbeat(
         and checkpoint.get("generation_family") == identity.get("generation_family"),
         "reconciliation checkpoint run identity differs",
     )
-    from startrain.checkpoint import inspect_checkpoint
-    from startrain.config import load_config
+    from deltreltrain.checkpoint import inspect_checkpoint
+    from deltreltrain.config import load_config
 
     profile_path, source_commit = active_authority(root)
     profile_sha256 = digest(profile_path)
@@ -1208,7 +1208,7 @@ class Deployment:
         # Retain those heads with zero losses. Later source-only rollouts use
         # their original profile, including existing auxiliary loss weights.
         recovery_source = self.source
-        from startrain.auxiliary_upgrade import AUXILIARY_LOSSES
+        from deltreltrain.auxiliary_upgrade import AUXILIARY_LOSSES
 
         candidate_payload = yaml.safe_load(self.candidate.read_text())
         candidate_model = candidate_payload.get("model", {})

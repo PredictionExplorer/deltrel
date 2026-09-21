@@ -46,7 +46,7 @@ training service stopped if the operator is interrupted.
 The baseline runtime is `8425b5b`, and the initial pinned model is candidate
 112,309 (`sha256-a8ea68f6b30c716492b6a2904311fd8f9c4855f35107daa98f81414172fd7541`).
 Source pins, profiles, benchmark results, and rollback evidence are retained in
-`/home/ubuntu/edgeconnect-rollouts/selfplay-efficiency-20260907`.
+`/home/ubuntu/deltrel-rollouts/selfplay-efficiency-20260907`.
 
 ### Completed seven-arm matrix
 
@@ -89,7 +89,7 @@ was faster in this sample than the eight-thread arm; more CPU threads therefore
 cannot be assumed to improve this workload.
 
 The independent, unmodified comparison output is
-`/home/ubuntu/edgeconnect-rollouts/selfplay-efficiency-20260907/matrix-comparison-independent.json`.
+`/home/ubuntu/deltrel-rollouts/selfplay-efficiency-20260907/matrix-comparison-independent.json`.
 Individual reports include actual precision, TF32 settings, CPU affinity,
 thread counts, effective per-model cache limits, timed inference deltas, and
 before/after GPU ownership evidence.
@@ -120,7 +120,7 @@ lossless graceful stop.
 ## Deployment and validation
 
 The immutable runtime is
-`/home/ubuntu/edgeconnect-releases/variant-selfplay-efficiency-20260907`, pinned to
+`/home/ubuntu/deltrel-releases/variant-selfplay-efficiency-20260907`, pinned to
 source commit `585a54a821ff7cbeba553af154b4218585a5b7a5`. All 427 source files
 were verified against their recorded checksums. The native artifact SHA-256 is
 `8ac6163f61a8299d4fdbc1112746f2509dd48f341bb89450ba07e7bd9a19901a`.

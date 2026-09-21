@@ -10,18 +10,18 @@ import numpy as np
 import pytest
 
 from scripts import benchmark_selfplay_search_cost as benchmark
-from startrain.config import load_config
-from startrain.native import positions_from_native
-from startrain.replay import ReplaySample
-from startrain.replay_store import ReplayStore
-from startrain.runtime import RunIdentity
-from startrain.selfplay import SelfPlayConfig, VariantMixtureConfig
+from deltreltrain.config import load_config
+from deltreltrain.native import positions_from_native
+from deltreltrain.replay import ReplaySample
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.selfplay import SelfPlayConfig, VariantMixtureConfig
 from test_native_inference_keys import adapter
 
 
 @pytest.fixture
 def native():
-    return pytest.importorskip("star_native")
+    return pytest.importorskip("deltrel_native")
 
 
 def sample(
@@ -423,7 +423,7 @@ def test_frozen_selection_respects_immutable_step_ready_and_contract_filters(
 
 
 def actor_override_config(base):
-    from startrain.config import ActorPipelineConfig, GPUWorkerConfig
+    from deltreltrain.config import ActorPipelineConfig, GPUWorkerConfig
 
     workers = (
         GPUWorkerConfig(gpu_id=0, role="learner", cpu_threads=1),

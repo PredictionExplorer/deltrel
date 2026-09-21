@@ -5,11 +5,11 @@ import pytest
 import torch
 from torch import nn
 
-from startrain.features import DoubleStarPosition
-from startrain.gradient_diagnostics import collect_gradient_diagnostics
-from startrain.optim import build_optimizer
-from startrain.replay import ReplayBatch, ReplaySample, collate_replay_samples
-from startrain.topology import get_topology
+from deltreltrain.features import DoubleDeltrelPosition
+from deltreltrain.gradient_diagnostics import collect_gradient_diagnostics
+from deltreltrain.optim import build_optimizer
+from deltreltrain.replay import ReplayBatch, ReplaySample, collate_replay_samples
+from deltreltrain.topology import get_topology
 from test_replay import decisive_score, normalized_policy, sample_for
 
 
@@ -31,7 +31,7 @@ def batch():
 
 
 def variant_sample(mode, handicap, pie, ring=4):
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=ring,
         stones=torch.full((get_topology(ring).n,), -1, dtype=torch.int8),
         to_move=0,
@@ -93,7 +93,7 @@ def test_preclip_attribution_routes_shares_zero_missing_and_snapshot_ownership()
 
 
 def test_reuses_precomputed_norms_without_reducing_gradients_again(monkeypatch):
-    import startrain.gradient_diagnostics as diagnostics
+    import deltreltrain.gradient_diagnostics as diagnostics
 
     model = RoutedModel()
     optimizer = build_optimizer(model)
@@ -174,7 +174,7 @@ def test_sparse_gradients_and_external_optimizer_routes_are_supported():
 @pytest.mark.parametrize("prefer_native", (False, True))
 def test_exact_six_modes_survive_collation_and_transfers(prefer_native, monkeypatch):
     if prefer_native:
-        pytest.importorskip("star_native")
+        pytest.importorskip("deltrel_native")
     variants = (
         ("classic", 1, False),
         ("double", 1, False),

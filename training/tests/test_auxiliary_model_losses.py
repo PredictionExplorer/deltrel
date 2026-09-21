@@ -6,11 +6,11 @@ import math
 import pytest
 import torch
 
-from startrain.features import encode_batch
-from startrain.losses import LossWeights, compute_losses
-from startrain.model import GraphResTNet, ModelConfig, model_parameter_count
-from startrain.symmetry import D5Transform, permute_nodes, transform_position
-from startrain.topology import SUPPORTED_RINGS, get_topology
+from deltreltrain.features import encode_batch
+from deltreltrain.losses import LossWeights, compute_losses
+from deltreltrain.model import GraphResTNet, ModelConfig, model_parameter_count
+from deltreltrain.symmetry import D5Transform, permute_nodes, transform_position
+from deltreltrain.topology import SUPPORTED_RINGS, get_topology
 from test_losses import outputs, targets
 from test_model import position
 
@@ -18,9 +18,9 @@ from test_model import position
 AUX_NAMES = (
     "opponent_reply",
     "second_stone",
-    "final_peries",
-    "final_stars",
-    "final_quarks",
+    "final_shores",
+    "final_networks",
+    "final_capes",
 )
 
 
@@ -38,9 +38,9 @@ def auxiliary_outputs():
     return outputs()._replace(
         opponent_reply_logits=torch.zeros(2, 4, requires_grad=True),
         second_stone_logits=torch.zeros(2, 3, requires_grad=True),
-        final_peries_logits=torch.zeros(2, 2, 51, requires_grad=True),
-        final_stars_logits=torch.zeros(2, 2, 26, requires_grad=True),
-        final_quarks_logits=torch.zeros(2, 2, 6, requires_grad=True),
+        final_shores_logits=torch.zeros(2, 2, 51, requires_grad=True),
+        final_networks_logits=torch.zeros(2, 2, 26, requires_grad=True),
+        final_capes_logits=torch.zeros(2, 2, 6, requires_grad=True),
     )
 
 
@@ -51,9 +51,9 @@ def auxiliary_targets():
         # The unavailable row intentionally contains invalid values.
         opponent_reply=torch.tensor([[0.0, 0.0, 0.0, 1.0], [float("nan")] * 4]),
         second_stone=torch.tensor([[0.0, 1.0, 0.0], [float("nan")] * 3]),
-        final_peries=torch.tensor([[4, 7], [-999, -999]]),
-        final_stars=torch.tensor([[2, 1], [-999, -999]]),
-        final_quarks=torch.tensor([[2, 3], [-999, -999]]),
+        final_shores=torch.tensor([[4, 7], [-999, -999]]),
+        final_networks=torch.tensor([[2, 1], [-999, -999]]),
+        final_capes=torch.tensor([[2, 3], [-999, -999]]),
         **{f"{name}_mask": available.clone() for name in AUX_NAMES},
     )
 
@@ -97,14 +97,14 @@ def test_auxiliary_shapes_board_limits_and_action_masks():
         out = model(*batch.model_args())
     assert out.opponent_reply_logits.shape == (4, batch.max_nodes + 1)
     assert out.second_stone_logits.shape == (4, batch.max_nodes)
-    assert out.final_peries_logits.shape == (4, 2, 51)
-    assert out.final_stars_logits.shape == (4, 2, 26)
-    assert out.final_quarks_logits.shape == (4, 2, 6)
-    minimum = torch.finfo(out.final_peries_logits.dtype).min
+    assert out.final_shores_logits.shape == (4, 2, 51)
+    assert out.final_networks_logits.shape == (4, 2, 26)
+    assert out.final_capes_logits.shape == (4, 2, 6)
+    minimum = torch.finfo(out.final_shores_logits.dtype).min
     for row, ring in enumerate(SUPPORTED_RINGS):
-        assert (out.final_peries_logits[row, :, 5 * ring + 1 :] == minimum).all()
-        assert (out.final_stars_logits[row, :, (5 * ring) // 2 + 1 :] == minimum).all()
-        assert (out.final_peries_logits[row, :, : 5 * ring + 1] > minimum).all()
+        assert (out.final_shores_logits[row, :, 5 * ring + 1 :] == minimum).all()
+        assert (out.final_networks_logits[row, :, (5 * ring) // 2 + 1 :] == minimum).all()
+        assert (out.final_shores_logits[row, :, : 5 * ring + 1] > minimum).all()
         assert out.opponent_reply_logits[row, -1] > minimum
     illegal = ~batch.legal_action_mask
     assert (out.opponent_reply_logits[:, :-1][illegal] == minimum).all()
@@ -194,7 +194,7 @@ def test_auxiliary_cross_entropies_and_gradients_mask_unavailable_rows(validate)
     expected_gradient = torch.full((2, 6), 0.1 / 6)
     expected_gradient[0, 2] -= 0.1
     expected_gradient[1, 3] -= 0.1
-    torch.testing.assert_close(output.final_quarks_logits.grad[0], expected_gradient)
+    torch.testing.assert_close(output.final_capes_logits.grad[0], expected_gradient)
 
 
 def test_missing_targets_and_zero_auxiliary_weights_have_finite_zero_gradients():
@@ -268,8 +268,8 @@ def test_legacy_model_has_no_auxiliary_supervision_diagnostics():
     [
         ({"opponent_reply_mask": None}, "occur together"),
         ({"second_stone_mask": torch.ones(2)}, "boolean"),
-        ({"final_quarks": torch.ones(2, 2)}, "integer"),
-        ({"final_quarks": torch.tensor([[6, 0], [0, 0]])}, "supported range"),
+        ({"final_capes": torch.ones(2, 2)}, "integer"),
+        ({"final_capes": torch.tensor([[6, 0], [0, 0]])}, "supported range"),
         (
             {"second_stone": torch.tensor([[0.0, 0.0, 1.0], [0.0, 0.0, 0.0]])},
             "empty nodes",
@@ -289,8 +289,8 @@ def test_auxiliary_contract_rejects_invalid_available_labels(change, match):
 def test_count_loss_rejects_impossible_board_class_and_transfers_optional_targets():
     output = auxiliary_outputs()
     with torch.no_grad():
-        output.final_stars_logits[:, :, 11:] = torch.finfo(torch.float32).min
-    target = replace(auxiliary_targets(), final_stars=torch.tensor([[11, 1], [-1, -1]]))
+        output.final_networks_logits[:, :, 11:] = torch.finfo(torch.float32).min
+    target = replace(auxiliary_targets(), final_networks=torch.tensor([[11, 1], [-1, -1]]))
     with pytest.raises(ValueError, match="impossible for the board size"):
         compute_losses(output, target, **loss_options())
     transferred = target.to("cpu")
@@ -314,9 +314,9 @@ def test_auxiliary_only_supervision_reaches_trunk_and_every_head():
         targets(1, n, n),
         opponent_reply=torch.cat((policy, torch.zeros(1, 1)), dim=-1),
         second_stone=policy,
-        final_peries=torch.tensor([[3, 4]]),
-        final_stars=torch.tensor([[1, 2]]),
-        final_quarks=torch.tensor([[2, 3]]),
+        final_shores=torch.tensor([[3, 4]]),
+        final_networks=torch.tensor([[1, 2]]),
+        final_capes=torch.tensor([[2, 3]]),
         **{f"{name}_mask": torch.ones(1, dtype=torch.bool) for name in AUX_NAMES},
     )
     weights = LossWeights(
@@ -343,9 +343,9 @@ def test_auxiliary_only_supervision_reaches_trunk_and_every_head():
             for head in (
                 "opponent_reply",
                 "second_stone",
-                "final_peries",
-                "final_stars",
-                "final_quarks",
+                "final_shores",
+                "final_networks",
+                "final_capes",
             )
         ):
             assert parameter.grad is not None and torch.isfinite(parameter.grad).all()

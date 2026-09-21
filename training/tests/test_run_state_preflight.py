@@ -17,7 +17,7 @@ from scripts.preflight_run_state import (
     main as preflight_main,
     run_state_preflight,
 )
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     inspect_checkpoint,
     load_model_manifest,
@@ -26,13 +26,13 @@ from startrain.checkpoint import (
     write_recovery_checkpoint,
     write_resume_cutover,
 )
-from startrain.config import load_config
-from startrain.learner import ImmutableModelPublisher
-from startrain.model import GraphResTNet
-from startrain.optim import build_optimizer
-from startrain.replay_store import ReplayStore
-from startrain.runtime import RunIdentity, atomic_json, require_launch_ready
-from startrain.training import build_scheduler
+from deltreltrain.config import load_config
+from deltreltrain.learner import ImmutableModelPublisher
+from deltreltrain.model import GraphResTNet
+from deltreltrain.optim import build_optimizer
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import RunIdentity, atomic_json, require_launch_ready
+from deltreltrain.training import build_scheduler
 
 CONFIGS = Path(__file__).parents[1] / "configs"
 

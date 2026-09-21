@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from startrain.config import ConfigError, LearnerConfig, TrainConfig
+from deltreltrain.config import ConfigError, LearnerConfig, TrainConfig
 
 
 def test_example_normalized_ema_resolves_per_global_batch() -> None:

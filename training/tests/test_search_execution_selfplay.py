@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from startrain.inference import InferenceResponse
-from startrain.search_options import FullSearchBudgetConfig, SearchExecutionConfig
-from startrain.selfplay import SelfPlayActor, SelfPlayConfig, SelfPlayIdentity
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.search_options import FullSearchBudgetConfig, SearchExecutionConfig
+from deltreltrain.selfplay import SelfPlayActor, SelfPlayConfig, SelfPlayIdentity
 from test_selfplay_streaming import Sink, sample_fingerprints
 
 
@@ -92,7 +92,7 @@ def run_tail(native, execution, *, sharp=False):
 
 @pytest.mark.native
 def test_first_visit_prefetch_preserves_selfplay_results_and_respects_row_cap():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     baseline = run_tail(native, SearchExecutionConfig())
     batched = run_tail(native, SearchExecutionConfig(first_visit_batch_size=4))
     assert [asdict(summary) for summary in baseline[1]] == [
@@ -120,7 +120,7 @@ def test_first_visit_prefetch_preserves_selfplay_results_and_respects_row_cap():
 
 @pytest.mark.native
 def test_entropy_full_cap_records_actual_budget_without_relabeling_full_targets():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     sink, summaries, _, _ = run_tail(
         native,
         SearchExecutionConfig(full_budget=FullSearchBudgetConfig(mode="root-entropy")),
@@ -139,7 +139,7 @@ def test_entropy_full_cap_records_actual_budget_without_relabeling_full_targets(
 
 @pytest.mark.native
 def test_reuse_keeps_one_session_and_evaluates_each_new_root():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     sink, summaries, _, observed = run_tail(
         native, SearchExecutionConfig(first_visit_batch_size=2, subtree_reuse=True)
     )

@@ -4,9 +4,9 @@ from dataclasses import replace
 import pytest
 import torch
 
-from startrain.contracts import SCORE_MARGIN_MAX, SCORE_MARGIN_MIN
-from startrain.losses import LossWeights, TrainingTargets, compute_losses
-from startrain.model import StarModelOutput
+from deltreltrain.contracts import SCORE_MARGIN_MAX, SCORE_MARGIN_MIN
+from deltreltrain.losses import LossWeights, TrainingTargets, compute_losses
+from deltreltrain.model import DeltrelModelOutput
 
 
 def test_loss_weights_reject_negative_nonfinite_and_all_zero() -> None:
@@ -18,8 +18,8 @@ def test_loss_weights_reject_negative_nonfinite_and_all_zero() -> None:
         LossWeights(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
 
 
-def outputs(batch: int = 2, nodes: int = 3, actions: int = 3) -> StarModelOutput:
-    return StarModelOutput(
+def outputs(batch: int = 2, nodes: int = 3, actions: int = 3) -> DeltrelModelOutput:
+    return DeltrelModelOutput(
         policy_logits=torch.zeros(batch, actions, requires_grad=True),
         outcome_logits=torch.zeros(batch, 2, requires_grad=True),
         score_margin_logits=torch.zeros(batch, 303, requires_grad=True),

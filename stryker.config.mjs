@@ -16,10 +16,10 @@ const config = {
     'training/**',
   ],
   mutate: [
-    'src/lib/star/game.ts',
-    'src/lib/star/scoring.ts',
-    'src/lib/star/symmetry.ts',
-    'src/lib/star/ai/protocol.ts',
+    'src/lib/deltrel/game.ts',
+    'src/lib/deltrel/scoring.ts',
+    'src/lib/deltrel/symmetry.ts',
+    'src/lib/deltrel/ai/protocol.ts',
   ],
   reporters: ['progress', 'clear-text', 'html'],
   thresholds: {

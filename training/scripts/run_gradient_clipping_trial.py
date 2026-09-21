@@ -3,11 +3,11 @@
 
 Prepare while production runs:
   --prepare-only --config PROFILE --recovery recovery.json --replay-root REPLAY
-  --output-dir NEW_EXPERIMENT --train-samples-per-cell 2048
+  --output-dir NEW_EXSHOREMENT --train-samples-per-cell 2048
   --validation-samples-per-cell 512
 
 After isolating the selected GPU:
-  --replay-manifest NEW_EXPERIMENT/frozen-replay.json --output-dir NEW_ARM
+  --replay-manifest NEW_EXSHOREMENT/frozen-replay.json --output-dir NEW_ARM
   --arms global --steps 600 --device cuda:1 --cpu-affinity 32-63
   --timeout-seconds 1800
 
@@ -33,7 +33,7 @@ import sys
 import time
 from typing import Any
 
-FORMAT = "startrain.gradient-clipping-trial-replay"
+FORMAT = "deltreltrain.gradient-clipping-trial-replay"
 RINGS = (4, 6, 8, 10)
 MODES = (
     "classic-standard",
@@ -85,7 +85,7 @@ def _disjoint_output(output: Path, sources: list[Path]) -> Path:
 def _copy_pin(
     source: Path, target: Path, expected: str | None = None
 ) -> dict[str, object]:
-    from startrain.checkpoint import sha256_file
+    from deltreltrain.checkpoint import sha256_file
 
     if source.is_symlink() or not source.is_file():
         raise ValueError(f"unsafe source artifact: {source}")
@@ -105,11 +105,11 @@ def _copy_pin(
 
 
 def prepare(args) -> dict[str, object]:
-    from startrain.checkpoint import load_recovery_pointer, sha256_file
-    from startrain.config import load_config
-    from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH
-    from startrain.replay import decode_replay_shard
-    from startrain.selfplay import GameVariant
+    from deltreltrain.checkpoint import load_recovery_pointer, sha256_file
+    from deltreltrain.config import load_config
+    from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH
+    from deltreltrain.replay import decode_replay_shard
+    from deltreltrain.selfplay import GameVariant
 
     config = load_config(args.config)
     _validate_production_config(config)
@@ -259,7 +259,7 @@ def prepare(args) -> dict[str, object]:
 
 
 def _validate_production_config(config) -> None:
-    from startrain.model import model_parameter_count
+    from deltreltrain.model import model_parameter_count
 
     if model_parameter_count(config.model) != 17_402_775:
         raise ValueError("trial requires the unchanged 17,402,775-parameter model")
@@ -284,8 +284,8 @@ def cell_schedule(*, seed: int, steps: int) -> list[str]:
 
 
 def load_frozen(path: Path):
-    from startrain.checkpoint import verify_file
-    from startrain.replay import decode_replay_shard
+    from deltreltrain.checkpoint import verify_file
+    from deltreltrain.replay import decode_replay_shard
 
     helpers = _helpers()
     document = json.loads(path.read_text())
@@ -424,11 +424,11 @@ def seed_trial_rngs(seed: int, device) -> dict[str, str]:
 
 
 def restore_training_state(config, document, *, device, arm: str):
-    from startrain.checkpoint import ExponentialMovingAverage, load_checkpoint
-    from startrain.gradient_clipping import GradientClipper
-    from startrain.model import GraphResTNet
-    from startrain.optim import build_optimizer
-    from startrain.training import build_scheduler
+    from deltreltrain.checkpoint import ExponentialMovingAverage, load_checkpoint
+    from deltreltrain.gradient_clipping import GradientClipper
+    from deltreltrain.model import GraphResTNet
+    from deltreltrain.optim import build_optimizer
+    from deltreltrain.training import build_scheduler
 
     rng_before_model_init = seed_trial_rngs(
         document.get("seed", config.train.seed), device
@@ -507,8 +507,8 @@ def restore_training_state(config, document, *, device, arm: str):
 
 def _diagnostic_backward(model, batch, optimizer, config, *, forward_model=None):
     import torch
-    from startrain.gradient_diagnostics import collect_gradient_diagnostics
-    from startrain.losses import compute_losses
+    from deltreltrain.gradient_diagnostics import collect_gradient_diagnostics
+    from deltreltrain.losses import compute_losses
 
     device = next(model.parameters()).device
     moved = batch.to(device)
@@ -549,7 +549,7 @@ def _diagnostic_backward(model, batch, optimizer, config, *, forward_model=None)
 
 
 def evaluate_models(model, ema, config, replay, cells, *, device, batches: int):
-    from startrain.model import GraphResTNet
+    from deltreltrain.model import GraphResTNet
 
     helpers = _helpers()
     shadow = GraphResTNet(config.model).to(device)
@@ -600,12 +600,12 @@ def evaluate_models(model, ema, config, replay, cells, *, device, batches: int):
 
 
 def _runtime_source_pin() -> dict[str, str]:
-    from startrain.checkpoint import sha256_file
+    from deltreltrain.checkpoint import sha256_file
 
     root = Path(__file__).resolve().parents[1]
     paths = [
         Path(__file__).resolve(),
-        *sorted((root / "startrain").glob("*.py")),
+        *sorted((root / "deltreltrain").glob("*.py")),
         Path(__file__).with_name("run_frozen_replay_optimizer_calibration.py"),
     ]
     return {str(path): sha256_file(path) for path in paths}
@@ -619,11 +619,11 @@ def run_child(args) -> dict[str, object]:
         cpus.update(range(int(ends[0]), int(ends[-1]) + 1))
     getattr(os, "sched_setaffinity")(0, cpus)
     import torch
-    from startrain.checkpoint import save_checkpoint, sha256_file
-    from startrain.config import load_config
-    from startrain.device import enable_fast_math
-    from startrain.training import maybe_compile_model, train_step
-    from startrain.runtime import atomic_json
+    from deltreltrain.checkpoint import save_checkpoint, sha256_file
+    from deltreltrain.config import load_config
+    from deltreltrain.device import enable_fast_math
+    from deltreltrain.training import maybe_compile_model, train_step
+    from deltreltrain.runtime import atomic_json
 
     if sha256_file(args.replay_manifest) != args.manifest_sha256:
         raise ValueError("frozen manifest changed after parent pinned it")
@@ -700,7 +700,7 @@ def run_child(args) -> dict[str, object]:
         )
         counts[cell] += 1
     report = {
-        "format": "startrain.gradient-clipping-trial",
+        "format": "deltreltrain.gradient-clipping-trial",
         "schema_version": 1,
         "arm": arm,
         "diagnostic_only": args.diagnostic_only,
@@ -913,11 +913,11 @@ def run_child(args) -> dict[str, object]:
 def validate_result(
     path: Path, *, arm: str, manifest_sha256: str, steps: int, diagnostic: bool
 ) -> dict:
-    from startrain.checkpoint import verify_file
+    from deltreltrain.checkpoint import verify_file
 
     result = json.loads(path.read_text())
     if (
-        result.get("format") != "startrain.gradient-clipping-trial"
+        result.get("format") != "deltreltrain.gradient-clipping-trial"
         or result.get("schema_version") != 1
         or result.get("status") != "complete"
         or result.get("arm") != arm
@@ -1000,7 +1000,7 @@ def compare_trial_results(paths: list[Path]) -> dict[str, object]:
             for cell in CELLS
         }
     return {
-        "format": "startrain.gradient-clipping-trial-comparison",
+        "format": "deltreltrain.gradient-clipping-trial-comparison",
         "comparable": True,
         "frozen_manifest_sha256": baseline["frozen_manifest_sha256"],
         "source_step": baseline["source_step"],
@@ -1066,8 +1066,8 @@ def main(argv: list[str] | None = None) -> int:
         run_child(args)
         return 0
     control = _control()
-    from startrain.training import isolated_compile_cache
-    from startrain.checkpoint import sha256_file
+    from deltreltrain.training import isolated_compile_cache
+    from deltreltrain.checkpoint import sha256_file
 
     manifest_sha256 = sha256_file(args.replay_manifest)
     frozen = json.loads(args.replay_manifest.read_text())

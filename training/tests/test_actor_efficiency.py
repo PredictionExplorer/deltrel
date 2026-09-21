@@ -10,11 +10,11 @@ from types import SimpleNamespace
 import pytest
 
 
-from startrain import actor as actor_module
-from startrain.actor import ActorSupervisor, HistoricalModelPool, SharedModelRegistry
-from startrain.config import CPUActorConfig, GPUWorkerConfig, load_config
-from startrain.orchestration import RunDirectories, build_worker_specs
-from startrain.runtime import RunIdentity
+from deltreltrain import actor as actor_module
+from deltreltrain.actor import ActorSupervisor, HistoricalModelPool, SharedModelRegistry
+from deltreltrain.config import CPUActorConfig, GPUWorkerConfig, load_config
+from deltreltrain.orchestration import RunDirectories, build_worker_specs
+from deltreltrain.runtime import RunIdentity
 
 
 def test_history_eligibility_drops_stale_and_future_models_before_sampling(
@@ -153,7 +153,7 @@ def test_registry_shares_immutable_model_and_does_not_evict_a_pinned_cohort(
 
 @pytest.mark.parametrize("fail_one", [False, True])
 def test_shared_cohorts_drain_before_closing_broker(tmp_path, monkeypatch, fail_one):
-    import startrain.inference_batching as batching
+    import deltreltrain.inference_batching as batching
 
     events = []
 
@@ -224,9 +224,9 @@ def test_shared_cohorts_drain_before_closing_broker(tmp_path, monkeypatch, fail_
 @pytest.mark.native
 @pytest.mark.parametrize("handicap,pie", [(1, False), (4, False), (1, True)])
 def test_native_independent_cohorts_share_one_inference_owner(tmp_path, handicap, pie):
-    from startrain.inference_batching import BoundedInferenceBroker
-    from startrain.replay_store import ReplayStore
-    from startrain.selfplay import (
+    from deltreltrain.inference_batching import BoundedInferenceBroker
+    from deltreltrain.replay_store import ReplayStore
+    from deltreltrain.selfplay import (
         GameVariant,
         SelfPlayActor,
         SelfPlayConfig,
@@ -235,7 +235,7 @@ def test_native_independent_cohorts_share_one_inference_owner(tmp_path, handicap
     )
     from test_variant_selfplay import evaluator
 
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     base = evaluator()
     identity = RunIdentity(tmp_path / "run.json", "shared-native", "shared-native", 1)
     # Initialize the ledger before threads start; each cohort owns a connection.

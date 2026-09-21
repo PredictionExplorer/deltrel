@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from startrain.runtime import atomic_json
+from deltreltrain.runtime import atomic_json
 from scripts.migrate_continuous_profile import (
     MigrationPlan,
     _atomic_write_bytes,

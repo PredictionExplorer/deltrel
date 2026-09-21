@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     ModelManifest,
     inspect_checkpoint,
     load_model_manifest,
@@ -24,9 +24,9 @@ from startrain.checkpoint import (
     load_resume_cutover,
     write_model_pointer,
 )
-from startrain.config import ExperimentConfig, load_config
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
-from startrain.replay_store import (
+from deltreltrain.config import ExperimentConfig, load_config
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
+from deltreltrain.replay_store import (
     MANIFEST_SCHEMA_VERSION as MANIFEST_SCHEMA_VERSION,
     REPLAY_PUBLICATION_MANIFEST_SCHEMA_VERSION,
     SUPPORTED_MANIFEST_SCHEMA_VERSIONS,
@@ -35,7 +35,7 @@ from startrain.replay_store import (
     training_replay_clause,
     validate_game_publications,
 )
-from startrain.runtime import atomic_json, load_run_identity
+from deltreltrain.runtime import atomic_json, load_run_identity
 
 PREFLIGHT_SCHEMA_VERSION = 1
 UTD_SEGMENT_SCHEMA_VERSION = 1

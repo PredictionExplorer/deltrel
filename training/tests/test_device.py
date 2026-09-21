@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from startrain.device import (
+from deltreltrain.device import (
     AcceleratorInventory,
     DeviceResolutionError,
     capabilities_for,

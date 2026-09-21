@@ -8,7 +8,7 @@ def test_balanced_monitor_never_falls_back_to_rejected_or_standard_only_elo(tmp_
     (tmp_path / "run.json").write_text(json.dumps(identity))
     report = {
         "schema_version": 1,
-        "report": "startrain-strength-efficiency",
+        "report": "deltreltrain-strength-efficiency",
         "status": "complete",
         "run_id": "variant",
         "generation_family": "family",

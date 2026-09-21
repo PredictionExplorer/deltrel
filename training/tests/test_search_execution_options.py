@@ -7,14 +7,14 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from startrain.balanced_evaluation import evaluation_contract
-from startrain.config import ArenaConfig, ConfigError, load_config
-from startrain.config_compatibility import (
+from deltreltrain.balanced_evaluation import evaluation_contract
+from deltreltrain.config import ArenaConfig, ConfigError, load_config
+from deltreltrain.config_compatibility import (
     compatible_config_epoch_payloads,
     without_search_execution_defaults,
 )
-from startrain.inference import InferenceResponse
-from startrain.search_options import (
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.search_options import (
     FullSearchBudgetConfig,
     SearchExecutionConfig,
     normalized_root_entropy,
@@ -23,7 +23,7 @@ from startrain.search_options import (
     search_batch_row_limit,
     search_model_context,
 )
-from startrain.selfplay import SelfPlayActor, SelfPlayConfig
+from deltreltrain.selfplay import SelfPlayActor, SelfPlayConfig
 
 
 @pytest.mark.parametrize(

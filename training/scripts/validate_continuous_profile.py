@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import argparse
 
-from startrain.config import SUPPORTED_RINGS, ExperimentConfig, load_config
-from startrain.search_allocation_gate import validate_production_ring_allocations
+from deltreltrain.config import SUPPORTED_RINGS, ExperimentConfig, load_config
+from deltreltrain.search_allocation_gate import validate_production_ring_allocations
 
 
 def _validate_learner_shared_promotion(config: ExperimentConfig) -> None:

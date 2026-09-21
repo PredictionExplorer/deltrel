@@ -2,32 +2,33 @@
 
 import { useSyncExternalStore } from 'react';
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { isSupportedRings } from './star/board';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import { GAME_STORAGE_KEY, migrateStorageNamespace } from './persistence';
+import { isSupportedRings } from './deltrel/board';
 import {
   HUMAN_CONTROLLERS,
   isControllerType,
   normalizeControllers,
   type ControllerType,
   type PlayerControllers,
-} from './star/ai/controllers';
-import type { StarAiSearchBudget } from './star/ai/decision';
+} from './deltrel/ai/controllers';
+import type { DeltrelAiSearchBudget } from './deltrel/ai/decision';
 import {
   MAX_BROWSER_AI_MAX_CONSIDERED,
   MAX_BROWSER_AI_SIMULATIONS,
-} from './star/ai/manifest';
+} from './deltrel/ai/manifest';
 import {
   MAX_SERVER_AI_MAX_CONSIDERED,
   MAX_SERVER_AI_SIMULATIONS,
-} from './star/ai/server-client';
-import { scoreCompletionBounds } from './star/completion-bounds';
-import { replay, type GameAction, type GameConfig } from './star/game';
-import { normalizeNewGameConfig } from './star/new-game-policy';
-import { STAR_MAX_HANDICAP } from './star/rules';
+} from './deltrel/ai/server-client';
+import { scoreCompletionBounds } from './deltrel/completion-bounds';
+import { replay, type GameAction, type GameConfig } from './deltrel/game';
+import { normalizeNewGameConfig } from './deltrel/new-game-policy';
+import { DELTREL_MAX_HANDICAP } from './deltrel/rules';
 
 export type Phase = 'setup' | 'playing';
 export type AiRuntime = Exclude<ControllerType, 'human'>;
-export type AiSearchSettings = Record<AiRuntime, StarAiSearchBudget>;
+export type AiSearchSettings = Record<AiRuntime, DeltrelAiSearchBudget>;
 export interface ClinchAcknowledgement {
   winner: 0 | 1;
   /** Action count at the first acknowledged clinched position. */
@@ -71,7 +72,7 @@ export interface AppState {
   toSetup: () => void;
   resumeAi: () => void;
   setPlayerController: (player: 0 | 1, controller: ControllerType) => void;
-  setAiSearchBudget: (runtime: AiRuntime, budget: StarAiSearchBudget) => void;
+  setAiSearchBudget: (runtime: AiRuntime, budget: DeltrelAiSearchBudget) => void;
   setReviewing: (reviewing: boolean) => void;
   acknowledgeClinch: (winner: 0 | 1) => void;
   endClinchedGame: (winner: 0 | 1) => void;
@@ -105,7 +106,7 @@ export const DEFAULT_AI_SEARCH_SETTINGS: AiSearchSettings = {
 };
 export const APP_STORE_VERSION = 6;
 
-const AI_SEARCH_LIMITS: Record<AiRuntime, StarAiSearchBudget> = {
+const AI_SEARCH_LIMITS: Record<AiRuntime, DeltrelAiSearchBudget> = {
   server: {
     simulations: MAX_SERVER_AI_SIMULATIONS,
     maxConsidered: MAX_SERVER_AI_MAX_CONSIDERED,
@@ -131,7 +132,7 @@ function isHandicap(value: unknown): value is number {
     typeof value === 'number' &&
     Number.isInteger(value) &&
     value >= 1 &&
-    value <= STAR_MAX_HANDICAP
+    value <= DELTREL_MAX_HANDICAP
   );
 }
 
@@ -191,7 +192,7 @@ export function normalizeGameConfig(value: unknown): GameConfig {
 export function parseAiSearchBudget(
   runtime: AiRuntime,
   value: unknown,
-): StarAiSearchBudget | null {
+): DeltrelAiSearchBudget | null {
   if (runtime !== 'server' && runtime !== 'local') return null;
   if (!isRecord(value) || !hasExactKeys(value, ['simulations', 'maxConsidered'])) {
     return null;
@@ -604,7 +605,12 @@ export const useAppStore = create<AppState>()(
         }),
     }),
     {
-      name: 'edgeconnect-star-v1',
+      name: GAME_STORAGE_KEY,
+      storage: createJSONStorage(() => {
+        const storage = window.localStorage;
+        migrateStorageNamespace(storage);
+        return storage;
+      }),
       version: APP_STORE_VERSION,
       migrate: migratePersistedState,
       merge: (persisted, current) => {

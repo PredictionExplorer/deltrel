@@ -22,17 +22,17 @@ from scripts.prepare_champion_warm_start import (
     prepare_champion_warm_start,
 )
 from scripts.prepare_elo_ablation import prepare_elo_ablation
-from startrain.arena import ARENA_RESULT_SCHEMA_VERSION, ArenaPair, summarize_pairs
-from startrain.checkpoint import (
+from deltreltrain.arena import ARENA_RESULT_SCHEMA_VERSION, ArenaPair, summarize_pairs
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     ModelManifest,
     load_model_manifest,
     write_model_pointer,
     write_recovery_checkpoint,
 )
-from startrain.config import ExperimentConfig, load_config
-from startrain.learner import ImmutableModelPublisher
-from startrain.manifest_selection import (
+from deltreltrain.config import ExperimentConfig, load_config
+from deltreltrain.learner import ImmutableModelPublisher
+from deltreltrain.manifest_selection import (
     ManifestSelectionError,
     SelectionEvidence,
     SelectionPlan,
@@ -45,16 +45,16 @@ from startrain.manifest_selection import (
     selection_opening,
     verify_selection_snapshot,
 )
-from startrain.model import GraphResTNet
-from startrain.optim import build_optimizer
-from startrain.replay_store import ReplayStore
-from startrain.runtime import (
+from deltreltrain.model import GraphResTNet
+from deltreltrain.optim import build_optimizer
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import (
     RunIdentity,
     atomic_json,
     require_active_selection_cutover,
     require_launch_ready,
 )
-from startrain.training import build_scheduler
+from deltreltrain.training import build_scheduler
 
 CONFIGS = Path(__file__).parents[1] / "configs"
 
@@ -559,7 +559,7 @@ def test_plan_only_reuses_plan_and_terminal_results_without_cuda(
         )
     monkeypatch.setattr(
         archived_selection_script,
-        "load_star_native",
+        "load_deltrel_native",
         lambda **_options: pytest.fail("terminal result reuse loaded native code"),
     )
     completed = evaluate_archived_manifests(
@@ -637,7 +637,7 @@ def test_partial_wave_is_validated_and_resumed_from_next_pair(
 
     monkeypatch.setattr(
         archived_selection_script,
-        "load_star_native",
+        "load_deltrel_native",
         lambda **_options: object(),
     )
     monkeypatch.setattr(

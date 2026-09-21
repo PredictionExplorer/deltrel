@@ -11,10 +11,10 @@ import scripts.benchmark_learner_batches as learner_benchmark
 import scripts.preflight_run_state as preflight
 import scripts.replay_manifest_backup as ledger_backup
 import scripts.run_frozen_replay_optimizer_calibration as frozen_benchmark
-from startrain.cohort_work import PersistentWorkSchedule
-from startrain.replay import ReplaySample
-from startrain.replay_store import ReplayStore
-from startrain.runtime import load_run_identity
+from deltreltrain.cohort_work import PersistentWorkSchedule
+from deltreltrain.replay import ReplaySample
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import load_run_identity
 from test_pipeline_core import make_replay_sample
 from test_training_disaster_recovery import _fixture, _snapshot
 import scripts.training_disaster_recovery as recovery

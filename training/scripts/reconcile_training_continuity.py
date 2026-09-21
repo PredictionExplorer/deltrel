@@ -8,7 +8,7 @@ import json
 import sys
 from pathlib import Path
 
-from startrain.continuity import (
+from deltreltrain.continuity import (
     ContinuityBusyError,
     ContinuityError,
     ContinuitySplitBrainError,

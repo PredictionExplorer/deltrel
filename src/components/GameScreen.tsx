@@ -13,34 +13,35 @@ import {
   Trophy,
   Undo2,
 } from 'lucide-react';
-import { controllerLabel, type ControllerType } from '@/lib/star/ai/controllers';
+import { controllerLabel, type ControllerType } from '@/lib/deltrel/ai/controllers';
 import {
-  StarAiError,
-  asStarAiError,
-  type StarAiErrorCode,
-} from '@/lib/star/ai/errors';
+  DeltrelAiError,
+  asDeltrelAiError,
+  type DeltrelAiErrorCode,
+} from '@/lib/deltrel/ai/errors';
 import type {
-  StarAiAnalysis,
-  StarAiSearchBudget,
-} from '@/lib/star/ai/decision';
+  DeltrelAiAnalysis,
+  DeltrelAiSearchBudget,
+} from '@/lib/deltrel/ai/decision';
 import {
   acceptAiResponse,
   buildAiRequest,
   semanticStateFromGame,
   semanticStateHash,
-  type StarAiRequest,
-} from '@/lib/star/ai/protocol';
-import { requestServerAiDecision } from '@/lib/star/ai/server-client';
-import { scoreCompletionBounds } from '@/lib/star/completion-bounds';
-import { configHandicap, replay } from '@/lib/star/game';
+  type DeltrelAiRequest,
+} from '@/lib/deltrel/ai/protocol';
+import { requestServerAiDecision } from '@/lib/deltrel/ai/server-client';
+import { scoreCompletionBounds } from '@/lib/deltrel/completion-bounds';
+import { configHandicap, replay } from '@/lib/deltrel/game';
 import {
   EMPTY,
   scorePosition,
   validateTerminalWinner,
-} from '@/lib/star/scoring';
-import { buildTimeline, lastCompletedTurnMoves } from '@/lib/star/timeline';
+} from '@/lib/deltrel/scoring';
+import { buildTimeline, lastCompletedTurnMoves } from '@/lib/deltrel/timeline';
 import { useAppStore } from '@/lib/store';
 import { BoardStage } from './BoardStage';
+import { DeltrelMark } from './DeltrelMark';
 import { EngineEstimatePanel } from './EngineEstimatePanel';
 import {
   ClinchDialog,
@@ -54,8 +55,8 @@ import { RulesDialog } from './RulesDialog';
 import { ScorePanel } from './ScorePanel';
 import {
   engineControllerLabel,
-  starAiDevtoolsEnabled,
-} from './starAiDevtools';
+  deltrelAiDevtoolsEnabled,
+} from './deltrelAiDevtools';
 import styles from './GameScreen.module.css';
 import { PLAYER_COLORS } from './theme';
 
@@ -65,14 +66,14 @@ type AiStatus =
   | {
       kind: 'error';
       controller: Exclude<ControllerType, 'human'>;
-      code: StarAiErrorCode;
+      code: DeltrelAiErrorCode;
       message: string;
       retryable: boolean;
     };
 
 interface AiFlight {
   key: string;
-  request: StarAiRequest;
+  request: DeltrelAiRequest;
   controller: Exclude<ControllerType, 'human'>;
   abortController: AbortController;
   cancelScheduled: boolean;
@@ -82,12 +83,12 @@ interface AiFlight {
 
 interface PublishedAiAnalysis {
   key: string;
-  analysis: StarAiAnalysis;
+  analysis: DeltrelAiAnalysis;
 }
 
 function reducedSearchBudget(
-  budget: StarAiSearchBudget,
-): StarAiSearchBudget | null {
+  budget: DeltrelAiSearchBudget,
+): DeltrelAiSearchBudget | null {
   if (budget.simulations === 1 && budget.maxConsidered === 1) return null;
   return {
     simulations: Math.max(1, Math.floor(budget.simulations / 2)),
@@ -120,7 +121,7 @@ export function GameScreen() {
   const acknowledgeClinch = useAppStore((state) => state.acknowledgeClinch);
   const endClinchedGame = useAppStore((state) => state.endClinchedGame);
   const resign = useAppStore((state) => state.resign);
-  const devtools = starAiDevtoolsEnabled();
+  const devtools = deltrelAiDevtoolsEnabled();
 
   const [rulesOpen, setRulesOpen] = useState(false);
   const [showInfluence, setShowInfluence] = useState(false);
@@ -276,11 +277,11 @@ export function GameScreen() {
       if (!existing.settled) setPublishedAnalysis(null);
     }
 
-    let request: StarAiRequest;
+    let request: DeltrelAiRequest;
     try {
       request = buildAiRequest(config, log);
     } catch (error) {
-      const aiError = asStarAiError(error);
+      const aiError = asDeltrelAiError(error);
       queueMicrotask(() => {
         setPublishedAnalysis(null);
         setAiStatus({
@@ -317,7 +318,7 @@ export function GameScreen() {
     const response =
       controller === 'server'
         ? requestServerAiDecision(request, options)
-        : import('@/lib/star/ai/local-client').then(({ requestLocalAiDecision }) =>
+        : import('@/lib/deltrel/ai/local-client').then(({ requestLocalAiDecision }) =>
             requestLocalAiDecision(request, options),
           );
 
@@ -343,7 +344,7 @@ export function GameScreen() {
             setAiStatus({ kind: 'idle' });
             return;
           }
-          throw new StarAiError(accepted.code, accepted.message, false);
+          throw new DeltrelAiError(accepted.code, accepted.message, false);
         }
         const currentGame = replay(current.config, current.log);
         if (
@@ -367,7 +368,7 @@ export function GameScreen() {
         if (flight.cancelled || flightRef.current !== flight) return;
         flight.settled = true;
         setPublishedAnalysis(null);
-        const aiError = asStarAiError(error);
+        const aiError = asDeltrelAiError(error);
         if (aiError.code === 'cancelled' || aiError.code === 'stale') {
           setAiStatus({ kind: 'idle' });
           return;
@@ -399,7 +400,7 @@ export function GameScreen() {
   ]);
 
   const disposeLocalAi = useCallback(() => {
-    void import('@/lib/star/ai/local-client').then(({ disposeLocalAiClient }) => {
+    void import('@/lib/deltrel/ai/local-client').then(({ disposeLocalAiClient }) => {
       disposeLocalAiClient();
     });
   }, []);
@@ -674,7 +675,7 @@ export function GameScreen() {
     <main
       className={`${styles.screen} relative z-10 mx-auto flex w-full max-w-[100rem] flex-col`}
     >
-      <h1 className="sr-only">*Star game</h1>
+      <h1 className="sr-only">Deltrel game</h1>
       <header className="mb-3 flex shrink-0 items-center justify-between gap-3">
         <button
           type="button"
@@ -682,11 +683,12 @@ export function GameScreen() {
           aria-label="Return to setup"
           className="group flex min-h-11 min-w-0 items-center gap-3 text-left"
         >
-          <span className="font-display text-shimmer text-3xl font-semibold leading-none">
-            ✳Star
+          <DeltrelMark className="h-9 w-9 shrink-0 text-sand" />
+          <span className="font-display text-3xl font-semibold leading-none tracking-tight text-sand-strong">
+            Deltrel
           </span>
           <span className="hidden truncate text-xs text-muted sm:block">
-            {config.mode === 'double' ? 'Double *Star' : 'Classic'} ·{' '}
+            {config.mode === 'double' ? 'Double Deltrel' : 'Classic'} ·{' '}
             {config.pieRule ? 'Pie' : configHandicap(config) > 1 ? `${configHandicap(config)}-stone handicap` : 'Standard'} ·{' '}
             {config.rings} rings
           </span>
@@ -697,7 +699,7 @@ export function GameScreen() {
               type="button"
               onClick={() => setReviewing(false)}
               aria-label="Result"
-              className={`min-h-11 items-center gap-2 rounded-xl border border-gold/60 bg-gold-faint px-3 text-sm text-gold-strong transition-colors hover:bg-gold/25 ${
+              className={`min-h-11 items-center gap-2 rounded-xl border border-sand/60 bg-sand-faint px-3 text-sm text-sand-strong transition-colors hover:bg-sand/25 ${
                 earlyOutcome?.reason === 'clinch'
                   ? 'hidden lg:flex'
                   : 'flex'
@@ -711,7 +713,7 @@ export function GameScreen() {
             type="button"
             onClick={() => setRulesOpen(true)}
             aria-label="Rules"
-            className="flex min-h-11 items-center gap-2 rounded-xl border border-white/15 px-3 text-sm text-ink transition-colors hover:border-gold/50"
+            className="flex min-h-11 items-center gap-2 rounded-xl border border-white/15 px-3 text-sm text-ink transition-colors hover:border-sand/50"
           >
             <BookOpenText className="h-4 w-4" aria-hidden />
             <span className="hidden sm:inline">Rules</span>
@@ -720,7 +722,7 @@ export function GameScreen() {
             type="button"
             onClick={leaveGame}
             aria-label="New game"
-            className="flex min-h-11 items-center gap-2 rounded-xl border border-white/15 px-3 text-sm text-ink transition-colors hover:border-gold/50"
+            className="flex min-h-11 items-center gap-2 rounded-xl border border-white/15 px-3 text-sm text-ink transition-colors hover:border-sand/50"
           >
             <Settings2 className="h-4 w-4" aria-hidden />
             <span className="hidden sm:inline">New game</span>
@@ -822,7 +824,7 @@ export function GameScreen() {
                       <button
                         type="button"
                         onClick={resumeAiAction}
-                        className="min-h-9 rounded-lg border border-gold/50 px-3 py-1 text-gold-strong transition-colors hover:bg-gold/15"
+                        className="min-h-9 rounded-lg border border-sand/50 px-3 py-1 text-sand-strong transition-colors hover:bg-sand/15"
                       >
                         Resume AI
                       </button>
@@ -835,7 +837,7 @@ export function GameScreen() {
                           setAiStatus({ kind: 'idle' });
                           setRetryNonce((value) => value + 1);
                         }}
-                        className="min-h-9 rounded-lg border border-gold/50 px-3 py-1 text-gold-strong transition-colors hover:bg-gold/15"
+                        className="min-h-9 rounded-lg border border-sand/50 px-3 py-1 text-sand-strong transition-colors hover:bg-sand/15"
                       >
                         Retry
                       </button>
@@ -844,7 +846,7 @@ export function GameScreen() {
                       <button
                         type="button"
                         onClick={() => retryWithLessEffort(currentController)}
-                        className="min-h-9 rounded-lg border border-gold/50 px-3 py-1 text-gold-strong transition-colors hover:bg-gold/15"
+                        className="min-h-9 rounded-lg border border-sand/50 px-3 py-1 text-sand-strong transition-colors hover:bg-sand/15"
                       >
                         Use less effort
                       </button>
@@ -852,7 +854,7 @@ export function GameScreen() {
                     <button
                       type="button"
                       onClick={() => takeOverAsHuman(game.toMove, currentController)}
-                      className="min-h-9 rounded-lg border border-white/20 px-3 py-1 text-ink transition-colors hover:border-gold/40"
+                      className="min-h-9 rounded-lg border border-white/20 px-3 py-1 text-ink transition-colors hover:border-sand/40"
                     >
                       Take over as human
                     </button>
@@ -862,7 +864,7 @@ export function GameScreen() {
 
           {/* Pie rule offer */}
           {game.canSwap && (
-            <div className="rounded-2xl border border-dashed border-gold/50 bg-gold-faint px-4 py-3 text-sm">
+            <div className="rounded-2xl border border-dashed border-sand/50 bg-sand-faint px-4 py-3 text-sm">
               <p className="text-ink">
                 Pie rule — {config.playerNames[1]} may steal the opening stone.
               </p>
@@ -875,7 +877,7 @@ export function GameScreen() {
                     act({ type: 'swap' });
                   }
                 }}
-                className="mt-2 flex min-h-10 items-center gap-2 rounded-lg border border-gold/60 px-3 py-1.5 text-xs font-medium text-gold-strong transition-colors hover:bg-gold/20"
+                className="mt-2 flex min-h-10 items-center gap-2 rounded-lg border border-sand/60 px-3 py-1.5 text-xs font-medium text-sand-strong transition-colors hover:bg-sand/20"
               >
                 <Replace className="h-3.5 w-3.5" aria-hidden /> Steal it (swap sides)
               </button>
@@ -916,7 +918,7 @@ export function GameScreen() {
                       >
                         {config.playerNames[proofWinner]} has clinched
                       </h2>
-                      <span className="rounded-full border border-gold/30 bg-gold-faint px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-gold">
+                      <span className="rounded-full border border-sand/30 bg-sand-faint px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-sand">
                         Result locked
                       </span>
                     </div>
@@ -946,7 +948,7 @@ export function GameScreen() {
                   </span>
                 </div>
                 {proofActive && (
-                  <p className="mt-2 text-center text-xs font-medium text-gold">
+                  <p className="mt-2 text-center text-xs font-medium text-sand">
                     Proof board active · striped stones are hypothetical
                   </p>
                 )}
@@ -985,7 +987,7 @@ export function GameScreen() {
               </summary>
               <p className="pb-3 text-xs leading-relaxed text-muted">
                 Influence shows the current scoring projection and dims groups that are not yet
-                stars. Crosses mark only groups that cannot become a star even if they received
+                networks. Crosses mark only groups that cannot become a network even if they received
                 every open node. A striped proof stone is hypothetical and never changes the
                 actual move history.
               </p>
@@ -1006,7 +1008,7 @@ export function GameScreen() {
                 clinchPending
               }
               onClick={undoAction}
-              className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm text-ink transition-colors enabled:hover:border-gold/50 disabled:opacity-35"
+              className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm text-ink transition-colors enabled:hover:border-sand/50 disabled:opacity-35"
             >
               <Undo2 className="h-4 w-4" aria-hidden /> Undo
             </button>
@@ -1019,7 +1021,7 @@ export function GameScreen() {
                 clinchPending
               }
               onClick={redoAction}
-              className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm text-ink transition-colors enabled:hover:border-gold/50 disabled:opacity-35"
+              className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm text-ink transition-colors enabled:hover:border-sand/50 disabled:opacity-35"
             >
               <Redo2 className="h-4 w-4" aria-hidden /> Redo
             </button>
@@ -1051,8 +1053,8 @@ export function GameScreen() {
                   }}
                   className={`col-span-2 min-h-11 items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left text-sm transition-colors ${
                     proofActive
-                      ? 'border-gold/60 bg-gold-faint text-gold-strong'
-                      : 'border-white/15 bg-white/[0.03] text-ink hover:border-gold/50'
+                      ? 'border-sand/60 bg-sand-faint text-sand-strong'
+                      : 'border-white/15 bg-white/[0.03] text-ink hover:border-sand/50'
                   } hidden lg:flex`}
                 >
                   <span className="flex items-center gap-2">
@@ -1070,14 +1072,14 @@ export function GameScreen() {
                 <button
                   type="button"
                   onClick={continueAfterClinch}
-                  className="hidden min-h-11 items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm text-ink transition-colors hover:border-gold/50 lg:flex"
+                  className="hidden min-h-11 items-center justify-center rounded-xl border border-white/15 px-3 py-2 text-sm text-ink transition-colors hover:border-sand/50 lg:flex"
                 >
                   Continue playing
                 </button>
                 <button
                   type="button"
                   onClick={endClinchNow}
-                  className="hidden min-h-11 items-center justify-center gap-2 rounded-xl border border-gold/60 bg-gold-faint px-3 py-2 text-sm font-medium text-gold-strong transition-colors hover:bg-gold/25 lg:flex"
+                  className="hidden min-h-11 items-center justify-center gap-2 rounded-xl border border-sand/60 bg-sand-faint px-3 py-2 text-sm font-medium text-sand-strong transition-colors hover:bg-sand/25 lg:flex"
                 >
                   <Trophy className="h-4 w-4" aria-hidden /> End now
                 </button>
@@ -1089,7 +1091,7 @@ export function GameScreen() {
                   cancelActiveAi();
                   setEndConfirmOpen(true);
                 }}
-                className="col-span-2 hidden min-h-11 items-center justify-center gap-2 rounded-xl border border-gold/60 bg-gold-faint px-3 py-2 text-sm font-medium text-gold-strong transition-colors hover:bg-gold/25 lg:flex"
+                className="col-span-2 hidden min-h-11 items-center justify-center gap-2 rounded-xl border border-sand/60 bg-sand-faint px-3 py-2 text-sm font-medium text-sand-strong transition-colors hover:bg-sand/25 lg:flex"
               >
                 <Trophy className="h-4 w-4" aria-hidden /> End game
               </button>
@@ -1140,7 +1142,7 @@ export function GameScreen() {
                 if (proofActive) setProofMode(false);
                 else showProofBoard();
               }}
-              className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-white/15 px-2 py-2 text-xs text-ink transition-colors hover:border-gold/50"
+              className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-white/15 px-2 py-2 text-xs text-ink transition-colors hover:border-sand/50"
             >
               <ShieldCheck className="h-4 w-4" aria-hidden />
               {proofActive ? 'Live board' : 'Show proof'}
@@ -1150,14 +1152,14 @@ export function GameScreen() {
                 <button
                   type="button"
                   onClick={continueAfterClinch}
-                  className="min-h-11 rounded-xl border border-white/15 px-2 py-2 text-xs text-ink transition-colors hover:border-gold/50"
+                  className="min-h-11 rounded-xl border border-white/15 px-2 py-2 text-xs text-ink transition-colors hover:border-sand/50"
                 >
                   Continue
                 </button>
                 <button
                   type="button"
                   onClick={endClinchNow}
-                  className="min-h-11 rounded-xl border border-gold/60 bg-gold-faint px-2 py-2 text-xs font-medium text-gold-strong"
+                  className="min-h-11 rounded-xl border border-sand/60 bg-sand-faint px-2 py-2 text-xs font-medium text-sand-strong"
                 >
                   End now
                 </button>
@@ -1166,7 +1168,7 @@ export function GameScreen() {
               <button
                 type="button"
                 onClick={() => setReviewing(false)}
-                className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-gold/60 bg-gold-faint px-2 py-2 text-xs font-medium text-gold-strong"
+                className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-sand/60 bg-sand-faint px-2 py-2 text-xs font-medium text-sand-strong"
               >
                 <Trophy className="h-4 w-4" aria-hidden /> Result
               </button>
@@ -1177,7 +1179,7 @@ export function GameScreen() {
                   cancelActiveAi();
                   setEndConfirmOpen(true);
                 }}
-                className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-gold/60 bg-gold-faint px-2 py-2 text-xs font-medium text-gold-strong"
+                className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-sand/60 bg-sand-faint px-2 py-2 text-xs font-medium text-sand-strong"
               >
                 <Trophy className="h-4 w-4" aria-hidden /> End game
               </button>

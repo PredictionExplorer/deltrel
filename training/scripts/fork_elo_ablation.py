@@ -14,16 +14,16 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from startrain.checkpoint import load_model_manifest, write_model_pointer
-from startrain.config import ExperimentConfig, load_config
-from startrain.learner import LearnerLoop, UTDSegmentState
-from startrain.manifest_selection import (
+from deltreltrain.checkpoint import load_model_manifest, write_model_pointer
+from deltreltrain.config import ExperimentConfig, load_config
+from deltreltrain.learner import LearnerLoop, UTDSegmentState
+from deltreltrain.manifest_selection import (
     VerifiedSelection,
     selected_manifest_in_copy,
     verify_selection_snapshot,
 )
-from startrain.replay_store import ReplayStore
-from startrain.runtime import (
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import (
     SELECTION_CUTOVER_FORMAT,
     SELECTION_CUTOVER_SCHEMA_VERSION,
     atomic_json,
@@ -36,7 +36,7 @@ else:
     from prepare_elo_ablation import verify_winner_snapshot
 
 SCHEMA_VERSION = 1
-REPORT_NAME = "startrain-elo-ablation-branch"
+REPORT_NAME = "deltreltrain-elo-ablation-branch"
 _ROTATED_DIRECTORIES = ("status", "logs", "metrics")
 
 
@@ -273,7 +273,7 @@ def fork_elo_ablation(
     if not plan_file.is_file():
         raise FileNotFoundError(f"ablation plan does not exist: {plan_file}")
     plan = _read_json(plan_file)
-    if plan.get("report") != "startrain-elo-ablation-plan":
+    if plan.get("report") != "deltreltrain-elo-ablation-plan":
         raise ValueError("unsupported ablation plan")
     initialization = plan.get("initialization", "fork")
     if initialization != "fork":

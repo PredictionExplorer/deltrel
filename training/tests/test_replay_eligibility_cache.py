@@ -4,7 +4,7 @@ import sqlite3
 
 import pytest
 
-from startrain.replay_store import ReplayStore
+from deltreltrain.replay_store import ReplayStore
 from test_replay_game_revisions import publication as publication, _samples
 
 

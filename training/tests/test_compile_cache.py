@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from startrain.training import (
+from deltreltrain.training import (
     COMPILE_CACHE_SCHEMA_VERSION,
     configure_isolated_compile_cache,
     isolated_compile_cache,

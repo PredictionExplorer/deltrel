@@ -16,8 +16,8 @@ from typing import Any, Sequence
 
 import yaml
 
-from startrain.config import ActorWorkSchedulingConfig, ExperimentConfig, load_config
-from startrain.selfplay import PolicyPublicationConfig
+from deltreltrain.config import ActorWorkSchedulingConfig, ExperimentConfig, load_config
+from deltreltrain.selfplay import PolicyPublicationConfig
 
 
 class ProfilePreparationError(ValueError):

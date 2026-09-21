@@ -12,7 +12,7 @@ import pytest
 import yaml
 
 from scripts import monitor_run
-from startrain import continuity
+from deltreltrain import continuity
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -86,8 +86,8 @@ def _fixture(
     runtime_training = release_root / "training"
     source_files = {}
     for relative in (
-        "startrain/orchestration.py",
-        "startrain/continuity.py",
+        "deltreltrain/orchestration.py",
+        "deltreltrain/continuity.py",
         "scripts/reconcile_training_continuity.py",
     ):
         path = runtime_training / relative
@@ -96,19 +96,19 @@ def _fixture(
         source_files[f"training/{relative}"] = hashlib.sha256(
             path.read_bytes()
         ).hexdigest()
-    runtime_orchestrator = runtime_training / ".venv" / "bin" / "startrain-orchestrate"
+    runtime_orchestrator = runtime_training / ".venv" / "bin" / "deltreltrain-orchestrate"
     runtime_orchestrator.parent.mkdir(parents=True)
     runtime_orchestrator.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     runtime_orchestrator.chmod(0o755)
-    primary_unit = (tmp_path / "edgeconnect-primary.service").resolve()
-    fallback_unit = (tmp_path / "edgeconnect-fallback.service").resolve()
+    primary_unit = (tmp_path / "deltrel-primary.service").resolve()
+    fallback_unit = (tmp_path / "deltrel-fallback.service").resolve()
     primary_unit.write_text("[Service]\nExecStart=/bin/true\n", encoding="utf-8")
     fallback_unit.write_text("[Service]\nExecStart=/bin/true\n", encoding="utf-8")
     runtime_manifest = (release_root / "release-manifest.json").resolve()
     runtime_manifest.write_text(
         json.dumps(
             {
-                "report": "edgeconnect-immutable-release",
+                "report": "deltrel-immutable-release",
                 "schema_version": 1,
                 "source_files": source_files,
             },
@@ -136,7 +136,7 @@ def _fixture(
             {
                 "id": "primary",
                 "role": "primary",
-                "unit": "edgeconnect-primary.service",
+                "unit": "deltrel-primary.service",
                 "profile": {
                     "path": str(primary_profile),
                     "sha256": primary_hashes["profile_sha256"],
@@ -160,7 +160,7 @@ def _fixture(
             {
                 "id": "fallback-lkg",
                 "role": "fallback",
-                "unit": "edgeconnect-fallback.service",
+                "unit": "deltrel-fallback.service",
                 "profile": {
                     "path": str(fallback_profile),
                     "sha256": fallback_hashes["profile_sha256"],
@@ -226,7 +226,7 @@ def _fixture(
             _write_json(
                 disaster_root / "namespace.json",
                 {
-                    "report": "startrain-disaster-recovery-namespace",
+                    "report": "deltreltrain-disaster-recovery-namespace",
                     "schema_version": 1,
                     "run_id": run_identity["run_id"],
                     "generation_family": run_identity["generation_family"],
@@ -234,18 +234,18 @@ def _fixture(
                 },
             )
             workload["protection"] = {
-                "replay_backup_timer": (f"edgeconnect-startrain-{owner}-backup.timer"),
+                "replay_backup_timer": (f"deltrel-deltreltrain-{owner}-backup.timer"),
                 "disaster_backup_timer": (
-                    f"edgeconnect-startrain-{owner}-disaster-backup.timer"
+                    f"deltrel-deltreltrain-{owner}-disaster-backup.timer"
                 ),
                 "disaster_backup_root": str(disaster_root),
                 "disaster_backup_mount": str(disaster_mount),
-                "telemetry_service": (f"edgeconnect-startrain-{owner}-monitor.service"),
+                "telemetry_service": (f"deltrel-deltreltrain-{owner}-monitor.service"),
                 "telemetry_output": str(run_root / "status" / "monitor-5s.jsonl"),
                 "telemetry_max_bytes": 50 * 1024 * 1024,
                 "telemetry_retain_files": 7,
-                "report_service": (f"edgeconnect-startrain-{owner}-report.service"),
-                "report_timer": (f"edgeconnect-startrain-{owner}-report.timer"),
+                "report_service": (f"deltrel-deltreltrain-{owner}-report.service"),
+                "report_timer": (f"deltrel-deltreltrain-{owner}-report.timer"),
                 "report_provisioned_gpus": 1,
                 "service_user": "ubuntu",
             }
@@ -448,7 +448,7 @@ def _protection_inspector(
 
 def _fatal(fixture: Fixture, **overrides: object) -> None:
     payload: dict[str, object] = {
-        "format": "startrain.coordinator-fatal",
+        "format": "deltreltrain.coordinator-fatal",
         "schema_version": 1,
         "timestamp_ns": fixture.now_ns - 2,
         "terminal_reason": "restart_budget_exhausted",
@@ -486,7 +486,7 @@ def test_software_failure_quarantines_metadata_and_starts_verified_lkg(
     assert state["active_workload_id"] == "fallback-lkg"
     assert state["selected_lkg_workload_id"] == "fallback-lkg"
     assert state["fallback_attempts"] == 1
-    assert units.starts == ["edgeconnect-fallback.service"]
+    assert units.starts == ["deltrel-fallback.service"]
     assert _tree_bytes(fixture.primary_root) == before
     records = list((fixture.state_root / "quarantine").glob("*.json"))
     assert len(records) == 1
@@ -532,7 +532,7 @@ def test_reconcile_is_idempotent_after_fallback_start(tmp_path: Path) -> None:
         unit_manager=units,
     )
 
-    assert units.starts == ["edgeconnect-fallback.service"]
+    assert units.starts == ["deltrel-fallback.service"]
     assert list((fixture.state_root / "quarantine").glob("*.json")) == quarantine_before
     assert list((fixture.state_root / "alerts").glob("*.json")) == alerts_before
     state_after = json.loads(
@@ -570,10 +570,10 @@ def test_start_retries_are_bounded_before_lkg_fallback(tmp_path: Path) -> None:
     )
 
     assert units.starts == [
-        "edgeconnect-primary.service",
-        "edgeconnect-primary.service",
-        "edgeconnect-primary.service",
-        "edgeconnect-fallback.service",
+        "deltrel-primary.service",
+        "deltrel-primary.service",
+        "deltrel-primary.service",
+        "deltrel-fallback.service",
     ]
     assert state["phase"] == "starting_fallback"
     assert state["selected_lkg_workload_id"] == "fallback-lkg"
@@ -667,7 +667,7 @@ def test_verified_unsafe_hardware_stops_an_active_registered_workload(
     )
 
     assert stopped["phase"] == "stopping_hardware_unsafe"
-    assert units.stops == ["edgeconnect-primary.service"]
+    assert units.stops == ["deltrel-primary.service"]
     assert stopped["last_transition"]["kind"] == "hardware_unsafe_stop_requested"
 
 
@@ -714,8 +714,8 @@ def test_active_unit_is_not_productive_until_learner_and_actor_progress(
         },
     )
     units = FakeUnitManager()
-    units.statuses["edgeconnect-primary.service"] = continuity.UnitStatus(
-        "edgeconnect-primary.service",
+    units.statuses["deltrel-primary.service"] = continuity.UnitStatus(
+        "deltrel-primary.service",
         "active",
         sub_state="running",
         main_pid=100,
@@ -810,12 +810,12 @@ def test_quarantined_primary_cannot_displace_selected_fallback(
         now_ns=fixture.now_ns,
         unit_manager=units,
     )
-    units.statuses["edgeconnect-fallback.service"] = continuity.UnitStatus(
-        "edgeconnect-fallback.service",
+    units.statuses["deltrel-fallback.service"] = continuity.UnitStatus(
+        "deltrel-fallback.service",
         "inactive",
     )
-    units.statuses["edgeconnect-primary.service"] = continuity.UnitStatus(
-        "edgeconnect-primary.service",
+    units.statuses["deltrel-primary.service"] = continuity.UnitStatus(
+        "deltrel-primary.service",
         "active",
         main_pid=999,
     )
@@ -879,7 +879,7 @@ def test_optional_protection_metadata_is_strict_and_backward_compatible(
 
     raw = json.loads(fixture.manifest.read_text(encoding="utf-8"))
     raw["workloads"][0]["protection"] = {
-        "replay_backup_timer": "edgeconnect-startrain-primary-backup.timer"
+        "replay_backup_timer": "deltrel-deltreltrain-primary-backup.timer"
     }
     _write_json(fixture.manifest, raw)
 
@@ -952,7 +952,7 @@ def test_protection_verifies_pinned_strength_report_timer(tmp_path: Path) -> Non
     assert verified.valid is True
 
     inspector.definitions[primary.protection.report_timer] = (
-        "[Timer]\nUnit=edgeconnect-startrain-wrong-report.service\n"
+        "[Timer]\nUnit=deltrel-deltreltrain-wrong-report.service\n"
     )
     drifted = continuity.verify_workload_protection(
         manifest,
@@ -1130,7 +1130,7 @@ def test_corrupt_host_state_fails_closed_with_durable_alert(tmp_path: Path) -> N
         if not path.name.endswith(".delivery.json")
     ]
     assert any(alert["kind"] == "continuity_state_blocked" for alert in alerts)
-    assert units.starts == ["edgeconnect-primary.service"]
+    assert units.starts == ["deltrel-primary.service"]
 
 
 def test_corrupt_lkg_hash_blocks_instead_of_starting_it(tmp_path: Path) -> None:
@@ -1207,7 +1207,7 @@ def test_failed_queue_artifact_requests_fallback(tmp_path: Path) -> None:
 
     assert state["phase"] == "active_fallback"
     assert state["last_failure"]["source_type"] == "queue_state"
-    assert units.starts == ["edgeconnect-fallback.service"]
+    assert units.starts == ["deltrel-fallback.service"]
 
 
 def test_completed_queue_handoff_resumes_lkg_without_quarantine(
@@ -1222,7 +1222,7 @@ def test_completed_queue_handoff_resumes_lkg_without_quarantine(
         handoff,
         {
             "schema_version": 1,
-            "report": "startrain-continuity-handoff-request",
+            "report": "deltreltrain-continuity-handoff-request",
             "status": "requested",
             "requested_action": "reconcile_training_continuity",
             "requested_ns": fixture.now_ns - 1,
@@ -1246,7 +1246,7 @@ def test_completed_queue_handoff_resumes_lkg_without_quarantine(
     assert state["last_failure"] is None
     assert state["last_handoff"]["domain"] == "handoff"
     assert state["quarantine_records"] == []
-    assert units.starts == ["edgeconnect-fallback.service"]
+    assert units.starts == ["deltrel-fallback.service"]
     request = json.loads(handoff.read_text(encoding="utf-8"))
     request["requested_ns"] = fixture.now_ns + 1
     _write_json(handoff, request)
@@ -1277,7 +1277,7 @@ def test_alert_delivery_failure_never_gates_recovery(tmp_path: Path) -> None:
     )
 
     assert state["phase"] == "active_fallback"
-    assert units.starts == ["edgeconnect-fallback.service"]
+    assert units.starts == ["deltrel-fallback.service"]
     deliveries = list((fixture.state_root / "alerts").glob("*.delivery.json"))
     assert deliveries
     assert all(
@@ -1348,7 +1348,7 @@ def test_locked_wrapper_execs_only_state_selected_workload(tmp_path: Path) -> No
     ]
     environment = captured["environment"]
     assert isinstance(environment, dict)
-    assert environment["STARTRAIN_CONTINUITY_WORKLOAD_ID"] == "primary"
+    assert environment["DELTRELTRAIN_CONTINUITY_WORKLOAD_ID"] == "primary"
 
 
 def test_monitor_surfaces_structured_continuity_state(tmp_path: Path) -> None:

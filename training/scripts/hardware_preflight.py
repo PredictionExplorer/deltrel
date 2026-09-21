@@ -16,12 +16,12 @@ from pathlib import Path
 
 import torch
 
-from startrain.config import load_config
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.model import GraphResTNet
-from startrain.native import load_star_native
-from startrain.topology import get_topology
-from startrain.training import maybe_compile_model
+from deltreltrain.config import load_config
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.model import GraphResTNet
+from deltreltrain.native import load_deltrel_native
+from deltreltrain.topology import get_topology
+from deltreltrain.training import maybe_compile_model
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         else arguments.compile_dynamic
     )
     compile_mode = arguments.compile_mode or refresh.inference_compile_mode
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     assert native is not None
     model = GraphResTNet(experiment.model).to(device).eval()
     inference_model = maybe_compile_model(

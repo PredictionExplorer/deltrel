@@ -1,19 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Sparkles, Star, Users } from 'lucide-react';
+import { ArrowUpRight, BookOpen, Users, Waves } from 'lucide-react';
 import {
   getBoard,
   isSupportedRings,
   MAX_RINGS,
   MIN_RINGS,
-} from '@/lib/star/board';
+} from '@/lib/deltrel/board';
 import {
   INITIAL_AI_CAPABILITIES,
   capabilityForController,
   checkAiCapabilities,
   type AiCapabilities,
-} from '@/lib/star/ai/capabilities';
+} from '@/lib/deltrel/ai/capabilities';
 import {
   CONTROLLER_TYPES,
   controllerLabel,
@@ -21,23 +21,26 @@ import {
   supportsAiControllers,
   type ControllerType,
   type PlayerControllers,
-} from '@/lib/star/ai/controllers';
-import { EMPTY } from '@/lib/star/scoring';
-import { configHandicap, type GameConfig, type Mode } from '@/lib/star/game';
-import { normalizeNewGameConfig } from '@/lib/star/new-game-policy';
-import { STAR_MAX_HANDICAP } from '@/lib/star/rules';
+} from '@/lib/deltrel/ai/controllers';
+import { EMPTY } from '@/lib/deltrel/scoring';
+import { configHandicap, type GameConfig, type Mode } from '@/lib/deltrel/game';
+import { normalizeNewGameConfig } from '@/lib/deltrel/new-game-policy';
+import { DELTREL_MAX_HANDICAP } from '@/lib/deltrel/rules';
 import { useAppStore, type AiRuntime } from '@/lib/store';
 import {
   EngineDeveloperSettings,
   budgetFitsCapability,
 } from './EngineDeveloperSettings';
-import { StarBoard } from './StarBoard';
+import { DeltrelBoard } from './DeltrelBoard';
 import { ChampionPanel } from './ChampionPanel';
 import {
   engineControllerLabel,
-  starAiDevtoolsEnabled,
-} from './starAiDevtools';
+  deltrelAiDevtoolsEnabled,
+} from './deltrelAiDevtools';
 import { BOARD_PRESETS, PLAYER_COLORS } from './theme';
+import { DeltrelMark } from './DeltrelMark';
+import { RulesDialog } from './RulesDialog';
+import styles from './SetupScreen.module.css';
 
 export function SetupScreen() {
   const startGame = useAppStore((s) => s.startGame);
@@ -45,8 +48,9 @@ export function SetupScreen() {
   const lastControllers = useAppStore((s) => s.controllers);
   const aiSearchSettings = useAppStore((s) => s.aiSearchSettings);
   const setAiSearchBudget = useAppStore((s) => s.setAiSearchBudget);
-  const devtools = starAiDevtoolsEnabled();
+  const devtools = deltrelAiDevtoolsEnabled();
 
+  const [showRules, setShowRules] = useState(false);
   const [mode, setMode] = useState<Mode>(lastConfig.mode);
   const [rings, setRings] = useState(lastConfig.rings);
   const [handicap, setHandicap] = useState(() =>
@@ -159,49 +163,62 @@ export function SetupScreen() {
   } · ${rings} rings`;
 
   return (
-    <main className="screen-safe relative z-10 mx-auto flex w-full max-w-7xl flex-1 flex-col">
-      <header className="fade-up mx-auto flex max-w-3xl flex-col items-center text-center sm:flex-row sm:gap-6 sm:text-left">
-        <div className="shrink-0">
-          <p className="mb-1 flex items-center justify-center gap-2 text-xs uppercase tracking-[0.16em] text-muted sm:justify-start">
-            <Sparkles className="h-3.5 w-3.5 text-gold" aria-hidden />
-            a connection game by Ea Ea
-          </p>
-          <h1 className="font-display text-shimmer text-5xl font-semibold leading-none sm:text-6xl">
-            ✳Star
-          </h1>
+    <main className={`screen-safe ${styles.screen}`}>
+      <header className={`${styles.header}`}>
+        <div className={styles.brand}>
+          <DeltrelMark className={styles.brandMark} />
+          <div>
+            <h1 className={styles.wordmark}>Deltrel<span aria-hidden>.</span></h1>
+            <p className={styles.brandCaption}>A game of connection</p>
+          </div>
         </div>
-        <p className="mt-3 max-w-xl text-balance text-[13px] leading-relaxed text-muted sm:mt-4">
-          Claim the edge, join your stars through the heavens, and let no light go to waste.
-          Two players, one sky.
-        </p>
+        <div className={styles.headerAside}>
+          <p>Two players.<br /><span>A world between you.</span></p>
+          <button type="button" onClick={() => setShowRules(true)} className={styles.rulesButton}>
+            <BookOpen size={15} aria-hidden /> How to play
+          </button>
+        </div>
       </header>
 
-      <div className="mt-6 grid w-full flex-1 items-start gap-6 md:grid-cols-[minmax(15rem,4fr)_minmax(25rem,5fr)] lg:grid-cols-[minmax(0,5fr)_minmax(27rem,4fr)]">
-        {/* Board preview */}
-        <div
-          data-setup-preview
-          className="pop-in panel-surface relative mx-auto w-full max-w-lg rounded-[2rem] p-2 md:sticky md:top-6 md:max-w-[clamp(17rem,40vw,32rem)] md:self-start"
-          style={{ animationDelay: '0.12s' }}
-        >
-          <div className="aspect-square w-full">
-            <StarBoard
-              key={rings}
-              board={board}
-              stones={emptyStones}
-              className="block h-full w-full"
-            />
+      <div className={styles.content}>
+        <section className={`${styles.atlas}`} aria-label="The estuary">
+          <div className={styles.atlasHeading}>
+            <div>
+              <p className={styles.eyebrow}>Where the river meets the sea</p>
+              <h2>Connection runs deep.</h2>
+            </div>
+            <Waves className={styles.tideIcon} aria-hidden />
           </div>
-          <div className="pointer-events-none px-3 pb-2 text-center text-xs text-muted">
-            {board.n} nodes · {board.periCount} peries · 5 quarks · match total{' '}
-            <span className="text-gold">{board.periCount + 1}</span>
+          <div data-setup-preview className={styles.preview}>
+            <div className={styles.chartLabel} aria-hidden>
+              <span>THE ESTUARY</span><span>{String(rings).padStart(2, '0')} / RINGS</span>
+            </div>
+            <div className={styles.previewBoard}>
+              <DeltrelBoard
+                key={rings}
+                board={board}
+                stones={emptyStones}
+                className="block h-full w-full"
+              />
+            </div>
+            <div className={styles.chartLegend}>
+              <span><b>{board.n}</b> places to begin</span>
+              <span><b>{board.shoreCount}</b> shores</span>
+              <span><b>5</b> capes</span>
+            </div>
           </div>
-        </div>
+          <div className={styles.atlasFooter}>
+            <p>Reach the shore. Join your networks.<br />Make every connection count.</p>
+            <span className={styles.matchTotal}>MATCH TOTAL <b>{board.shoreCount + 1}</b></span>
+          </div>
+        </section>
 
-        {/* Controls */}
-        <div
-          className="fade-up panel-surface flex min-w-0 flex-col gap-5 rounded-3xl p-4 sm:p-5"
-          style={{ animationDelay: '0.2s' }}
-        >
+        <section className={`${styles.setup}`} aria-label="New game setup">
+          <div className={styles.setupHeading}>
+            <span className={styles.eyebrow}>Your next encounter</span>
+            <h2>Set your course.</h2>
+          </div>
+          <div className={`${styles.setupScroll} thin-scroll`}>
           <ChampionPanel
             capability={capabilities.server}
             selected={controllers.includes('server')}
@@ -219,11 +236,11 @@ export function SetupScreen() {
             <h2 className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-muted">
               Variant
             </h2>
-            <div className="grid grid-cols-1 gap-2.5 min-[420px]:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2.5">
               {(
                 [
-                  { id: 'classic', title: 'Classic *Star', sub: '1 stone per turn' },
-                  { id: 'double', title: 'Double *Star', sub: '2 stones per turn · first turn 1' },
+                  { id: 'classic', title: 'Classic Deltrel', sub: '1 stone per turn' },
+                  { id: 'double', title: 'Double Deltrel', sub: '2 stones per turn · first turn 1' },
                 ] as const
               ).map((m) => (
                 <button
@@ -234,11 +251,11 @@ export function SetupScreen() {
                   aria-label={`${m.title}, ${m.sub}`}
                   className={`min-h-16 rounded-2xl border px-4 py-3 text-left transition-[border-color,background-color,box-shadow,transform] duration-200 active:scale-[0.99] ${
                     mode === m.id
-                      ? 'border-gold/70 bg-gold-faint shadow-[0_0_28px_rgba(232,196,139,0.15)]'
-                      : 'border-white/10 bg-white/[0.03] hover:border-gold/35'
+                      ? 'border-sand/70 bg-sand-faint shadow-[inset_0_0_0_1px_rgba(228,201,161,0.18)]'
+                      : 'border-white/10 bg-white/[0.03] hover:border-sand/35'
                   }`}
                 >
-                  <span className="font-display block text-xl text-ink">{m.title}</span>
+                  <span className="font-display block text-xl text-ink">{m.id === 'classic' ? 'Classic' : 'Double'}</span>
                   <span className="mt-1 block text-xs text-muted">{m.sub}</span>
                 </button>
               ))}
@@ -263,7 +280,7 @@ export function SetupScreen() {
                       setHandicap(id === 'handicap' ? Math.max(2, handicap) : 1);
                     }}
                     className={`min-h-16 rounded-xl border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                      opening === id ? 'border-gold/70 bg-gold-faint' : 'border-white/10 bg-white/[0.03] hover:border-gold/35'
+                      opening === id ? 'border-sand/70 bg-sand-faint' : 'border-white/10 bg-white/[0.03] hover:border-sand/35'
                     }`}
                   >
                     <span className="block text-sm text-ink">{label}</span>
@@ -292,7 +309,7 @@ export function SetupScreen() {
                 aria-label="Handicap stones"
                 className="mt-2 grid grid-cols-8 gap-1"
               >
-                {Array.from({ length: STAR_MAX_HANDICAP - 1 }, (_, index) => index + 2).map(
+                {Array.from({ length: DELTREL_MAX_HANDICAP - 1 }, (_, index) => index + 2).map(
                   (stones) => (
                     <button
                       key={stones}
@@ -303,8 +320,8 @@ export function SetupScreen() {
                       onClick={() => setHandicap(stones)}
                       className={`min-h-10 rounded-lg border text-xs transition-[border-color,background-color] duration-200 disabled:cursor-not-allowed disabled:opacity-40 ${
                         handicap === stones
-                          ? 'border-gold/70 bg-gold-faint text-ink'
-                          : 'border-white/10 bg-white/[0.03] text-muted hover:border-gold/35'
+                          ? 'border-sand/70 bg-sand-faint text-ink'
+                          : 'border-white/10 bg-white/[0.03] text-muted hover:border-sand/35'
                       }`}
                     >
                       {stones}
@@ -320,7 +337,7 @@ export function SetupScreen() {
             <h2 className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-muted">
               Board
             </h2>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-4 gap-2">
               {BOARD_PRESETS.map((p) => (
                 <button
                   key={p.rings}
@@ -330,8 +347,8 @@ export function SetupScreen() {
                   aria-label={`${p.label}, ${p.rings} rings`}
                   className={`min-h-12 rounded-xl border px-2 py-2 text-center transition-[border-color,background-color,transform] duration-200 active:scale-[0.98] ${
                     rings === p.rings
-                      ? 'border-gold/70 bg-gold-faint'
-                      : 'border-white/10 bg-white/[0.03] hover:border-gold/35'
+                      ? 'border-sand/70 bg-sand-faint'
+                      : 'border-white/10 bg-white/[0.03] hover:border-sand/35'
                   }`}
                 >
                   <span className="block text-sm text-ink">{p.label}</span>
@@ -354,7 +371,7 @@ export function SetupScreen() {
                   const nextRings = Number(event.target.value);
                   if (isSupportedRings(nextRings)) chooseRings(nextRings);
                 }}
-                className="w-full accent-[#e8c48b]"
+                className="w-full accent-[#e4c9a1]"
               />
               <span className="w-20 shrink-0 text-right text-sm text-ink">
                 {rings} rings{preset ? '' : ' ·'}
@@ -421,7 +438,7 @@ export function SetupScreen() {
                               key={controller}
                               value={controller}
                               disabled={capability.status !== 'available'}
-                              className="bg-[#17130f]"
+                              className="bg-[#103e40]"
                             >
                               {controller === 'server' && capabilities.server.status === 'available' && capabilities.server.champion
                                 ? 'Current champion'
@@ -444,7 +461,7 @@ export function SetupScreen() {
             <div className="mt-2 min-h-6 px-1 text-xs" aria-live="polite">
               {!aiAllowed && (
                 <p className="text-muted">
-                  AI controllers support classic and Double *Star, handicaps up to
+                  AI controllers support classic and Double Deltrel, handicaps up to
                   nine stones, and the pie rule (without a handicap).
                 </p>
               )}
@@ -484,7 +501,7 @@ export function SetupScreen() {
                       setEngineDraftValidity({});
                       setCapabilityCheck((value) => value + 1);
                     }}
-                    className="mt-1 min-h-8 text-left text-gold-strong underline decoration-gold/40 underline-offset-2"
+                    className="mt-1 min-h-8 text-left text-sand-strong underline decoration-sand/40 underline-offset-2"
                   >
                     Check AI availability again
                   </button>
@@ -500,20 +517,28 @@ export function SetupScreen() {
             />
           )}
 
-          <p className="text-center text-sm text-gold-strong" aria-live="polite" data-selected-game-mode>
+          </div>
+          <div className={styles.setupFooter}>
+          <p className={styles.modeSummary} aria-live="polite" data-selected-game-mode>
             {modeSummary}
           </p>
           <button
             type="button"
             onClick={start}
             disabled={!controllersReady || !engineSettingsReady}
-            className="font-display group mt-1 flex min-h-14 items-center justify-center gap-2.5 rounded-2xl border border-gold/60 bg-gradient-to-b from-[#e8c48b] to-[#c99d5f] px-6 py-3 text-xl font-medium text-[#241703] shadow-[0_8px_40px_rgba(4,5,12,0.7)] transition-[transform,box-shadow] duration-200 hover:scale-[1.01] hover:shadow-[0_8px_54px_rgba(232,196,139,0.35)] active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
+            className={styles.beginButton}
           >
-            <Star className="h-5 w-5 transition-transform group-hover:rotate-[72deg]" aria-hidden />
-            Begin the game
+            <span>Begin the game</span>
+            <ArrowUpRight size={21} aria-hidden />
           </button>
-        </div>
+          </div>
+        </section>
       </div>
+      <footer className={styles.footer}>
+        <span>Deltrel · A meeting of minds</span>
+        <span>Rules by Ea Ea · Made for the moment</span>
+      </footer>
+      <RulesDialog open={showRules} onClose={() => setShowRules(false)} />
     </main>
   );
 }

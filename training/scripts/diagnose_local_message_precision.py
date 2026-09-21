@@ -122,7 +122,7 @@ def cases(args: argparse.Namespace) -> list[dict[str, Any]]:
 
 def configure_math(fp32: bool, device: str) -> dict[str, Any]:
     import torch
-    from startrain.device import enable_fast_math
+    from deltreltrain.device import enable_fast_math
 
     if fp32:
         torch.set_float32_matmul_precision("highest")
@@ -169,7 +169,7 @@ def metrics(
 
 def utility(outcome: Any, margin: Any, weight: float) -> Any:
     import torch
-    from startrain.contracts import SCORE_MARGIN_MIN, SCORE_MARGIN_MAX
+    from deltreltrain.contracts import SCORE_MARGIN_MIN, SCORE_MARGIN_MAX
 
     probabilities = outcome.float().softmax(-1)
     value = probabilities[:, 1] - probabilities[:, 0]
@@ -215,8 +215,8 @@ def capture(
         if name in (
             "opponent_reply_logits",
             "second_stone_logits",
-            "final_peries_logits",
-            "final_stars_logits",
+            "final_shores_logits",
+            "final_networks_logits",
         ):
             value = value[value > torch.finfo(value.dtype).min]
         raw[name] = value.detach().float().cpu()
@@ -319,9 +319,9 @@ def _save(path: Path, report: dict[str, Any]) -> None:
 
 
 def plan(args: argparse.Namespace) -> dict[str, Any]:
-    from startrain.config import load_config
-    from startrain.checkpoint import load_model_manifest
-    import startrain.model as model_module
+    from deltreltrain.config import load_config
+    from deltreltrain.checkpoint import load_model_manifest
+    import deltreltrain.model as model_module
 
     config, gpu = actor_experiment(load_config(args.config), args.actor_gpu_id)
     manifest = load_model_manifest(args.checkpoint)
@@ -379,12 +379,12 @@ def diagnostic_timing(
     progress: Any = None,
 ) -> list[dict[str, Any]]:
     import torch
-    from startrain.inference import GraphInferenceAdapter
-    from startrain.model import GraphResTNet
-    from startrain.native import load_star_native
-    from startrain.training import maybe_compile_model
+    from deltreltrain.inference import GraphInferenceAdapter
+    from deltreltrain.model import GraphResTNet
+    from deltreltrain.native import load_deltrel_native
+    from deltreltrain.training import maybe_compile_model
 
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     configure_math(False, args.device)
     refresh = config.orchestration.model_refresh
     adapters = []
@@ -493,12 +493,12 @@ def diagnostic_timing(
 def worker(args: argparse.Namespace, pinned: dict[str, Any]) -> dict[str, Any]:
     import torch
     import torch.nn.functional as functional
-    import startrain.model as model_module
-    from startrain.checkpoint import load_ema_checkpoint, load_model_manifest
-    from startrain.config import load_config
-    from startrain.local_message_inference import _reference_mean, _source_class_mean
-    from startrain.native import encode_native_feature_data, load_star_native
-    from startrain.training import maybe_compile_model
+    import deltreltrain.model as model_module
+    from deltreltrain.checkpoint import load_ema_checkpoint, load_model_manifest
+    from deltreltrain.config import load_config
+    from deltreltrain.local_message_inference import _reference_mean, _source_class_mean
+    from deltreltrain.native import encode_native_feature_data, load_deltrel_native
+    from deltreltrain.training import maybe_compile_model
 
     if not args.device.startswith("cuda") or not torch.cuda.is_available():
         raise ValueError("isolated CUDA required")
@@ -517,7 +517,7 @@ def worker(args: argparse.Namespace, pinned: dict[str, Any]) -> dict[str, Any]:
     )
     config, gpu = actor_experiment(load_config(args.config), args.actor_gpu_id)
     manifest = load_model_manifest(args.checkpoint)
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     assert native is not None and native.__file__ is not None
     model = model_module.GraphResTNet(config.model).eval()
     load_ema_checkpoint(
@@ -546,7 +546,7 @@ def worker(args: argparse.Namespace, pinned: dict[str, Any]) -> dict[str, Any]:
         "parameter_count": model.parameter_count(),
         "native_sha256": hashlib.sha256(
             (
-                Path(native.__file__).resolve().parent / "star_native.abi3.so"
+                Path(native.__file__).resolve().parent / "deltrel_native.abi3.so"
             ).read_bytes()
         ).hexdigest(),
         "fp32_gate_passed": False,

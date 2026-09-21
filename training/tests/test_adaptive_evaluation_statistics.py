@@ -5,8 +5,8 @@ import math
 import numpy as np
 import pytest
 
-from startrain.arena import ArenaPair, summarize_completed_arena_pairs
-from startrain.balanced_evaluation import (
+from deltreltrain.arena import ArenaPair, summarize_completed_arena_pairs
+from deltreltrain.balanced_evaluation import (
     ADAPTIVE_INITIAL_HANDICAP_COEFFICIENT,
     balanced_categories,
     balanced_opening_seed,
@@ -18,7 +18,7 @@ from startrain.balanced_evaluation import (
     summarize_balanced_pairs,
     weighted_stratum_log_e_value,
 )
-from startrain.config import ArenaConfig
+from deltreltrain.config import ArenaConfig
 
 
 def config():

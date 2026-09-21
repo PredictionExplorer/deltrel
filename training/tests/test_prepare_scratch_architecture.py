@@ -9,7 +9,7 @@ from scripts.prepare_elo_ablation import (
     prepare_elo_ablation,
 )
 from scripts.prepare_scratch_architecture import prepare_scratch_root
-from startrain.config import load_config
+from deltreltrain.config import load_config
 
 CONFIGS = Path(__file__).parents[1] / "configs"
 

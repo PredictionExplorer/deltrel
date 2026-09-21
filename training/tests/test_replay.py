@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 import torch
 
-from startrain.actions import extract_sample_actions, relocate_sample_actions
-from startrain.contracts import (
+from deltreltrain.actions import extract_sample_actions, relocate_sample_actions
+from deltreltrain.contracts import (
     FEATURE_SCHEMA_HASH,
     OUTCOME_LOSS,
     OUTCOME_WIN,
@@ -19,8 +19,8 @@ from startrain.contracts import (
     TARGET_SCORE_MARGIN,
     TARGET_SOFT_POLICY,
 )
-from startrain.features import DoubleStarPosition
-from startrain.replay import (
+from deltreltrain.features import DoubleDeltrelPosition
+from deltreltrain.replay import (
     MISSING_ALIVE,
     MISSING_OWNERSHIP,
     REPLAY_SCHEMA_VERSION,
@@ -32,18 +32,18 @@ from startrain.replay import (
     read_replay_shard,
     write_replay_shard,
 )
-from startrain.replay_store import ReplaySelection, ReplayStore
-from startrain.runtime import RunIdentity
-from startrain.scoring import PlayerScore, ScoreResult
-from startrain.symmetry import D5Transform
-from startrain.topology import get_topology
+from deltreltrain.replay_store import ReplaySelection, ReplayStore
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.scoring import PlayerScore, ScoreResult
+from deltreltrain.symmetry import D5Transform
+from deltreltrain.topology import get_topology
 
 
-def live_position(rings: int = 4) -> DoubleStarPosition:
+def live_position(rings: int = 4) -> DoubleDeltrelPosition:
     topology = get_topology(rings)
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
     stones[0] = 0
-    return DoubleStarPosition(
+    return DoubleDeltrelPosition(
         rings=rings,
         stones=stones,
         to_move=1,
@@ -53,23 +53,23 @@ def live_position(rings: int = 4) -> DoubleStarPosition:
     )
 
 
-def decisive_score(position: DoubleStarPosition, *, winner: int = 0) -> ScoreResult:
+def decisive_score(position: DoubleDeltrelPosition, *, winner: int = 0) -> ScoreResult:
     topology = get_topology(position.rings)
     loser = 1 - winner
     players = [PlayerScore(5, 2, 1, 0, 0, 5) for _ in range(2)]
     players[winner] = PlayerScore(10, 3, 1, 1, 0, 11)
     owner = torch.full((topology.n,), loser, dtype=torch.int8)
-    owner[: topology.peri_count] = winner
+    owner[: topology.shore_count] = winner
     return ScoreResult(
         players=(players[0], players[1]),
         node_owner=owner,
         alive_stone=torch.zeros(topology.n, dtype=torch.bool),
-        contested_peries=0,
+        contested_shores=0,
         leader=winner,
     )
 
 
-def normalized_policy(position: DoubleStarPosition) -> np.ndarray:
+def normalized_policy(position: DoubleDeltrelPosition) -> np.ndarray:
     legal = position.stones.numpy() == -1
     policy = legal.astype(np.float32)
     policy /= policy.sum()
@@ -177,7 +177,7 @@ def test_clinch_outcome_only_uses_existing_masks_without_schema_change(
         )
 
 
-def test_zero_margin_quark_tiebreak_still_has_binary_outcome() -> None:
+def test_zero_margin_cape_tiebreak_still_has_binary_outcome() -> None:
     position = live_position()
     topology = get_topology(4)
     final = ScoreResult(
@@ -187,7 +187,7 @@ def test_zero_margin_quark_tiebreak_still_has_binary_outcome() -> None:
         ),
         node_owner=torch.full((topology.n,), -1, dtype=torch.int8),
         alive_stone=torch.zeros(topology.n, dtype=torch.bool),
-        contested_peries=topology.peri_count,
+        contested_shores=topology.shore_count,
         leader=0,
     )
     sample = ReplaySample.from_position(
@@ -204,7 +204,7 @@ def test_zero_margin_quark_tiebreak_still_has_binary_outcome() -> None:
 
 def test_opening_and_terminal_samples_round_trip(tmp_path) -> None:
     topology = get_topology(4)
-    opening = DoubleStarPosition(
+    opening = DoubleDeltrelPosition(
         rings=4,
         stones=torch.full((topology.n,), -1, dtype=torch.int8),
         to_move=0,
@@ -212,7 +212,7 @@ def test_opening_and_terminal_samples_round_trip(tmp_path) -> None:
         opening=True,
         terminal=False,
     )
-    full = DoubleStarPosition(
+    full = DoubleDeltrelPosition(
         rings=4,
         stones=torch.arange(topology.n, dtype=torch.int8) % 2,
         to_move=1,
@@ -483,13 +483,13 @@ def test_replay_branch_cutoff_is_strict_persisted_and_default_neutral(
 def legacy_v4_shard(path, samples: list[ReplaySample]):
     """Write a previous-lineage schema-v4 shard from v5 samples."""
 
-    from startrain.contracts import (
+    from deltreltrain.contracts import (
         LEGACY_FEATURE_SCHEMA_HASH,
         LEGACY_RULES_HASH,
         LEGACY_RULES_HASH_WIRE,
         LEGACY_RULES_SCHEMA_ID,
     )
-    from startrain.replay import _LEGACY_SAMPLE_ARRAY_NAMES
+    from deltreltrain.replay import _LEGACY_SAMPLE_ARRAY_NAMES
 
     current = write_replay_shard(path.with_name("current-source.npz"), samples)
     with np.load(current, allow_pickle=False) as archive:
@@ -600,7 +600,7 @@ def test_variant_samples_round_trip(tmp_path) -> None:
     stones[[1, 2, 3]] = 0
     handicap = torch.zeros(topology.n, dtype=torch.bool)
     handicap[[1, 2, 3]] = True
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=4,
         stones=stones,
         to_move=1,
@@ -644,7 +644,7 @@ def classic_sample_for(rings: int = 4) -> ReplaySample:
     stones[0] = 0
     previous = torch.zeros(topology.n, dtype=torch.bool)
     previous[0] = True
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=rings,
         stones=stones,
         to_move=1,

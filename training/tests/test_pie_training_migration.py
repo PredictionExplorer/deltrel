@@ -8,10 +8,10 @@ from types import SimpleNamespace
 import pytest
 
 import scripts.preflight_run_state as preflight
-from startrain.checkpoint import game_configs_compatible
-from startrain.config import GameConfig
-from startrain.config_compatibility import without_search_execution_defaults
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
+from deltreltrain.checkpoint import game_configs_compatible
+from deltreltrain.config import GameConfig
+from deltreltrain.config_compatibility import without_search_execution_defaults
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH_WIRE
 
 
 def segment(scope=None, baseline=12):

@@ -28,7 +28,7 @@ from typing import Any, cast
 from scripts.benchmark_graph_buckets import _gpu_snapshot, _load_assessment, _nvml_uuid
 from scripts.benchmark_training_shared_geometry import _run_process
 from scripts.benchmark_local_message_adapter import actor_experiment
-from startrain.graph_cache_evidence import (
+from deltreltrain.graph_cache_evidence import (
     BOUNDED_NONINFERIORITY_POLICY,
     BUCKETS,
     SCENARIOS,
@@ -339,9 +339,9 @@ def validate(args: argparse.Namespace) -> None:
 
 
 def plan(args: argparse.Namespace) -> tuple[dict[str, Any], Any, Any, Any]:
-    from startrain.checkpoint import load_model_manifest
-    from startrain.config import load_config
-    from startrain import (
+    from deltreltrain.checkpoint import load_model_manifest
+    from deltreltrain.config import load_config
+    from deltreltrain import (
         inference,
         inference_graphs,
         model,
@@ -463,11 +463,11 @@ def worker(
     actor: Any,
 ) -> dict[str, Any]:
     import torch
-    from startrain.checkpoint import load_ema_checkpoint
-    from startrain.inference import GraphInferenceAdapter, InferenceConfig
-    from startrain.model import GraphResTNet
-    from startrain.native import load_star_native
-    from startrain.training import maybe_compile_model
+    from deltreltrain.checkpoint import load_ema_checkpoint
+    from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+    from deltreltrain.model import GraphResTNet
+    from deltreltrain.native import load_deltrel_native
+    from deltreltrain.training import maybe_compile_model
 
     worker_initial_math = read_actor_inference_math()
     validate_actor_inference_math(worker_initial_math, phase="fresh worker")
@@ -533,7 +533,7 @@ def worker(
             config=replace(base, cuda_graphs=True, cuda_graph_max_entries=entries),
         )
 
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     if native is None:
         raise ValueError("native engine unavailable")
     native.configure_rayon_threads(actor.native_threads or actor.cpu_threads)

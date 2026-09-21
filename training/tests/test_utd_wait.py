@@ -6,10 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from startrain import learner as module
-from startrain.config import LearnerConfig, TrainConfig
-from startrain.learner import LearnerLoop, UTDSegmentState
-from startrain.utd_wait import (
+from deltreltrain import learner as module
+from deltreltrain.config import LearnerConfig, TrainConfig
+from deltreltrain.learner import LearnerLoop, UTDSegmentState
+from deltreltrain.utd_wait import (
     AdaptiveCreditWait,
     new_samples_for_batch,
     sleep_interruptibly,

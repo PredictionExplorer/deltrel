@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from scripts import prepare_live_replay_profile as preparation
-from startrain.config import load_config
+from deltreltrain.config import load_config
 
 
 CONFIGS = Path(__file__).parents[1] / "configs"

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-import startrain.orchestration as module
-from startrain.config import load_config
-from startrain.runtime import load_or_create_run_identity
+import deltreltrain.orchestration as module
+from deltreltrain.config import load_config
+from deltreltrain.runtime import load_or_create_run_identity
 
 
 def fixture(tmp_path):

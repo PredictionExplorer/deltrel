@@ -1,4 +1,4 @@
-# StarTrain model-improvement roadmap
+# DeltrelTrain model-improvement roadmap
 
 This document is the source of truth for improving ring-10 strength per
 provisioned wall-clock hour. Update it only from immutable experiment evidence;
@@ -194,7 +194,7 @@ Decision:
 ```
 
 ```text
-ID: R10-LIVE-CADENCE-01
+ID: E-LIVE-CADENCE-01
 Phase: 1 — training dynamics / arena backlog
 Status: seed-17 screen complete; confirmation rejected
 Hypothesis: reducing candidate publication frequency clears arena backlog
@@ -210,7 +210,7 @@ Budget: 8 hours / 2B leaves per screen arm; 12 hours per confirmation arm
 System gates: arrival/service <=1.20 or >=25% relative reduction versus control
 Statistical gate: standard pair-valid Elo/hour screening and three-seed gate
 Lambda snapshot verification: verified distinct treatment snapshots under
-  edgeconnect-dr/elo-optimization/cadence-seed17-v2
+  deltrel-dr/elo-optimization/cadence-seed17-v2
 Result: treatment arrival/service 1.00 versus control 1.25, approximately 4.6%
   higher actor and learner throughput, but zero promotions and zero pair-valid
   champion-frontier Elo/hour in both arms
@@ -218,7 +218,7 @@ Decision: retain the runtime workload; do not confirm or adopt the 5M cadence
 ```
 
 ```text
-ID: R10-OPTIMIZER-CAL-01
+ID: E-OPTIMIZER-CAL-01
 Phase: 1 — frozen-replay optimizer/clipping calibration
 Status: v6 deployed and armed; waiting for a strictly newer quiescent terminal
   while the verified fallback continues training
@@ -259,7 +259,7 @@ Decision: preserve v4/v5 evidence, keep their activators retired, and retain the
 ```
 
 ```text
-ID: R10-LR-RECOVERY-01
+ID: E-LR-RECOVERY-01
 Phase: 1 — training dynamics / learning-rate governance
 Status: cut over 2026-09-02 04:52 UTC (36.8 minutes of downtime from the
   04:15:42 stop); 12-hour verification in progress
@@ -273,7 +273,7 @@ Commit: 73d6632c201d7c2232f9afbedc53c2bc6d19955d
 Release: main-73d6632-lr-recovery (release-manifest sha256
   4c6402c7bdd4456e127cef331d58a7e34cf7951a98ae668e9c1b6245340773bc)
 Workload: continuity primary `lr-recovery-742979`, run root
-  /home/ubuntu/edgeconnect-recovery/lr-recovery-ring10-lr-recovery-3e-4-seed17,
+  /home/ubuntu/deltrel-recovery/lr-recovery-ring10-lr-recovery-3e-4-seed17,
   profile sha256 ab77e3b36cd04cff74357a48c107b6a938409d14c04ad79a89ff3fdacc4ff016;
   `fallback-lkg` (the stopped source) remains the verified last-known-good
   fallback and the rollback path
@@ -298,7 +298,7 @@ Lambda snapshot verification: fallback snapshot
   1788322266613655941-ba1ed78f68e9da46cef7a0f0f24eec26ef5a6df0760d7df0d15609235909533b
   completed 04:15:28 UTC (14 seconds before the stop); a final post-stop
   snapshot was started at 04:16:33; the fork's own 14-minute snapshot timer
-  publishes to edgeconnect-dr/continuity/lr-recovery-742979
+  publishes to deltrel-dr/continuity/lr-recovery-742979
 Result: twelve-hour verification (16:55 UTC) — system healthy: Muon 3.0e-4 at
   multiplier 1.0 throughout, UTD 1.00, zero non-finite events, zero plateau
   events, eight candidates on the 1.55-hour cadence, actors ~370 samples/s,
@@ -309,7 +309,7 @@ Result: twelve-hour verification (16:55 UTC) — system healthy: Muon 3.0e-4 at
   games (continuing). Trend positive and monotone but all evaluations remain
   inconclusive at the 400-game cap, so the twelve-hour promotion criterion was
   not testable at this gate; the abort criteria were not approached
-Decision: keep the recovery rates; proceed with R10-ARENA-GATE-02 so the gate
+Decision: keep the recovery rates; proceed with E-ARENA-GATE-02 so the gate
   can conclude on effects of this size, then judge Elo per hour on the
   1024-simulation measurement ladder
 Notes: the fork refused sixteen root-owned SQLite temp sidecars left in the
@@ -326,7 +326,7 @@ Notes: the fork refused sixteen root-owned SQLite temp sidecars left in the
 ```
 
 ```text
-ID: R10-ARENA-GATE-02
+ID: E-ARENA-GATE-02
 Phase: 1 — promotion evidence efficiency
 Status: live since 2026-09-02 17:32 UTC (in-place migration at learner step
   775,955; four minutes of GPU idle time, stopped at the arena boundary right
@@ -340,7 +340,7 @@ Commit: 2ccd895 (migration chain 22df338 -> 2ccd895; the root's source
   authority had stayed at the parent's commit through the R1 release cutover,
   which the migration reason records)
 Release: main-2ccd895-arena-gate (profile-arena-gate.yaml, sha256 d1be1905...)
-Control: the R10-LR-RECOVERY-01 gate (1024 simulations, 50/50/200 pairs)
+Control: the E-LR-RECOVERY-01 gate (1024 simulations, 50/50/200 pairs)
 Treatment: arena.simulations 256, arena.max_pairs_per_ring 600,
   historical_evaluation {measure_direct_predecessor, simulations 1024,
   max_considered 32, pairs 50/100, every_promotions 2}
@@ -361,13 +361,13 @@ Result: first gate evaluation (candidate 774,235) concluded `reject` after
   (score 0.4725). Candidate 778,142 at -20.9 after 200 games, continuing. The
   gate now resolves in about an hour what the 400-game 1024-simulation gate
   left open in 3.8 hours. Auditing what the fast verdicts feed exposed the
-  keep-weights lag bug recorded under R10-PLATEAU-LAG-03
+  keep-weights lag bug recorded under E-PLATEAU-LAG-03
 Decision: keep the gate; the anneal it now drives is corrected in
-  R10-PLATEAU-LAG-03
+  E-PLATEAU-LAG-03
 ```
 
 ```text
-ID: R10-PLATEAU-LAG-03
+ID: E-PLATEAU-LAG-03
 Phase: 1 — training dynamics / plateau policy
 Status: live since 2026-09-02 19:37 UTC (runtime-only cutover at learner step
   780,872, two minutes of GPU idle, stopped right after candidate 778,142's
@@ -401,7 +401,7 @@ Treatment (code only, profile unchanged):
     learner.max_replay_lag_steps or more behind the learner, recording
     champion_selfplay_stale
   - reset_from_champion keeps its lag-gated pause/reset semantics
-Control: R10-ARENA-GATE-02 runtime (main-2ccd895-arena-gate)
+Control: E-ARENA-GATE-02 runtime (main-2ccd895-arena-gate)
 Seeds: 17 (production continuation)
 Budget: continuous
 System gates: learner steps per hour unchanged (~2,600) after lag passes
@@ -441,7 +441,7 @@ Decision: keep the policy; every remaining champion-lag use in the learner is
 ```
 
 ```text
-ID: R10-UTD-04
+ID: E-UTD-04
 Phase: 1 — learner utilization
 Status: live since 2026-09-03 02:03 UTC (in-place migration at learner step
   796,464, 2.5 minutes of GPU idle, applied right after candidate 785,956's
@@ -457,7 +457,7 @@ Commit: 496ad19 (migration chain 2ccd895 -> 496ad19; the R3/R4 runtime
 Release: main-496ad19-utd-1p5 (release-manifest sha256 de5301c9...; profile
   profile-utd-1.5.yaml sha256 32e2958a...); prospective segment baselined at
   examples_consumed 407,789,568 and committed replay samples 592,021,716
-Control: R10-PLATEAU-LAG-03 runtime at UTD 1.0 (candidates 782,049 and
+Control: E-PLATEAU-LAG-03 runtime at UTD 1.0 (candidates 782,049 and
   785,956 under the 1.5e-4 anneal: +13.3 and +18.5 at 1,200 games, both
   reject_max_pairs)
 Treatment: learner.target_updates_per_new_sample 1.0 -> 1.5 with the
@@ -494,13 +494,13 @@ Decision: keep UTD 1.5
 ```
 
 ```text
-ID: R10-ANNEAL-HOVER-05
+ID: E-ANNEAL-HOVER-05
 Phase: 1 — training dynamics / plateau policy
 Status: live since 2026-09-03 04:32 UTC (in-place migration at learner step
   ~805,000; two minutes of GPU idle). A first attempt at 04:22 was refused by
   the migrator with "source profile does not match the migration chain head"
   because the new defaulted field changed the canonical config hash; nothing
-  was written, the unchanged R10-UTD-04 runtime restarted within two minutes,
+  was written, the unchanged E-UTD-04 runtime restarted within two minutes,
   and the migrator was fixed (b53bb2e) to accept every legacy hash variant of
   additive defaulted fields before the second attempt
 Hypothesis: the annealed learner produces candidates that are really about
@@ -516,7 +516,7 @@ Commit: b53bb2e (policy flag 1f450a8 plus the migrator fix; migration chain
   496ad19 -> b53bb2e)
 Release: main-b53bb2e-anneal-hover (release-manifest sha256 59df27dc...;
   profile profile-anneal-hover.yaml)
-Control: R10-UTD-04 runtime (conclusive-only streak)
+Control: E-UTD-04 runtime (conclusive-only streak)
 Treatment: orchestration.plateau.count_inconclusive_rejections true; the
   arena's all-terminal streak already stands at 2 since the 19:37 recovery,
   so the second stage (multiplier 0.25, Muon 7.5e-5) fires on the first
@@ -537,7 +537,7 @@ Result: the second stage never had to fire. 793,770 ended reject_max_pairs at
   conclusive) before its verdict could count; the promotion reset the streak
   and restored the multiplier to 1.0 (Muon 2.97e-4 on the cosine). The flag
   stays enabled for the next hover; the promotion itself is credited to the
-  1.5e-4 anneal plus UTD 1.5 (R10-UTD-04)
+  1.5e-4 anneal plus UTD 1.5 (E-UTD-04)
 Decision: keep the flag; watch the post-promotion cycle at 3.0e-4 against the
   new champion 799,630. The 3.0e-4 phase after the warm start cost fifteen
   hours of below-champion candidates; if the dip recurs (candidates
@@ -558,7 +558,7 @@ Cumulative roadmap H100-hours:
 ```
 
 ```text
-Experiment: R10-LR-RECOVERY-01 cutover
+Experiment: E-LR-RECOVERY-01 cutover
 Arms: 1 (production continuation)
 Wall hours per arm: 0.61 of downtime (04:15:42-04:52:28 UTC, 2026-09-02)
 Provisioned H100-hours: 4.9 idle during the cutover
@@ -634,7 +634,7 @@ read as "lag exactly at the limit".
 Decision: three consecutive annealed candidates ended `reject_max_pairs` at
 +13, +18, and +15 Elo. That is real progress the 1,200-game gate cannot
 conclude against a +35 alternative (detecting +15 needs roughly 4,000 games),
-and under the conclusive-only rule from R10-LR-RECOVERY-01 it advances nothing:
+and under the conclusive-only rule from E-LR-RECOVERY-01 it advances nothing:
 no promotion, no stage, rate frozen at 1.5e-4. The conclusive-only rule was
 written to stop inconclusive verdicts from triggering weight resets and
 compounding cuts; with keep-weights, the floor, and restore-on-promotion, an
@@ -673,7 +673,7 @@ release-manifest sha256 52b3a864...): cutover 21:37:37-21:39:02 UTC (85
 seconds of GPU idle, learner step 785,7xx, resumed at multiplier 0.5 from the
 checkpoint's governor state), first snapshot 21:40:30 verified ok with 8,484
 catalog files; disaster coverage gap 19:36-21:40. Follow-up: the snapshot
-tool's SQLite restart loop on stopped roots (noted under R10-LR-RECOVERY-01)
+tool's SQLite restart loop on stopped roots (noted under E-LR-RECOVERY-01)
 remains open.
 
 ### 2026-09-02 — Decouple keep-weights plateau recovery from champion lag

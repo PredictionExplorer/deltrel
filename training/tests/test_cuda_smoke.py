@@ -3,19 +3,19 @@ from __future__ import annotations
 import torch
 
 import pytest
-from startrain.arena import ArenaRunner
-from startrain.config import ArenaConfig
-from startrain.features import DoubleStarPosition, encode_batch
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.native import load_star_native
-from startrain.topology import get_topology
-from startrain.training import maybe_compile_model, unwrap_model
+from deltreltrain.arena import ArenaRunner
+from deltreltrain.config import ArenaConfig
+from deltreltrain.features import DoubleDeltrelPosition, encode_batch
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.native import load_deltrel_native
+from deltreltrain.topology import get_topology
+from deltreltrain.training import maybe_compile_model, unwrap_model
 
 
 def _batch(batch_size: int = 4, *, rings: int = 4):
     topology = get_topology(rings)
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=rings,
         stones=torch.full((topology.n,), -1, dtype=torch.int8),
         to_move=0,
@@ -76,7 +76,7 @@ def test_cuda_bf16_compiled_forward_backward_is_finite() -> None:
 @pytest.mark.native
 @pytest.mark.timeout(600)
 def test_cuda_dual_compiled_arena_first_wave_completes() -> None:
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     assert native is not None
     evaluators = []
     for version in ("candidate", "baseline"):

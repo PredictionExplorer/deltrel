@@ -41,9 +41,9 @@ strength results are available.
 ## Deployment procedure
 
 Build and validate a new release at
-`/home/ubuntu/edgeconnect-releases/variant-evaluation-sessions-20260905-v2` while the
+`/home/ubuntu/deltrel-releases/variant-evaluation-sessions-20260905-v2` while the
 active runtime continues. Save units, profile, recovery provenance, and backups
-under `/home/ubuntu/edgeconnect-rollouts/evaluation-sessions-20260905` before a
+under `/home/ubuntu/deltrel-rollouts/evaluation-sessions-20260905` before a
 graceful stop. The old runtime can retain completed pairs at shutdown but cannot
 retroactively save moves from a game begun before this fix.
 
@@ -98,7 +98,7 @@ heartbeat remain active during a cooperative pause. Shutdown still cancels work
 through the normal stop path; routine GPU handoffs preserve it.
 
 The final release is
-`/home/ubuntu/edgeconnect-releases/variant-cooperative-evaluation-20260905`.
+`/home/ubuntu/deltrel-releases/variant-cooperative-evaluation-20260905`.
 Its scheduling-only migration preserves the learner and evaluation state. The
 older terminate strategy remains the default for existing profiles. Cooperative
 suspension requires shared inference and multiple actor cohorts, with GPU memory
@@ -117,7 +117,7 @@ establish shared-lock safety.
   source-file hashes and the unchanged native artifact hash. The release includes
   the monitor corrections; it no longer depends on a separately pinned monitor.
 - Active profile:
-  `/home/ubuntu/edgeconnect-runs/variant-network/profile-cooperative-evaluation-20260905.yaml`.
+  `/home/ubuntu/deltrel-runs/variant-network/profile-cooperative-evaluation-20260905.yaml`.
   Its SHA-256 is `55d2cd5fc8515d1156bbe27aa61374ead284196b59944504e75864620578e56b`.
   The final migration changed only the actor pause strategy, from terminate to
   cooperative suspend.
@@ -144,7 +144,7 @@ establish shared-lock safety.
   disaster-recovery evidence.
 - Rollback units, profile authority, migration outputs, source pins, and live
   handoff evidence are retained under
-  `/home/ubuntu/edgeconnect-rollouts/cooperative-evaluation-20260905`.
+  `/home/ubuntu/deltrel-rollouts/cooperative-evaluation-20260905`.
 
 The monitor still reports the existing high gradient-clipping frequency and the
 absence of complete connected balanced strength measurements. This rollout fixes

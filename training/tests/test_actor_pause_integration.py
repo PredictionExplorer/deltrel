@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from startrain.actor import ActorSupervisor
-from startrain.config import load_config
-from startrain.runtime import RunIdentity, atomic_json
+from deltreltrain.actor import ActorSupervisor
+from deltreltrain.config import load_config
+from deltreltrain.runtime import RunIdentity, atomic_json
 
 
 def wait_for(predicate, seconds=5):

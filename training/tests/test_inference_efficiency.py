@@ -9,15 +9,15 @@ import pytest
 import torch
 from torch import nn
 
-from startrain.features import DoubleStarPosition, EncodedBatch, encode_batch
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.inference_cache import (
+from deltreltrain.features import DoubleDeltrelPosition, EncodedBatch, encode_batch
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.inference_cache import (
     BoundedPredictionCache,
     PinnedTransferPool,
     RawPrediction,
 )
-from startrain.model import StarModelOutput
-from startrain.topology import get_topology
+from deltreltrain.model import DeltrelModelOutput
+from deltreltrain.topology import get_topology
 
 
 @dataclass
@@ -42,8 +42,8 @@ def encoded_requests(batch: EncodedBatch, *, token_start: int = 1) -> EncodedReq
     )
 
 
-def position(ring: int = 4, *, pda: int = 0) -> DoubleStarPosition:
-    return DoubleStarPosition(
+def position(ring: int = 4, *, pda: int = 0) -> DoubleDeltrelPosition:
+    return DoubleDeltrelPosition(
         rings=ring,
         stones=torch.full((get_topology(ring).n,), -1, dtype=torch.int8),
         to_move=0,
@@ -79,7 +79,7 @@ class ObservedNetwork(nn.Module):
         outcome = torch.stack((torch.zeros_like(summary), summary), dim=-1)
         margin = torch.full((batch, 303), -8.0, device=node_features.device)
         margin[:, 210] = summary + 8
-        return StarModelOutput(
+        return DeltrelModelOutput(
             policy,
             outcome,
             margin,
@@ -92,7 +92,7 @@ class ObservedNetwork(nn.Module):
 @pytest.fixture
 def feature_requests(monkeypatch):
     monkeypatch.setattr(
-        "startrain.inference.encode_native_feature_data",
+        "deltreltrain.inference.encode_native_feature_data",
         lambda data, **_: data.encoded,
     )
     return encoded_requests
@@ -340,7 +340,7 @@ def test_configuration_and_unversioned_cache_fail_closed(feature_requests):
 
 @pytest.mark.native
 def test_native_variant_requests_share_only_exact_features():
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     adapter = cached_adapter()
     for mode, handicap, pie in (
         ("double", 1, False),

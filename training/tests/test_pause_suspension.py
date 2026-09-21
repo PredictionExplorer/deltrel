@@ -10,9 +10,9 @@ from types import SimpleNamespace
 
 import pytest
 
-import startrain.orchestration as orchestration
-from startrain.orchestration import Coordinator, RunDirectories, build_worker_specs
-from startrain.runtime import RunIdentity, atomic_json
+import deltreltrain.orchestration as orchestration
+from deltreltrain.orchestration import Coordinator, RunDirectories, build_worker_specs
+from deltreltrain.runtime import RunIdentity, atomic_json
 from test_orchestration import (
     FakeClock,
     FakeProcess,
@@ -358,7 +358,7 @@ def test_final_drain_reaps_actor_already_resuming_without_leaving_lease_stuck(
 def test_real_actor_gate_and_coordinator_preserve_release_before_next_token(
     tmp_path, monkeypatch
 ):
-    from startrain.actor_pause import ActorPauseGate
+    from deltreltrain.actor_pause import ActorPauseGate
 
     case = suspension_case(tmp_path, monkeypatch)
     case.target.process.pid = os.getpid()

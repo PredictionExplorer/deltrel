@@ -2,7 +2,7 @@
 
 This extension teaches the existing network to predict the opponent's next
 reply, its own second stone in a regular Double turn, and each player's final
-peries, stars, and quarks. It adds small output heads without replacing the
+shores, networks, and capes. It adds small output heads without replacing the
 trained network or changing its search utility.
 
 ## Official game ending and labels
@@ -10,16 +10,16 @@ trained network or changing its search utility.
 When the native engine proves a winner even if the losing side receives every
 remaining empty cell, self-play ends. The losing side's stones fill those cells
 and the native scorer computes the official final result. Final component
-targets use exactly that result, including the star-count adjustment and the
-quark-peri bonus. They do not continue self-play after the proof.
+targets use exactly that result, including the network-count adjustment and the
+cape-bonus bonus. They do not continue self-play after the proof.
 
 Existing identifiers such as `clinch_auxiliary_targets: synthetic` and
 `final=clinch-loser-fill` remain for checkpoint/replay compatibility; they name
 this same official clinch-completion convention. Other terminal paths retain
 their existing final-board scoring semantics.
 
-For each player, `score = peries + (quarks >= 3) + 2*(opponent_stars-own_stars)`.
-A star is a connected same-color group directly occupying at least two peries.
+For each player, `score = shores + (capes >= 3) + 2*(opponent_networks-own_networks)`.
+A network is a connected same-color group directly occupying at least two shores.
 Corner control includes territory, not only corner-stone occupancy.
 
 ## Prediction contract
@@ -32,13 +32,13 @@ are unchanged.
 | --- | --- |
 | Opponent reply | The next recorded opponent decision's search policy; an actual pie swap has its own final action slot |
 | Second stone | The later search policy for the second placement of the same regular Double turn |
-| Final peries | Categorical count, 0–50, for each player |
-| Final stars | Categorical count, 0–25, for each player |
-| Final quarks | Categorical count, 0–5, for each player |
+| Final shores | Categorical count, 0–50, for each player |
+| Final networks | Categorical count, 0–25, for each player |
+| Final capes | Categorical count, 0–5, for each player |
 
-Player pairs are ordered player-to-move, then opponent. Peries and stars mask
+Player pairs are ordered player-to-move, then opponent. Shores and networks mask
 counts impossible for the current board size. The probability of receiving the
-quark-peri bonus is the sum of quark-count probabilities for counts 3–5.
+cape-bonus bonus is the sum of cape-count probabilities for counts 3–5.
 
 Future move labels stay within a game. They account for the remaining own
 placements, exclude handicap opening placements from the second-stone task,
@@ -53,7 +53,7 @@ components are cached outside the training batch's graph traversal. Progressive
 publication can enrich existing positions without adding fresh-position credit.
 
 The preparation script's initial loss weights are opponent reply 0.1, second
-stone 0.1, final peries 0.05, final stars 0.05 and final quarks 0.025. Other loss
+stone 0.1, final shores 0.05, final networks 0.05 and final capes 0.025. Other loss
 weights, optimizer settings, sampling, search budgets and publication cadence
 are retained. These are initial settings, not an established optimum.
 
@@ -83,7 +83,7 @@ The browser's six-output ONNX contract is unchanged.
 
 The full-model API uses opt-in `include_predictions` on schema-3 analysis
 requests. Old clients retain their original response shape. New clients display
-expected final peries, stars, controlled corners and corner-bonus probability
+expected final shores, networks, controlled corners and corner-bonus probability
 for both players, plus applicable future-move predictions. These are estimates
 for the analyzed position, separate from the current scoring projection.
 

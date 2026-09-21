@@ -7,17 +7,17 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from startrain.contracts import (
+from deltreltrain.contracts import (
     TARGET_ALIVE,
     TARGET_OUTCOME,
     TARGET_OWNERSHIP,
     TARGET_POLICY,
     TARGET_SCORE_MARGIN,
 )
-from startrain.inference import InferenceResponse
-from startrain.native import positions_from_native, score_results_from_native
-from startrain.selfplay import SelfPlayActor, SelfPlayConfig
-from startrain.topology import get_topology
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.native import positions_from_native, score_results_from_native
+from deltreltrain.selfplay import SelfPlayActor, SelfPlayConfig
+from deltreltrain.topology import get_topology
 
 
 def test_candidate_limit_scaling_is_explicit_and_capped() -> None:
@@ -116,7 +116,7 @@ def test_pending_clinch_is_not_counted_before_cohort_finalization() -> None:
 
 @pytest.mark.native
 def test_fast_policy_target_ablation_records_completed_q_when_enabled() -> None:
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
 
     class UniformEvaluator:
         model_version = "uniform"
@@ -174,7 +174,7 @@ def test_fast_policy_target_ablation_records_completed_q_when_enabled() -> None:
 
 @pytest.mark.native
 def test_loser_fill_clinch_stops_search_and_supplies_conservative_targets() -> None:
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
 
     class UniformEvaluator:
         model_version = "uniform"

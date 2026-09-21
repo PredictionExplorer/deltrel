@@ -7,12 +7,12 @@ import {
   type RefObject,
 } from 'react';
 import { History } from 'lucide-react';
-import type { StarBoardProps } from './StarBoard';
-import { StarBoard } from './StarBoard';
+import type { DeltrelBoardProps } from './DeltrelBoard';
+import { DeltrelBoard } from './DeltrelBoard';
 import styles from './GameScreen.module.css';
 
 type BoardStageProps = Pick<
-  StarBoardProps,
+  DeltrelBoardProps,
   | 'board'
   | 'stones'
   | 'nodeOwner'
@@ -81,7 +81,7 @@ export const BoardStage = memo(function BoardStage({
       className={`${styles.boardStage} ${className}`}
     >
       <div className={styles.boardFrame}>
-        <StarBoard
+        <DeltrelBoard
           board={board}
           stones={stones}
           nodeOwner={nodeOwner}
@@ -104,16 +104,16 @@ export const BoardStage = memo(function BoardStage({
         {review && (
           <div
             data-review-banner
-            className="pop-in absolute left-1/2 top-2 z-10 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-2.5 rounded-full border border-gold/45 bg-night-surface-strong/95 py-1.5 pl-3.5 pr-1.5 shadow-[0_10px_36px_rgba(0,0,0,0.5)] backdrop-blur-md"
+            className="pop-in absolute left-1/2 top-2 z-10 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-2.5 rounded-full border border-sand/45 bg-estuary-surface-strong/95 py-1.5 pl-3.5 pr-1.5 shadow-[0_10px_36px_rgba(0,0,0,0.5)] backdrop-blur-md"
           >
-            <History className="h-3.5 w-3.5 shrink-0 text-gold" aria-hidden />
+            <History className="h-3.5 w-3.5 shrink-0 text-sand" aria-hidden />
             <span className="whitespace-nowrap text-xs text-ink">
               {review.ply === 0 ? (
                 'Start'
               ) : (
                 <>
                   Move{' '}
-                  <span className="font-mono tabular-nums text-gold-strong">
+                  <span className="font-mono tabular-nums text-sand-strong">
                     {review.ply}
                   </span>
                 </>
@@ -124,7 +124,7 @@ export const BoardStage = memo(function BoardStage({
             <button
               type="button"
               onClick={review.onExit}
-              className="min-h-8 whitespace-nowrap rounded-full border border-gold/60 bg-gold-faint px-3 py-1 text-xs font-medium text-gold-strong transition-colors hover:bg-gold/25"
+              className="min-h-8 whitespace-nowrap rounded-full border border-sand/60 bg-sand-faint px-3 py-1 text-xs font-medium text-sand-strong transition-colors hover:bg-sand/25"
             >
               Back to live
             </button>
@@ -134,24 +134,24 @@ export const BoardStage = memo(function BoardStage({
           aria-live="polite"
           className={`pointer-events-none absolute bottom-2 left-2 max-w-[calc(100%-1rem)] rounded-lg border px-2.5 py-1 font-mono text-xs backdrop-blur-sm ${
             proof
-              ? 'border-gold/35 bg-night-surface-strong/90 text-ink shadow-lg'
+              ? 'border-sand/35 bg-estuary-surface-strong/90 text-ink shadow-lg'
               : 'truncate border-white/10 bg-black/45 text-muted'
           }`}
         >
           {proof ? (
             <>
-              <span className="font-sans text-[0.65rem] font-semibold uppercase tracking-[0.13em] text-gold">
+              <span className="font-sans text-[0.65rem] font-semibold uppercase tracking-[0.13em] text-sand">
                 {proof.label}
               </span>
               <span className="ml-2 text-muted">{proof.detail}</span>
             </>
           ) : hoverNode >= 0 ? (
             <>
-              node <span className="text-gold">{board.labels[hoverNode]}</span>
-              {board.isQuark[hoverNode]
-                ? ' · quark'
-                : board.isPeri[hoverNode]
-                  ? ' · peri'
+              node <span className="text-sand">{board.labels[hoverNode]}</span>
+              {board.isCape[hoverNode]
+                ? ' · cape'
+                : board.isShore[hoverNode]
+                  ? ' · shore'
                   : ''}
             </>
           ) : (

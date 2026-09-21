@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from scripts import render_workload_protection_units as renderer
-from startrain import continuity
+from deltreltrain import continuity
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -69,8 +69,8 @@ def _manifest(tmp_path: Path) -> Path:
     training_dir = release_root / "training"
     source_files: dict[str, str] = {}
     for relative in (
-        "startrain/orchestration.py",
-        "startrain/continuity.py",
+        "deltreltrain/orchestration.py",
+        "deltreltrain/continuity.py",
         "scripts/reconcile_training_continuity.py",
     ):
         path = training_dir / relative
@@ -79,7 +79,7 @@ def _manifest(tmp_path: Path) -> Path:
         source_files[f"training/{relative}"] = hashlib.sha256(
             path.read_bytes()
         ).hexdigest()
-    orchestrator = training_dir / ".venv" / "bin" / "startrain-orchestrate"
+    orchestrator = training_dir / ".venv" / "bin" / "deltreltrain-orchestrate"
     orchestrator.parent.mkdir(parents=True)
     orchestrator.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     orchestrator.chmod(0o755)
@@ -88,7 +88,7 @@ def _manifest(tmp_path: Path) -> Path:
     _write_json(
         runtime_manifest,
         {
-            "report": "edgeconnect-immutable-release",
+            "report": "deltrel-immutable-release",
             "schema_version": 1,
             "source_files": source_files,
         },
@@ -96,8 +96,8 @@ def _manifest(tmp_path: Path) -> Path:
     runtime_sha256 = hashlib.sha256(runtime_manifest.read_bytes()).hexdigest()
     unit_root = (tmp_path / "units").resolve()
     unit_root.mkdir()
-    primary_unit = unit_root / "edgeconnect-primary.service"
-    fallback_unit = unit_root / "edgeconnect-fallback.service"
+    primary_unit = unit_root / "deltrel-primary.service"
+    fallback_unit = unit_root / "deltrel-fallback.service"
     primary_unit.write_text("[Service]\nExecStart=/bin/true\n", encoding="utf-8")
     fallback_unit.write_text("[Service]\nExecStart=/bin/true\n", encoding="utf-8")
 
@@ -147,18 +147,18 @@ def _manifest(tmp_path: Path) -> Path:
         primary_unit,
     )
     primary["protection"] = {
-        "replay_backup_timer": "edgeconnect-startrain-primary-backup.timer",
+        "replay_backup_timer": "deltrel-deltreltrain-primary-backup.timer",
         "disaster_backup_timer": (
-            "edgeconnect-startrain-primary-disaster-backup.timer"
+            "deltrel-deltreltrain-primary-disaster-backup.timer"
         ),
         "disaster_backup_root": str(disaster_root),
         "disaster_backup_mount": str(disaster_mount),
-        "telemetry_service": "edgeconnect-startrain-primary-monitor.service",
+        "telemetry_service": "deltrel-deltreltrain-primary-monitor.service",
         "telemetry_output": str(primary_root / "status" / "monitor-5s.jsonl"),
         "telemetry_max_bytes": 50 * 1024 * 1024,
         "telemetry_retain_files": 7,
-        "report_service": "edgeconnect-startrain-primary-report.service",
-        "report_timer": "edgeconnect-startrain-primary-report.timer",
+        "report_service": "deltrel-deltreltrain-primary-report.service",
+        "report_timer": "deltrel-deltreltrain-primary-report.timer",
         "report_provisioned_gpus": 8,
         "service_user": "ubuntu",
     }
@@ -218,28 +218,28 @@ def test_renderer_is_deterministic_and_resolves_all_templates(
     assert all(b"@" not in content for content in first.values())
     assert (
         b"--continuity-manifest " + str(manifest).encode()
-        in first["edgeconnect-startrain-primary-monitor.service"]
+        in first["deltrel-deltreltrain-primary-monitor.service"]
     )
     assert (
         b"--interval 5 --format jsonl"
-        in first["edgeconnect-startrain-primary-monitor.service"]
+        in first["deltrel-deltreltrain-primary-monitor.service"]
     )
     assert (
         b"--telemetry-max-bytes 52428800"
-        in first["edgeconnect-startrain-primary-monitor.service"]
+        in first["deltrel-deltreltrain-primary-monitor.service"]
     )
     assert (
         b"--telemetry-retain-files 7"
-        in first["edgeconnect-startrain-primary-monitor.service"]
+        in first["deltrel-deltreltrain-primary-monitor.service"]
     )
-    assert b"--quiet" in first["edgeconnect-startrain-primary-report.service"]
+    assert b"--quiet" in first["deltrel-deltreltrain-primary-report.service"]
     assert (
-        b"Unit=edgeconnect-startrain-primary-report.service"
-        in first["edgeconnect-startrain-primary-report.timer"]
+        b"Unit=deltrel-deltreltrain-primary-report.service"
+        in first["deltrel-deltreltrain-primary-report.timer"]
     )
     assert (
-        b"Unit=edgeconnect-startrain-primary-backup.service"
-        in first["edgeconnect-startrain-primary-backup.timer"]
+        b"Unit=deltrel-deltreltrain-primary-backup.service"
+        in first["deltrel-deltreltrain-primary-backup.timer"]
     )
 
 
@@ -256,7 +256,7 @@ def test_renderer_refuses_overwrite_without_safe_replace_flag(
         user="ubuntu",
         provisioned_gpus=8,
     )
-    monitor = output / "edgeconnect-startrain-primary-monitor.service"
+    monitor = output / "deltrel-deltreltrain-primary-monitor.service"
     expected = monitor.read_bytes()
     assert monitor.stat().st_mode & 0o777 == 0o644
     monitor.write_text("drift\n", encoding="utf-8")

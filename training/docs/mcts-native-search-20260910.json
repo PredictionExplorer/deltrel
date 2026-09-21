@@ -62,13 +62,13 @@
     "includes": "all requested semantic states and legal ordering; selected actions, visits, and float bits of every root statistic and policy target; opaque response tokens omitted"
   },
   "candidate_source_sha256": {
-    "training/crates/star-search/src/tree.rs": "70836bcd3338853c0594a27141f8cbac7980e79648013252a1060bfdfe2f60a4",
-    "training/crates/star-search/src/gumbel.rs": "577ac9157583eb2f8666d87a6467c321e317efeb11396a85ee91e359c2dcb56c",
-    "training/crates/star-search/src/batch.rs": "1fd602fa1b4776e7fa706837b6bd1477d82d6f2d3fb3d07c8c64ecd9d301a152",
-    "training/crates/star-py/src/lib.rs": "34ab7b86689ae23e6f1b24f9584414638f6cc8d0b4e850fc4c1b3177c4f22fc9",
-    "training/crates/star-wasm/src/lib.rs": "eef834021af6a17407ec2948968ba3ce99f1449f4a505b8ff37dd0c291115287",
-    "src/workers/star-ai.worker.ts": "f977be92fc5f85aff74afe268b74c41e3fbc74bdbd4d0cdbb5073abff8494f9d",
-    "training/crates/star-search/examples/benchmark_search.rs": "411cca439859dd8bfd76564f2c897b6079ad0facfacf9d0f733d21658cb6d51a"
+    "training/crates/deltrel-search/src/tree.rs": "70836bcd3338853c0594a27141f8cbac7980e79648013252a1060bfdfe2f60a4",
+    "training/crates/deltrel-search/src/gumbel.rs": "577ac9157583eb2f8666d87a6467c321e317efeb11396a85ee91e359c2dcb56c",
+    "training/crates/deltrel-search/src/batch.rs": "1fd602fa1b4776e7fa706837b6bd1477d82d6f2d3fb3d07c8c64ecd9d301a152",
+    "training/crates/deltrel-py/src/lib.rs": "34ab7b86689ae23e6f1b24f9584414638f6cc8d0b4e850fc4c1b3177c4f22fc9",
+    "training/crates/deltrel-wasm/src/lib.rs": "eef834021af6a17407ec2948968ba3ce99f1449f4a505b8ff37dd0c291115287",
+    "src/workers/deltrel-ai.worker.ts": "f977be92fc5f85aff74afe268b74c41e3fbc74bdbd4d0cdbb5073abff8494f9d",
+    "training/crates/deltrel-search/examples/benchmark_search.rs": "411cca439859dd8bfd76564f2c897b6079ad0facfacf9d0f733d21658cb6d51a"
   },
   "sample_order": "Within each case and arm: block0/repeats0..2, block1/repeats0..2, block2/repeats0..2, block3/repeats0..2. Run order alternates AB/BA between blocks.",
   "cases": [

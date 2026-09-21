@@ -6,15 +6,15 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.inference_cache import BoundedPredictionCache, RawPrediction
-from startrain.native import encode_native_feature_data
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.inference_cache import BoundedPredictionCache, RawPrediction
+from deltreltrain.native import encode_native_feature_data
 from test_inference_efficiency import ObservedNetwork
 
 
 @pytest.fixture
 def native():
-    module = pytest.importorskip("star_native")
+    module = pytest.importorskip("deltrel_native")
     assert module.native_inference_key_version() == 1, "rebuild native inference keys"
     return module
 

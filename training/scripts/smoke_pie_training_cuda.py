@@ -23,16 +23,16 @@ from scripts.validate_cuda_graph_runtime import (
     compare_predictions,
     regular_adapter,
 )
-from startrain.checkpoint import load_checkpoint
-from startrain.config import load_config
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.model import GraphResTNet
-from startrain.native import load_star_native, positions_from_native
-from startrain.optim import build_optimizer
-from startrain.replay import ReplaySample, collate_replay_samples
-from startrain.runtime import atomic_json
-from startrain.selfplay import GameVariant
-from startrain.training import train_step
+from deltreltrain.checkpoint import load_checkpoint
+from deltreltrain.config import load_config
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.model import GraphResTNet
+from deltreltrain.native import load_deltrel_native, positions_from_native
+from deltreltrain.optim import build_optimizer
+from deltreltrain.replay import ReplaySample, collate_replay_samples
+from deltreltrain.runtime import atomic_json
+from deltreltrain.selfplay import GameVariant
+from deltreltrain.training import train_step
 
 
 def main() -> None:
@@ -76,7 +76,7 @@ def main() -> None:
         model_version="sha256-" + checkpoint_hash,
     )
     reference = regular_adapter(graph)
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     if native is None:
         raise RuntimeError("native extension unavailable")
     results, training_samples = [], []

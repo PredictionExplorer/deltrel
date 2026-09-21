@@ -5,11 +5,11 @@ from unittest.mock import patch
 import pytest
 import torch
 
-from startrain.attention_bias_autograd import (
+from deltreltrain.attention_bias_autograd import (
     _relation_bias_vjp,
     relation_bias_gradient_carrier,
 )
-from startrain.model import _explicit_attention_in_fp32, model_parameter_count
+from deltreltrain.model import _explicit_attention_in_fp32, model_parameter_count
 
 
 @pytest.mark.parametrize("groups", [1, 2, 4])
@@ -101,7 +101,7 @@ def test_compiled_carrier_preserves_zero_forward_and_bias_gradient():
 
 
 def test_bias_fix_retains_approved_parameter_count():
-    from startrain.config import load_config
+    from deltreltrain.config import load_config
 
     profile = load_config(
         Path(__file__).parents[1] / "configs/h100-8gpu-largest-board-priority.yaml"
@@ -110,8 +110,8 @@ def test_bias_fix_retains_approved_parameter_count():
 
 
 def test_model_forward_is_unchanged_from_explicit_zero_carrier():
-    from startrain.features import encode_batch
-    from startrain.model import GraphResTNet, ModelConfig
+    from deltreltrain.features import encode_batch
+    from deltreltrain.model import GraphResTNet, ModelConfig
     from test_inference_efficiency import position
 
     torch.manual_seed(869)
@@ -125,7 +125,7 @@ def test_model_forward_is_unchanged_from_explicit_zero_carrier():
         explicit = _explicit_attention_in_fp32(query, key, value, mask, groups)
         return explicit - explicit.detach()
 
-    with patch("startrain.model._relation_bias_gradient_carrier", original_carrier):
+    with patch("deltreltrain.model._relation_bias_gradient_carrier", original_carrier):
         expected = original(*batch.model_args())
     actual = model(*batch.model_args())
     for candidate, reference in zip(actual, expected, strict=True):

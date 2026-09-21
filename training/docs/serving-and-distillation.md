@@ -7,18 +7,18 @@ publication steps below. From `training/`, the equivalent pip setup is:
 
 ```bash
 python -m pip install "maturin==1.14.1" -e ".[serve,onnx]"
-maturin develop --release --locked --manifest-path crates/star-py/Cargo.toml
+maturin develop --release --locked --manifest-path crates/deltrel-py/Cargo.toml
 ```
 
-No model is included in the repository. `starserve` can start only after
-`configs/starserve.yaml` points to an existing champion:
+No model is included in the repository. `deltrelserve` can start only after
+`configs/deltrelserve.yaml` points to an existing champion:
 
 ```bash
-export STARSERVE_BEARER_TOKEN="replace-with-a-secret"
-starserve --config configs/starserve.yaml
+export DELTRELSERVE_BEARER_TOKEN="replace-with-a-secret"
+deltrelserve --config configs/deltrelserve.yaml
 ```
 
-`starserve` loads only EMA weights named by an atomic `champion.json` pointer.
+`deltrelserve` loads only EMA weights named by an atomic `champion.json` pointer.
 The pointer references an immutable, content-addressed manifest and checkpoint;
 SHA-256, byte length, run identity, generation family, experiment
 configuration, finalized rules hash, feature hash, and checkpoint step are
@@ -37,15 +37,15 @@ Install the service and native search extension from a repository checkout on
 the Mac:
 
 ```bash
-cd /path/to/EdgeConnect/training
+cd /path/to/Deltrel/training
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install "maturin==1.14.1" -e ".[serve]"
 rustup toolchain install 1.93.0
 RUSTUP_TOOLCHAIN=1.93.0 maturin develop --release --locked \
-  --manifest-path crates/star-py/Cargo.toml
-python -c 'import star_native, torch; print(star_native.__file__); print("mps_available=", torch.backends.mps.is_available())'
+  --manifest-path crates/deltrel-py/Cargo.toml
+python -c 'import deltrel_native, torch; print(deltrel_native.__file__); print("mps_available=", torch.backends.mps.is_available())'
 ```
 
 Create each snapshot on the training host, where the atomic pointer and its
@@ -60,11 +60,11 @@ Run the export remotely and transfer the new, versioned directory with SSH and
 
 ```bash
 export TRAIN_HOST=trainer.example
-export TRAINING_ROOT=/srv/EdgeConnect/training
+export TRAINING_ROOT=/srv/Deltrel/training
 export REMOTE_CHAMPION=runs/h100-8gpu-optimized/learner/champion.json
 export REMOTE_PROFILE=configs/h100-8gpu-optimized.yaml
 export SNAPSHOT_ID="$(date -u +%Y%m%dT%H%M%SZ)"
-export REMOTE_SNAPSHOT="/tmp/edgeconnect-champion-$SNAPSHOT_ID"
+export REMOTE_SNAPSHOT="/tmp/deltrel-champion-$SNAPSHOT_ID"
 
 ssh "$TRAIN_HOST" \
   "cd '$TRAINING_ROOT' && .venv/bin/python scripts/export_champion_snapshot.py \
@@ -72,13 +72,13 @@ ssh "$TRAIN_HOST" \
   --profile '$REMOTE_PROFILE' \
   --output '$REMOTE_SNAPSHOT'"
 
-export LOCAL_SNAPSHOT="$HOME/.local/share/edgeconnect/$SNAPSHOT_ID"
+export LOCAL_SNAPSHOT="$HOME/.local/share/deltrel/$SNAPSHOT_ID"
 mkdir -p "$LOCAL_SNAPSHOT"
 rsync -a "$TRAIN_HOST:$REMOTE_SNAPSHOT/" "$LOCAL_SNAPSHOT/"
 ```
 
 The bundle is relocatable. `champion.json` retains its manifest path, the
-manifest retains its checkpoint path, and `starserve-mac.yaml` uses only
+manifest retains its checkpoint path, and `deltrelserve-mac.yaml` uses only
 bundle-relative paths. The generated server config binds `127.0.0.1`, selects
 `mps`, has no CORS origins or bearer token, and limits analysis to one
 concurrent request. Its derived experiment profile uses FP32 and disables
@@ -87,10 +87,10 @@ concurrent request. Its derived experiment profile uses FP32 and disables
 Start and verify the Mac service:
 
 ```bash
-cd /path/to/EdgeConnect/training
+cd /path/to/Deltrel/training
 source .venv/bin/activate
-starserve --config "$LOCAL_SNAPSHOT/starserve-mac.yaml" --check-config
-starserve --config "$LOCAL_SNAPSHOT/starserve-mac.yaml"
+deltrelserve --config "$LOCAL_SNAPSHOT/deltrelserve-mac.yaml" --check-config
+deltrelserve --config "$LOCAL_SNAPSHOT/deltrelserve-mac.yaml"
 ```
 
 In another terminal, verify readiness and launch Next.js with the private
@@ -99,24 +99,24 @@ loopback endpoint:
 ```bash
 curl --fail --silent http://127.0.0.1:8080/v2/health | python -m json.tool
 
-cd /path/to/EdgeConnect
-export STAR_AI_SERVER_URL=http://127.0.0.1:8080
-export NEXT_PUBLIC_STAR_AI_DEVTOOLS=1
+cd /path/to/Deltrel
+export DELTREL_AI_SERVER_URL=http://127.0.0.1:8080
+export NEXT_PUBLIC_DELTREL_AI_DEVTOOLS=1
 npm run dev
 ```
 
 The equivalent `.env.local` entries are:
 
 ```dotenv
-STAR_AI_SERVER_URL=http://127.0.0.1:8080
-NEXT_PUBLIC_STAR_AI_DEVTOOLS=1
+DELTREL_AI_SERVER_URL=http://127.0.0.1:8080
+NEXT_PUBLIC_DELTREL_AI_DEVTOOLS=1
 ```
 
 If startup reports that MPS is unavailable, or batch-one measurements show
 CPU is faster, use the same verified bundle with the explicit CPU override:
 
 ```bash
-starserve --config "$LOCAL_SNAPSHOT/starserve-mac.yaml" --device cpu
+deltrelserve --config "$LOCAL_SNAPSHOT/deltrelserve-mac.yaml" --device cpu
 ```
 
 Refresh by exporting and syncing a new `SNAPSHOT_ID`, stopping the old process,
@@ -129,7 +129,7 @@ in-place replacement.
 Launch the single-host pipeline with an explicit topology:
 
 ```bash
-startrain-orchestrate --config configs/h100-8gpu.yaml
+deltreltrain-orchestrate --config configs/h100-8gpu.yaml
 ```
 
 The coordinator durably creates `<run-root>/run.json` and passes its path to each child.
@@ -142,7 +142,7 @@ Completed game IDs are unique in SQLite, so a restarted actor cannot commit the
 same game twice.
 
 The learner writes immutable `sha256-<digest>.pt` checkpoints, immutable
-content-hashed manifests, and an atomic `candidate.json` pointer. `starserve`
+content-hashed manifests, and an atomic `candidate.json` pointer. `deltrelserve`
 never reads that pointer. Shipped profiles keep actors on `champion.json`;
 research runs may explicitly select the latest candidate or a seeded
 candidate/champion mixture through `model_refresh.selfplay_source`. Pointer
@@ -249,7 +249,7 @@ playout-doubling advantage `pda` in `-3..3` for the side to move (browser client
 ```json
 {
   "schema_version": 3,
-  "rules_hash": "fnv1a64:a5d932b0ef8354e8",
+  "rules_hash": "fnv1a64:46e4fbcff4e17fd3",
   "rings": 4,
   "stones": [-1, -1, -1, -1, -1, -1, -1, 0, -1, -1,
              -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -280,7 +280,7 @@ playout-doubling advantage `pda` in `-3..3` for the side to move (browser client
 }
 ```
 
-The state is imported through `star_native.StateBatch.from_semantic`; Python
+The state is imported through `deltrel_native.StateBatch.from_semantic`; Python
 does not replay or reinterpret moves. The response contains one atomic
 placement, completed-Q root policy, root Q and visits, `{loss, win}` probabilities,
 `P(win) - P(loss)`, the visit-weighted `root_value` (the opener's optimal-swap payoff
@@ -302,48 +302,48 @@ cancellation signal and keeps its concurrency slot until the worker stops.
 ## Private same-origin proxy
 
 The web app defaults to its own `/v2/move` and `/v2/health` route handlers. Keep
-`starserve` private and configure the Next.js server with:
+`deltrelserve` private and configure the Next.js server with:
 
 ```bash
-STAR_AI_SERVER_URL=http://starserve.internal:8080
-STAR_AI_BEARER_TOKEN="$STARSERVE_BEARER_TOKEN"
+DELTREL_AI_SERVER_URL=http://deltrelserve.internal:8080
+DELTREL_AI_BEARER_TOKEN="$DELTRELSERVE_BEARER_TOKEN"
 ```
 
-`STAR_AI_SERVER_URL` must be an absolute HTTP(S) URL without embedded credentials.
-`STAR_AI_BEARER_TOKEN` must match the environment variable named by
+`DELTREL_AI_SERVER_URL` must be an absolute HTTP(S) URL without embedded credentials.
+`DELTREL_AI_BEARER_TOKEN` must match the environment variable named by
 `security.bearer_token_env` in the server YAML. Both variables are server-only; never
-use a `NEXT_PUBLIC_*` token. Leave `NEXT_PUBLIC_STAR_AI_URL` unset for the same-origin
+use a `NEXT_PUBLIC_*` token. Leave `NEXT_PUBLIC_DELTREL_AI_URL` unset for the same-origin
 proxy. Optional public search-budget variables must stay within the server YAML limits.
 
 Build the CUDA service image from this directory:
 
 ```bash
-docker build -t edgeconnect-starserve .
+docker build -t deltrel-deltrelserve .
 docker run --gpus all --read-only \
   -p 8080:8080 \
-  -e STARSERVE_CONFIG=/config/starserve.yaml \
-  -e STARSERVE_BEARER_TOKEN \
+  -e DELTRELSERVE_CONFIG=/config/deltrelserve.yaml \
+  -e DELTRELSERVE_BEARER_TOKEN \
   -v "$PWD/configs:/config:ro" \
   -v "$PWD/runs:/runs:ro" \
-  edgeconnect-starserve
+  deltrel-deltrelserve
 ```
 
 Adjust manifest paths in the mounted server YAML for the container layout.
 
 ## Browser model
 
-`startrain-distill` trains a newly initialized, configurable smaller
+`deltreltrain-distill` trains a newly initialized, configurable smaller
 `GraphResTNet` from validated replay search/outcome/spatial targets. When a
 teacher EMA manifest is configured, per-head logit KL can be enabled for policy,
 binary outcome, score margin, ownership, and alive beliefs.
 
 ```bash
-startrain-distill --config configs/distill-browser.yaml
+deltreltrain-distill --config configs/distill-browser.yaml
 ```
 
 The command emits:
 
-- a regular atomic startrain checkpoint containing raw and EMA state;
+- a regular atomic deltreltrain checkpoint containing raw and EMA state;
 - an EMA-weight FP16 ONNX model with dynamic batch, node, degree, and action axes;
 - a browser manifest (schema 3) with SHA-256 and byte length for both artifacts,
   exact tensor names/dtypes/shapes (including the per-sample `rings` input that
@@ -354,8 +354,8 @@ The command emits:
 The browser worker builds a variant-aware WASM state from the request (mode,
 handicap, pie), replays placements and the swap, encodes the schema-v4 features with
 history always known and `pda = 0`, and swaps when the selected keep continuation is
-below the negative manifest dead zone. `src/lib/star/ai/features.ts` is pinned to the Python
-encoder through `testdata/star/features-v4.json`.
+below the negative manifest dead zone. `src/lib/deltrel/ai/features.ts` is pinned to the Python
+encoder through `testdata/deltrel/features-v4.json`.
 
 Artifact versions are immutable: the command refuses to overwrite an existing
 checkpoint, ONNX model, or manifest. Choose a new `model_version` for each run.
@@ -364,30 +364,30 @@ Publish a verified browser release only after distillation succeeds:
 
 ```bash
 cd ..
-RUSTUP_TOOLCHAIN=1.93.0 npm run build:star-wasm
+RUSTUP_TOOLCHAIN=1.93.0 npm run build:deltrel-wasm
 cd training
-startrain-publish-browser \
-  --manifest runs/browser/star-browser-v3.browser.json \
-  --target ../public/models/star \
-  --wasm-source ../public/models/star/wasm-a5d932b0ef8354e8
+deltreltrain-publish-browser \
+  --manifest runs/browser/deltrel-browser-v3.browser.json \
+  --target ../public/models/deltrel \
+  --wasm-source ../public/models/deltrel/wasm-46e4fbcff4e17fd3
 ```
 
 The release command verifies SHA-256 and byte length for both the Python
 checkpoint and ONNX artifact, copies the immutable ONNX file, and atomically
-replaces `public/models/star/manifest.json` last. An optional WASM build can be
+replaces `public/models/deltrel/manifest.json` last. An optional WASM build can be
 run as the same verified release step:
 
 ```bash
-startrain-publish-browser \
-  --manifest runs/browser/star-browser-v3.browser.json \
-  --target ../public/models/star \
+deltreltrain-publish-browser \
+  --manifest runs/browser/deltrel-browser-v3.browser.json \
+  --target ../public/models/deltrel \
   --wasm-cwd .. \
-  --wasm-source ../public/models/star/wasm-a5d932b0ef8354e8 \
-  --wasm-build npm run build:star-wasm
+  --wasm-source ../public/models/deltrel/wasm-46e4fbcff4e17fd3 \
+  --wasm-build npm run build:deltrel-wasm
 ```
 
 The verified WASM artifacts are
-`wasm/star_wasm.js` and `wasm/star_wasm_bg.wasm`. The build runs first; the
+`wasm/deltrel_wasm.js` and `wasm/deltrel_wasm_bg.wasm`. The build runs first; the
 release command stages and verifies both WASM files and the ONNX model, then
 replaces the canonical `manifest.json` strictly last.
 

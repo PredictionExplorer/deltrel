@@ -9,19 +9,19 @@ from types import SimpleNamespace
 
 import pytest
 
-import startrain.cli as cli_module
-import startrain.orchestration as orchestration_module
-from starserve.cli import main as starserve_main
-from startrain.arena import ARENA_RESULT_SCHEMA_VERSION
-from startrain.cli import (
+import deltreltrain.cli as cli_module
+import deltreltrain.orchestration as orchestration_module
+from deltrelserve.cli import main as deltrelserve_main
+from deltreltrain.arena import ARENA_RESULT_SCHEMA_VERSION
+from deltreltrain.cli import (
     actor_main,
     arena_main,
     main,
     selfplay_main,
     train_main,
 )
-from startrain.distill import distill_main
-from startrain.orchestration import (
+from deltreltrain.distill import distill_main
+from deltreltrain.orchestration import (
     FATAL_WORKER_EXIT_CODE,
     TRANSIENT_WORKER_EXIT_CODE,
     WORKER_FAILURE_PATH_ENV,
@@ -29,9 +29,9 @@ from startrain.orchestration import (
     WORKER_ROLE_ENV,
     orchestrate_main,
 )
-from startrain.preflight import preflight_main
-from startrain.promotion import promotion_main
-from startrain.publish import publish_browser_main
+from deltreltrain.preflight import preflight_main
+from deltreltrain.promotion import promotion_main
+from deltreltrain.publish import publish_browser_main
 
 
 @pytest.mark.parametrize(
@@ -46,7 +46,7 @@ from startrain.publish import publish_browser_main
         publish_browser_main,
         orchestrate_main,
         preflight_main,
-        starserve_main,
+        deltrelserve_main,
     ],
 )
 def test_every_operator_entrypoint_has_parseable_help(
@@ -76,8 +76,8 @@ def test_preflight_reports_detection_and_config_resolution(
 
 @pytest.mark.native
 def test_pie_objective_cpu_smoke_generates_pie_replay(tmp_path, capsys):
-    pytest.importorskip("star_native")
-    from startrain.replay_store import ReplayStore
+    pytest.importorskip("deltrel_native")
+    from deltreltrain.replay_store import ReplayStore
 
     identity = tmp_path / "run.json"
     identity.write_text(
@@ -136,7 +136,7 @@ def test_preflight_exercise_proves_the_host_device(
 def test_dispatcher_rejects_missing_and_unknown_commands() -> None:
     with pytest.raises(SystemExit, match="expected one of"):
         main([])
-    with pytest.raises(SystemExit, match="unknown startrain command"):
+    with pytest.raises(SystemExit, match="unknown deltreltrain command"):
         main(["not-a-command"])
 
 
@@ -202,23 +202,23 @@ def test_orchestrator_config_value_error_uses_fatal_exit_code(
 
 
 def test_python_module_entrypoints_fail_cleanly_without_arguments() -> None:
-    startrain = subprocess.run(
-        [sys.executable, "-m", "startrain.cli"],
+    deltreltrain = subprocess.run(
+        [sys.executable, "-m", "deltreltrain.cli"],
         check=False,
         capture_output=True,
         text=True,
     )
-    assert startrain.returncode != 0
-    assert "expected one of" in startrain.stderr
+    assert deltreltrain.returncode != 0
+    assert "expected one of" in deltreltrain.stderr
 
-    starserve = subprocess.run(
-        [sys.executable, "-m", "starserve", "--help"],
+    deltrelserve = subprocess.run(
+        [sys.executable, "-m", "deltrelserve", "--help"],
         check=False,
         capture_output=True,
         text=True,
     )
-    assert starserve.returncode == 0
-    assert "usage:" in starserve.stdout.lower()
+    assert deltrelserve.returncode == 0
+    assert "usage:" in deltrelserve.stdout.lower()
 
 
 def test_arena_architecture_mode_is_explicit_and_diagnostic_only(
@@ -285,7 +285,7 @@ def test_arena_architecture_mode_is_explicit_and_diagnostic_only(
     monkeypatch.setattr(cli_module, "load_manifest_evaluator", load_evaluator)
     monkeypatch.setattr(
         cli_module,
-        "load_star_native",
+        "load_deltrel_native",
         lambda *, required: SimpleNamespace(required=required),
     )
 

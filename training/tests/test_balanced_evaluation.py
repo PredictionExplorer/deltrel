@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from startrain.arena import ArenaPair, ArenaRunner
-from startrain.balanced_evaluation import (
+from deltreltrain.arena import ArenaPair, ArenaRunner
+from deltreltrain.balanced_evaluation import (
     BALANCED_CATEGORIES,
     BALANCED_OBSERVATION_MODEL,
     balanced_cells,
@@ -23,9 +23,9 @@ from startrain.balanced_evaluation import (
     pair_key,
     summarize_balanced_pairs,
 )
-from startrain.config import ArenaConfig, load_config
-from startrain.contracts import SEARCH_ALGORITHM_ID
-from startrain.promotion import PromotionSupervisor
+from deltreltrain.config import ArenaConfig, load_config
+from deltreltrain.contracts import SEARCH_ALGORITHM_ID
+from deltreltrain.promotion import PromotionSupervisor
 
 
 def config(**changes) -> ArenaConfig:
@@ -219,15 +219,17 @@ def test_subset_contracts_isolate_the_corrected_search_from_legacy_evidence() ->
     )
     assert corrected["search_algorithm"] == SEARCH_ALGORITHM_ID
     assert corrected["identity"] != legacy_identity
-    # The algorithm marker alone retires the old evidence namespace. Rules,
-    # statistical tests and search budgets retain their previous contract.
+    # The algorithm marker retires evidence for the current Deltrel identity;
+    # naming changes also retire the historical evidence namespace above.
     old_payload = {
         key: value
         for key, value in corrected.items()
         if key not in ("identity", "search_algorithm")
     }
     encoded = json.dumps(old_payload, sort_keys=True, separators=(",", ":")).encode()
-    assert "sha256-" + hashlib.sha256(encoded).hexdigest() == legacy_identity
+    assert "sha256-" + hashlib.sha256(encoded).hexdigest() == (
+        "sha256-8436792d6dd77dd48bc4df6dfe77f1d961f5047a549e75d4a416f6591d3988e2"
+    )
     contracts = [
         evaluation_contract(replace(legacy, rings=rings))
         for rings in ((4,), (10,), (6, 10), (4, 6, 8, 10))
@@ -325,7 +327,7 @@ def test_balanced_promotion_persists_and_recovers_all_cell_pairs(
     tmp_path, monkeypatch
 ) -> None:
     from dataclasses import asdict
-    import startrain.promotion as promotion_module
+    import deltreltrain.promotion as promotion_module
     from test_promotion import _promotion_wave_case
 
     case = _promotion_wave_case(tmp_path, monkeypatch)
@@ -388,10 +390,10 @@ def test_balanced_promotion_persists_and_recovers_all_cell_pairs(
 def test_native_balanced_runner_plays_configured_cells_with_role_reversal(
     rings,
 ) -> None:
-    from startrain.inference import GraphInferenceAdapter, InferenceConfig
-    from startrain.model import GraphResTNet, ModelConfig
+    from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+    from deltreltrain.model import GraphResTNet, ModelConfig
 
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     evaluator = GraphInferenceAdapter(
         GraphResTNet(ModelConfig(width=8, rrt_groups=1, attention_heads=2, kv_heads=1)),
         config=InferenceConfig(precision="fp32"),
@@ -437,9 +439,9 @@ def test_balanced_pair_search_is_stable_across_reordered_and_partial_batches(
     name, balanced
 ):
     from concurrent.futures import ThreadPoolExecutor
-    from startrain.inference import InferenceResponse
+    from deltreltrain.inference import InferenceResponse
 
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
 
     class StableEvaluator:
         model_version = "sha256-" + "c" * 64

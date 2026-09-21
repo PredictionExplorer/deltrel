@@ -24,16 +24,16 @@ server. Equal importance applies to six game modes and four board sizes.
 ## Deployment facts
 
 - SSH: ubuntu@192.222.52.230, existing pinned known-host file
-  `~/.ssh/edgeconnect-training-known_hosts`.
-- Active root: `/home/ubuntu/edgeconnect-runs/variant-network`.
-- Active release: `/home/ubuntu/edgeconnect-releases/variant-f36dc87-384x8`.
-- Unit: `edgeconnect-startrain-variant-network.service`.
+  `~/.ssh/deltrel-training-known_hosts`.
+- Active root: `/home/ubuntu/deltrel-runs/variant-network`.
+- Active release: `/home/ubuntu/deltrel-releases/variant-f36dc87-384x8`.
+- Unit: `deltrel-deltreltrain-variant-network.service`.
 - Active profile: `<run-root>/profile.yaml`, Stage A, UTD1.0.
 - Unit KillMode=mixed, SIGTERM, TimeoutStopSec1000; old immutable release retained.
 - Last initial check: step37,799, all workers active, zero service restarts,
   terminal arena rejection at candidate29,298 vs champion19,532.
-- Legacy teacher: `/home/ubuntu/edgeconnect-recovery/lr-recovery-ring10-lr-recovery-3e-4-seed17/learner/checkpoints/sha256-37c38c80d9ff1c9de2422cc3aca14d5f15bc22c5d49931e0941de545c91c11fe.pt`, step864,090.
-- DR root: `/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network`.
+- Legacy teacher: `/home/ubuntu/deltrel-recovery/lr-recovery-ring10-lr-recovery-3e-4-seed17/learner/checkpoints/sha256-37c38c80d9ff1c9de2422cc3aca14d5f15bc22c5d49931e0941de545c91c11fe.pt`, step864,090.
+- DR root: `/lambda/nfs/texas-north-fs/deltrel-dr/variant-network`.
 - Host tools: `/home/ubuntu/.local/bin/uv`, `/home/ubuntu/.cargo/bin/cargo`;
   Python3.11, PyTorch2.13.0+cu130. Passwordless sudo available.
 - CPU logical sibling pairs are adjacent:0/1 core0,2/3 core1,etc.; node0=0–103,
@@ -97,8 +97,8 @@ journal. Other in-place arena-contract changes still require a terminal boundary
 - Graceful stop: step39,249, coordinator exit0, no forced kill. Restart:
   September5 07:17UTC from the same verified recovery checkpoint, with zero
   uncheckpointed updates discarded. Original release and unit files remain in
-  `/home/ubuntu/edgeconnect-rollbacks/variant-20260905`.
-- Active profile: `/home/ubuntu/edgeconnect-runs/variant-network/profile-efficiency-20260905.yaml`.
+  `/home/ubuntu/deltrel-rollbacks/variant-20260905`.
+- Active profile: `/home/ubuntu/deltrel-runs/variant-network/profile-efficiency-20260905.yaml`.
   Equal-six-mode StageB, equal ring allocation, prospective UTD1.5, shared GPU
   inference/cohorts, bounded caches and pinned buffers, one reserved CPU actor,
   and bounded exact tails are enabled.

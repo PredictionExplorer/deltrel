@@ -25,12 +25,13 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=moderate
+      - run: npm run check:brand
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test:coverage
-      - run: node scripts/export-star-conformance.mjs "$RUNNER_TEMP/conformance-v2.json"
-      - run: cmp testdata/star/conformance-v2.json "$RUNNER_TEMP/conformance-v2.json"
-      - run: STAR_BENCH_ITERATIONS=10000 npm run bench:scoring
+      - run: node scripts/export-deltrel-conformance.mjs "$RUNNER_TEMP/conformance-v3.json"
+      - run: cmp testdata/deltrel/conformance-v3.json "$RUNNER_TEMP/conformance-v3.json"
+      - run: DELTREL_BENCH_ITERATIONS=10000 npm run bench:scoring
       - run: npm run build
       - uses: actions/upload-artifact@v4
         if: always()
@@ -60,7 +61,7 @@ jobs:
       - run: cargo test --workspace --locked
       - run: cargo install cargo-llvm-cov --locked
       - run: >-
-          cargo llvm-cov -p star-engine -p star-search --locked
+          cargo llvm-cov -p deltrel-engine -p deltrel-search --locked
           --fail-under-lines 90 --fail-under-functions 85
           --fail-under-regions 88 --summary-only
       - run: cargo install cargo-audit --locked
@@ -86,10 +87,10 @@ jobs:
           enable-cache: true
       - run: uv sync --extra test --extra serve --extra onnx --locked
       - run: uv run pip-audit
-      - run: uv run maturin develop --release --locked --manifest-path crates/star-py/Cargo.toml
-      - run: uv run python -c "import star_native; print(star_native.native_rules_hash_tag())"
-      - run: uv run ruff check startrain starserve tests scripts
-      - run: uv run ruff format --check startrain starserve tests scripts
+      - run: uv run maturin develop --release --locked --manifest-path crates/deltrel-py/Cargo.toml
+      - run: uv run python -c "import deltrel_native; print(deltrel_native.native_rules_hash_tag())"
+      - run: uv run ruff check deltreltrain deltrelserve tests scripts
+      - run: uv run ruff format --check deltreltrain deltrelserve tests scripts
       - run: uv run pyright
       - run: >-
           uv run pytest --require-native
@@ -125,11 +126,11 @@ jobs:
           workspaces: training
       - run: npm ci
       - run: cargo install wasm-pack --locked
-      - run: npm run build:star-wasm
-      - run: wasm-pack test --node training/crates/star-wasm
+      - run: npm run build:deltrel-wasm
+      - run: wasm-pack test --node training/crates/deltrel-wasm
 
   container:
-    name: Starserve container smoke
+    name: Deltrelserve container smoke
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -140,13 +141,13 @@ jobs:
           context: training
           load: true
           push: false
-          tags: edgeconnect-starserve:ci
+          tags: deltrel-deltrelserve:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - run: >-
-          docker run --rm --entrypoint python3 edgeconnect-starserve:ci
-          -c "import star_native, starserve, startrain, torch;
-          print(star_native.native_rules_hash_tag(), torch.__version__)"
+          docker run --rm --entrypoint python3 deltrel-deltrelserve:ci
+          -c "import deltrel_native, deltrelserve, deltreltrain, torch;
+          print(deltrel_native.native_rules_hash_tag(), torch.__version__)"
 
   e2e:
     name: Browser end-to-end

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 
-from startrain.arena import ARENA_RESULT_SCHEMA_VERSION
+from deltreltrain.arena import ARENA_RESULT_SCHEMA_VERSION
 from pathlib import Path
 
 import pytest

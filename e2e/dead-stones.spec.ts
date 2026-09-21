@@ -4,11 +4,11 @@ async function startMiniDoubleGame(page: Page) {
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
   await page.reload();
-  await page.getByRole('button', { name: /^Double \*Star/i }).click();
+  await page.getByRole('button', { name: /^Double Deltrel/i }).click();
   await page.getByRole('button', { name: /^Mini, 4 rings$/i }).click();
   await page.getByRole('button', { name: 'Begin the game' }).click();
   await expect(
-    page.getByRole('group', { name: /\*Star board with 4 rings/i }),
+    page.getByRole('group', { name: /Deltrel board with 4 rings/i }),
   ).toBeVisible();
 }
 
@@ -28,14 +28,14 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('projected territory does not cross out rescuable stones', async ({ page }) => {
-  await place(page, 'S10');
-  await place(page, '*40');
-  await place(page, '*41');
+  await place(page, 'B');
+  await place(page, 'AE');
+  await place(page, 'AF');
 
   await expect(page.locator('[data-provably-dead-stone]')).toHaveCount(0);
   await expect(
     page.getByRole('button', {
-      name: /Node S10, Player 1 stone.*not currently part of a living star/i,
+      name: /Node B, Player 1 stone.*not currently part of a living network/i,
     }),
   ).toBeVisible();
   await expect(page.locator('[data-stone-node="1"]')).toHaveAttribute(
@@ -54,18 +54,18 @@ test('projected territory does not cross out rescuable stones', async ({ page })
 test('a walled group is crossed only once rescue becomes impossible', async ({
   page,
 }) => {
-  await place(page, '*43');
-  await place(page, '*42');
-  await place(page, '*32');
-  await place(page, 'T42');
-  await place(page, 'T43');
-  await place(page, 'S30');
+  await place(page, 'AH');
+  await place(page, 'AG');
+  await place(page, 'R');
+  await place(page, 'AO');
+  await place(page, 'AP');
+  await place(page, 'S');
 
   await expect(page.locator('[data-provably-dead-stone="33"]')).toHaveCount(0);
-  await place(page, 'S40');
+  await place(page, 'AI');
   await expect(page.locator('[data-provably-dead-stone="33"]')).toBeVisible();
   await expect(
-    page.getByRole('button', { name: /Node \*43.*provably dead/i }),
+    page.getByRole('button', { name: /Node AH.*provably dead/i }),
   ).toBeVisible();
 
   await page.getByRole('button', { name: 'Undo' }).click();

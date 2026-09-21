@@ -88,8 +88,8 @@ def test_preflight_command_is_explicit_and_bounded(tmp_path: Path) -> None:
     assert command[command.index("--iterations") + 1] == "4"
     assert "--no-compile-dynamic" in command
     assert command[command.index("--compile-mode") + 1] == "reduce-overhead"
-    assert "startrain-orchestrate" not in command
-    assert "startrain-train" not in command
+    assert "deltreltrain-orchestrate" not in command
+    assert "deltreltrain-train" not in command
 
 
 def test_run_case_captures_measurements_and_context(tmp_path: Path) -> None:

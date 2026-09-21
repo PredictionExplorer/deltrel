@@ -8,13 +8,13 @@ mixed with v2 replay, checkpoints, manifests, or serving results.
 
 The next target-host run must use:
 
-- rules `edgeconnect.star.rules.v2`,
+- rules `deltrel.rules.v2`,
   `fnv1a64:2da3783519381453`;
 - supported rings exactly 4, 6, 8, and 10;
 - feature schema v3 and node-only action tensors;
 - replay schema v4 with binary loss/win outcomes;
 - fresh run, replay, checkpoint, model-manifest, and browser-manifest roots; and
-- a rebuilt rules-v2 `star_native` extension.
+- a rebuilt rules-v2 `deltrel_native` extension.
 
 Run the bounded inference sweep on representative rings 6 and 10:
 

@@ -2,8 +2,8 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'vitest-axe';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { GameAction, GameConfig } from '@/lib/star/game';
-import { buildTimeline } from '@/lib/star/timeline';
+import type { GameAction, GameConfig } from '@/lib/deltrel/game';
+import { buildTimeline } from '@/lib/deltrel/timeline';
 import { MovesPanel } from '../MovesPanel';
 
 const double: GameConfig = {
@@ -46,7 +46,7 @@ describe('MovesPanel', () => {
     ).not.toBeInTheDocument();
 
     await user.click(
-      within(panel).getByRole('button', { name: 'Go to move 2: Grace at S10' }),
+      within(panel).getByRole('button', { name: 'Go to move 2: Grace at B' }),
     );
     expect(onSeek).toHaveBeenCalledWith(2);
   });
@@ -69,7 +69,7 @@ describe('MovesPanel', () => {
     );
 
     const current = screen.getByRole('button', {
-      name: 'Go to move 2: Grace at S10',
+      name: 'Go to move 2: Grace at B',
     });
     expect(current).toHaveAttribute('aria-current', 'step');
     expect(screen.getByText('Viewing move 2 of 4')).toBeInTheDocument();

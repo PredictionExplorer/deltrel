@@ -11,7 +11,7 @@
   },
   "telemetry": {
     "source": "e8e877cd7292dd44558e280c8117e6242820c2ce",
-    "profile": "1db1a8b29a177e9b92a455d1468247e88e5fcfc5e74ce0aef1d9867a09265d62  /home/ubuntu/edgeconnect-runs/variant-network/profile-training-optimized-20260910.yaml",
+    "profile": "1db1a8b29a177e9b92a455d1468247e88e5fcfc5e74ce0aef1d9867a09265d62  /home/ubuntu/deltrel-runs/variant-network/profile-training-optimized-20260910.yaml",
     "start_utc": "2026-09-10T17:00:01+00:00",
     "end_utc": "2026-09-10T17:59:56+00:00",
     "wall_seconds": 3595.0,

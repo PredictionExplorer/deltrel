@@ -28,15 +28,15 @@ from typing import Any
 
 import numpy as np
 
-from startrain.actor import resolve_actor_experiment
-from startrain.checkpoint import load_model_manifest
-from startrain.config import load_config
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, SEARCH_ALGORITHM_ID
-from startrain.native import BITBOARD_WORDS, load_star_native
-from startrain.promotion import load_manifest_evaluator
-from startrain.replay import ReplaySample, read_replay_shard, write_replay_shard
-from startrain.selfplay import SelfPlayConfig
-from startrain.topology import SUPPORTED_RINGS
+from deltreltrain.actor import resolve_actor_experiment
+from deltreltrain.checkpoint import load_model_manifest
+from deltreltrain.config import load_config
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, SEARCH_ALGORITHM_ID
+from deltreltrain.native import BITBOARD_WORDS, load_deltrel_native
+from deltreltrain.promotion import load_manifest_evaluator
+from deltreltrain.replay import ReplaySample, read_replay_shard, write_replay_shard
+from deltreltrain.selfplay import SelfPlayConfig
+from deltreltrain.topology import SUPPORTED_RINGS
 
 MODES = (
     "standard-double",
@@ -94,7 +94,7 @@ def sample_id(sample: ReplaySample) -> str:
 def samples_from_bytes(contents: bytes) -> list[ReplaySample]:
     # The production decoder intentionally accepts filesystem paths only. Read
     # from an owned immutable byte snapshot, never re-open a live GC-able path.
-    with tempfile.TemporaryDirectory(prefix="star-frozen-replay-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="deltrel-frozen-replay-") as temporary:
         path = Path(temporary) / "snapshot.npz"
         path.write_bytes(contents)
         return read_replay_shard(path)
@@ -1206,7 +1206,7 @@ def main(argv: list[str] | None = None) -> int:
             raise RuntimeError(f"batched search worker failed: {stderr[-6000:]}")
         print(stdout, end="")
         return 0
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     deadline = time.monotonic() + args.timeout_seconds
     evaluator = load_manifest_evaluator(runtime_config, manifest, device=args.device)
     try:

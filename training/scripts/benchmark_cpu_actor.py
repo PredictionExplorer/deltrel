@@ -38,7 +38,7 @@ def _checkpoint_record(manifest) -> dict[str, object]:
 
 
 def _load_actor_weights(config, model, checkpoint: Path, manifest_sha256: str | None):
-    from startrain.checkpoint import load_ema_checkpoint, load_model_manifest
+    from deltreltrain.checkpoint import load_ema_checkpoint, load_model_manifest
 
     manifest = load_model_manifest(checkpoint)
     if manifest_sha256 is not None and manifest.manifest_sha256 != manifest_sha256:
@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--child", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    from startrain.config import parse_cpu_affinity
+    from deltreltrain.config import parse_cpu_affinity
 
     cpus = parse_cpu_affinity(args.cpu_affinity)
     if (
@@ -116,13 +116,13 @@ def main(argv: list[str] | None = None) -> int:
         else:
             raise RuntimeError("CPU affinity benchmarking requires a Linux target host")
         import torch
-        import star_native
-        from startrain.config import load_config
-        from startrain.inference import GraphInferenceAdapter, InferenceConfig
-        from startrain.model import GraphResTNet, model_parameter_count
-        from startrain.replay_store import ReplayStore
-        from startrain.runtime import RunIdentity
-        from startrain.selfplay import SelfPlayActor, SelfPlayIdentity
+        import deltrel_native
+        from deltreltrain.config import load_config
+        from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+        from deltreltrain.model import GraphResTNet, model_parameter_count
+        from deltreltrain.replay_store import ReplayStore
+        from deltreltrain.runtime import RunIdentity
+        from deltreltrain.selfplay import SelfPlayActor, SelfPlayIdentity
 
         torch.set_num_threads(args.blas_threads[0])
         torch.set_num_interop_threads(1)
@@ -154,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
         work_directory = (
             nullcontext(str(args.work_dir))
             if args.work_dir is not None
-            else tempfile.TemporaryDirectory(prefix="startrain-cpu-benchmark-")
+            else tempfile.TemporaryDirectory(prefix="deltreltrain-cpu-benchmark-")
         )
         with work_directory as root:
             identity = RunIdentity(
@@ -166,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
             with ReplayStore(Path(root) / "replay") as store:
                 generation = store.lease_generation(identity, "actor-benchmark")
                 actor = SelfPlayActor(
-                    star_native,
+                    deltrel_native,
                     evaluator,
                     store,
                     replace(
@@ -200,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
                             mode=config.selfplay.mode,
                             variant=config.selfplay.variant.label,
                             checkpoint=checkpoint_record,
-                            native_threads=getattr(star_native, "rayon_num_threads")(),
+                            native_threads=getattr(deltrel_native, "rayon_num_threads")(),
                             blas_threads=torch.get_num_threads(),
                             cpu_affinity=sorted(getattr(os, "sched_getaffinity")(0)),
                             selfplay=asdict(actor.metrics_snapshot()),
@@ -210,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     pinned_checkpoint = None
     if args.checkpoint is not None:
-        from startrain.checkpoint import load_model_manifest
+        from deltreltrain.checkpoint import load_model_manifest
 
         pinned_checkpoint = _checkpoint_record(load_model_manifest(args.checkpoint))
     results = []
@@ -261,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
                 command.append("--random-initialization")
             try:
                 with tempfile.TemporaryDirectory(
-                    prefix="startrain-cpu-benchmark-"
+                    prefix="deltreltrain-cpu-benchmark-"
                 ) as work_dir:
                     run = subprocess.run(
                         [*command, "--work-dir", work_dir],

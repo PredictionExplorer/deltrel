@@ -9,14 +9,14 @@ from unittest.mock import patch
 
 import pytest
 
-from startrain.replay import ReplaySample, collate_replay_samples, read_replay_shard
-from startrain.replay_store import (
+from deltreltrain.replay import ReplaySample, collate_replay_samples, read_replay_shard
+from deltreltrain.replay_store import (
     DuplicateGameError,
     ReplayStore,
     prove_legacy_committed_sample_history,
     validate_game_publications,
 )
-from startrain.runtime import RunIdentity
+from deltreltrain.runtime import RunIdentity
 from test_replay_concurrency import MODEL_IDENTITY, _sample
 
 
@@ -186,7 +186,7 @@ def test_final_with_new_tail_credits_only_tail_and_permits_final_weights(publica
 def test_clinch_finalization_can_enrich_outcome_without_inventing_auxiliary_labels(
     publication,
 ):
-    from startrain.contracts import TARGET_OUTCOME, TARGET_POLICY, TARGET_SOFT_POLICY
+    from deltreltrain.contracts import TARGET_OUTCOME, TARGET_POLICY, TARGET_SOFT_POLICY
 
     store, identity, generation, kwargs = publication
     store.append_game_revision(
@@ -212,11 +212,11 @@ def test_clinch_finalization_can_enrich_outcome_without_inventing_auxiliary_labe
         row.target_mask == TARGET_POLICY | TARGET_SOFT_POLICY | TARGET_OUTCOME
         for row in restored
     )
-    assert all(row.final_peries is None and row.final_stars is None for row in restored)
+    assert all(row.final_shores is None and row.final_networks is None for row in restored)
     targets = collate_replay_samples(restored).targets
-    assert not targets.final_peries_mask.any()
-    assert not targets.final_stars_mask.any()
-    assert not targets.final_quarks_mask.any()
+    assert not targets.final_shores_mask.any()
+    assert not targets.final_networks_mask.any()
+    assert not targets.final_capes_mask.any()
 
 
 def test_first_revision_cannot_upgrade_incomplete_credit_authority(publication):
@@ -268,7 +268,7 @@ def test_final_cannot_rewrite_published_policy_identity(publication, change):
         policy = row.policy.copy()
         policy[0] += 0.01
         policy[1] -= 0.01
-        from startrain.replay import katago_soft_policy_target
+        from deltreltrain.replay import katago_soft_policy_target
 
         final[0] = replace(
             row,
@@ -432,7 +432,7 @@ def test_lost_acknowledgement_after_commit_retries_without_credit(publication):
     store, identity, generation, kwargs = publication
     rows = _samples(identity, generation, 2)
     with patch(
-        "startrain.replay_store.GameRevisionReceipt",
+        "deltreltrain.replay_store.GameRevisionReceipt",
         side_effect=RuntimeError("lost acknowledgement"),
     ):
         with pytest.raises(RuntimeError, match="acknowledgement"):
@@ -475,7 +475,7 @@ def _process_publish(root, rows, kwargs, result_queue, crash=False):
     with ReplayStore(root) as store:
         if crash:
             with patch(
-                "startrain.replay_store._sha256", side_effect=lambda _: os._exit(17)
+                "deltreltrain.replay_store._sha256", side_effect=lambda _: os._exit(17)
             ):
                 store.append_game_revision(rows, finalized=False, **kwargs)
         else:
@@ -623,7 +623,7 @@ def test_selection_counter_and_ready_versions_share_snapshot(publication):
 def test_window_open_uses_selected_credit_even_if_more_rows_commit_after_selection(
     publication,
 ):
-    from startrain.replay_store import ReplaySelection
+    from deltreltrain.replay_store import ReplaySelection
 
     store, identity, generation, kwargs = publication
     store.append_game_revision(

@@ -9,8 +9,8 @@ from typing import Any, Callable, cast
 
 import pytest
 import yaml
-from startrain.arena import ARENA_RESULT_SCHEMA_VERSION
-from startrain.arena import bounded_confidence_sequence, elo_from_probability
+from deltreltrain.arena import ARENA_RESULT_SCHEMA_VERSION
+from deltreltrain.arena import bounded_confidence_sequence, elo_from_probability
 
 from scripts.compare_elo_ablation import (
     PAIR_VALID_ERROR_PROBABILITY_PER_SIDE,
@@ -390,7 +390,7 @@ def _comparison(
         manifest_path,
         {
             "schema_version": 1,
-            "report": "startrain-elo-ablation-deployment",
+            "report": "deltreltrain-elo-ablation-deployment",
             "source": {"commit": SOURCE_COMMIT},
             "plan": {
                 "path": str(plan_path.resolve()),

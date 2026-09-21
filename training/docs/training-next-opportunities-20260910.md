@@ -33,7 +33,7 @@ The five-minute replay refresh is functioning: eleven freshness refreshes occurr
 
 **Priority: high for interactive inference. Small implementation, but a strength experiment is required.**
 
-Ordinary non-developer website play does not pass the stored search settings. The server client consequently supplies **4,096 simulations and 32 candidates**, while the UI/store and advertised server default use **512/16**. The explicit client request takes precedence over the server default. See [GameScreen](/Users/tarasbobrovytsky/Dev/EdgeConnect/src/components/GameScreen.tsx:317) and [server client](/Users/tarasbobrovytsky/Dev/EdgeConnect/src/lib/star/ai/server-client.ts:20).
+Ordinary non-developer website play does not pass the stored search settings. The server client consequently supplies **4,096 simulations and 32 candidates**, while the UI/store and advertised server default use **512/16**. The explicit client request takes precedence over the server default. See [GameScreen](../../src/components/GameScreen.tsx#L317) and [server client](../../src/lib/deltrel/ai/server-client.ts#L20).
 
 The two numeric public environment overrides are absent locally. Deployment-time browser environment values were not verified. Git history shows the discrepancy existed in the original implementation; later tests deliberately preserve developer-only budget overrides. It is a confirmed split-default inconsistency, not a proven accidental regression.
 
@@ -51,7 +51,7 @@ The local browser path is separate. It uses its published model manifest, whose 
 
 **Priority: highest conservative model-kernel experiment. The mathematical redundancy is confirmed.**
 
-Production uses the `mean` local operator. Its message is a function of the normalized source node and edge class; it does not depend on the destination. Nevertheless, [LocalEdgeBlock](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/model.py:343) gathers a wide tensor and projects/activates each repeated neighbor slot independently.
+Production uses the `mean` local operator. Its message is a function of the normalized source node and edge class; it does not depend on the destination. Nevertheless, [LocalEdgeBlock](../deltreltrain/model.py#L343) gathers a wide tensor and projects/activates each repeated neighbor slot independently.
 
 Ring 10 has **550 distinct source/edge-class pairs**, versus **1,925 padded slots**. About 19.5% of slots are invalid. Compute the source projection once, form the required class-specific activated messages, and fuse their destination aggregation.
 
@@ -67,7 +67,7 @@ The earlier projection-order-only rewrite regressed in its H100 experiment. The 
 
 **Priority: high for training time and memory. A concrete vendor API may avoid a bespoke kernel.**
 
-The shared-geometry rollout reduced bias broadcasting, but [the custom VJP](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/attention_bias_autograd.py:31) still recomputes attention probabilities and materializes dense FP32 intermediates. At B512 and sequence length 276, each matrix has **468,025,344 elements**, or **1,785.375 MiB**. Five named intermediates can remain live simultaneously: approximately **8.72 GiB** during a block's backward pass.
+The shared-geometry rollout reduced bias broadcasting, but [the custom VJP](../deltreltrain/attention_bias_autograd.py#L31) still recomputes attention probabilities and materializes dense FP32 intermediates. At B512 and sequence length 276, each matrix has **468,025,344 elements**, or **1,785.375 MiB**. Five named intermediates can remain live simultaneously: approximately **8.72 GiB** during a block's backward pass.
 
 NVIDIA's cuDNN Graph API exposes `sdpa_backward` with both `bias` and a `dBias` output. Its documentation covers BF16, GQA and broadcast bias. The exact combination—12 query heads, three KV heads, head width 32, N106/276 and a shared per-head bias—must pass a supported-plan check before adoption. The server has cuDNN **9.20.0**, but its Python frontend package is not installed. [NVIDIA attention API](https://docs.nvidia.com/deeplearning/cudnn/latest/operations/Attention.html).
 
@@ -83,7 +83,7 @@ FlashBias is a separate approximation/reparameterization experiment. Its learned
 
 **Priority: high for a bounded native-memory improvement.**
 
-[Tree expansion](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/crates/star-search/src/tree.rs:838) immediately softmaxes the policy and allocates a **40-byte Edge for every legal action**, including leaves that are never visited again.
+[Tree expansion](../crates/deltrel-search/src/tree.rs#L838) immediately softmaxes the policy and allocates a **40-byte Edge for every legal action**, including leaves that are never visited again.
 
 A release-mode CPU probe using the actual tree implementation, a ring-10 position after three placements and a synthetic evaluator produced:
 
@@ -102,11 +102,11 @@ Require exact request ordering, visits, Q values, policy targets and cancellatio
 
 **Priority: high for small, exact implementation changes; moderate whole-system ceiling.**
 
-[pack_requests](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/crates/star-py/src/lib.rs:3225) still eagerly creates the legacy `StateData` export: roughly two dozen vectors and recomputed state hashes. The trusted compact-key inference path does not read this object. Make that export lazy while preserving compatibility for callers that request it.
+[pack_requests](../crates/deltrel-py/src/lib.rs#L3225) still eagerly creates the legacy `StateData` export: roughly two dozen vectors and recomputed state hashes. The trusted compact-key inference path does not read this object. Make that export lazy while preserving compatibility for callers that request it.
 
-[Selected-feature packing](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/crates/star-py/src/lib.rs:1282) deep-clones cached rows before copying them into the final flat buffers. A borrowed-row packer can remove the intermediate clone while keeping public writable buffers isolated from immutable cached data.
+[Selected-feature packing](../crates/deltrel-py/src/lib.rs#L1282) deep-clones cached rows before copying them into the final flat buffers. A borrowed-row packer can remove the intermediate clone while keeping public writable buffers isolated from immutable cached data.
 
-The next larger bridge experiment is buffer-based submission instead of Python float lists. Current inference copies packed predictions to the CPU, turns rows into bytes, reconstructs a CPU tensor, applies softmax there and converts legal logits into Python lists. See [GPU-to-CPU return](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/inference.py:881) and [postprocessing](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/inference.py:1107).
+The next larger bridge experiment is buffer-based submission instead of Python float lists. Current inference copies packed predictions to the CPU, turns rows into bytes, reconstructs a CPU tensor, applies softmax there and converts legal logits into Python lists. See [GPU-to-CPU return](../deltreltrain/inference.py#L881) and [postprocessing](../deltreltrain/inference.py#L1107).
 
 A typed native buffer API could avoid repeated scalar boxing and copying. GPU-side outcome/score reduction could also avoid transferring all 303 score logits on ordinary non-detailed requests. Detailed APIs, cache semantics, utility-weight changes and numerical parity must be preserved.
 
@@ -118,7 +118,7 @@ Return processing occupies only **8.8–9.7%** of actor wall time in the measure
 
 During 17–18 UTC, **all 387,403 GPU-generated durable rows were candidate/ring10**. There were no fresh GPU rows for rings 6 or 8; CPU ring 4 added 5,141 rows. Coordinator snapshots showed only one or two bundles per GPU after roughly two hours.
 
-The [coordinator](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/cohort_work.py:31) schedules joint role/ring weights using bundles of four 128-game leases. A local reproduction with the actual weights and seven GPU seeds showed that **every GPU's first eight bundle choices are ring 10**. The first non-ring10 choice is bundle nine; the first particular ring-6/8 choice can be as late as bundle nineteen. These are scheduling choices, not a claim that every preceding bundle must finish before the next begins.
+The [coordinator](../deltreltrain/cohort_work.py#L31) schedules joint role/ring weights using bundles of four 128-game leases. A local reproduction with the actual weights and seven GPU seeds showed that **every GPU's first eight bundle choices are ring 10**. The first non-ring10 choice is bundle nine; the first particular ring-6/8 choice can be as late as bundle nineteen. These are scheduling choices, not a claim that every preceding bundle must finish before the next begins.
 
 Test smaller compatible scheduling quanta, persistent scheduling credits and fleet-level phase staggering. Preserve compatibility pooling where it improves batching: indiscriminately mixing models/rings could reduce GPU throughput. Track useful eligible rows and neural cost by role/ring/mode, rather than judging balance solely by lease counts.
 
@@ -141,7 +141,7 @@ Subtree reuse also needs a coherent additional-budget policy. A native reproduct
 
 ## 8. The larger route: cheaper actors and fewer full-network evaluations
 
-The code already contains a [teacher/replay distillation pipeline](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/distill.py:394). This makes a cheaper actor experiment more concrete than building a second learning stack from scratch. It currently targets browser models and needs actor-specific model loading, measured execution settings and a reliable distillation data path.
+The code already contains a [teacher/replay distillation pipeline](../deltreltrain/distill.py#L394). This makes a cheaper actor experiment more concrete than building a second learning stack from scratch. It currently targets browser models and needs actor-specific model loading, measured execution settings and a reliable distillation data path.
 
 Exact parameter counts for valid configurations:
 
@@ -154,7 +154,7 @@ Exact parameter counts for valid configurations:
 
 Parameter ratios are not latency or strength ratios. Start with the moderate student, preserve the large learner, distill all important heads and all six modes, and compare equal-time search strength. A small actor can propose moves; a large model can selectively verify difficult positions. That hybrid is a hypothesis requiring calibration, not exact speculative decoding.
 
-Native search already produces action Q and visit information that [decision recording](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/startrain/selfplay.py:1496) does not preserve as action-value supervision. Store genuinely visited action values, confidence/visit masks and utility/PDA context. Do not treat completed-Q placeholders as observed targets. This supports a cheap per-action Q head and subsequent search-light trials.
+Native search already produces action Q and visit information that [decision recording](../deltreltrain/selfplay.py#L1496) does not preserve as action-value supervision. Store genuinely visited action values, confidence/visit masks and utility/PDA context. Do not treat completed-Q placeholders as observed targets. This supports a cheap per-action Q head and subsequent search-light trials.
 
 RMCTS is a particularly relevant new search experiment: its January 2026 preprint evaluates breadth-first prior-guided trees in large batches and reports about 3× faster batched search/training in its studied games, with much larger single-root results. It changes exploration and target construction, and its smaller networks/RTX3080 measurements do not transfer directly to this H100/Gumbel setup. [RMCTS paper](https://arxiv.org/html/2601.01301v1).
 
@@ -181,4 +181,4 @@ These approaches could plausibly produce a combined 10× computational-work redu
 
 The first group offers clear engineering opportunities. The last group is the credible route toward 10×+ overall performance, with a corresponding need to establish retained strength.
 
-The [evidence summary](/Users/tarasbobrovytsky/Dev/EdgeConnect/training/docs/training-next-opportunities-evidence-20260910.json) retains the telemetry aggregate, CPU-probe results, source identities and research URLs.
+The [evidence summary](training-next-opportunities-evidence-20260910.json) retains the telemetry aggregate, CPU-probe results, source identities and research URLs.

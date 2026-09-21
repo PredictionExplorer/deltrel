@@ -6,17 +6,17 @@ from pathlib import Path
 
 import pytest
 
-import startrain.promotion as promotion_module
-from startrain.arena import ArenaPair, summarize_completed_arena_pairs
-from startrain.balanced_evaluation import (
+import deltreltrain.promotion as promotion_module
+from deltreltrain.arena import ArenaPair, summarize_completed_arena_pairs
+from deltreltrain.balanced_evaluation import (
     BALANCED_CATEGORIES,
     balanced_opening_seed,
     cell_variant,
     completed_counts_by_ring,
     pair_key,
 )
-from startrain.config import ArenaConfig, HistoricalEvaluationConfig, load_config
-from startrain.promotion import PromotionSupervisor, _balanced_round_plan
+from deltreltrain.config import ArenaConfig, HistoricalEvaluationConfig, load_config
+from deltreltrain.promotion import PromotionSupervisor, _balanced_round_plan
 
 from test_promotion import _promotion_wave_case
 

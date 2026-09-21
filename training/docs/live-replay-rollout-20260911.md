@@ -14,8 +14,8 @@ reporting and both backup timers were active; temporary build/check/deployment
 processes were stopped.
 
 Application source: `70058b1ff5ca34ecf20b0b1112bbe93e9e817ee1`.
-Immutable release: `/home/ubuntu/edgeconnect-releases/variant-live-replay-70058b1`.
-Server evidence: `/home/ubuntu/edgeconnect-rollouts/live-replay-20260911`.
+Immutable release: `/home/ubuntu/deltrel-releases/variant-live-replay-70058b1`.
+Server evidence: `/home/ubuntu/deltrel-rollouts/live-replay-20260911`.
 The compact retained record is
 [the deployment evidence](live-replay-deployment-evidence-20260911.json).
 
@@ -57,7 +57,7 @@ configuration hash remained
 
 The new runtime resumed the exact checkpoint and passed sustained readiness.
 The disabled-publication baseline profile is
-`/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-baseline-20260911.yaml`,
+`/home/ubuntu/deltrel-runs/variant-network/profile-live-replay-baseline-20260911.yaml`,
 with unchanged profile SHA-256
 `1db1a8b29a177e9b92a455d1468247e88e5fcfc5e74ce0aef1d9867a09265d62`.
 Fresh local and off-server backups also passed after readiness.
@@ -87,7 +87,7 @@ the 1.5 update-to-data ratio are preserved. Previously enabled geometry sharing,
 small graph buckets and interruption-policy preservation stay enabled.
 
 The target profile is
-`/home/ubuntu/edgeconnect-runs/variant-network/profile-live-replay-20260911.yaml`.
+`/home/ubuntu/deltrel-runs/variant-network/profile-live-replay-20260911.yaml`.
 Its SHA-256 is
 `e7f6420f08d1b5efdad9490d1ee0521041840a717936c25ffbc61556109458da`;
 its canonical configuration SHA-256 is
@@ -161,7 +161,7 @@ recovery also stops isolated GPU-check descendants before restarting training.
 
 All workload, preflight, monitor, report and backup service paths are updated
 together. Normal disaster backups retain the existing namespace
-`/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network`.
+`/lambda/nfs/texas-north-fs/deltrel-dr/variant-network`.
 The global continuity service/timer remain inactive, with the timer disabled.
 
 Normal snapshot creation currently takes approximately 11–12 minutes because

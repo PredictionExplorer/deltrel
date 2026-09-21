@@ -12,11 +12,11 @@ import torch
 import torch.distributed as distributed
 from torch.nn.parallel import DistributedDataParallel
 
-from startrain.config import load_config
-from startrain.features import DoubleStarPosition, encode_batch
-from startrain.model import GraphResTNet
-from startrain.topology import SUPPORTED_RINGS, get_topology
-from startrain.training import maybe_compile_model
+from deltreltrain.config import load_config
+from deltreltrain.features import DoubleDeltrelPosition, encode_batch
+from deltreltrain.model import GraphResTNet
+from deltreltrain.topology import SUPPORTED_RINGS, get_topology
+from deltreltrain.training import maybe_compile_model
 
 
 def main() -> int:
@@ -71,7 +71,7 @@ def main() -> int:
                 else SUPPORTED_RINGS[0]
             )
             topology = get_topology(rings)
-            position = DoubleStarPosition(
+            position = DoubleDeltrelPosition(
                 rings=rings,
                 stones=torch.full((topology.n,), -1, dtype=torch.int8),
                 to_move=0,

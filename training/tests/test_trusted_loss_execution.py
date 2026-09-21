@@ -6,8 +6,8 @@ import pytest
 import torch
 from torch.utils._python_dispatch import TorchDispatchMode
 
-from startrain.losses import LossWeights, compute_losses
-from startrain.model import StarModelOutput
+from deltreltrain.losses import LossWeights, compute_losses
+from deltreltrain.model import DeltrelModelOutput
 from test_losses import outputs, targets
 
 
@@ -25,13 +25,13 @@ class RecordOperations(TorchDispatchMode):
 @pytest.mark.parametrize("supervision", ["full", "partial", "none"])
 def test_trusted_losses_preserve_values_gradients_and_diagnostics(teacher, supervision):
     generator = torch.Generator().manual_seed(1729)
-    reference = StarModelOutput(
+    reference = DeltrelModelOutput(
         *(
             torch.randn(t.shape, generator=generator).requires_grad_()
             for t in outputs(4, 5, 5)[:6]
         )
     )
-    trusted = StarModelOutput(
+    trusted = DeltrelModelOutput(
         *(t.detach().clone().requires_grad_() for t in reference[:6])
     )
     target = targets(4, 5, 5)

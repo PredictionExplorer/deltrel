@@ -3,14 +3,14 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from startrain.features import DoubleStarPosition
-from startrain.losses import LossWeights, compute_losses
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.optim import OptimizerConfig, build_optimizer
-from startrain.replay import ReplaySample, collate_replay_samples
-from startrain.scoring import PlayerScore, ScoreResult
-from startrain.topology import get_topology
-from startrain.training import train_step
+from deltreltrain.features import DoubleDeltrelPosition
+from deltreltrain.losses import LossWeights, compute_losses
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.optim import OptimizerConfig, build_optimizer
+from deltreltrain.replay import ReplaySample, collate_replay_samples
+from deltreltrain.scoring import PlayerScore, ScoreResult
+from deltreltrain.topology import get_topology
+from deltreltrain.training import train_step
 
 
 def test_tiny_model_overfits_a_fixed_search_target() -> None:
@@ -18,7 +18,7 @@ def test_tiny_model_overfits_a_fixed_search_target() -> None:
     topology = get_topology(4)
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
     stones[0] = 0
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=4,
         stones=stones,
         to_move=1,
@@ -40,7 +40,7 @@ def test_tiny_model_overfits_a_fixed_search_target() -> None:
             ),
             node_owner=torch.zeros(topology.n, dtype=torch.int8),
             alive_stone=torch.zeros(topology.n, dtype=torch.bool),
-            contested_peries=0,
+            contested_shores=0,
             leader=0,
         ),
         search_provenance="learning-smoke",

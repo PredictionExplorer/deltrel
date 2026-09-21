@@ -9,10 +9,10 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-import startrain.actor as actor_module
-import startrain.replay_store as replay_module
-from startrain.config import load_config
-from startrain.replay_store import ReplayStore, ReplayStoreCancelled
+import deltreltrain.actor as actor_module
+import deltreltrain.replay_store as replay_module
+from deltreltrain.config import load_config
+from deltreltrain.replay_store import ReplayStore, ReplayStoreCancelled
 from test_pipeline_core import append_replay, make_replay_sample, run_identity
 
 

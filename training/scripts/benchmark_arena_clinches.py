@@ -32,7 +32,7 @@ else:
     from prepare_arena_occupancy_benchmark import _native_extension_path
 
 
-REPORT = "startrain-arena-exact-clinch-tail-smoke"
+REPORT = "deltreltrain-arena-exact-clinch-tail-smoke"
 TRAINING_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -52,7 +52,7 @@ def select_cases(saved: dict, proof: dict, max_tail_moves: int) -> list[dict]:
     capped prefix can be later than the first clinch; that bias is intentional
     for a bounded deployment smoke and is recorded per seat.
     """
-    from startrain.selfplay import GameVariant
+    from deltreltrain.selfplay import GameVariant
 
     if type(max_tail_moves) is not int or not 1 <= max_tail_moves <= 128:
         raise ValueError("max_tail_moves must be an integer in 1..128")
@@ -143,8 +143,8 @@ def select_cases(saved: dict, proof: dict, max_tail_moves: int) -> list[dict]:
 
 
 def validate_cases(cases: list[dict], native, arena_config) -> None:
-    from startrain.arena import ArenaGame, ArenaRunner
-    from startrain.selfplay import GameVariant
+    from deltreltrain.arena import ArenaGame, ArenaRunner
+    from deltreltrain.selfplay import GameVariant
 
     for case in cases:
         saved = case["resume"]
@@ -186,7 +186,7 @@ def promotion_runtime_config(config, candidate, baseline):
     Reusing the production derivation keeps strict snapshot/seed validation.
     No supervisor is started and no model/run files are modified.
     """
-    from startrain.promotion import PromotionSupervisor
+    from deltreltrain.promotion import PromotionSupervisor
 
     arena = PromotionSupervisor._arena_config(
         cast(Any, SimpleNamespace(experiment=config)), candidate, baseline
@@ -195,15 +195,15 @@ def promotion_runtime_config(config, candidate, baseline):
 
 
 def prepare(args):
-    from startrain.checkpoint import load_model_manifest
-    from startrain.config import load_config
-    from startrain.native import load_star_native
+    from deltreltrain.checkpoint import load_model_manifest
+    from deltreltrain.config import load_config
+    from deltreltrain.native import load_deltrel_native
 
     wrapper = json.loads(args.resume.read_text())
     saved = wrapper["arena_state"]
     proof = json.loads(args.proof.read_text())
     config = load_config(args.profile)
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     candidate_path = args.candidate_manifest or Path(wrapper["candidate_manifest"])
     baseline_path = args.baseline_manifest or Path(wrapper["baseline_manifest"])
     candidate = load_model_manifest(candidate_path)
@@ -235,7 +235,7 @@ def prepare(args):
             )
         ],
         _native_extension_path(native),
-        *sorted((TRAINING_ROOT / "startrain").glob("*.py")),
+        *sorted((TRAINING_ROOT / "deltreltrain").glob("*.py")),
     ]
     plan = {
         "report": REPORT,
@@ -265,8 +265,8 @@ def prepare(args):
 
 
 def play_case(case, config, native, candidate, baseline, *, enabled, saved=None):
-    from startrain.arena import ArenaRunner
-    from startrain.selfplay import GameVariant
+    from deltreltrain.arena import ArenaRunner
+    from deltreltrain.selfplay import GameVariant
 
     subject = ArenaRunner(
         native_module=native,
@@ -305,8 +305,8 @@ def execute_worker(
     args, plan, cases, config, candidate_manifest, baseline_manifest, native
 ):
     import torch
-    from startrain.device import peak_memory_stats, reset_peak_memory_stats
-    from startrain.promotion import load_manifest_evaluator
+    from deltreltrain.device import peak_memory_stats, reset_peak_memory_stats
+    from deltreltrain.promotion import load_manifest_evaluator
 
     preflight = _gpu_snapshot(args.gpu_uuid)
     if preflight.get("verified") is not True or preflight.get("owners"):

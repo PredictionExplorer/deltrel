@@ -3,8 +3,8 @@ from dataclasses import fields, replace
 import pytest
 import torch
 
-from startrain.features import EncodedBatch, encode_batch
-from startrain.inference import (
+from deltreltrain.features import EncodedBatch, encode_batch
+from deltreltrain.inference import (
     GraphInferenceAdapter,
     InferenceConfig,
     _merge_batch_tensors,
@@ -29,7 +29,7 @@ def broadcast_topology(batch: EncodedBatch) -> EncodedBatch:
 @pytest.fixture
 def feature_requests(monkeypatch):
     monkeypatch.setattr(
-        "startrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
+        "deltreltrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
     )
     return encoded_requests
 
@@ -160,7 +160,7 @@ def test_broadcast_merge_and_padding_preserve_every_model_input(
     def unexpected_merge(*args, **kwargs):
         raise AssertionError("cache hits must not merge model inputs")
 
-    monkeypatch.setattr("startrain.inference._merge_batch_tensors", unexpected_merge)
+    monkeypatch.setattr("deltreltrain.inference._merge_batch_tensors", unexpected_merge)
     assert shared.evaluate_prepared(prepared, include_details=(True, True)) == expected
     assert shared.model.rows == [8]
 
@@ -202,7 +202,7 @@ def test_merge_does_not_confuse_signed_zero_or_broadcast_shape():
     ),
 )
 def test_native_broadcast_features_match_dense_inference(ring, mode, handicap, pie):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     states = native.StateBatch(ring, 3, mode=mode, handicap=handicap, pie=pie)
     search = native.SearchBatch(
         states,

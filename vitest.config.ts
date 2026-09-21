@@ -45,13 +45,13 @@ export default defineConfig({
         functions: 80,
         branches: 75,
         statements: 79,
-        'src/lib/star/{board,game,scoring,symmetry}.ts': {
+        'src/lib/deltrel/{board,game,scoring,symmetry}.ts': {
           lines: 90,
           functions: 85,
           branches: 85,
           statements: 90,
         },
-        'src/lib/star/ai/**.ts': {
+        'src/lib/deltrel/ai/**.ts': {
           lines: 80,
           functions: 80,
           branches: 75,
@@ -69,7 +69,7 @@ export default defineConfig({
           branches: 80,
           statements: 84,
         },
-        'src/workers/star-ai.worker.ts': {
+        'src/workers/deltrel-ai.worker.ts': {
           lines: 25,
           functions: 40,
           branches: 35,

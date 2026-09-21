@@ -14,16 +14,16 @@ from scripts.compare_architecture_ablation import (
     main,
 )
 from scripts.run_architecture_ablation_queue import architecture_suite_document
-from startrain.arena import ARENA_RESULT_SCHEMA_VERSION, ArenaGame, ArenaPair
-from startrain.checkpoint import (
+from deltreltrain.arena import ARENA_RESULT_SCHEMA_VERSION, ArenaGame, ArenaPair
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     extract_verified_manifest_config,
     sha256_file,
 )
-from startrain.config import load_config
-from startrain.learner import ImmutableModelPublisher
-from startrain.model import GraphResTNet
-from startrain.runtime import RunIdentity
+from deltreltrain.config import load_config
+from deltreltrain.learner import ImmutableModelPublisher
+from deltreltrain.model import GraphResTNet
+from deltreltrain.runtime import RunIdentity
 
 
 def _pin(path: Path) -> dict[str, object]:

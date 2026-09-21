@@ -19,14 +19,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from startrain.arena import ARENA_RESULT_SCHEMA_VERSION
-from startrain.runtime import atomic_json
+from deltreltrain.arena import ARENA_RESULT_SCHEMA_VERSION
+from deltreltrain.runtime import atomic_json
 
 SCHEMA_VERSION = 1
-POLICY_REPORT = "startrain-terminal-boundary-policy"
-STATE_REPORT = "startrain-terminal-boundary-state"
-ACTIVATION_REPORT = "startrain-terminal-boundary-queue-activation"
-FALLBACK_REPORT = "startrain-continuity-handoff-request"
+POLICY_REPORT = "deltreltrain-terminal-boundary-policy"
+STATE_REPORT = "deltreltrain-terminal-boundary-state"
+ACTIVATION_REPORT = "deltreltrain-terminal-boundary-queue-activation"
+FALLBACK_REPORT = "deltreltrain-continuity-handoff-request"
 TERMINAL_DECISIONS = frozenset(
     {
         "promote",
@@ -961,7 +961,7 @@ def probe_terminal_boundary_policy(path: str | Path) -> dict[str, object]:
     terminal = state_status in TERMINAL_STATE_STATUSES
     return {
         "schema_version": SCHEMA_VERSION,
-        "report": "startrain-terminal-boundary-probe",
+        "report": "deltreltrain-terminal-boundary-probe",
         "status": "terminal" if terminal else "runnable",
         "should_run": not terminal,
         "reason": (
@@ -1096,7 +1096,7 @@ def _model_pointer_evidence(
     identity = _string(pointer.get("model_identity"), name=f"{role} model identity")
     step = _nonnegative_int(pointer.get("model_step"), name=f"{role} model step")
     if (
-        pointer.get("format") != "startrain.model-pointer"
+        pointer.get("format") != "deltreltrain.model-pointer"
         or pointer.get("schema_version") != 2
         or pointer.get("role") != role
         or pointer.get("run_id") != run_identity.get("run_id")
@@ -1119,7 +1119,7 @@ def _model_pointer_evidence(
     if (
         manifest_sha256 != expected_sha256
         or len(manifest_bytes) != expected_bytes
-        or manifest.get("format") != "startrain.model-manifest"
+        or manifest.get("format") != "deltreltrain.model-manifest"
         or manifest.get("schema_version") != 3
         or manifest.get("model_identity") != identity
         or manifest.get("model_step") != step
@@ -1155,7 +1155,7 @@ def _direct_manifest_evidence(
 ) -> dict[str, object]:
     document, digest_value, data = _read_json_with_digest(path, name=name)
     if (
-        document.get("format") != "startrain.model-manifest"
+        document.get("format") != "deltreltrain.model-manifest"
         or document.get("schema_version") != 3
         or document.get("model_identity") != identity
         or (step is not None and document.get("model_step") != step)
@@ -1557,7 +1557,7 @@ def _plan_evidence(
         )
     plan, digest_value, data = _read_json_with_digest(path, name="calibration plan")
     if (
-        plan.get("report") != "startrain-elo-ablation-plan"
+        plan.get("report") != "deltreltrain-elo-ablation-plan"
         or plan.get("initialization", "fork") != "fork"
         or plan.get("source_run_root")
         != _mapping(policy.raw.get("source"), name="source").get("run_root")
@@ -1668,7 +1668,7 @@ def _validate_warm_start(
     expected_status = "active" if active else "prepared"
     expected_step = champion.get("model_step")
     if (
-        marker.get("format") != "startrain.champion-warm-start"
+        marker.get("format") != "deltreltrain.champion-warm-start"
         or marker.get("schema_version") != 1
         or marker.get("status") != expected_status
         or marker.get("source_model_identity") != champion.get("model_identity")
@@ -2749,7 +2749,7 @@ def run_terminal_boundary_pipeline(
             if hold_document is None:
                 hold_document = {
                     "schema_version": SCHEMA_VERSION,
-                    "report": "startrain-terminal-boundary-operator-hold",
+                    "report": "deltreltrain-terminal-boundary-operator-hold",
                     "status": "active",
                     "policy_sha256": policy.sha256,
                     "promotion_status_sha256": status_evidence["sha256"],
@@ -3141,7 +3141,7 @@ def recover_terminal_boundary_pipeline(
 
 
 class DefaultTerminalBoundaryAdapters:
-    """Production adapters backed by existing StarTrain and systemd APIs."""
+    """Production adapters backed by existing DeltrelTrain and systemd APIs."""
 
     def __init__(
         self,
@@ -3199,7 +3199,7 @@ class DefaultTerminalBoundaryAdapters:
         return max(cls._hold_created_ns(policy), stopped_ns)
 
     def inspect_source(self, policy: Mapping[str, object]) -> Mapping[str, object]:
-        from startrain.continuity import SystemdUnitManager
+        from deltreltrain.continuity import SystemdUnitManager
 
         source = self._source(policy)
         unit = _mapping(source.get("unit"), name="source unit")
@@ -3467,7 +3467,7 @@ class DefaultTerminalBoundaryAdapters:
         return {**report, "path": str(snapshot)}
 
     def stop_source(self, policy: Mapping[str, object]) -> Mapping[str, object]:
-        from startrain.continuity import SystemdUnitManager
+        from deltreltrain.continuity import SystemdUnitManager
 
         source = self._source(policy)
         unit = _mapping(source.get("unit"), name="source unit")
@@ -3521,7 +3521,7 @@ class DefaultTerminalBoundaryAdapters:
         source_evidence: Mapping[str, object],
         stop_evidence: Mapping[str, object],
     ) -> Mapping[str, object]:
-        from startrain.continuity import SystemdUnitManager
+        from deltreltrain.continuity import SystemdUnitManager
 
         del stop_evidence
         source = self._source(policy)
@@ -3619,8 +3619,8 @@ class DefaultTerminalBoundaryAdapters:
         policy: Mapping[str, object],
         winner_snapshot: Mapping[str, object],
     ) -> Mapping[str, object]:
-        from starserve.snapshot import export_champion_snapshot
-        from startrain.checkpoint import load_model_manifest
+        from deltrelserve.snapshot import export_champion_snapshot
+        from deltreltrain.checkpoint import load_model_manifest
 
         source = self._source(policy)
         profile = _mapping(source.get("profile"), name="source profile")
@@ -3654,7 +3654,7 @@ class DefaultTerminalBoundaryAdapters:
         files = self._snapshot_tree(destination)
         pin = {
             "schema_version": SCHEMA_VERSION,
-            "report": "startrain-terminal-boundary-champion-snapshot",
+            "report": "deltreltrain-terminal-boundary-champion-snapshot",
             "status": "verified",
             "destination": str(destination),
             "model_identity": champion["model_identity"],
@@ -4148,7 +4148,7 @@ class DefaultTerminalBoundaryAdapters:
         policy: Mapping[str, object],
         activation_manifest: Path,
     ) -> Mapping[str, object]:
-        from startrain.continuity import SystemdUnitManager
+        from deltreltrain.continuity import SystemdUnitManager
 
         activation = _json_object(
             _read_json_bytes(
@@ -4253,7 +4253,7 @@ class DefaultTerminalBoundaryAdapters:
         policy: Mapping[str, object],
         request: Mapping[str, object],
     ) -> Mapping[str, object]:
-        from startrain.continuity import reconcile_training_continuity
+        from deltreltrain.continuity import reconcile_training_continuity
 
         fallback = _mapping(policy.get("fallback"), name="continuity fallback")
         path = Path(fallback["handoff_path"])

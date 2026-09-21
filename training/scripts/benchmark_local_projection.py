@@ -31,8 +31,8 @@ import torch
 import torch.nn.functional as functional
 from torch import Tensor
 
-from startrain.model import LocalEdgeBlock
-from startrain.topology import SUPPORTED_RINGS, get_topology
+from deltreltrain.model import LocalEdgeBlock
+from deltreltrain.topology import SUPPORTED_RINGS, get_topology
 
 
 class OriginalLocalEdgeBlock(LocalEdgeBlock):

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     collect_recovery_garbage,
     discover_resume_checkpoints,
@@ -18,8 +18,8 @@ from startrain.checkpoint import (
     write_recovery_checkpoint,
     write_resume_cutover,
 )
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.optim import OptimizerConfig, build_optimizer
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.optim import OptimizerConfig, build_optimizer
 
 
 def _state():
@@ -45,7 +45,7 @@ def test_ema_state_can_require_configured_decay() -> None:
 def test_checkpoint_restores_weights_and_optimizer_when_only_pie_default_changes(
     tmp_path,
 ):
-    from startrain.config import GameConfig
+    from deltreltrain.config import GameConfig
 
     model, optimizer, scheduler, ema = _state()
     loss = model(torch.ones(1, 3)).sum()
@@ -317,7 +317,7 @@ def test_verified_checkpoint_config_is_normalized_and_contract_bound(
         },
     }
     assert verified.evaluation_contract["action_layout_version"] == 1
-    assert verified.game_contract["rules_schema"] == "edgeconnect.star.rules.v3"
+    assert verified.game_contract["rules_schema"] == "deltrel.rules.v3"
     assert verified.input_contract["feature_schema_version"] == 4
     assert set(verified.evaluation_contract) == (
         set(verified.game_contract) | set(verified.input_contract)

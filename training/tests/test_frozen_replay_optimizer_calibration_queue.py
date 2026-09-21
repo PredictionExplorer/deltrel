@@ -36,7 +36,7 @@ def _plan(tmp_path: Path) -> Path:
         plan,
         {
             "schema_version": 1,
-            "report": "startrain-elo-ablation-plan",
+            "report": "deltreltrain-elo-ablation-plan",
             "suite": "ring10-optimizer-calibration",
             "wall_budget_seconds": 7200,
             "leaf_budget": 1,

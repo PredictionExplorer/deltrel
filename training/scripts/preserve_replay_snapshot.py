@@ -27,7 +27,7 @@ import time
 from typing import Any
 
 
-FORMAT = "startrain.preserved-stopped-run"
+FORMAT = "deltreltrain.preserved-stopped-run"
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 _MODEL = re.compile(r"(?:sha256-([0-9a-f]{64})\.pt|manifest-([0-9a-f]{64})\.json)\Z")
 _CONTROL_SUFFIXES = {".json", ".jsonl", ".yaml", ".yml", ".sha256", ".txt"}

@@ -2,7 +2,7 @@
 
 ## Current deployment — completed
 
-The H100 training server now runs production source **`e8e877cd7292dd44558e280c8117e6242820c2ce`** from `/home/ubuntu/edgeconnect-releases/variant-training-followup-e8e877c`, using frozen profile `/home/ubuntu/edgeconnect-runs/variant-network/profile-training-optimized-20260910.yaml`.
+The H100 training server now runs production source **`e8e877cd7292dd44558e280c8117e6242820c2ce`** from `/home/ubuntu/deltrel-releases/variant-training-followup-e8e877c`, using frozen profile `/home/ubuntu/deltrel-runs/variant-network/profile-training-optimized-20260910.yaml`.
 
 All three validated options are enabled: shared homogeneous training geometry, smaller CUDA-graph inference buckets, and preservation of computed policy targets during clean actor interruptions. The compact-gather experiment remains disabled because its earlier H100 comparison showed no material gain. Search budgets, model architecture, BF16 mixed precision, UTD target, optimizer/LR/EMA clocks, and evaluation settings retain their prior values.
 
@@ -26,7 +26,7 @@ Final profile SHA-256: `1db1a8b29a177e9b92a455d1468247e88e5fcfc5e74ce0aef1d9867a
 
 The geometry benchmark used production static compilation and BF16/TF32 settings, while its FP32 oracle disabled TF32. All valid output heads matched bitwise between baseline and sharing in both FP32 and BF16. BF16 differences were 0.0089% across gradients and 0.114% across relation-bias gradients; all numerical and finite-optimizer checks passed. Isolation held across 122 observations plus the final check, and the complete run took 270 seconds. H100 numerical evidence covers ring 10 at B16, with B128/B512 timing; CPU tests cover other rings. These timings exclude loader, EMA and checkpoint I/O and are not an Elo measurement.
 
-The first bucket benchmark could not verify GPU ownership because PyTorch omitted the `GPU-` UUID prefix required by nvidia-smi. Its timings were rejected. The correction is committed as **`e6c883c`** and deployed separately as a pinned tool at `/home/ubuntu/edgeconnect-rollouts/training-followup-20260910/benchmark_graph_buckets-e6c883c.py`; the immutable production release remains unchanged. A fresh isolated comparison passed all output tolerances and graph-replay checks. The changed-size geometric mean was 1.1155×; this is not a fleet-throughput forecast.
+The first bucket benchmark could not verify GPU ownership because PyTorch omitted the `GPU-` UUID prefix required by nvidia-smi. Its timings were rejected. The correction is committed as **`e6c883c`** and deployed separately as a pinned tool at `/home/ubuntu/deltrel-rollouts/training-followup-20260910/benchmark_graph_buckets-e6c883c.py`; the immutable production release remains unchanged. A fresh isolated comparison passed all output tolerances and graph-replay checks. The changed-size geometric mean was 1.1155×; this is not a fleet-throughput forecast.
 
 ### Live data-path evidence
 
@@ -42,7 +42,7 @@ No 10× Elo/hour gain or global optimum has been established. Cheaper actors, ri
 
 ## First deployed release
 
-Commit `ef7f9ea443d6844b88caa23af579f3b5b0f89c18` is deployed in the immutable release `/home/ubuntu/edgeconnect-releases/variant-training-efficiency-ef7f9ea` on the H100 training host.
+Commit `ef7f9ea443d6844b88caa23af579f3b5b0f89c18` is deployed in the immutable release `/home/ubuntu/deltrel-releases/variant-training-efficiency-ef7f9ea` on the H100 training host.
 
 The release repairs streamed replay consumption, aligns readiness and capacity with the actual sampler, retains the eligible sample window rather than relying solely on a file count, and replaces native inference keys with exact compact state descriptors and lazy feature construction. It also adds memoized alpha-beta exact endgames, source-role metrics, and explicit strength-epoch accounting.
 
@@ -58,7 +58,7 @@ The source-only migration discarded **zero optimizer steps**. Profile bytes, rec
 
 A sustained readiness gate passed. Independent post-deployment verification observed step **165,857**, all ten workers healthy with zero restarts, zero actor inference failures, and the expected source and process identities. The main service, monitor, report timer, local backup timer, and disaster backup timer were active. The temporary recovery guard was stopped. The pre-existing global continuity timer was left disabled.
 
-Evidence is retained under `/home/ubuntu/edgeconnect-rollouts/training-efficiency-20260910`, including source checksums, build/test logs, frozen unit files, stop-boundary checkpoint, before/after control hashes, migration receipts, backup verification, readiness observations, and `final-health.json`.
+Evidence is retained under `/home/ubuntu/deltrel-rollouts/training-efficiency-20260910`, including source checksums, build/test logs, frozen unit files, stop-boundary checkpoint, before/after control hashes, migration receipts, backup verification, readiness observations, and `final-health.json`.
 
 ## Live replay evidence
 
@@ -76,7 +76,7 @@ The exact-endgame oracle sweep reduced visited nodes from 19,536 to 9,474 while 
 
 The optional compact inference gather produced exact six-head outputs on H100 for tested batches, but showed no material speed improvement (latency ratios 1.007, 1.021, and 1.000). It remains disabled. Smaller CUDA-graph buckets and shared training geometry require isolated H100 evidence before activation.
 
-Training remains BF16 mixed precision with FP32 parameters and sensitive operations. Search budgets, network size, EMA/LR clocks, UTD target, and evaluation strength settings were preserved. No EdgeConnect Elo/hour multiplier has yet been demonstrated; the new strength epoch measures the realized champion frontier and does not establish causal release effects.
+Training remains BF16 mixed precision with FP32 parameters and sensitive operations. Search budgets, network size, EMA/LR clocks, UTD target, and evaluation strength settings were preserved. No Deltrel Elo/hour multiplier has yet been demonstrated; the new strength epoch measures the realized champion frontier and does not establish causal release effects.
 
 ## Validation
 

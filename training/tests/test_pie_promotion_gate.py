@@ -11,8 +11,8 @@ import yaml
 import scripts.prepare_pie_promotion_gate as preparation
 from scripts.prepare_pie_policy_gate import prepare_policy_gate
 from scripts.validate_continuous_profile import validate_continuous_config
-from startrain import search_allocation_gate as gate
-from startrain.pie_promotion import pie_promotion_config
+from deltreltrain import search_allocation_gate as gate
+from deltreltrain.pie_promotion import pie_promotion_config
 from test_pie_policy_gate import policy_fixture
 from test_search_allocation_gate import reference, write_json
 

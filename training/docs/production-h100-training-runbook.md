@@ -1,13 +1,13 @@
 # Production H100 training runbook
 
 This is the canonical operator procedure for starting, supervising, stopping,
-and resuming a production Double *Star training run on one Linux host with
+and resuming a production Double Deltrel training run on one Linux host with
 either four or eight NVIDIA H100 GPUs.
 
 The short command is:
 
 ```bash
-startrain-orchestrate --config /absolute/path/to/frozen-run-profile.yaml
+deltreltrain-orchestrate --config /absolute/path/to/frozen-run-profile.yaml
 ```
 
 Do not run that command until the installation, storage, profile, CUDA, native
@@ -44,7 +44,7 @@ The supplied layouts are single-host profiles:
 
 All supplied continuous profiles deliberately use one learner GPU and set
 `distributed.enabled: false`. The real training command is therefore
-`startrain-orchestrate`, not `torchrun`. NCCL is used only by the preflight
+`deltreltrain-orchestrate`, not `torchrun`. NCCL is used only by the preflight
 smoke unless an operator creates and validates a separate multi-learner
 profile.
 
@@ -53,7 +53,7 @@ or mocked distributed tests does not certify H100 readiness. A target host is
 production-ready only after the CUDA, throughput, NCCL, recovery, and
 candidate-to-arena checks in this runbook pass.
 
-The Dockerfile in `training/` is a `starserve` serving image. It is not the
+The Dockerfile in `training/` is a `deltrelserve` serving image. It is not the
 production training launcher.
 
 ## 1. Host requirements
@@ -132,8 +132,8 @@ server. Avoid copying local build artifacts.
 Example remote workflow:
 
 ```bash
-git clone <repository-url> "$HOME/EdgeConnect"
-cd "$HOME/EdgeConnect"
+git clone <repository-url> "$HOME/Deltrel"
+cd "$HOME/Deltrel"
 git checkout <commit-or-release-tag>
 git status --short
 git rev-parse HEAD
@@ -151,8 +151,8 @@ rsync -az \
   --exclude training/.venv \
   --exclude training/target \
   --exclude training/runs \
-  /local/path/EdgeConnect/ \
-  <server>:"$HOME/EdgeConnect/"
+  /local/path/Deltrel/ \
+  <server>:"$HOME/Deltrel/"
 ```
 
 Do not edit source code in place after training starts. Use a new commit and a
@@ -213,7 +213,7 @@ runtime dependencies. Use this route when the installed driver supports
 CUDA 13:
 
 ```bash
-cd "$HOME/EdgeConnect/training"
+cd "$HOME/Deltrel/training"
 
 uv sync \
   --python 3.11 \
@@ -234,7 +234,7 @@ Use this route when the host driver cannot load the locked CUDA 13 runtime but
 does support CUDA 12.6:
 
 ```bash
-cd "$HOME/EdgeConnect/training"
+cd "$HOME/Deltrel/training"
 
 uv venv --python 3.11 .venv
 source .venv/bin/activate
@@ -258,7 +258,7 @@ From `training/`, with `.venv` activated:
 maturin develop \
   --release \
   --locked \
-  --manifest-path crates/star-py/Cargo.toml
+  --manifest-path crates/deltrel-py/Cargo.toml
 ```
 
 Re-run this command after every Rust change.
@@ -268,13 +268,13 @@ Verify the runtime:
 ```bash
 python - <<'PY'
 import torch
-import star_native
+import deltrel_native
 
 print("PyTorch:", torch.__version__)
 print("Bundled CUDA runtime:", torch.version.cuda)
 print("CUDA available:", torch.cuda.is_available())
 print("GPU count:", torch.cuda.device_count())
-print("Rules hash:", star_native.native_rules_hash_tag())
+print("Rules hash:", deltrel_native.native_rules_hash_tag())
 
 assert torch.cuda.is_available()
 assert torch.cuda.is_bf16_supported()
@@ -298,7 +298,7 @@ to bypass native tests.
 Choose the actual NVMe mount and verify free space and write permissions:
 
 ```bash
-export RUNS_BASE="/mnt/nvme/edgeconnect"  # change for this host
+export RUNS_BASE="/mnt/nvme/deltrel"  # change for this host
 mkdir -p "$RUNS_BASE"
 test -w "$RUNS_BASE"
 df -h "$RUNS_BASE"
@@ -349,10 +349,10 @@ ring 10. It intentionally provides no strength guarantee for rings 4, 6, or 8.
 Create a unique UTC run ID, absolute run root, and copied profile:
 
 ```bash
-cd "$HOME/EdgeConnect/training"
+cd "$HOME/Deltrel/training"
 source .venv/bin/activate
 
-export RUN_ID="star-$(date -u +%Y%m%dT%H%M%SZ)"
+export RUN_ID="deltrel-$(date -u +%Y%m%dT%H%M%SZ)"
 export RUN_ROOT="$RUNS_BASE/$RUN_ID"
 export PROFILE="$RUN_ROOT/profile.yaml"
 
@@ -497,7 +497,7 @@ Validate and print the effective topology:
 ```bash
 python - "$PROFILE" <<'PY'
 import sys
-from startrain.config import load_config
+from deltreltrain.config import load_config
 
 config = load_config(sys.argv[1])
 print("Profile:", config.profile)
@@ -534,15 +534,15 @@ Never copy a prior checkpoint or replay ledger into an autonomous root.
 ## 9. Run deterministic CPU/native validation
 
 ```bash
-cd "$HOME/EdgeConnect/training"
+cd "$HOME/Deltrel/training"
 source .venv/bin/activate
 
 cargo +1.93.0 fmt --all --check
 cargo +1.93.0 clippy --workspace --all-targets --locked -- -D warnings
 cargo +1.93.0 test --workspace --locked
 
-python -m ruff check startrain starserve tests scripts
-python -m ruff format --check startrain starserve tests scripts
+python -m ruff check deltreltrain deltrelserve tests scripts
+python -m ruff format --check deltreltrain deltrelserve tests scripts
 python -m pyright
 python -m pytest \
   --require-native \
@@ -558,7 +558,7 @@ python scripts/benchmark_native_features.py \
 ```
 
 The benchmark must report exact parity and a native path speedup. A missing
-`star_native` module or skipped native suite is a hard failure.
+`deltrel_native` module or skipped native suite is a hard failure.
 
 ## 10. Run one-GPU CUDA validation
 
@@ -660,11 +660,11 @@ coordinator directly while surviving SSH disconnects.
 From `training/`:
 
 ```bash
-cd "$HOME/EdgeConnect/training"
+cd "$HOME/Deltrel/training"
 source .venv/bin/activate
 
 tmux new-session -d -s "$RUN_ID" \
-  "bash -lc 'set -o pipefail; cd \"$PWD\" && source .venv/bin/activate && startrain-orchestrate --config \"$PROFILE\" 2>&1 | tee \"$RUN_ROOT/coordinator-console.log\"'"
+  "bash -lc 'set -o pipefail; cd \"$PWD\" && source .venv/bin/activate && deltreltrain-orchestrate --config \"$PROFILE\" 2>&1 | tee \"$RUN_ROOT/coordinator-console.log\"'"
 ```
 
 Confirm that the process started:
@@ -692,39 +692,39 @@ After a successful tmux soak, systemd is preferable for a multi-day run because
 it restarts the coordinator after a process failure and starts it after host
 reboot.
 
-The repository includes `deploy/edgeconnect-startrain.service.example`.
+The repository includes `deploy/deltrel-deltreltrain.service.example`.
 Generate a host-specific unit:
 
 ```bash
-cd "$HOME/EdgeConnect/training"
+cd "$HOME/Deltrel/training"
 
 sed \
   -e "s|@USER@|$USER|g" \
   -e "s|@TRAINING_DIR@|$PWD|g" \
   -e "s|@PROFILE@|$PROFILE|g" \
   -e "s|@RUN_ROOT@|$RUN_ROOT|g" \
-  deploy/edgeconnect-startrain.service.example \
-  > "/tmp/edgeconnect-startrain-$RUN_ID.service"
+  deploy/deltrel-deltreltrain.service.example \
+  > "/tmp/deltrel-deltreltrain-$RUN_ID.service"
 
 sudo install -m 0644 \
-  "/tmp/edgeconnect-startrain-$RUN_ID.service" \
-  "/etc/systemd/system/edgeconnect-startrain-$RUN_ID.service"
+  "/tmp/deltrel-deltreltrain-$RUN_ID.service" \
+  "/etc/systemd/system/deltrel-deltreltrain-$RUN_ID.service"
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now "edgeconnect-startrain-$RUN_ID.service"
+sudo systemctl enable --now "deltrel-deltreltrain-$RUN_ID.service"
 ```
 
 For an unlimited profile, generate the unit from
-`deploy/edgeconnect-startrain-continuous.service.example`. It validates the
+`deploy/deltrel-deltreltrain-continuous.service.example`. It validates the
 continuous settings, fails closed on configured GPU health before replay
 recovery, uses `Restart=always`, disables systemd's start-burst
 cutoff, and feeds a watchdog from the coordinator loop. A deliberate
 `systemctl stop` still suppresses restart. Finite profiles must use the regular
 `Restart=on-failure` template. Install the replay-ledger backup service/timer
-from `deploy/edgeconnect-startrain-backup.*.example` with the same `@USER@`,
+from `deploy/deltrel-deltreltrain-backup.*.example` with the same `@USER@`,
 `@TRAINING_DIR@`, `@RUN_ROOT@`, and `@RUN_ID@` substitutions.
 For autonomous runs, also install
-`deploy/edgeconnect-startrain-report.{service,timer}.example`, replace
+`deploy/deltrel-deltreltrain-report.{service,timer}.example`, replace
 `@PROVISIONED_GPUS@`, and enable the timer to refresh
 `strength-efficiency.json` every 15 minutes.
 
@@ -744,9 +744,9 @@ search waves, while still hard-killing the complete cgroup after
 The coordinator recovers workers inside one run. Cross-run recovery is owned by
 the separate host continuity controller:
 
-- `deploy/edgeconnect-startrain-continuity.service.example`
-- `deploy/edgeconnect-startrain-continuity.timer.example`
-- `deploy/edgeconnect-startrain-continuity-workload.service.example`
+- `deploy/deltrel-deltreltrain-continuity.service.example`
+- `deploy/deltrel-deltreltrain-continuity.timer.example`
+- `deploy/deltrel-deltreltrain-continuity-workload.service.example`
 - `deploy/training-continuity-manifest.json.example`
 
 Create isolated primary and fallback run roots first. The fallback must have
@@ -771,16 +771,16 @@ object to each workload that may start automatically:
 
 ```json
 "protection": {
-  "replay_backup_timer": "edgeconnect-startrain-<owner>-backup.timer",
-  "disaster_backup_timer": "edgeconnect-startrain-<owner>-disaster-backup.timer",
-  "disaster_backup_root": "/lambda/nfs/<filesystem>/edgeconnect-dr/<owner>",
+  "replay_backup_timer": "deltrel-deltreltrain-<owner>-backup.timer",
+  "disaster_backup_timer": "deltrel-deltreltrain-<owner>-disaster-backup.timer",
+  "disaster_backup_root": "/lambda/nfs/<filesystem>/deltrel-dr/<owner>",
   "disaster_backup_mount": "/lambda/nfs/<filesystem>",
-  "telemetry_service": "edgeconnect-startrain-<owner>-monitor.service",
+  "telemetry_service": "deltrel-deltreltrain-<owner>-monitor.service",
   "telemetry_output": "/absolute/run/root/status/monitor-5s.jsonl",
   "telemetry_max_bytes": 52428800,
   "telemetry_retain_files": 7,
-  "report_service": "edgeconnect-startrain-<owner>-report.service",
-  "report_timer": "edgeconnect-startrain-<owner>-report.timer",
+  "report_service": "deltrel-deltreltrain-<owner>-report.service",
+  "report_timer": "deltrel-deltreltrain-<owner>-report.timer",
   "report_provisioned_gpus": 8,
   "service_user": "<training-user>"
 }
@@ -798,15 +798,15 @@ fields remain valid and retain their original command bytes for migration;
 schema v2 requires those fields. A workload may omit `protection`; manifests
 without protection objects retain the legacy behavior and API.
 
-Keep mutable continuity state under `/var/lib/edgeconnect`, outside every run
+Keep mutable continuity state under `/var/lib/deltrel`, outside every run
 root. Pre-create the shared GPU execution lock for the training user and its
 private operations group:
 
 ```bash
 sudo install -d -m 0750 -o root -g "$USER" \
-  /var/lib/edgeconnect/training-continuity
+  /var/lib/deltrel/training-continuity
 sudo install -m 0660 -o "$USER" -g "$USER" /dev/null \
-  /var/lib/edgeconnect/elo-ablation-execution.lock
+  /var/lib/deltrel/elo-ablation-execution.lock
 ```
 
 The queue and every continuity workload must use that same lock path. Render one
@@ -815,8 +815,8 @@ Enable only the continuity timer; it selects the permitted unit:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now edgeconnect-startrain-continuity.timer
-sudo systemctl start edgeconnect-startrain-continuity.service
+sudo systemctl enable --now deltrel-deltreltrain-continuity.timer
+sudo systemctl start deltrel-deltreltrain-continuity.service
 ```
 
 The protection renderer accepts only the atomically pinned manifest under the
@@ -858,7 +858,7 @@ root across workloads. Ownership drift writes an immutable
 stop an otherwise healthy active workload; the operator can repair protection
 without sacrificing training progress.
 
-Install `deploy/edgeconnect-startrain-continuity-trigger.conf.example` as a
+Install `deploy/deltrel-deltreltrain-continuity-trigger.conf.example` as a
 drop-in on finite queue units for immediate handoff. The one-minute timer remains
 the boot/crash backstop.
 
@@ -894,7 +894,7 @@ user, reload logind, and verify the D-Bus property:
 ```bash
 sudo install -d -m 0755 /etc/systemd/logind.conf.d
 printf '[Login]\nRemoveIPC=no\n' |
-  sudo tee /etc/systemd/logind.conf.d/99-edgeconnect-training.conf >/dev/null
+  sudo tee /etc/systemd/logind.conf.d/99-deltrel-training.conf >/dev/null
 sudo loginctl enable-linger "$USER"
 sudo systemctl kill -s HUP systemd-logind
 busctl get-property org.freedesktop.login1 /org/freedesktop/login1 \
@@ -912,15 +912,15 @@ and bounded shard caches without observing mutable parent-only dataset state.
 The pool is shut down exactly once when the learner process exits. Monitor
 `loader_pool=starts/rebinds/shutdowns` and require one start, increasing
 rebinds, and no shutdown while the learner is live. More than one start in one
-learner process is a warning. `STARTRAIN_LOADER_LIFECYCLE=per_window` is an
+learner process is a warning. `DELTRELTRAIN_LOADER_LIFECYCLE=per_window` is an
 emergency, deployment-pinned rollback switch only; it restores the older
 spawn-per-window behavior and must not be treated as a production fix.
 
 Inspect it:
 
 ```bash
-systemctl status "edgeconnect-startrain-$RUN_ID.service"
-journalctl -u "edgeconnect-startrain-$RUN_ID.service" -f
+systemctl status "deltrel-deltreltrain-$RUN_ID.service"
+journalctl -u "deltrel-deltreltrain-$RUN_ID.service" -f
 ```
 
 Do not run tmux and systemd coordinators against the same run root at the same
@@ -967,17 +967,17 @@ between arena evaluations. That is expected.
 Re-establish the run path in every shell:
 
 ```bash
-export RUN_ROOT="/mnt/nvme/edgeconnect/<run-id>"
+export RUN_ROOT="/mnt/nvme/deltrel/<run-id>"
 ```
 
 For a detachable, once-per-minute operator summary, use the read-only monitor
 from a checkout that is not modified by the active run:
 
 ```bash
-export UNIT="edgeconnect-startrain-<run-id>.service"
-export MONITOR_TRAINING="$HOME/edgeconnect-releases/main-<sha>/training"
+export UNIT="deltrel-deltreltrain-<run-id>.service"
+export MONITOR_TRAINING="$HOME/deltrel-releases/main-<sha>/training"
 export MONITOR_PYTHON="$HOME/edge-connect-local/training/.venv/bin/python"
-export MONITOR_SESSION="startrain-monitor-<run-id>"
+export MONITOR_SESSION="deltreltrain-monitor-<run-id>"
 export MONITOR_LOG="$RUN_ROOT/operator-monitor.log"
 
 screen -DmS "$MONITOR_SESSION" bash -lc '
@@ -1156,14 +1156,14 @@ tmux send-keys -t "$RUN_ID" C-c
 For systemd:
 
 ```bash
-sudo systemctl stop "edgeconnect-startrain-$RUN_ID.service"
+sudo systemctl stop "deltrel-deltreltrain-$RUN_ID.service"
 ```
 
 To keep a continuous unit stopped across reboot:
 
 ```bash
-sudo systemctl disable --now "edgeconnect-startrain-$RUN_ID.service"
-sudo systemctl disable --now "edgeconnect-startrain-$RUN_ID-backup.timer"
+sudo systemctl disable --now "deltrel-deltreltrain-$RUN_ID.service"
+sudo systemctl disable --now "deltrel-deltreltrain-$RUN_ID-backup.timer"
 ```
 
 The profile allows up to 900 seconds for worker termination and complete-cohort
@@ -1192,11 +1192,11 @@ Correct the external cause, then start the exact same profile against the exact
 same run root:
 
 ```bash
-cd "$HOME/EdgeConnect/training"
+cd "$HOME/Deltrel/training"
 source .venv/bin/activate
 
 export RUN_ID="<existing-run-id>"
-export RUNS_BASE="/mnt/nvme/edgeconnect"  # same mount used at creation
+export RUNS_BASE="/mnt/nvme/deltrel"  # same mount used at creation
 export RUN_ROOT="$RUNS_BASE/$RUN_ID"
 export PROFILE="$RUN_ROOT/profile.yaml"
 
@@ -1206,7 +1206,7 @@ python scripts/preflight_run_state.py \
   --apply
 
 tmux new-session -d -s "$RUN_ID" \
-  "bash -lc 'set -o pipefail; cd \"$PWD\" && source .venv/bin/activate && startrain-orchestrate --config \"$PROFILE\" 2>&1 | tee \"$RUN_ROOT/coordinator-console.log\"'"
+  "bash -lc 'set -o pipefail; cd \"$PWD\" && source .venv/bin/activate && deltreltrain-orchestrate --config \"$PROFILE\" 2>&1 | tee \"$RUN_ROOT/coordinator-console.log\"'"
 ```
 
 The coordinator reuses `run.json`, reconciles replay files, and resumes the
@@ -1238,7 +1238,7 @@ instance volume. Keep the active run on local ext4/NVMe for SQLite correctness,
 and write immutable disaster snapshots to an attached Lambda filesystem:
 
 ```bash
-export DR_ROOT=/lambda/nfs/<filesystem>/edgeconnect-dr/<workload-id>
+export DR_ROOT=/lambda/nfs/<filesystem>/deltrel-dr/<workload-id>
 export DR_MOUNT=/lambda/nfs/<filesystem>
 
 python scripts/training_disaster_recovery.py snapshot \
@@ -1268,7 +1268,7 @@ warm-started run lost disaster coverage at its first plateau recovery
 which is exactly when a backup matters most.
 
 Render and enable
-`deploy/edgeconnect-startrain-disaster-backup.{service,timer}.example` for a
+`deploy/deltrel-deltreltrain-disaster-backup.{service,timer}.example` for a
 15-minute RPO. Distinct ablation roots retain one run identity, so give every
 arm a distinct disaster-backup root and `@BACKUP_ID@`; never let two roots
 publish into the same snapshot namespace.
@@ -1334,7 +1334,7 @@ Likely causes are a CPU-only wheel, driver/runtime incompatibility, missing GPU
 visibility, or a container/runtime configuration problem. Reinstall the
 appropriate PyTorch build; do not modify training code.
 
-### `import star_native` fails
+### `import deltrel_native` fails
 
 Rebuild in the active environment:
 
@@ -1343,8 +1343,8 @@ source .venv/bin/activate
 maturin develop \
   --release \
   --locked \
-  --manifest-path crates/star-py/Cargo.toml
-python -c "import star_native; print(star_native.native_rules_hash_tag())"
+  --manifest-path crates/deltrel-py/Cargo.toml
+python -c "import deltrel_native; print(deltrel_native.native_rules_hash_tag())"
 ```
 
 ### Hardware preflight is below 5,000 leaf evaluations/s/H100
@@ -1449,7 +1449,7 @@ parent root; it does not delete the failed fork.
 
 Use `scripts/run_terminal_boundary_pipeline.py` only from a detached, immutable
 release. Render
-`deploy/edgeconnect-startrain-terminal-boundary.service.example` and a
+`deploy/deltrel-deltreltrain-terminal-boundary.service.example` and a
 root-owned policy based on
 `deploy/terminal-boundary-staging-manifest.json.example`. Pin the exact source
 run identity, profile, systemd unit, current promotion-status digest/timestamp,
@@ -1736,7 +1736,7 @@ artifact references remain valid.
 The output is not automatically a browser model:
 
 1. Confirm the final candidate has a terminal arena decision.
-2. Use `learner/champion.json` for private `starserve`.
+2. Use `learner/champion.json` for private `deltrelserve`.
 3. Run external strength evaluation across all rings.
 4. Distill the validated champion for browser inference.
 5. Build Rust/WASM artifacts.
@@ -1750,7 +1750,7 @@ Continue with:
 
 ## Final launch checklist
 
-Before running `startrain-orchestrate`, confirm all boxes:
+Before running `deltreltrain-orchestrate`, confirm all boxes:
 
 - [ ] intended source commit recorded;
 - [ ] every GPU ID selected by the 4- or 8-GPU profile is a full H100 and
@@ -1759,7 +1759,7 @@ Before running `startrain-orchestrate`, confirm all boxes:
 - [ ] BF16 supported;
 - [ ] local NVMe root writable with sufficient bytes and inodes;
 - [ ] Rust 1.93 and Python 3.11 active;
-- [ ] `star_native` release extension built and rules hash verified;
+- [ ] `deltrel_native` release extension built and rules hash verified;
 - [ ] CPU/native tests pass without skips;
 - [ ] CUDA smoke passes;
 - [ ] ring-6 and ring-10 hardware preflight exceeds the throughput floor;

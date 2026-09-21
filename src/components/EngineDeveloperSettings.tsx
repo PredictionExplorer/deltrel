@@ -4,10 +4,10 @@ import { useEffect, useId, useState } from 'react';
 import type {
   AiCapabilities,
   AiSearchCapability,
-} from '@/lib/star/ai/capabilities';
-import type { StarAiSearchBudget } from '@/lib/star/ai/decision';
+} from '@/lib/deltrel/ai/capabilities';
+import type { DeltrelAiSearchBudget } from '@/lib/deltrel/ai/decision';
 import { useAppStore, type AiRuntime } from '@/lib/store';
-import { engineControllerLabel } from './starAiDevtools';
+import { engineControllerLabel } from './deltrelAiDevtools';
 
 const PRESETS = [
   ['quick', 'Quick'],
@@ -28,7 +28,7 @@ function budgetError(value: string, maximum: number, label: string): string | nu
 }
 
 export function budgetFitsCapability(
-  budget: StarAiSearchBudget,
+  budget: DeltrelAiSearchBudget,
   search: AiSearchCapability | undefined,
 ): boolean {
   return (
@@ -45,8 +45,8 @@ export function budgetFitsCapability(
 interface EngineBudgetControlsProps {
   runtime: AiRuntime;
   search: AiSearchCapability;
-  budget: StarAiSearchBudget;
-  onChange: (budget: StarAiSearchBudget) => void;
+  budget: DeltrelAiSearchBudget;
+  onChange: (budget: DeltrelAiSearchBudget) => void;
   onValidityChange: (runtime: AiRuntime, valid: boolean) => void;
 }
 
@@ -86,7 +86,7 @@ function EngineBudgetControls({
     onValidityChange(runtime, valid);
   }, [onValidityChange, runtime, valid]);
 
-  const applyBudget = (next: StarAiSearchBudget) => {
+  const applyBudget = (next: DeltrelAiSearchBudget) => {
     setDraft({
       simulations: String(next.simulations),
       maxConsidered: String(next.maxConsidered),
@@ -95,7 +95,7 @@ function EngineBudgetControls({
   };
 
   const updateDraft = (
-    field: keyof StarAiSearchBudget,
+    field: keyof DeltrelAiSearchBudget,
     value: string,
   ) => {
     const next = { ...draft, [field]: value };
@@ -139,8 +139,8 @@ function EngineBudgetControls({
               onClick={() => applyBudget({ ...preset })}
               className={`rounded-xl border px-3 py-2 text-left transition-colors ${
                 selected
-                  ? 'border-gold/70 bg-gold-faint'
-                  : 'border-white/10 bg-white/[0.03] hover:border-gold/35'
+                  ? 'border-sand/70 bg-sand-faint'
+                  : 'border-white/10 bg-white/[0.03] hover:border-sand/35'
               }`}
             >
               <span className="block text-sm text-ink">{label}</span>
@@ -159,7 +159,7 @@ function EngineBudgetControls({
       </p>
 
       <details className="mt-3 rounded-lg border border-white/10 bg-black/10 px-3 py-2">
-        <summary className="cursor-pointer text-xs text-gold-strong">
+        <summary className="cursor-pointer text-xs text-sand-strong">
           Advanced search budget
         </summary>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -185,7 +185,7 @@ function EngineBudgetControls({
               onChange={(event) =>
                 updateDraft('simulations', event.target.value)
               }
-              className="mt-1 w-full rounded-lg border border-white/15 bg-white/[0.04] px-2.5 py-2 text-sm text-ink outline-none focus:border-gold/60"
+              className="mt-1 w-full rounded-lg border border-white/15 bg-white/[0.04] px-2.5 py-2 text-sm text-ink outline-none focus:border-sand/60"
             />
             <p
               id={`${inputId}-simulations-hint`}
@@ -227,7 +227,7 @@ function EngineBudgetControls({
               onChange={(event) =>
                 updateDraft('maxConsidered', event.target.value)
               }
-              className="mt-1 w-full rounded-lg border border-white/15 bg-white/[0.04] px-2.5 py-2 text-sm text-ink outline-none focus:border-gold/60"
+              className="mt-1 w-full rounded-lg border border-white/15 bg-white/[0.04] px-2.5 py-2 text-sm text-ink outline-none focus:border-sand/60"
             />
             <p
               id={`${inputId}-max-considered-hint`}
@@ -267,8 +267,8 @@ export function EngineDeveloperSettings({
   const setAiSearchBudget = useAppStore((state) => state.setAiSearchBudget);
 
   return (
-    <details className="rounded-xl border border-gold/25 bg-gold-faint px-4 py-3">
-      <summary className="cursor-pointer text-sm font-medium text-gold-strong">
+    <details className="rounded-xl border border-sand/25 bg-sand-faint px-4 py-3">
+      <summary className="cursor-pointer text-sm font-medium text-sand-strong">
         Engine developer settings
       </summary>
       <div className="mt-4 space-y-4">

@@ -11,8 +11,8 @@ import pytest
 import yaml
 
 from scripts import monitor_run as monitor
-from startrain.arena import ARENA_RESULT_SCHEMA_VERSION
-from startrain import continuity
+from deltreltrain.arena import ARENA_RESULT_SCHEMA_VERSION
+from deltreltrain import continuity
 
 CONFIGS = Path(__file__).parents[1] / "configs"
 
@@ -81,18 +81,18 @@ def _continuity_fixture(tmp_path: Path) -> dict[str, Path]:
         "primary",
         primary_root,
         primary_profile,
-        "edgeconnect-primary.service",
+        "deltrel-primary.service",
     )
 
     def protection(owner: str, root: Path, backup_root: Path) -> dict[str, object]:
         return {
-            "replay_backup_timer": (f"edgeconnect-startrain-{owner}-backup.timer"),
+            "replay_backup_timer": (f"deltrel-deltreltrain-{owner}-backup.timer"),
             "disaster_backup_timer": (
-                f"edgeconnect-startrain-{owner}-disaster-backup.timer"
+                f"deltrel-deltreltrain-{owner}-disaster-backup.timer"
             ),
             "disaster_backup_root": str(backup_root),
             "disaster_backup_mount": str(disaster_mount),
-            "telemetry_service": (f"edgeconnect-startrain-{owner}-monitor.service"),
+            "telemetry_service": (f"deltrel-deltreltrain-{owner}-monitor.service"),
             "telemetry_output": str(root / "status" / "monitor-5s.jsonl"),
         }
 
@@ -102,7 +102,7 @@ def _continuity_fixture(tmp_path: Path) -> dict[str, Path]:
         "fallback",
         fallback_root,
         fallback_profile,
-        "edgeconnect-fallback.service",
+        "deltrel-fallback.service",
     )
     fallback["protection"] = protection(
         "fallback-lkg",
@@ -397,7 +397,7 @@ def test_collect_snapshot_reports_healthy_run(tmp_path, monkeypatch) -> None:
     _healthy_dependencies(monkeypatch)
 
     snapshot: Any = monitor.collect_snapshot(
-        root, unit="startrain.service", now_ns=now_ns
+        root, unit="deltreltrain.service", now_ns=now_ns
     )
 
     assert snapshot["status"] == "OK"
@@ -750,7 +750,7 @@ def test_collect_snapshot_reports_unlimited_recovery_state(
     _write_json(
         root / "learner" / "recovery.json",
         {
-            "format": "startrain.recovery-pointer",
+            "format": "deltreltrain.recovery-pointer",
             "schema_version": 1,
             "checkpoint": f"recovery/{recovery_checkpoint.name}",
             "checkpoint_sha256": recovery_sha,
@@ -866,7 +866,7 @@ def test_snapshot_surfaces_stale_restart_quarantine_and_hardware(
     )
 
     snapshot: Any = monitor.collect_snapshot(
-        root, unit="startrain.service", now_ns=now_ns
+        root, unit="deltreltrain.service", now_ns=now_ns
     )
     codes = {warning["code"] for warning in snapshot["warnings"]}
 
@@ -1055,7 +1055,7 @@ def test_snapshot_and_text_surface_durable_coordinator_failure(
     _write_json(
         root / "status" / "fatal.json",
         {
-            "format": "startrain.coordinator-fatal",
+            "format": "deltreltrain.coordinator-fatal",
             "schema_version": 1,
             "timestamp_ns": now_ns,
             "terminal_reason": "fatal_worker_failure",
@@ -1519,14 +1519,14 @@ def test_continuity_manifest_resolves_active_monitor_target(tmp_path: Path) -> N
         paths["manifest"],
         run_root=paths["run_root"],
         profile_path=paths["profile"],
-        unit="edgeconnect-primary.service",
+        unit="deltrel-primary.service",
         continuity_state_path=paths["state"],
         disaster_backup_root=paths["disaster_root"],
     )
 
     assert target.run_root == paths["run_root"]
     assert target.profile_path == paths["profile"]
-    assert target.unit == "edgeconnect-primary.service"
+    assert target.unit == "deltrel-primary.service"
     assert target.continuity_state_path == paths["state"]
     assert target.disaster_backup_root == paths["disaster_root"]
 
@@ -1552,7 +1552,7 @@ def test_continuity_manifest_follows_fallback_active_workload(
 
     assert target.run_root == paths["fallback_run_root"]
     assert target.profile_path == paths["fallback_profile"]
-    assert target.unit == "edgeconnect-fallback.service"
+    assert target.unit == "deltrel-fallback.service"
     assert target.disaster_backup_root == paths["fallback_disaster_root"]
 
 
@@ -1563,7 +1563,7 @@ def test_continuity_manifest_rejects_conflicting_explicit_monitor_inputs(
     conflicts = (
         ({"run_root": tmp_path / "other-run"}, "--run-root"),
         ({"profile_path": tmp_path / "other.yaml"}, "--profile"),
-        ({"unit": "edgeconnect-other.service"}, "--unit"),
+        ({"unit": "deltrel-other.service"}, "--unit"),
         (
             {"continuity_state_path": tmp_path / "other-state.json"},
             "--continuity-state",
@@ -1604,7 +1604,7 @@ def test_main_uses_manifest_resolved_active_workload(
     assert result == 0
     assert captured["run_root"] == paths["run_root"]
     assert captured["profile_path"] == paths["profile"]
-    assert captured["unit"] == "edgeconnect-primary.service"
+    assert captured["unit"] == "deltrel-primary.service"
     assert captured["continuity_state_path"] == paths["state"]
     assert captured["disaster_backup_root"] == paths["disaster_root"]
 
@@ -1850,7 +1850,7 @@ def test_monitor_shows_headline_segment_loader_and_result_kind_counts(
     _write_json(
         root / "strength-efficiency.json",
         {
-            "report": "startrain-strength-efficiency",
+            "report": "deltreltrain-strength-efficiency",
             "schema_version": 1,
             "status": "complete",
             "run_id": "monitor-run",
@@ -1989,7 +1989,7 @@ def test_monitor_derives_aggregate_headline_from_legacy_report(tmp_path) -> None
     _write_json(
         tmp_path / "strength-efficiency.json",
         {
-            "report": "startrain-strength-efficiency",
+            "report": "deltreltrain-strength-efficiency",
             "schema_version": 1,
             "status": "complete",
             "run_id": "legacy-run",
@@ -2027,7 +2027,7 @@ def test_monitor_escalates_stale_strength_report_for_active_run(
     _write_json(
         root / "strength-efficiency.json",
         {
-            "report": "startrain-strength-efficiency",
+            "report": "deltreltrain-strength-efficiency",
             "schema_version": 1,
             "status": "complete",
             "run_id": "monitor-run",
@@ -2064,7 +2064,7 @@ def test_strength_report_requires_exact_run_root_and_allows_small_clock_skew(
     now_ns = 20_000_000_000
     root = _fixture(tmp_path, now_ns=now_ns)
     report = {
-        "report": "startrain-strength-efficiency",
+        "report": "deltreltrain-strength-efficiency",
         "schema_version": 1,
         "status": "complete",
         "run_id": "monitor-run",
@@ -2088,15 +2088,15 @@ def test_strength_report_requires_exact_run_root_and_allows_small_clock_skew(
 
 
 def test_changed_balanced_objective_cannot_reuse_previous_report_headline(tmp_path):
-    from startrain.balanced_evaluation import evaluation_contract
-    from startrain.config import ArenaConfig
+    from deltreltrain.balanced_evaluation import evaluation_contract
+    from deltreltrain.config import ArenaConfig
 
     now_ns = 20_000_000_000
     root = _fixture(tmp_path, now_ns=now_ns)
     old = evaluation_contract(ArenaConfig(balanced_cells=True))
     current = evaluation_contract(ArenaConfig(rings=(10,), balanced_cells=True))
     report = {
-        "report": "startrain-strength-efficiency",
+        "report": "deltreltrain-strength-efficiency",
         "schema_version": 1,
         "status": "complete",
         "run_id": "monitor-run",
@@ -2252,7 +2252,7 @@ def test_disaster_recovery_status_verifies_lambda_snapshot(tmp_path) -> None:
         backup_root / "namespace.json",
         {
             "schema_version": 1,
-            "report": "startrain-disaster-recovery-namespace",
+            "report": "deltreltrain-disaster-recovery-namespace",
             "run_id": run_id,
             "generation_family": "family-1",
             "source_run_root": str(active_root),
@@ -2261,7 +2261,7 @@ def test_disaster_recovery_status_verifies_lambda_snapshot(tmp_path) -> None:
     run_snapshots = backup_root / "snapshots" / run_id
     snapshot = {
         "schema_version": 1,
-        "report": "startrain-disaster-recovery-snapshot",
+        "report": "deltreltrain-disaster-recovery-snapshot",
         "run_id": run_id,
         "generation_family": "family-1",
         "created_ns": now_ns - 60_000_000_000,
@@ -2284,7 +2284,7 @@ def test_disaster_recovery_status_verifies_lambda_snapshot(tmp_path) -> None:
         run_snapshots / "latest.json",
         {
             "schema_version": 1,
-            "report": "startrain-disaster-recovery-latest",
+            "report": "deltreltrain-disaster-recovery-latest",
             "run_id": run_id,
             "generation_family": "family-1",
             "path": snapshot_name,
@@ -2325,7 +2325,7 @@ def test_disaster_recovery_status_verifies_lambda_snapshot(tmp_path) -> None:
         run_snapshots / "latest.json",
         {
             "schema_version": 1,
-            "report": "startrain-disaster-recovery-latest",
+            "report": "deltreltrain-disaster-recovery-latest",
             "run_id": run_id,
             "generation_family": "family-1",
             "path": newer_name,
@@ -2383,7 +2383,7 @@ def test_disaster_recovery_status_rejects_tampered_snapshot(tmp_path) -> None:
         tmp_path / "namespace.json",
         {
             "schema_version": 1,
-            "report": "startrain-disaster-recovery-namespace",
+            "report": "deltreltrain-disaster-recovery-namespace",
             "run_id": run_id,
             "generation_family": "family-1",
             "source_run_root": str(active_root),
@@ -2397,7 +2397,7 @@ def test_disaster_recovery_status_rejects_tampered_snapshot(tmp_path) -> None:
         run_snapshots / "latest.json",
         {
             "schema_version": 1,
-            "report": "startrain-disaster-recovery-latest",
+            "report": "deltreltrain-disaster-recovery-latest",
             "run_id": run_id,
             "generation_family": "family-1",
             "path": snapshot_name,

@@ -6,9 +6,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from startrain.arena import ArenaRunner
-from startrain.config import ArenaConfig
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.arena import ArenaRunner
+from deltreltrain.config import ArenaConfig
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
 from test_inference_efficiency import ObservedNetwork
 
 
@@ -35,7 +35,7 @@ def config() -> ArenaConfig:
 def test_parallel_balanced_groups_batch_neural_requests_without_changing_pairs() -> (
     None
 ):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     counts = {4: 4, 6: 0, 8: 0, 10: 0}
     serial_adapter, shared_adapter = evaluator(), evaluator()
     serial = ArenaRunner(
@@ -61,7 +61,7 @@ def test_parallel_balanced_groups_batch_neural_requests_without_changing_pairs()
     assert metrics["neural_batches"] < metrics["submitted_requests"]
     assert metrics["submitted_requests"] == metrics["completed_requests"]
     assert metrics["pending_requests"] == metrics["failed_requests"] == 0
-    assert set(shared_adapter.model.threads) == {"star-inference-owner"}
+    assert set(shared_adapter.model.threads) == {"deltrel-inference-owner"}
     assert max(shared_adapter.model.rows) > max(serial_adapter.model.rows)
     assert shared["search"]["variant_group_workers"] == 12
     assert shared["search"]["inference_execution"] == "shared_broker"
@@ -71,7 +71,7 @@ def test_parallel_balanced_groups_batch_neural_requests_without_changing_pairs()
 @pytest.mark.native
 @pytest.mark.parametrize("fail", [False, True])
 def test_balanced_groups_drain_all_inference_before_owner_shutdown(fail) -> None:
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     adapter = evaluator()
     adapter.model.started, adapter.model.release = threading.Event(), threading.Event()
     adapter.model.fail = fail

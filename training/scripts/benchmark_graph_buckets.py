@@ -282,9 +282,9 @@ def _native_requests(native, ring, rows):
 
 
 def _plan(args):
-    from startrain.checkpoint import load_model_manifest
-    from startrain.config import load_config
-    from startrain import inference, inference_graphs, model, native
+    from deltreltrain.checkpoint import load_model_manifest
+    from deltreltrain.config import load_config
+    from deltreltrain import inference, inference_graphs, model, native
 
     config = load_config(args.config)
     manifest = load_model_manifest(args.checkpoint)
@@ -330,10 +330,10 @@ def _plan(args):
 
 def _worker(args, plan, identity, config, manifest):
     import torch
-    from startrain.checkpoint import load_ema_checkpoint
-    from startrain.inference import GraphInferenceAdapter, InferenceConfig
-    from startrain.model import GraphResTNet
-    from startrain.native import load_star_native
+    from deltreltrain.checkpoint import load_ema_checkpoint
+    from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+    from deltreltrain.model import GraphResTNet
+    from deltreltrain.native import load_deltrel_native
 
     started = time.monotonic()
     if not torch.cuda.is_available():
@@ -361,7 +361,7 @@ def _worker(args, plan, identity, config, manifest):
     model.set_compact_inference_gather(plan["compact_inference_gather"])
     if args.compile_model:
         model = cast(GraphResTNet, torch.compile(model, dynamic=True, fullgraph=True))
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     if native is None:
         raise ValueError("compiled native engine is unavailable")
     setup_seconds = time.monotonic() - started

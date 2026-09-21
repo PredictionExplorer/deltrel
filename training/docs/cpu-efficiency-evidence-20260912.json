@@ -4,14 +4,14 @@
   "platform": "macOS-26.6.2-arm64-arm-64bit",
   "python": "3.11.13 (main, Jun  3 2025, 18:38:25) [Clang 17.0.0 (clang-1700.0.13.3)]",
   "candidate_sha256": {
-    "startrain/arena.py": "3f888aad834418920553c5ea6df80d88ae10dde1659376cbb78833db4c9e1161",
-    "startrain/inference.py": "77a17f695542a109dfcf56f3f8645f02566d04e134dbebac5d4da28a9ff35ebd",
-    "startrain/losses.py": "8344853a9d9694ebd477dc4fd6566494e6b0ec5ccbb3bcc78dea068b27396850",
-    "startrain/replay_store.py": "12a382e64d60e11987dc0e1e199df11871c591124f55f27f23f6885115f7100a",
-    "crates/star-py/src/lib.rs": "eb19053c176e3a8af1727b6ca4ccc6d4c80c83ba082a32bf2f2874abda594fd8",
-    "crates/star-search/src/tree.rs": "8d38ba2f227ca473bf264c5b1205e2669f0e236f5071287be04ed02b263118de",
+    "deltreltrain/arena.py": "3f888aad834418920553c5ea6df80d88ae10dde1659376cbb78833db4c9e1161",
+    "deltreltrain/inference.py": "77a17f695542a109dfcf56f3f8645f02566d04e134dbebac5d4da28a9ff35ebd",
+    "deltreltrain/losses.py": "8344853a9d9694ebd477dc4fd6566494e6b0ec5ccbb3bcc78dea068b27396850",
+    "deltreltrain/replay_store.py": "12a382e64d60e11987dc0e1e199df11871c591124f55f27f23f6885115f7100a",
+    "crates/deltrel-py/src/lib.rs": "eb19053c176e3a8af1727b6ca4ccc6d4c80c83ba082a32bf2f2874abda594fd8",
+    "crates/deltrel-search/src/tree.rs": "8d38ba2f227ca473bf264c5b1205e2669f0e236f5071287be04ed02b263118de",
     "scripts/prepare_arena_occupancy_benchmark.py": "e390e38bdfcb16d3488c5bc90d9687bda8154c0e2ce0ac1df7a8d83da264b21a",
-    "startrain/orchestration.py": "e9c1e643d73d72100b43edd2c12d60a331a58632c940ccc1afaa7dc963596983"
+    "deltreltrain/orchestration.py": "e9c1e643d73d72100b43edd2c12d60a331a58632c940ccc1afaa7dc963596983"
   },
   "cpu_hotpaths": {
     "schema_version": 1,
@@ -319,7 +319,7 @@
   "validation": {
     "rust_workspace_tests_passed": 100,
     "strict_clippy": "passed",
-    "wasm32_star_wasm_check": "passed",
+    "wasm32_deltrel_wasm_check": "passed",
     "ruff_all_python": "passed",
     "pyright_all_python": "passed",
     "affected_benchmark_regressions_after_binary_layout_fix": 23,
@@ -327,32 +327,32 @@
     "installed_candidate_binary_matches_benchmarked_binary": true,
     "installed_candidate_regression_passed": 77,
     "current_provenance_fast_path_tests_passed": 6,
-    "current_provenance_coverage_report": "/tmp/edgeconnect-efficiency-yp6wY3/provenance-coverage.json",
+    "current_provenance_coverage_report": "/tmp/deltrel-efficiency-yp6wY3/provenance-coverage.json",
     "cpu_test_groups": [
       {
         "tests_passed": 467,
         "log_sha256": "b17acaa8ce406689865e0851d0567f9dadca022048ea0fd08b12143ec1f3193f",
-        "log_path": "/tmp/edgeconnect-efficiency-yp6wY3/shard-0.log"
+        "log_path": "/tmp/deltrel-efficiency-yp6wY3/shard-0.log"
       },
       {
         "tests_passed": 732,
         "log_sha256": "9a458b7115e5e40bdd6c6c4ad22bc840342a76d5d329768bf310475080d131e7",
-        "log_path": "/tmp/edgeconnect-efficiency-yp6wY3/shard-1-final.log"
+        "log_path": "/tmp/deltrel-efficiency-yp6wY3/shard-1-final.log"
       },
       {
         "tests_passed": 949,
         "log_sha256": "110954e26d155e2bb1186a6242df20787b4db763f1d93fae757842c31848af91",
-        "log_path": "/tmp/edgeconnect-efficiency-yp6wY3/shard-2-final.log"
+        "log_path": "/tmp/deltrel-efficiency-yp6wY3/shard-2-final.log"
       },
       {
         "tests_passed": 949,
         "log_sha256": "b39aafdab3983f0144a75c0c5e6210d2087ef7bb2a2f5cab1baee95ea7e3a44f",
-        "log_path": "/tmp/edgeconnect-efficiency-yp6wY3/shard-3.log"
+        "log_path": "/tmp/deltrel-efficiency-yp6wY3/shard-3.log"
       },
       {
         "tests_passed": 6,
         "log_sha256": "1345cd26ca238dcb7cced5e91b81499d97d254b8818fe51b8050c24a3c6507ab",
-        "log_path": "/tmp/edgeconnect-efficiency-yp6wY3/provenance-tests.log"
+        "log_path": "/tmp/deltrel-efficiency-yp6wY3/provenance-tests.log"
       }
     ],
     "cpu_unique_tests_passed": 3103,
@@ -363,7 +363,7 @@
       "gate_passed": true,
       "report_sha256": "3660285b8a1b4c45ebed88a83535f9706e309672e02502a1905fe88cc736f4b3",
       "files": {
-        "startrain/arena.py": {
+        "deltreltrain/arena.py": {
           "covered_lines": 1113,
           "num_statements": 1205,
           "percent_covered": 89.87924094307073,
@@ -379,7 +379,7 @@
           "percent_branches_covered": 84.26966292134831,
           "percent_branches_covered_display": "84"
         },
-        "startrain/inference.py": {
+        "deltreltrain/inference.py": {
           "covered_lines": 621,
           "num_statements": 686,
           "percent_covered": 88.1004366812227,
@@ -395,7 +395,7 @@
           "percent_branches_covered": 80.8695652173913,
           "percent_branches_covered_display": "81"
         },
-        "startrain/losses.py": {
+        "deltreltrain/losses.py": {
           "covered_lines": 190,
           "num_statements": 203,
           "percent_covered": 90.6367041198502,
@@ -411,7 +411,7 @@
           "percent_branches_covered": 81.25,
           "percent_branches_covered_display": "81"
         },
-        "startrain/orchestration.py": {
+        "deltreltrain/orchestration.py": {
           "covered_lines": 1082,
           "num_statements": 1317,
           "percent_covered": 79.42693409742121,
@@ -427,7 +427,7 @@
           "percent_branches_covered": 71.02803738317758,
           "percent_branches_covered_display": "71"
         },
-        "startrain/replay_store.py": {
+        "deltreltrain/replay_store.py": {
           "covered_lines": 795,
           "num_statements": 871,
           "percent_covered": 88.38599487617421,

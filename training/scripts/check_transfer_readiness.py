@@ -7,9 +7,9 @@ import argparse
 import json
 from pathlib import Path
 
-from startrain.config import load_config
-from startrain.runtime import atomic_json
-from startrain.transfer_gate import transfer_readiness
+from deltreltrain.config import load_config
+from deltreltrain.runtime import atomic_json
+from deltreltrain.transfer_gate import transfer_readiness
 
 
 def main(argv: list[str] | None = None) -> int:

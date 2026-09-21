@@ -1,0 +1,39 @@
+schema_version: 2
+experiment_config: h100.yaml
+model_manifest: ../runs/h100-8gpu/learner/champion.json
+device: cuda:0
+host: 0.0.0.0
+port: 8080
+rules_schema_id: deltrel.rules.v3
+rules_hash: fnv1a64:46e4fbcff4e17fd3
+feature_schema_id: deltrel.model-features.external.v3
+feature_schema_hash: 058eb071d77948a7
+action_schema_id: deltrel.action-layout.nodes-only.v1
+
+search:
+  default_simulations: 512
+  maximum_simulations: 4096
+  default_max_considered: 16
+  maximum_max_considered: 64
+  c_visit: 50.0
+  c_scale: 1.0
+  swap_dead_zone: 0.02
+
+limits:
+  max_concurrency: 2
+  max_request_bytes: 1048576
+  request_timeout_seconds: 60.0
+  queue_timeout_seconds: 5.0
+
+inference:
+  cache_max_entries: 4096
+  cache_max_bytes: 67108864
+  shared_batching: true
+  max_batch_rows: 16
+  max_pending_requests: 16
+  max_wait_seconds: 0.001
+
+security:
+  cors_allow_origins:
+    - https://play.deltrel.example
+  bearer_token_env: DELTRELSERVE_BEARER_TOKEN

@@ -16,15 +16,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from startrain.checkpoint import sha256_file
-from startrain.config import ExperimentConfig, load_config
-from startrain.manifest_selection import (
+from deltreltrain.checkpoint import sha256_file
+from deltreltrain.config import ExperimentConfig, load_config
+from deltreltrain.manifest_selection import (
     SelectionPlan,
     freeze_selection_plan,
     verify_selection_plan,
 )
-from startrain.native import load_star_native
-from startrain.runtime import atomic_json
+from deltreltrain.native import load_deltrel_native
+from deltreltrain.runtime import atomic_json
 
 if __package__:
     from .evaluate_archived_manifests import plan_archived_manifest_evaluation
@@ -34,7 +34,7 @@ else:
     from validate_continuous_profile import validate_continuous_config
 
 SCHEMA_VERSION = 1
-REPORT_NAME = "startrain-arena-occupancy-benchmark-plan"
+REPORT_NAME = "deltreltrain-arena-occupancy-benchmark-plan"
 PLAN_NAME = "benchmark-plan.json"
 SELECTION_PLAN_NAME = "selection-plan.json"
 CONTROL_ARM = "continuation-25"
@@ -45,10 +45,10 @@ REPOSITORY_ROOT = TRAINING_ROOT.parent
 HARNESS_PATHS = (
     Path(__file__).resolve(),
     TRAINING_ROOT / "scripts" / "benchmark_arena_occupancy.py",
-    TRAINING_ROOT / "startrain" / "arena.py",
-    TRAINING_ROOT / "startrain" / "promotion.py",
+    TRAINING_ROOT / "deltreltrain" / "arena.py",
+    TRAINING_ROOT / "deltreltrain" / "promotion.py",
 )
-DEFAULT_HOST_EXECUTION_LOCK = Path("/var/lib/edgeconnect/elo-ablation-execution.lock")
+DEFAULT_HOST_EXECUTION_LOCK = Path("/var/lib/deltrel/elo-ablation-execution.lock")
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,7 +138,7 @@ def _release_manifest_artifact(commit: str) -> dict[str, object] | None:
     if (
         not isinstance(payload, dict)
         or payload.get("schema_version") != 1
-        or payload.get("report") != "edgeconnect-immutable-release"
+        or payload.get("report") != "deltrel-immutable-release"
         or payload.get("commit") != commit
     ):
         raise ValueError("release manifest identity does not match the checkout")
@@ -220,7 +220,7 @@ def _native_extension_path(native_module: object) -> Path:
         origin.endswith(suffix) for suffix in importlib.machinery.EXTENSION_SUFFIXES
     ):
         try:
-            spec = importlib.util.find_spec(f"{module_name}.star_native")
+            spec = importlib.util.find_spec(f"{module_name}.deltrel_native")
         except (ModuleNotFoundError, ValueError) as error:
             raise ValueError(
                 "compiled native extension artifact is unavailable"
@@ -234,7 +234,7 @@ def _native_extension_path(native_module: object) -> Path:
 
 
 def _native_extension_artifact() -> dict[str, object]:
-    native_module = load_star_native(required=True)
+    native_module = load_deltrel_native(required=True)
     if native_module is None:
         raise ValueError("native extension is required")
     rules_hash = getattr(native_module, "native_rules_hash", None)

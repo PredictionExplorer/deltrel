@@ -23,18 +23,18 @@ from typing import Any
 
 import torch
 
-from startrain.arena import ArenaRunner
-from startrain.checkpoint import sha256_file
-from startrain.device import (
+from deltreltrain.arena import ArenaRunner
+from deltreltrain.checkpoint import sha256_file
+from deltreltrain.device import (
     empty_device_cache,
     peak_memory_stats,
     reset_peak_memory_stats,
     synchronize_device,
 )
-from startrain.native import load_star_native
-from startrain.orchestration import CoordinatorLock
-from startrain.promotion import load_manifest_evaluator
-from startrain.runtime import atomic_json
+from deltreltrain.native import load_deltrel_native
+from deltreltrain.orchestration import CoordinatorLock
+from deltreltrain.promotion import load_manifest_evaluator
+from deltreltrain.runtime import atomic_json
 
 if __package__:
     from .evaluate_archived_manifests import selection_arena_config
@@ -63,7 +63,7 @@ else:
     )
     from run_elo_ablation_queue import exclusive_execution_lock
 
-REPORT_NAME = "startrain-arena-occupancy-benchmark"
+REPORT_NAME = "deltreltrain-arena-occupancy-benchmark"
 REPORT_FILE = "occupancy-report.json"
 PROGRESS_FILE = "benchmark-progress.json"
 FAILURE_FILE = "benchmark-failure.json"
@@ -897,7 +897,7 @@ def run_arena_occupancy_benchmark(
         candidate_evidence = selection.candidates[0]
         candidate = candidate_evidence.verify()
         baseline = selection.source_champion.manifest.verify()
-        native_module = load_star_native(required=True)
+        native_module = load_deltrel_native(required=True)
         if native_module is None:
             raise RuntimeError("native module is required")
         observed_runtime = runtime_metadata(

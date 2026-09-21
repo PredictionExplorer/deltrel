@@ -13,9 +13,9 @@ from typing import Sequence
 
 import yaml
 
-from startrain.config import load_config
-from startrain.pie_policy import pie_training_config
-from startrain.pie_promotion import pie_promotion_config
+from deltreltrain.config import load_config
+from deltreltrain.pie_policy import pie_training_config
+from deltreltrain.pie_promotion import pie_promotion_config
 
 
 def prepare_profile(

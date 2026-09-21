@@ -5,9 +5,9 @@ import time
 
 import pytest
 
-from startrain import learner as module
-from startrain.config import DataConfig, LearnerConfig, SchedulerConfig, TrainConfig
-from startrain.replay_store import ReplayStore
+from deltreltrain import learner as module
+from deltreltrain.config import DataConfig, LearnerConfig, SchedulerConfig, TrainConfig
+from deltreltrain.replay_store import ReplayStore
 from test_pipeline_core import (
     append_replay,
     make_replay_sample,

@@ -3,9 +3,9 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "startrain"
+name = "deltreltrain"
 version = "0.3.0"
-description = "PyTorch training foundation for Double *Star"
+description = "PyTorch training foundation for Double Deltrel"
 requires-python = ">=3.11"
 dependencies = [
   "numpy>=1.26",
@@ -14,16 +14,16 @@ dependencies = [
 ]
 
 [project.scripts]
-startrain-selfplay = "startrain.cli:selfplay_main"
-startrain-train = "startrain.cli:train_main"
-startrain-actor = "startrain.cli:actor_main"
-startrain-orchestrate = "startrain.orchestration:orchestrate_main"
-startrain-preflight = "startrain.preflight:preflight_main"
-startrain-arena = "startrain.cli:arena_main"
-startrain-distill = "startrain.distill:distill_main"
-startrain-publish-browser = "startrain.publish:publish_browser_main"
-startrain-promote = "startrain.promotion:promotion_main"
-starserve = "starserve.cli:main"
+deltreltrain-selfplay = "deltreltrain.cli:selfplay_main"
+deltreltrain-train = "deltreltrain.cli:train_main"
+deltreltrain-actor = "deltreltrain.cli:actor_main"
+deltreltrain-orchestrate = "deltreltrain.orchestration:orchestrate_main"
+deltreltrain-preflight = "deltreltrain.preflight:preflight_main"
+deltreltrain-arena = "deltreltrain.cli:arena_main"
+deltreltrain-distill = "deltreltrain.distill:distill_main"
+deltreltrain-publish-browser = "deltreltrain.publish:publish_browser_main"
+deltreltrain-promote = "deltreltrain.promotion:promotion_main"
+deltrelserve = "deltrelserve.cli:main"
 
 [project.optional-dependencies]
 serve = [
@@ -61,7 +61,7 @@ exclude = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["startrain", "starserve"]
+packages = ["deltreltrain", "deltrelserve"]
 
 [tool.pytest.ini_options]
 addopts = "-q -p no:cacheprovider --strict-config --strict-markers"
@@ -69,14 +69,14 @@ testpaths = ["tests"]
 timeout = 60
 xfail_strict = true
 filterwarnings = [
-  "error::DeprecationWarning:startrain.*",
-  "error::DeprecationWarning:starserve.*",
+  "error::DeprecationWarning:deltreltrain.*",
+  "error::DeprecationWarning:deltrelserve.*",
   'ignore:Using `httpx` with `starlette.testclient` is deprecated.*',
   'ignore:`isinstance\(treespec, LeafSpec\)` is deprecated.*:FutureWarning',
   "ignore:# The axis name.*will not be used.*:UserWarning",
 ]
 markers = [
-  "native: requires the compiled star_native extension",
+  "native: requires the compiled deltrel_native extension",
   "cuda: requires one CUDA-capable GPU",
   "multi_gpu: requires at least two CUDA-capable GPUs",
   "soak: long-running target-host reliability validation",
@@ -88,7 +88,7 @@ line-length = 88
 
 [tool.coverage.run]
 branch = true
-source = ["startrain", "starserve"]
+source = ["deltreltrain", "deltrelserve"]
 
 [tool.coverage.report]
 fail_under = 0
@@ -96,18 +96,18 @@ show_missing = true
 skip_covered = true
 
 [tool.pyright]
-include = ["startrain", "starserve", "scripts"]
+include = ["deltreltrain", "deltrelserve", "scripts"]
 pythonVersion = "3.11"
 typeCheckingMode = "standard"
 reportMissingTypeStubs = false
 
 [tool.mutmut]
-source_paths = ["startrain"]
+source_paths = ["deltreltrain"]
 only_mutate = [
-  "startrain/arena.py",
-  "startrain/losses.py",
-  "startrain/replay.py",
-  "startrain/selfplay.py",
+  "deltreltrain/arena.py",
+  "deltreltrain/losses.py",
+  "deltreltrain/replay.py",
+  "deltreltrain/selfplay.py",
 ]
 mutate_only_covered_lines = true
 also_copy = ["configs"]

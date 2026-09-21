@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from startrain.arena import ARENA_RESULT_SCHEMA_VERSION
-from startrain.arena import bounded_confidence_sequence, elo_from_probability
+from deltreltrain.arena import ARENA_RESULT_SCHEMA_VERSION
+from deltreltrain.arena import bounded_confidence_sequence, elo_from_probability
 
 from scripts.compare_elo_ablation import (
     DEFAULT_GUARD_FLOOR_ELO,
@@ -409,7 +409,7 @@ def _install_ablation_metadata(
         json.dumps(
             {
                 "schema_version": 1,
-                "report": "startrain-elo-ablation-branch",
+                "report": "deltreltrain-elo-ablation-branch",
                 "treatment": root.name,
                 "training_objective": training_objective,
                 "promotion_objective": promotion_objective,

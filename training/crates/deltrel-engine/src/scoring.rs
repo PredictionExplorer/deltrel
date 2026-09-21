@@ -1,0 +1,364 @@
+use crate::{BitBoard, Board, GameState, MAX_NODES, NodeId, Player};
+
+const NO_REGION: i16 = -1;
+const NO_BORDER: i8 = -2;
+const MIXED_BORDER: i8 = -1;
+
+/// Static score components for one player.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PlayerScore {
+    /// Perimeter nodes occupied by networks or owned as territory.
+    pub shores: i16,
+    /// Owned corner shores.
+    pub capes: i16,
+    /// Number of live connected networks.
+    pub networks: i16,
+    /// One point for owning at least three capes.
+    pub cape_bonus: i16,
+    /// Twice the opponent-network minus own-network count.
+    pub award: i16,
+    /// Conventional total score.
+    pub total: i16,
+}
+
+/// Authoritative static score and node ownership.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScoreResult {
+    /// Scores in fixed player order.
+    pub players: [PlayerScore; 2],
+    /// `-1` for contested/unowned, otherwise the player index.
+    pub node_owner: [i8; MAX_NODES],
+    /// Stones belonging to groups that occupy at least two shores.
+    pub alive_stones: BitBoard,
+    /// Shores owned by neither player.
+    pub contested_shores: u16,
+    /// Player ahead after the cape tie-break, or `None` for a dead tie.
+    pub leader: Option<Player>,
+}
+
+/// One extremal full completion of a live position.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompletionScenario {
+    /// Player assigned every node that was empty in the source position.
+    pub fill_player: Player,
+    /// Synthetic full-board stones used to calculate the boundary score.
+    pub stones: [BitBoard; 2],
+    /// Exact terminal score of the synthetic completion.
+    pub score: ScoreResult,
+}
+
+/// Score bounds obtained by assigning every empty node to each player.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompletionBounds {
+    /// Scenarios indexed by the player receiving every empty node.
+    pub scenarios: [CompletionScenario; 2],
+    /// Number of nodes that were empty in the source position.
+    pub empty_nodes: u16,
+    /// Winner forced across every full completion, if one exists.
+    pub guaranteed_winner: Option<Player>,
+}
+
+impl CompletionBounds {
+    /// The proof board that gives every source-position empty to the loser.
+    #[must_use]
+    pub fn loser_filled_scenario(&self) -> Option<&CompletionScenario> {
+        self.guaranteed_winner
+            .map(|winner| &self.scenarios[winner.opponent().index()])
+    }
+}
+
+impl ScoreResult {
+    /// Ownership of one in-range node.
+    #[must_use]
+    pub fn owner(&self, node: NodeId) -> Option<Player> {
+        match self.node_owner[usize::from(node)] {
+            0 => Some(Player::Zero),
+            1 => Some(Player::One),
+            _ => None,
+        }
+    }
+
+    /// Decisive zero-sum result from one player's perspective.
+    ///
+    /// Arbitrary static positions may be tied and therefore return `None`.
+    #[must_use]
+    pub fn outcome_for(&self, player: Player) -> Option<f32> {
+        self.leader
+            .map(|leader| if leader == player { 1.0 } else { -1.0 })
+    }
+}
+
+/// Reusable, allocation-free scoring workspace.
+#[derive(Clone)]
+pub struct ScoringScratch {
+    parent: [NodeId; MAX_NODES],
+    occupied_shores: [u16; MAX_NODES],
+    region_of: [i16; MAX_NODES],
+    stack: [NodeId; MAX_NODES],
+    region_color: [i8; MAX_NODES],
+}
+
+impl Default for ScoringScratch {
+    fn default() -> Self {
+        Self {
+            parent: [0; MAX_NODES],
+            occupied_shores: [0; MAX_NODES],
+            region_of: [NO_REGION; MAX_NODES],
+            stack: [0; MAX_NODES],
+            region_color: [NO_BORDER; MAX_NODES],
+        }
+    }
+}
+
+impl ScoringScratch {
+    /// Scores a complete state without modifying it.
+    pub fn score_state(&mut self, state: &GameState) -> ScoreResult {
+        self.score(state.board(), state.stones())
+    }
+
+    /// Scores two non-overlapping player bitboards on a board.
+    pub fn score(&mut self, board: &Board, stones: [BitBoard; 2]) -> ScoreResult {
+        let n = usize::from(board.node_count());
+        for node in 0..n {
+            self.parent[node] = node as NodeId;
+            self.occupied_shores[node] = 0;
+            self.region_of[node] = NO_REGION;
+            self.region_color[node] = NO_BORDER;
+        }
+
+        for node_index in 0..n {
+            let node = node_index as NodeId;
+            let Some(color) = stone_owner(stones, node) else {
+                continue;
+            };
+            for &neighbor in board.neighbors(node) {
+                if neighbor > node && stone_owner(stones, neighbor) == Some(color) {
+                    let left_root = self.find(node);
+                    let right_root = self.find(neighbor);
+                    if left_root != right_root {
+                        self.parent[usize::from(right_root)] = left_root;
+                    }
+                }
+            }
+        }
+
+        for node in board.shore_mask() {
+            if stone_owner(stones, node).is_some() {
+                let root = self.find(node);
+                self.occupied_shores[usize::from(root)] += 1;
+            }
+        }
+
+        let mut alive_stones = BitBoard::empty();
+        for node_index in 0..n {
+            let node = node_index as NodeId;
+            if stone_owner(stones, node).is_some() {
+                let root = self.find(node);
+                if self.occupied_shores[usize::from(root)] >= 2 {
+                    alive_stones.insert(node);
+                }
+            }
+        }
+
+        let mut region_count = 0_usize;
+        for start_index in 0..n {
+            let start = start_index as NodeId;
+            if alive_stones.contains(start) || self.region_of[start_index] != NO_REGION {
+                continue;
+            }
+
+            let region_id = region_count as i16;
+            region_count += 1;
+            let mut color = NO_BORDER;
+            let mut top = 0_usize;
+            self.stack[top] = start;
+            top += 1;
+            self.region_of[start_index] = region_id;
+
+            while top > 0 {
+                top -= 1;
+                let node = self.stack[top];
+                for &neighbor in board.neighbors(node) {
+                    if alive_stones.contains(neighbor) {
+                        let neighbor_color = stone_owner(stones, neighbor)
+                            .expect("alive nodes always contain a stone")
+                            as i8;
+                        color = if color == NO_BORDER {
+                            neighbor_color
+                        } else if color == neighbor_color {
+                            color
+                        } else {
+                            MIXED_BORDER
+                        };
+                    } else {
+                        let neighbor_index = usize::from(neighbor);
+                        if self.region_of[neighbor_index] == NO_REGION {
+                            self.region_of[neighbor_index] = region_id;
+                            self.stack[top] = neighbor;
+                            top += 1;
+                        }
+                    }
+                }
+            }
+            self.region_color[usize::try_from(region_id).expect("region id is non-negative")] =
+                color;
+        }
+
+        let mut node_owner = [-1_i8; MAX_NODES];
+        let mut shores = [0_i16; 2];
+        let mut capes = [0_i16; 2];
+        let mut networks = [0_i16; 2];
+        let mut contested_shores = 0_u16;
+
+        for (node_index, owner_slot) in node_owner.iter_mut().enumerate().take(n) {
+            let node = node_index as NodeId;
+            let owner = if alive_stones.contains(node) {
+                let player = stone_owner(stones, node).expect("alive nodes always contain a stone");
+                if self.find(node) == node {
+                    networks[player.index()] += 1;
+                }
+                player as i8
+            } else {
+                let region = self.region_of[node_index];
+                self.region_color[usize::try_from(region).expect("territory has a region")]
+            };
+
+            if owner == 0 || owner == 1 {
+                *owner_slot = owner;
+                if board.is_shore(node) {
+                    let player = owner as usize;
+                    shores[player] += 1;
+                    if board.is_cape(node) {
+                        capes[player] += 1;
+                    }
+                }
+            } else if board.is_shore(node) {
+                contested_shores += 1;
+            }
+        }
+
+        let players = core::array::from_fn(|player| {
+            let cape_bonus = i16::from(capes[player] >= 3);
+            let award = 2 * (networks[1 - player] - networks[player]);
+            PlayerScore {
+                shores: shores[player],
+                capes: capes[player],
+                networks: networks[player],
+                cape_bonus,
+                award,
+                total: shores[player] + cape_bonus + award,
+            }
+        });
+        let leader = if players[0].total != players[1].total {
+            Some(if players[0].total > players[1].total {
+                Player::Zero
+            } else {
+                Player::One
+            })
+        } else if players[0].capes != players[1].capes {
+            Some(if players[0].capes > players[1].capes {
+                Player::Zero
+            } else {
+                Player::One
+            })
+        } else {
+            None
+        };
+
+        ScoreResult {
+            players,
+            node_owner,
+            alive_stones,
+            contested_shores,
+            leader,
+        }
+    }
+
+    fn find(&mut self, node: NodeId) -> NodeId {
+        let mut root = node;
+        while self.parent[usize::from(root)] != root {
+            let parent = self.parent[usize::from(root)];
+            let grandparent = self.parent[usize::from(parent)];
+            self.parent[usize::from(root)] = grandparent;
+            root = grandparent;
+        }
+        root
+    }
+}
+
+/// Convenience scoring entry point for callers that do not retain scratch.
+#[must_use]
+pub fn score_state(state: &GameState) -> ScoreResult {
+    ScoringScratch::default().score_state(state)
+}
+
+/// Scores the two extremal full completions of a position.
+///
+/// Giving every empty node to one player is an upper bound on that player's
+/// terminal score. If the other player still wins that completion, the winner
+/// is therefore fixed for every possible continuation.
+#[must_use]
+pub fn score_completion_bounds(board: &Board, stones: [BitBoard; 2]) -> CompletionBounds {
+    let empty = board.node_mask().difference(stones[0].union(stones[1]));
+    let mut scratch = ScoringScratch::default();
+    let scenarios = core::array::from_fn(|index| {
+        let fill_player = if index == 0 {
+            Player::Zero
+        } else {
+            Player::One
+        };
+        let mut completed = stones;
+        completed[index] = completed[index].union(empty);
+        let score = scratch.score(board, completed);
+        debug_assert!(
+            score.leader.is_some(),
+            "a full Double Deltrel board must have a decisive winner"
+        );
+        CompletionScenario {
+            fill_player,
+            stones: completed,
+            score,
+        }
+    });
+    let zero_fill_winner = scenarios[0]
+        .score
+        .leader
+        .expect("a full Double Deltrel board must have a decisive winner");
+    let one_fill_winner = scenarios[1]
+        .score
+        .leader
+        .expect("a full Double Deltrel board must have a decisive winner");
+    let guaranteed_winner = if zero_fill_winner == Player::One {
+        Some(Player::One)
+    } else if one_fill_winner == Player::Zero {
+        Some(Player::Zero)
+    } else {
+        None
+    };
+
+    CompletionBounds {
+        scenarios,
+        empty_nodes: empty.count(),
+        guaranteed_winner,
+    }
+}
+
+/// Terminal zero-sum value from the state's current-player perspective.
+#[must_use]
+pub fn terminal_value(state: &GameState) -> Option<f32> {
+    state.is_terminal().then(|| {
+        score_state(state)
+            .outcome_for(state.to_move())
+            .expect("a full Double Deltrel board must have a decisive winner")
+    })
+}
+
+fn stone_owner(stones: [BitBoard; 2], node: NodeId) -> Option<Player> {
+    if stones[0].contains(node) {
+        Some(Player::Zero)
+    } else if stones[1].contains(node) {
+        Some(Player::One)
+    } else {
+        None
+    }
+}

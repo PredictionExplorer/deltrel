@@ -23,8 +23,8 @@ from pathlib import Path
 
 import yaml
 
-from startrain.config import load_config
-from startrain.continuity import ContinuityError, load_continuity_manifest
+from deltreltrain.config import load_config
+from deltreltrain.continuity import ContinuityError, load_continuity_manifest
 
 if __package__:
     from .validate_continuous_profile import validate_continuous_config
@@ -131,7 +131,7 @@ def resolve_monitor_target(
     state = _read_json(manifest.state_path)
     if (
         state is None
-        or state.get("format") != "startrain.training-continuity-state"
+        or state.get("format") != "deltreltrain.training-continuity-state"
         or state.get("schema_version") != 1
         or state.get("manifest_sha256") != manifest.sha256
     ):
@@ -218,7 +218,7 @@ def _continuity_status(
     payload = _read_json(source)
     if (
         payload is None
-        or payload.get("format") != "startrain.training-continuity-state"
+        or payload.get("format") != "deltreltrain.training-continuity-state"
         or payload.get("schema_version") != 1
     ):
         return {
@@ -291,7 +291,7 @@ def _disaster_recovery_status(
         or run_identity is None
         or run_identity.get("run_id") != run_id
         or namespace is None
-        or namespace.get("report") != "startrain-disaster-recovery-namespace"
+        or namespace.get("report") != "deltreltrain-disaster-recovery-namespace"
         or namespace.get("schema_version") != 1
         or namespace.get("run_id") != run_id
         or namespace.get("generation_family") != run_identity.get("generation_family")
@@ -307,7 +307,7 @@ def _disaster_recovery_status(
     latest = _read_json(latest_path)
     if (
         latest is None
-        or latest.get("report") != "startrain-disaster-recovery-latest"
+        or latest.get("report") != "deltreltrain-disaster-recovery-latest"
         or latest.get("schema_version") != 1
         or latest.get("run_id") != run_id
     ):
@@ -352,7 +352,7 @@ def _disaster_recovery_status(
     snapshot = _read_json(snapshot_path) if snapshot_valid else None
     if (
         snapshot is None
-        or snapshot.get("report") != "startrain-disaster-recovery-snapshot"
+        or snapshot.get("report") != "deltreltrain-disaster-recovery-snapshot"
         or snapshot.get("schema_version") != 1
         or snapshot.get("run_id") != run_id
         or snapshot.get("created_ns") != created_ns
@@ -1409,7 +1409,7 @@ def _strength_efficiency_status(
         or isinstance(started_ns, bool)
         or not isinstance(started_ns, int)
         or started_ns <= 0
-        or report.get("report") != "startrain-strength-efficiency"
+        or report.get("report") != "deltreltrain-strength-efficiency"
         or report.get("schema_version") != 1
         or report.get("status") != "complete"
         or report.get("run_id") != run_id
@@ -2413,7 +2413,7 @@ def collect_snapshot(
         checkpoint_sha256 = recovery_pointer.get("checkpoint_sha256")
         step = recovery_pointer.get("step")
         valid_pointer = (
-            recovery_pointer.get("format") == "startrain.recovery-pointer"
+            recovery_pointer.get("format") == "deltreltrain.recovery-pointer"
             and recovery_pointer.get("schema_version") == 1
             and isinstance(checkpoint_value, str)
             and bool(checkpoint_value)
@@ -2499,9 +2499,9 @@ def collect_snapshot(
         pointer_step = candidate_pointer.get("model_step")
         manifest_step = manifest_payload.get("model_step")
         candidate_valid = (
-            candidate_pointer.get("format") == "startrain.model-pointer"
+            candidate_pointer.get("format") == "deltreltrain.model-pointer"
             and candidate_pointer.get("schema_version") == 2
-            and manifest_payload.get("format") == "startrain.model-manifest"
+            and manifest_payload.get("format") == "deltreltrain.model-manifest"
             and manifest_valid
             and checkpoint_valid
             and isinstance(pointer_step, int)
@@ -2567,9 +2567,9 @@ def collect_snapshot(
         )
         pointer_step = selfplay_pointer.get("model_step")
         if (
-            selfplay_pointer.get("format") == "startrain.model-pointer"
+            selfplay_pointer.get("format") == "deltreltrain.model-pointer"
             and selfplay_pointer.get("schema_version") == 2
-            and manifest_payload.get("format") == "startrain.model-manifest"
+            and manifest_payload.get("format") == "deltreltrain.model-manifest"
             and manifest_valid
             and checkpoint_valid
             and isinstance(pointer_step, int)
@@ -2731,7 +2731,7 @@ def collect_snapshot(
         and validated_profile is not None
         and objective_contract["validated"] is True
     ):
-        from startrain.balanced_evaluation import evaluation_contract
+        from deltreltrain.balanced_evaluation import evaluation_contract
 
         _, max_considered = (
             validated_profile.orchestration.historical_evaluation.search_budget(

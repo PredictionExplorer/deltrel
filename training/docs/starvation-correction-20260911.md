@@ -6,7 +6,7 @@ discarded optimizer steps. All ten workers remained healthy during an uninterrup
 rose **39.5%** against the prospective baseline.
 
 The release is `7d874bba9206e07c4b17156e2dba169758d35720`, built at
-`/home/ubuntu/edgeconnect-releases/variant-starvation-7d874bb`. Its application
+`/home/ubuntu/deltrel-releases/variant-deltrelvation-7d874bb`. Its application
 implementation is commit `916cbfd`; subsequent commits isolate experimental
 compiler tests and annotate a Triton DSL construct for static checking. Neither
 follow-up changes executable application code.

@@ -10,10 +10,10 @@ import pytest
 import yaml
 
 from scripts.validate_continuous_profile import validate_continuous_config
-from startrain.config import load_config
-from startrain.contracts import SEARCH_ALGORITHM_ID
-from startrain import search_allocation_gate as gate
-from startrain.selfplay import RingSearchAllocation
+from deltreltrain.config import load_config
+from deltreltrain.contracts import SEARCH_ALGORITHM_ID
+from deltreltrain import search_allocation_gate as gate
+from deltreltrain.selfplay import RingSearchAllocation
 
 
 GOOD = {
@@ -98,7 +98,7 @@ def fixture(
         parent = root / "status/search-allocation-gates/inputs" / role
         parent.mkdir(parents=True)
         manifest = {
-            "format": "startrain.model-manifest",
+            "format": "deltreltrain.model-manifest",
             "schema_version": 3,
             "weights": "ema",
             "model_identity": "sha256-" + letter * 64,
@@ -405,7 +405,7 @@ def test_analysis_cache_reuses_only_verified_report_hash_and_parameters(
     tmp_path, monkeypatch
 ):
     _, target, root, envelope = fixture(tmp_path, monkeypatch, stub_analysis=False)
-    fake = ModuleType("startrain.search_allocation_evidence")
+    fake = ModuleType("deltreltrain.search_allocation_evidence")
     calls = []
 
     def analyze(report, **parameters):

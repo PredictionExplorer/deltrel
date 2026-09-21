@@ -67,5 +67,5 @@ jobs:
         with:
           workspaces: training
       - run: cargo install cargo-mutants --locked
-      - run: cargo mutants --package star-engine --package star-search --timeout 60
+      - run: cargo mutants --package deltrel-engine --package deltrel-search --timeout 60
 

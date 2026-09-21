@@ -10,7 +10,7 @@ from test_native_inference_keys import adapter
 
 @pytest.fixture
 def native():
-    module = pytest.importorskip("star_native")
+    module = pytest.importorskip("deltrel_native")
     request = module.SearchBatch(module.StateBatch(4, 1), simulations=1).root_requests()
     assert hasattr(request, "state_data_materialized"), "rebuild native packing"
     return module

@@ -21,7 +21,7 @@ from scripts.run_elo_ablation import (
     main,
     run_elo_ablation,
 )
-from startrain.runtime import (
+from deltreltrain.runtime import (
     CHAMPION_WARM_START_FORMAT,
     CHAMPION_WARM_START_SCHEMA_VERSION,
 )

@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from startrain.inference import GraphInferenceAdapter, InferenceConfig
-from startrain.model import GraphResTNet, ModelConfig, model_parameter_count
-from startrain.native import validate_native_module
-from startrain.replay import collate_replay_samples
-from startrain.replay_store import ReplayStore
-from startrain.runtime import RunIdentity
-from startrain.selfplay import (
+from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
+from deltreltrain.model import GraphResTNet, ModelConfig, model_parameter_count
+from deltreltrain.native import validate_native_module
+from deltreltrain.replay import collate_replay_samples
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.selfplay import (
     STANDARD_VARIANT,
     GameVariant,
     SelfPlayActor,
@@ -158,7 +158,7 @@ def test_playout_budgets_keep_the_doubling_ratio_inside_the_caps() -> None:
 def test_native_variant_games_complete_with_variant_provenance(
     tmp_path, variant: GameVariant, expected_pda: tuple[int, int]
 ) -> None:
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     validate_native_module(native)
     config = replace(
         SelfPlayConfig.cpu_smoke(seed=7),
@@ -259,7 +259,7 @@ def test_native_variant_games_complete_with_variant_provenance(
 
 
 def test_yaml_variant_mixture_flows_into_selfplay_and_learner_quotas(tmp_path) -> None:
-    from startrain.config import ConfigError, load_config
+    from deltreltrain.config import ConfigError, load_config
 
     configs = Path(__file__).resolve().parents[1] / "configs"
     source = (configs / "small.yaml").read_text(encoding="utf-8")
@@ -338,7 +338,7 @@ def test_variant_stage_profiles_validate_and_migrate(tmp_path) -> None:
         _profile_diffs,
     )
     from scripts.validate_continuous_profile import validate_continuous_config
-    from startrain.config import load_config
+    from deltreltrain.config import load_config
 
     configs = Path(__file__).resolve().parents[1] / "configs"
     stage_a = load_config(configs / "h100-8gpu-variant-stage-a.yaml")
@@ -443,7 +443,7 @@ def test_variant_stage_profiles_validate_and_migrate(tmp_path) -> None:
 
 @pytest.mark.parametrize("mode", ["classic", "double"])
 def test_handicap_mixture_and_arena_respect_the_allowed_mode_family(mode) -> None:
-    from startrain.config import ConfigError, VariantRulesConfig, load_config
+    from deltreltrain.config import ConfigError, VariantRulesConfig, load_config
 
     base = load_config(Path(__file__).parents[1] / "configs" / "small.yaml")
     family = VariantRulesConfig(modes=(mode,))

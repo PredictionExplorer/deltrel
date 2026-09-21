@@ -52,10 +52,10 @@ def _patch_selection_plan(
         benchmark_plan_module,
         "_native_extension_artifact",
         lambda: {
-            "path": "/test/star_native.so",
+            "path": "/test/deltrel_native.so",
             "bytes": 1,
             "sha256": "d" * 64,
-            "rules_hash": "fnv1a64:a5d932b0ef8354e8",
+            "rules_hash": "fnv1a64:46e4fbcff4e17fd3",
         },
     )
 
@@ -94,7 +94,7 @@ def test_git_revision_allows_only_matching_immutable_release_manifest(
         json.dumps(
             {
                 "schema_version": 1,
-                "report": "edgeconnect-immutable-release",
+                "report": "deltrel-immutable-release",
                 "commit": commit,
             }
         ),
@@ -121,7 +121,7 @@ def test_native_identity_resolves_compiled_extension_not_package_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     suffix = benchmark_plan_module.importlib.machinery.EXTENSION_SUFFIXES[0]
-    extension = tmp_path / f"star_native{suffix}"
+    extension = tmp_path / f"deltrel_native{suffix}"
     extension.write_bytes(b"compiled-extension")
     monkeypatch.setattr(
         benchmark_plan_module.importlib.util,
@@ -131,7 +131,7 @@ def test_native_identity_resolves_compiled_extension_not_package_wrapper(
 
     resolved = benchmark_plan_module._native_extension_path(
         SimpleNamespace(
-            __name__="star_native",
+            __name__="deltrel_native",
             __file__=str(tmp_path / "__init__.py"),
         )
     )
@@ -143,7 +143,7 @@ def test_native_identity_accepts_direct_extension_without_package_lookup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     suffix = benchmark_plan_module.importlib.machinery.EXTENSION_SUFFIXES[0]
-    extension = tmp_path / f"star_native{suffix}"
+    extension = tmp_path / f"deltrel_native{suffix}"
     extension.write_bytes(b"compiled-extension")
 
     def unexpected_lookup(_name):
@@ -154,7 +154,7 @@ def test_native_identity_accepts_direct_extension_without_package_lookup(
     )
     assert (
         benchmark_plan_module._native_extension_path(
-            SimpleNamespace(__name__="star_native", __file__=str(extension))
+            SimpleNamespace(__name__="deltrel_native", __file__=str(extension))
         )
         == extension.resolve()
     )
@@ -169,7 +169,7 @@ def test_native_identity_rejects_unavailable_extension(monkeypatch):
     )
     with pytest.raises(ValueError, match="compiled native extension artifact"):
         benchmark_plan_module._native_extension_path(
-            SimpleNamespace(__name__="star_native", __file__="wrapper.py")
+            SimpleNamespace(__name__="deltrel_native", __file__="wrapper.py")
         )
 
 

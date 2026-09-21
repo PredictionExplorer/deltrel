@@ -3,9 +3,9 @@ import pickle
 
 import pytest
 
-from startrain.contracts import TARGET_OUTCOME, TARGET_POLICY
-from startrain.policy_batch_metrics import PolicyBatchAccumulator, PolicyBatchMetrics
-from startrain.replay import collate_replay_samples
+from deltreltrain.contracts import TARGET_OUTCOME, TARGET_POLICY
+from deltreltrain.policy_batch_metrics import PolicyBatchAccumulator, PolicyBatchMetrics
+from deltreltrain.replay import collate_replay_samples
 from test_replay import sample_for
 
 

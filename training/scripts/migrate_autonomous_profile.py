@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn, TypeGuard
 
-from startrain.config import ExperimentConfig, load_config
+from deltreltrain.config import ExperimentConfig, load_config
 
 MIGRATION_SCHEMA_VERSION = 1
 UTD_SEGMENT_SCHEMA_VERSION = 1
@@ -665,7 +665,7 @@ def _validate_recovery(
     generation_family: str,
 ) -> tuple[int, int, str, Path]:
     if (
-        payload.get("format") != "startrain.recovery-pointer"
+        payload.get("format") != "deltreltrain.recovery-pointer"
         or payload.get("schema_version") != 1
         or payload.get("run_id") != run_id
         or payload.get("generation_family") != generation_family
@@ -737,7 +737,7 @@ def _validate_champion(
     generation_family: str,
 ) -> tuple[int, str, str]:
     if (
-        payload.get("format") != "startrain.model-pointer"
+        payload.get("format") != "deltreltrain.model-pointer"
         or payload.get("schema_version") != 2
         or payload.get("role") != "champion"
         or payload.get("run_id") != run_id

@@ -91,7 +91,7 @@ def _validate(args: argparse.Namespace) -> None:
 
 
 def actor_experiment(config: Any, actor_gpu_id: int | None = None) -> tuple[Any, Any]:
-    from startrain.actor import resolve_actor_experiment
+    from deltreltrain.actor import resolve_actor_experiment
 
     actors = config.orchestration.actor_gpus
     if not actors:
@@ -125,9 +125,9 @@ def runtime_flags(config: Any, gpu: Any) -> dict[str, Any]:
 
 
 def plan(args: argparse.Namespace) -> dict[str, Any]:
-    from startrain.checkpoint import load_model_manifest
-    from startrain.config import load_config
-    import startrain.model as model_module
+    from deltreltrain.checkpoint import load_model_manifest
+    from deltreltrain.config import load_config
+    import deltreltrain.model as model_module
 
     config, gpu = actor_experiment(load_config(args.config), args.actor_gpu_id)
     manifest = load_model_manifest(args.checkpoint)
@@ -193,7 +193,7 @@ def requests(
 
 
 def adapter_config(config: Any, *, actor_gpu_id: int | None = None) -> Any:
-    from startrain.inference import InferenceConfig
+    from deltreltrain.inference import InferenceConfig
 
     config, gpu = actor_experiment(config, actor_gpu_id)
     source = config.orchestration.model_refresh.inference
@@ -243,8 +243,8 @@ def _heads(runner: Any, raw: Any, encoded: Any, ring: int) -> dict[str, Any]:
             value = value[encoded.legal_action_mask]
         elif name in (
             "opponent_reply_logits",
-            "final_peries_logits",
-            "final_stars_logits",
+            "final_shores_logits",
+            "final_networks_logits",
         ):
             value = value[value > torch.finfo(value.dtype).min]
         result[name] = value.detach().float().cpu()
@@ -305,13 +305,13 @@ def _save(args: argparse.Namespace, report: dict[str, Any]) -> None:
 
 def worker(args: argparse.Namespace, pinned: dict[str, Any]) -> dict[str, Any]:
     import torch
-    from startrain.checkpoint import load_ema_checkpoint, load_model_manifest
-    from startrain.config import load_config
-    from startrain.device import enable_fast_math
-    from startrain.inference import GraphInferenceAdapter
-    from startrain.model import GraphResTNet
-    from startrain.native import encode_native_feature_data, load_star_native
-    from startrain.training import maybe_compile_model
+    from deltreltrain.checkpoint import load_ema_checkpoint, load_model_manifest
+    from deltreltrain.config import load_config
+    from deltreltrain.device import enable_fast_math
+    from deltreltrain.inference import GraphInferenceAdapter
+    from deltreltrain.model import GraphResTNet
+    from deltreltrain.native import encode_native_feature_data, load_deltrel_native
+    from deltreltrain.training import maybe_compile_model
 
     if not args.device.startswith("cuda") or not torch.cuda.is_available():
         raise ValueError("CUDA H100 required")
@@ -338,10 +338,10 @@ def worker(args: argparse.Namespace, pinned: dict[str, Any]) -> dict[str, Any]:
 
     monitor = threading.Thread(target=observe, daemon=True)
     monitor.start()
-    native = load_star_native(required=True)
+    native = load_deltrel_native(required=True)
     assert native is not None
     assert native.__file__ is not None
-    binary = Path(native.__file__).resolve().parent / "star_native.abi3.so"
+    binary = Path(native.__file__).resolve().parent / "deltrel_native.abi3.so"
     config, gpu = actor_experiment(load_config(args.config), args.actor_gpu_id)
     manifest = load_model_manifest(args.checkpoint)
     inference = adapter_config(config, actor_gpu_id=gpu.gpu_id)

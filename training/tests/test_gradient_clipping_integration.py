@@ -4,17 +4,17 @@ from dataclasses import asdict, dataclass, replace
 import pytest
 import torch
 
-from startrain.checkpoint import (
+from deltreltrain.checkpoint import (
     ExponentialMovingAverage,
     load_checkpoint,
     save_checkpoint,
 )
-from startrain.config import SchedulerConfig
-from startrain.gradient_clipping import GradientClipper, GradientClippingConfig
-from startrain.model import GraphResTNet, ModelConfig
-from startrain.optim import MuonAdamW, build_optimizer
-from startrain.replay import ReplayBatch, collate_replay_samples
-from startrain.training import (
+from deltreltrain.config import SchedulerConfig
+from deltreltrain.gradient_clipping import GradientClipper, GradientClippingConfig
+from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.optim import MuonAdamW, build_optimizer
+from deltreltrain.replay import ReplayBatch, collate_replay_samples
+from deltreltrain.training import (
     DeviceBatchPrefetcher,
     NonFiniteTrainingError,
     build_scheduler,

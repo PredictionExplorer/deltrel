@@ -16,13 +16,13 @@ from typing import cast
 
 import yaml
 
-from startrain.arena import (
+from deltreltrain.arena import (
     ARENA_RESULT_SCHEMA_VERSION,
     ArenaPair,
     bounded_confidence_sequence,
     elo_from_probability,
 )
-from startrain.config import load_config
+from deltreltrain.config import load_config
 
 if __package__:
     from .strength_efficiency_report import (
@@ -36,7 +36,7 @@ else:
     )
 
 SCHEMA_VERSION = 1
-REPORT_NAME = "startrain-elo-ablation-comparison"
+REPORT_NAME = "deltreltrain-elo-ablation-comparison"
 DEFAULT_PROVISIONED_GPUS = 8
 DEFAULT_GUARD_RINGS = (4, 6, 8)
 DEFAULT_GUARD_FLOOR_ELO = -35.0
@@ -1361,7 +1361,7 @@ def _measurement_context(
             },
             "ablation.json could not be parsed",
         )
-    if metadata.get("report") != "startrain-elo-ablation-branch":
+    if metadata.get("report") != "deltreltrain-elo-ablation-branch":
         failures.append(
             _failure(
                 metadata_path,

@@ -10,7 +10,7 @@ import pytest
 import torch
 
 from scripts import benchmark_graph_buckets as benchmark
-from startrain.inference import (
+from deltreltrain.inference import (
     DetailedInferenceResponse,
     GraphInferenceAdapter,
     InferenceConfig,
@@ -196,8 +196,8 @@ def test_requested_cases_match_actual_production_padding_including_65_row_contro
 
 @pytest.mark.native
 def test_real_native_positions_route_all_valid_predictions_through_tiny_network():
-    native = pytest.importorskip("star_native")
-    from startrain.model import GraphResTNet, ModelConfig
+    native = pytest.importorskip("deltrel_native")
+    from deltreltrain.model import GraphResTNet, ModelConfig
 
     requests = benchmark._native_requests(native, 4, 3)
     assert len(set(requests.inference_keys())) == 3

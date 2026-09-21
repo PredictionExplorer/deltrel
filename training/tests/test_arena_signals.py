@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from startrain.arena import _wait_for_future
+from deltreltrain.arena import _wait_for_future
 
 
 def test_arena_future_wait_preserves_task_timeout_error():
@@ -29,9 +29,9 @@ import sys
 import threading
 import time
 
-from startrain.arena import ArenaRunner
-from startrain.runtime import SignalLatch
-from startrain.selfplay import GameVariant
+from deltreltrain.arena import ArenaRunner
+from deltreltrain.runtime import SignalLatch
+from deltreltrain.selfplay import GameVariant
 
 stop = SignalLatch()
 stop.install()

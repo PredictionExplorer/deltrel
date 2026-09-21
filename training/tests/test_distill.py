@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 import torch
 
-from startrain.distill import (
+from deltreltrain.distill import (
     BrowserSearchConfig,
     DistillationConfig,
     DistillationExportConfig,
@@ -21,18 +21,18 @@ from startrain.distill import (
     _teacher_kl_losses,
     sha256_file,
 )
-from startrain.features import DoubleStarPosition, encode_batch
-from startrain.model import ModelConfig, StarModelOutput
-from startrain.publish import WASM_ASSET_DIRECTORY, publish_browser_artifacts
-from startrain.replay import ReplaySample, write_replay_shard
-from startrain.scoring import PlayerScore, ScoreResult
-from startrain.topology import get_topology
+from deltreltrain.features import DoubleDeltrelPosition, encode_batch
+from deltreltrain.model import ModelConfig, DeltrelModelOutput
+from deltreltrain.publish import WASM_ASSET_DIRECTORY, publish_browser_artifacts
+from deltreltrain.replay import ReplaySample, write_replay_shard
+from deltreltrain.scoring import PlayerScore, ScoreResult
+from deltreltrain.topology import get_topology
 
 
 def replay_sample() -> ReplaySample:
     topology = get_topology(4)
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=4,
         stones=stones,
         to_move=0,
@@ -52,7 +52,7 @@ def replay_sample() -> ReplaySample:
             ),
             node_owner=torch.zeros(topology.n, dtype=torch.int8),
             alive_stone=torch.zeros(topology.n, dtype=torch.bool),
-            contested_peries=0,
+            contested_shores=0,
             leader=0,
         ),
         search_provenance="distill-test-search",
@@ -180,7 +180,7 @@ def test_distillation_smoke_emits_checksum_verified_browser_manifest(
     import onnxruntime as ort
 
     first = replay_sample().to_position()
-    second = DoubleStarPosition.from_sequence(
+    second = DoubleDeltrelPosition.from_sequence(
         rings=4,
         stones=[0, *([-1] * 49)],
         to_move=1,
@@ -213,8 +213,8 @@ def test_distillation_smoke_emits_checksum_verified_browser_manifest(
     assert artifacts.final_losses["total"] >= 0
     wasm_source = tmp_path / "wasm-build"
     wasm_source.mkdir()
-    (wasm_source / "star_wasm.js").write_text("export default async function init() {}")
-    (wasm_source / "star_wasm_bg.wasm").write_bytes(b"\x00asm\x01\x00\x00\x00")
+    (wasm_source / "deltrel_wasm.js").write_text("export default async function init() {}")
+    (wasm_source / "deltrel_wasm_bg.wasm").write_bytes(b"\x00asm\x01\x00\x00\x00")
     replacements = []
     real_replace = os.replace
 
@@ -222,29 +222,29 @@ def test_distillation_smoke_emits_checksum_verified_browser_manifest(
         replacements.append(str(destination))
         return real_replace(source, destination)
 
-    monkeypatch.setattr("startrain.publish.os.replace", recording_replace)
+    monkeypatch.setattr("deltreltrain.publish.os.replace", recording_replace)
     published = publish_browser_artifacts(
         artifacts.manifest,
-        tmp_path / "public" / "models" / "star",
+        tmp_path / "public" / "models" / "deltrel",
         wasm_source_directory=wasm_source,
     )
-    canonical = tmp_path / "public" / "models" / "star" / "manifest.json"
+    canonical = tmp_path / "public" / "models" / "deltrel" / "manifest.json"
     assert replacements[-1] == str(canonical)
     assert published["manifest"] == str(canonical)
     assert json.loads(canonical.read_text()) == manifest
-    published_onnx = tmp_path / "public" / "models" / "star" / artifacts.onnx.name
+    published_onnx = tmp_path / "public" / "models" / "deltrel" / artifacts.onnx.name
     assert sha256_file(published_onnx) == artifacts.onnx_sha256
     assert (
-        tmp_path / "public" / "models" / "star" / WASM_ASSET_DIRECTORY / "star_wasm.js"
+        tmp_path / "public" / "models" / "deltrel" / WASM_ASSET_DIRECTORY / "deltrel_wasm.js"
     ).is_file()
     assert (
         (
             tmp_path
             / "public"
             / "models"
-            / "star"
+            / "deltrel"
             / WASM_ASSET_DIRECTORY
-            / "star_wasm_bg.wasm"
+            / "deltrel_wasm_bg.wasm"
         )
         .read_bytes()
         .startswith(b"\x00asm")
@@ -283,7 +283,7 @@ def test_distillation_smoke_emits_checksum_verified_browser_manifest(
 
 
 def test_teacher_logit_kl_covers_all_distilled_heads() -> None:
-    output = StarModelOutput(
+    output = DeltrelModelOutput(
         policy_logits=torch.tensor([[2.0, 0.0, -1.0]]),
         outcome_logits=torch.tensor([[1.0, -1.0]]),
         score_margin_logits=torch.zeros(1, 303),

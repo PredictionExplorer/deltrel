@@ -230,10 +230,10 @@ def numerical_gate(comparisons: dict[str, dict[str, Any]]) -> dict[str, Any]:
 def make_batch(ring: int, rows: int, seed: int) -> Any:
     import numpy as np
     import torch
-    from startrain.features import DoubleStarPosition
-    from startrain.replay import ReplaySample, collate_replay_samples
-    from startrain.scoring import score_position
-    from startrain.topology import get_topology
+    from deltreltrain.features import DoubleDeltrelPosition
+    from deltreltrain.replay import ReplaySample, collate_replay_samples
+    from deltreltrain.scoring import score_position
+    from deltreltrain.topology import get_topology
 
     topology = get_topology(ring)
     random = np.random.default_rng(seed + ring)
@@ -244,7 +244,7 @@ def make_batch(ring: int, rows: int, seed: int) -> Any:
         chosen = random.permutation(topology.n)[:occupied]
         stones[chosen] = random.integers(0, 2, size=occupied, dtype=np.int8)
         mode = "classic" if row % 2 == 0 else "double"
-        position = DoubleStarPosition.from_sequence(
+        position = DoubleDeltrelPosition.from_sequence(
             rings=ring,
             stones=stones,
             to_move=row % 2,
@@ -285,8 +285,8 @@ def _capture(
     model: Any, batch: Any, config: Any, *, shared: bool, precision: str
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     import torch
-    from startrain.losses import compute_losses
-    from startrain.training import unwrap_model
+    from deltreltrain.losses import compute_losses
+    from deltreltrain.training import unwrap_model
 
     model.zero_grad(set_to_none=True)
     with torch.autocast("cuda", dtype=torch.bfloat16, enabled=precision == "bf16"):
@@ -314,8 +314,8 @@ def _capture(
             tensor = tensor[batch.inputs.legal_action_mask]
         elif name in (
             "opponent_reply_logits",
-            "final_peries_logits",
-            "final_stars_logits",
+            "final_shores_logits",
+            "final_networks_logits",
         ):
             tensor = tensor[tensor > torch.finfo(tensor.dtype).min]
         outputs[name] = tensor.detach().float().cpu()
@@ -329,7 +329,7 @@ def _capture(
 
 def _execution(args: argparse.Namespace, cpu_model: Any) -> tuple[Any, Any]:
     from copy import deepcopy
-    from startrain.training import maybe_compile_model
+    from deltreltrain.training import maybe_compile_model
 
     configure_math(oracle=False, device=args.device)
     model = deepcopy(cpu_model).to(args.device).train()
@@ -363,7 +363,7 @@ def math_settings() -> dict[str, Any]:
 
 def configure_math(*, oracle: bool, device: str) -> dict[str, Any]:
     import torch
-    from startrain.device import enable_fast_math
+    from deltreltrain.device import enable_fast_math
 
     if oracle:
         torch.set_float32_matmul_precision("highest")
@@ -395,7 +395,7 @@ def _accuracy(
     execution: tuple[Any, Any] | None = None,
 ) -> dict[str, Any]:
     import torch
-    from startrain.optim import build_optimizer
+    from deltreltrain.optim import build_optimizer
 
     captures = {}
     finite_steps = {}
@@ -460,8 +460,8 @@ def _timing(
     execution: tuple[Any, Any] | None = None,
 ) -> dict[str, Any]:
     import torch
-    from startrain.optim import build_optimizer
-    from startrain.training import train_step
+    from deltreltrain.optim import build_optimizer
+    from deltreltrain.training import train_step
 
     measured_math = configure_math(oracle=False, device=args.device)
     model, runner = execution or _execution(args, cpu_model)
@@ -549,7 +549,7 @@ def _cutover(
 def load_weights(
     source: Path, model: Any, config: Any
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    from startrain.checkpoint import (
+    from deltreltrain.checkpoint import (
         load_ema_checkpoint,
         load_model_manifest,
         sha256_file,
@@ -581,9 +581,9 @@ def load_weights(
 
 def _child(args: argparse.Namespace, case: dict[str, Any]) -> dict[str, Any]:
     import torch
-    from startrain.checkpoint import sha256_file
-    from startrain.config import load_config
-    from startrain.model import GraphResTNet
+    from deltreltrain.checkpoint import sha256_file
+    from deltreltrain.config import load_config
+    from deltreltrain.model import GraphResTNet
 
     started = time.monotonic()
     if not args.device.startswith("cuda") or not torch.cuda.is_available():
@@ -757,7 +757,7 @@ def main(argv: list[str] | None = None) -> int:
     deadline = time.monotonic() + args.timeout_seconds
     if args.output and (not args.output.parent.is_dir() or args.output.exists()):
         argument_parser.error("output parent must exist and output must be new")
-    with tempfile.TemporaryDirectory(prefix="startrain-shared-geometry-") as directory:
+    with tempfile.TemporaryDirectory(prefix="deltreltrain-shared-geometry-") as directory:
         for index, case in enumerate(cases):
             remaining = deadline - time.monotonic()
             if remaining <= 0:

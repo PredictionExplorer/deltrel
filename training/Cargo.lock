@@ -94,6 +94,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61803da095bee82a81bb1a452ecc25d3b2f1416d1897eb86430c6159ef717c17"
 
 [[package]]
+name = "deltrel-engine"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "deltrel-py"
+version = "0.1.0"
+dependencies = [
+ "deltrel-engine",
+ "deltrel-search",
+ "pyo3",
+ "pyo3-build-config",
+ "rayon",
+]
+
+[[package]]
+name = "deltrel-search"
+version = "0.1.0"
+dependencies = [
+ "deltrel-engine",
+ "proptest",
+]
+
+[[package]]
+name = "deltrel-wasm"
+version = "0.1.0"
+dependencies = [
+ "deltrel-engine",
+ "deltrel-search",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+]
+
+[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -553,44 +591,6 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
-
-[[package]]
-name = "star-engine"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "star-py"
-version = "0.1.0"
-dependencies = [
- "pyo3",
- "pyo3-build-config",
- "rayon",
- "star-engine",
- "star-search",
-]
-
-[[package]]
-name = "star-search"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "star-engine",
-]
-
-[[package]]
-name = "star-wasm"
-version = "0.1.0"
-dependencies = [
- "star-engine",
- "star-search",
- "wasm-bindgen",
- "wasm-bindgen-test",
-]
 
 [[package]]
 name = "syn"

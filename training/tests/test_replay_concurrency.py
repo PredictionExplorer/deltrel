@@ -6,12 +6,12 @@ import threading
 import numpy as np
 import torch
 
-from startrain.features import DoubleStarPosition
-from startrain.replay import ReplaySample
-from startrain.replay_store import ReplayStore
-from startrain.runtime import RunIdentity
-from startrain.scoring import PlayerScore, ScoreResult
-from startrain.topology import get_topology
+from deltreltrain.features import DoubleDeltrelPosition
+from deltreltrain.replay import ReplaySample
+from deltreltrain.replay_store import ReplayStore
+from deltreltrain.runtime import RunIdentity
+from deltreltrain.scoring import PlayerScore, ScoreResult
+from deltreltrain.topology import get_topology
 
 
 MODEL_IDENTITY = "sha256-" + "c" * 64
@@ -50,7 +50,7 @@ def _sample(
 ) -> ReplaySample:
     topology = get_topology(4)
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=4,
         stones=stones,
         to_move=0,
@@ -70,7 +70,7 @@ def _sample(
             ),
             node_owner=torch.zeros(topology.n, dtype=torch.int8),
             alive_stone=torch.zeros(topology.n, dtype=torch.bool),
-            contested_peries=0,
+            contested_shores=0,
             leader=0,
         ),
         search_provenance="concurrency-test",

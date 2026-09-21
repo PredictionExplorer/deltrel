@@ -7,8 +7,8 @@ import random
 
 import pytest
 
-from startrain.arena import summarize_completed_arena_pairs
-from startrain.balanced_evaluation import (
+from deltreltrain.arena import summarize_completed_arena_pairs
+from deltreltrain.balanced_evaluation import (
     HOEFFDING_LAMBDAS,
     balanced_cells,
     maximum_weighted_null_expectation,

@@ -1888,7 +1888,7 @@ wheels = [
 ]
 
 [[package]]
-name = "startrain"
+name = "deltreltrain"
 version = "0.3.0"
 source = { editable = "." }
 dependencies = [

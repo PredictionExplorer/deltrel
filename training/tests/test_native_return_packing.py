@@ -12,7 +12,7 @@ from test_native_inference_keys import GeneralRequest, adapter
 def test_batched_uneven_legal_rows_preserve_order_details_and_cache(
     rings, warm, native_groups
 ):
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     requests = []
     for lengths in ((0, 1, 7), (4, 0)):
         states = native.StateBatch(rings, len(lengths))

@@ -23,17 +23,17 @@ from typing import Any
 import torch
 from torch import nn
 
-from startrain import inference, losses
-from startrain.model import StarModelOutput
+from deltreltrain import inference, losses
+from deltreltrain.model import DeltrelModelOutput
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def baseline_module(ref: str, name: str) -> tuple[ModuleType, str]:
     source = subprocess.check_output(
-        ["git", "show", f"{ref}:training/startrain/{name}.py"], cwd=ROOT
+        ["git", "show", f"{ref}:training/deltreltrain/{name}.py"], cwd=ROOT
     )
-    module_name = f"startrain._benchmark_baseline_{name}"
+    module_name = f"deltreltrain._benchmark_baseline_{name}"
     module = ModuleType(module_name)
     sys.modules[module_name] = module
     exec(compile(source, f"{ref}:{name}.py", "exec"), module.__dict__)
@@ -72,7 +72,7 @@ def loss_fixture(batch: int, nodes: int):
         (batch, nodes),
         (batch, nodes),
     )
-    output = StarModelOutput(
+    output = DeltrelModelOutput(
         *(torch.randn(shape, generator=generator).requires_grad_() for shape in shapes)
     )
     mask = torch.arange(batch) % 3 != 0
@@ -144,7 +144,7 @@ class FixtureNetwork(nn.Module):
         batch, nodes = node_features.shape[:2]
         policy = node_features.sum(dim=-1) + self.weight
         value = global_features.sum(dim=-1)
-        return StarModelOutput(
+        return DeltrelModelOutput(
             policy,
             torch.stack((-value, value), dim=-1),
             torch.arange(303, dtype=torch.float32).expand(batch, -1) / 303,
@@ -155,14 +155,14 @@ class FixtureNetwork(nn.Module):
 
 
 def benchmark_returns(baseline, *, rows, repeats, iterations) -> dict:
-    star_native = importlib.import_module("star_native")
+    deltrel_native = importlib.import_module("deltrel_native")
 
-    states = star_native.StateBatch(10, rows)
+    states = deltrel_native.StateBatch(10, rows)
     for action in range(15):
         indices = [row for row in range(rows) if row % 16 > action]
         if indices:
             states.apply_many(indices, [action] * len(indices))
-    search = star_native.SearchBatch(
+    search = deltrel_native.SearchBatch(
         states,
         simulations=1,
         pda_by_seat=[(row % 7 - 3, 3 - row % 7) for row in range(rows)],
@@ -237,7 +237,7 @@ def main() -> None:
         "baseline_sha256": {"losses.py": loss_hash, "inference.py": inference_hash},
         "candidate_sha256": {
             name: hashlib.sha256(
-                (ROOT / "training/startrain" / name).read_bytes()
+                (ROOT / "training/deltreltrain" / name).read_bytes()
             ).hexdigest()
             for name in ("losses.py", "inference.py")
         },

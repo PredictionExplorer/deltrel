@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from startrain.checkpoint import ModelManifest
-from startrain.config import HistoricalEvaluationConfig
-from startrain.historical_evaluation import (
+from deltreltrain.checkpoint import ModelManifest
+from deltreltrain.config import HistoricalEvaluationConfig
+from deltreltrain.historical_evaluation import (
     HISTORICAL_CROSSPLAY_RESULT_KIND,
     arena_result_kind,
     load_arena_results,
@@ -158,7 +158,7 @@ def test_completed_crossplay_is_idempotent_and_partial_result_resumes(
 def test_current_measurement_link_follows_completed_older_links_at_own_budget(
     tmp_path: Path,
 ) -> None:
-    from startrain.config import ArenaConfig
+    from deltreltrain.config import ArenaConfig
 
     zero = manifest(tmp_path, identity="model-zero", step=0)
     first = manifest(tmp_path, identity="model-first", step=10)

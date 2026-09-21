@@ -78,7 +78,7 @@ so these counts are an eligibility observation, not proof of training consumptio
 (0 disables, maximum 8). `exact_endgame_max_nodes` bounds every attempted tree
 (default 100,000, maximum 1,000,000). A fully explored tree returns a real terminal
 board from optimal legal play; exhaustion returns no result and leaves the source
-state untouched. Outcome is optimized first, then score margin and the quark
+state untouched. Outcome is optimized first, then score margin and the cape
 tie-break. Classic turns, consecutive double/handicap placements, swap state, and
 history all use the authoritative rules engine. PDA on recorded earlier decisions
 is preserved. No policy target is invented for solved moves.

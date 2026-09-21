@@ -101,7 +101,7 @@ def _payload(
             ),
             "compile_cache": {
                 "schema_version": 1,
-                "layout": "startrain-isolated-compile-cache-v1",
+                "layout": "deltreltrain-isolated-compile-cache-v1",
                 "root": cache_root_text,
                 "owner_marker": f"{cache_root_text}/cache-owner.json",
                 "required_unset_environment": [
@@ -327,7 +327,7 @@ def _write_suite(
         (cache_root / "cache-owner.json").write_text(
             json.dumps(
                 {
-                    "format": "startrain.compile-cache-owner",
+                    "format": "deltreltrain.compile-cache-owner",
                     "schema_version": 1,
                     "layout": cache["layout"],
                     "arm": arm,
@@ -483,7 +483,7 @@ def test_comparator_rejects_nested_compile_cache_roots(tmp_path: Path) -> None:
     (nested_root / "cache-owner.json").write_text(
         json.dumps(
             {
-                "format": "startrain.compile-cache-owner",
+                "format": "deltreltrain.compile-cache-owner",
                 "schema_version": 1,
                 "layout": cache["layout"],
                 "arm": treatment["arm"],

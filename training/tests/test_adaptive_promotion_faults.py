@@ -9,11 +9,11 @@ import time
 import pytest
 import torch
 
-import startrain.promotion as promotion_module
-from startrain.adaptive_promotion import next_allocation
-from startrain.arena import ArenaGame, summarize_completed_arena_pairs
-from startrain.balanced_evaluation import evaluation_contract
-from startrain.checkpoint import collect_model_garbage, write_model_pointer
+import deltreltrain.promotion as promotion_module
+from deltreltrain.adaptive_promotion import next_allocation
+from deltreltrain.arena import ArenaGame, summarize_completed_arena_pairs
+from deltreltrain.balanced_evaluation import evaluation_contract
+from deltreltrain.checkpoint import collect_model_garbage, write_model_pointer
 from scripts.training_disaster_recovery import _manifest_references
 from test_adaptive_promotion import _case, pairs_for
 

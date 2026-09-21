@@ -9,15 +9,15 @@ import pytest
 import torch
 
 from scripts import benchmark_learner_batches as benchmark
-from startrain.checkpoint import ExponentialMovingAverage, save_checkpoint, sha256_file
-from startrain.config import load_config
-from startrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, RULES_HASH_WIRE
-from startrain.features import DoubleStarPosition
-from startrain.model import GraphResTNet
-from startrain.optim import build_optimizer
-from startrain.replay import ReplaySample, write_replay_shard
-from startrain.topology import get_topology
-from startrain.training import build_scheduler
+from deltreltrain.checkpoint import ExponentialMovingAverage, save_checkpoint, sha256_file
+from deltreltrain.config import load_config
+from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, RULES_HASH_WIRE
+from deltreltrain.features import DoubleDeltrelPosition
+from deltreltrain.model import GraphResTNet
+from deltreltrain.optim import build_optimizer
+from deltreltrain.replay import ReplaySample, write_replay_shard
+from deltreltrain.topology import get_topology
+from deltreltrain.training import build_scheduler
 
 TRAINING_ROOT = Path(__file__).parents[1]
 RUN_ID = "benchmark-run"
@@ -110,7 +110,7 @@ def _sample() -> ReplaySample:
     topology = get_topology(4)
     stones = torch.full((topology.n,), -1, dtype=torch.int8)
     stones[0] = 0
-    position = DoubleStarPosition(
+    position = DoubleDeltrelPosition(
         rings=4,
         stones=stones,
         to_move=1,

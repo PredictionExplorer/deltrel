@@ -11,12 +11,12 @@ import yaml
 from scripts import prepare_auxiliary_training_profile as preparation
 from scripts.prepare_pie_promotion_gate import prepare_promotion_gate
 from scripts import training_disaster_recovery as recovery
-from startrain import search_allocation_gate as gate
-from startrain.auxiliary_policy import (
+from deltreltrain import search_allocation_gate as gate
+from deltreltrain.auxiliary_policy import (
     AUXILIARY_DEFAULT_WEIGHTS,
     auxiliary_training_config,
 )
-from startrain.config import load_config
+from deltreltrain.config import load_config
 from test_pie_promotion_gate import promotion_fixture
 from test_promotion_gate_disaster_recovery import promotion_transition
 from test_search_allocation_gate import reference, write_json

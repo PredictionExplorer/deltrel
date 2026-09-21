@@ -4,8 +4,8 @@ import sqlite3
 import yaml
 
 from scripts import migrate_continuous_profile as migration
-from startrain.config import load_config
-from startrain.pie_promotion import pie_promotion_config
+from deltreltrain.config import load_config
+from deltreltrain.pie_promotion import pie_promotion_config
 
 from test_continuous_profile_migration import _fixture, _write_json
 

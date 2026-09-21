@@ -6,22 +6,22 @@ from dataclasses import asdict
 
 import pytest
 
-from startrain.arena import ArenaPair
-from startrain.balanced_evaluation import (
+from deltreltrain.arena import ArenaPair
+from deltreltrain.balanced_evaluation import (
     BALANCED_CATEGORIES,
     cell_variant,
     balanced_opening_seed,
     evaluation_contract,
 )
-from startrain.balanced_strength import balanced_strength_summary
-from startrain.config import ArenaConfig
-from startrain.checkpoint import MODEL_MANIFEST_FORMAT, MODEL_MANIFEST_VERSION
-from startrain.contracts import (
+from deltreltrain.balanced_strength import balanced_strength_summary
+from deltreltrain.config import ArenaConfig
+from deltreltrain.checkpoint import MODEL_MANIFEST_FORMAT, MODEL_MANIFEST_VERSION
+from deltreltrain.contracts import (
     FEATURE_SCHEMA_HASH,
     RULES_HASH_WIRE,
 )
-from startrain.model import MODEL_SCHEMA_VERSION
-from startrain.search_options import SearchExecutionConfig
+from deltreltrain.model import MODEL_SCHEMA_VERSION
+from deltreltrain.search_options import SearchExecutionConfig
 
 
 def measurement(

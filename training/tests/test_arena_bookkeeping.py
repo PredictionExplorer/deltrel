@@ -7,9 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.benchmark_arena_bookkeeping import legacy_snapshot, synthetic_fixture
-from startrain.arena import ArenaGame, ArenaPair, ArenaRunner
-from startrain.config import ArenaConfig
-from startrain.selfplay import GameVariant
+from deltreltrain.arena import ArenaGame, ArenaPair, ArenaRunner
+from deltreltrain.config import ArenaConfig
+from deltreltrain.selfplay import GameVariant
 
 
 def test_large_snapshot_matches_previous_implementation_byte_for_byte():
@@ -24,7 +24,7 @@ def test_large_snapshot_matches_previous_implementation_byte_for_byte():
 def test_resumed_native_snapshots_match_legacy_and_normalize_extensions(clinches):
     from test_arena_resume import Clock, config, runner as native_runner
 
-    native = pytest.importorskip("star_native")
+    native = pytest.importorskip("deltrel_native")
     cfg = config(exact_clinch_termination=clinches)
     clock = Clock()
     interrupted = native_runner(native, cfg, clock).run(

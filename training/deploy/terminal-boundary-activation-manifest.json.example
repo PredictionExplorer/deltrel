@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "report": "startrain-terminal-boundary-queue-activation",
+  "report": "deltreltrain-terminal-boundary-queue-activation",
   "status": "verified_for_launch",
   "created_ns": 1000000000000000001,
   "policy": {
-    "path": "/etc/edgeconnect/terminal-boundary-policy-v1.json",
+    "path": "/etc/deltrel/terminal-boundary-policy-v1.json",
     "sha256": "@POLICY_SHA256@",
     "policy_id": "terminal-calibration-seed47",
     "policy_version": 1
@@ -20,13 +20,13 @@
   "safety": {
     "operator_hold": {
       "status": "active",
-      "path": "/var/lib/edgeconnect/terminal-boundary/operator-hold.json",
+      "path": "/var/lib/deltrel/terminal-boundary/operator-hold.json",
       "sha256": "@OPERATOR_HOLD_SHA256@",
       "bytes": 123
     },
     "replay_backup": {
       "status": "ok",
-      "path": "/srv/edgeconnect/runs/continuous/recovery/replay-manifest/manifest-1000000000000000001.sqlite3",
+      "path": "/srv/deltrel/runs/continuous/recovery/replay-manifest/manifest-1000000000000000001.sqlite3",
       "sha256": "@REPLAY_BACKUP_SHA256@",
       "bytes": 12345
     },
@@ -34,7 +34,7 @@
       "status": "ok",
       "verification": "lambda_attached",
       "required_after_ns": 1000000000000000002,
-      "snapshot": "/lambda/nfs/<filesystem>/edgeconnect-dr/continuous/snapshots/@RUN_ID@/snapshot-1000000000000000003.json",
+      "snapshot": "/lambda/nfs/<filesystem>/deltrel-dr/continuous/snapshots/@RUN_ID@/snapshot-1000000000000000003.json",
       "snapshot_sha256": "@DISASTER_SNAPSHOT_SHA256@",
       "snapshot_bytes": 12345,
       "run_id": "@RUN_ID@",
@@ -46,7 +46,7 @@
     },
     "source_stop": {
       "status": "stopped",
-      "unit": "edgeconnect-startrain-continuous.service"
+      "unit": "deltrel-deltreltrain-continuous.service"
     },
     "source_release": {
       "status": "verified",
@@ -70,10 +70,10 @@
   },
   "champion_snapshot": {
     "status": "verified",
-    "destination": "/srv/edgeconnect/exports/terminal-champion-v1",
+    "destination": "/srv/deltrel/exports/terminal-champion-v1",
     "model_identity": "@CANDIDATE_ID@",
     "pin": {
-      "path": "/var/lib/edgeconnect/terminal-boundary/champion-snapshot-pin.json",
+      "path": "/var/lib/deltrel/terminal-boundary/champion-snapshot-pin.json",
       "sha256": "@CHAMPION_SNAPSHOT_PIN_SHA256@",
       "bytes": 1234
     }
@@ -90,7 +90,7 @@
     "frozen_replay": {
       "status": "completed",
       "comparison": {
-        "path": "/var/lib/edgeconnect/terminal-boundary/frozen-calibration/comparison.json",
+        "path": "/var/lib/deltrel/terminal-boundary/frozen-calibration/comparison.json",
         "sha256": "@FROZEN_CALIBRATION_COMPARISON_SHA256@",
         "selection": {
           "selected_arm": "@SELECTED_TREATMENT@",
@@ -98,20 +98,20 @@
         }
       },
       "screen_plan": {
-        "path": "/var/lib/edgeconnect/terminal-boundary/screen-plan/ablation-plan.json",
+        "path": "/var/lib/deltrel/terminal-boundary/screen-plan/ablation-plan.json",
         "sha256": "@SCREEN_PLAN_SHA256@"
       }
     },
     "plan": {
-      "path": "/var/lib/edgeconnect/terminal-boundary/screen-plan/ablation-plan.json",
+      "path": "/var/lib/deltrel/terminal-boundary/screen-plan/ablation-plan.json",
       "sha256": "@SCREEN_PLAN_SHA256@",
       "bytes": 12345
     },
     "roots": [
       {
         "treatment": "control",
-        "run_root": "/srv/edgeconnect/runs/terminal-calibration/terminal-calibration-control-seed47",
-        "profile": "/var/lib/edgeconnect/terminal-boundary/calibration-plan/control.yaml",
+        "run_root": "/srv/deltrel/runs/terminal-calibration/terminal-calibration-control-seed47",
+        "profile": "/var/lib/deltrel/terminal-boundary/calibration-plan/control.yaml",
         "profile_sha256": "@CALIBRATION_PROFILE_SHA256@",
         "fork": {
           "status": "forked",
@@ -125,18 +125,18 @@
           "status": "ok",
           "mode": "apply",
           "marker": {
-            "path": "/srv/edgeconnect/runs/terminal-calibration/terminal-calibration-control-seed47/learner/champion-warm-start.json",
+            "path": "/srv/deltrel/runs/terminal-calibration/terminal-calibration-control-seed47/learner/champion-warm-start.json",
             "sha256": "@ACTIVE_WARM_START_MARKER_SHA256@",
             "bytes": 1234,
             "status": "active"
           },
           "recovery": {
-            "path": "/srv/edgeconnect/runs/terminal-calibration/terminal-calibration-control-seed47/learner/recovery.json",
+            "path": "/srv/deltrel/runs/terminal-calibration/terminal-calibration-control-seed47/learner/recovery.json",
             "sha256": "@ACTIVE_RECOVERY_SHA256@",
             "bytes": 1234
           },
           "resume_cutover": {
-            "path": "/srv/edgeconnect/runs/terminal-calibration/terminal-calibration-control-seed47/learner/resume-cutover.json",
+            "path": "/srv/deltrel/runs/terminal-calibration/terminal-calibration-control-seed47/learner/resume-cutover.json",
             "sha256": "@ACTIVE_RESUME_CUTOVER_SHA256@",
             "bytes": 1234
           }
@@ -146,12 +146,12 @@
   },
   "queue": {
     "deployment_manifest": {
-      "path": "/var/lib/edgeconnect/terminal-boundary/queue/deployment.json",
+      "path": "/var/lib/deltrel/terminal-boundary/queue/deployment.json",
       "sha256": "@QUEUE_DEPLOYMENT_SHA256@",
       "bytes": 12345
     },
-    "unit": "edgeconnect-startrain-terminal-calibration-queue.service",
-    "state_path": "/var/lib/edgeconnect/terminal-boundary/queue/state.json",
-    "execution_lock_path": "/var/lock/edgeconnect-startrain-execution.lock"
+    "unit": "deltrel-deltreltrain-terminal-calibration-queue.service",
+    "state_path": "/var/lib/deltrel/terminal-boundary/queue/state.json",
+    "execution_lock_path": "/var/lock/deltrel-deltreltrain-execution.lock"
   }
 }

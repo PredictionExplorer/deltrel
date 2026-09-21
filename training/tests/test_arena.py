@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from startrain.arena import (
+from deltreltrain.arena import (
     ARENA_RESULT_SCHEMA_VERSION,
     WEIGHTED_OBSERVATION_MODEL,
     ArenaPair,
@@ -28,9 +28,9 @@ from startrain.arena import (
     summarize_pairs,
     wilson_interval,
 )
-from startrain.config import ArenaConfig, ConfigError
-from startrain.inference import InferenceResponse
-from startrain.native import BITBOARD_WORDS
+from deltreltrain.config import ArenaConfig, ConfigError
+from deltreltrain.inference import InferenceResponse
+from deltreltrain.native import BITBOARD_WORDS
 
 
 class FakeRequests:
