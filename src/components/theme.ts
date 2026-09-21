@@ -9,12 +9,12 @@ export const PLAYER_COLORS = [
     soft: 'rgba(237, 155, 118, 0.16)',
   },
   {
-    name: 'Seafoam',
-    base: '#77d8c0',
-    bright: '#c8f8e4',
-    deep: '#237b74',
-    glow: 'rgba(119, 216, 192, 0.55)',
-    soft: 'rgba(119, 216, 192, 0.16)',
+    name: 'Pearl',
+    base: '#f1e8d6',
+    bright: '#fff9ef',
+    deep: '#9c8a70',
+    glow: 'rgba(241, 232, 214, 0.55)',
+    soft: 'rgba(241, 232, 214, 0.16)',
   },
 ] as const;
 

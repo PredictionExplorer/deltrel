@@ -7,7 +7,7 @@ Even games always use the pie rule; handicap games use the Full board without pi
 ## The estuary
 
 The responsive SVG board combines coastal contours, shallow-water gradients, curved
-channels, and tactile clay/seafoam markers. The central confluence preserves every
+channels, and tactile clay/pearl markers. The central confluence preserves every
 connection between the five innermost nodes. Decorative motion honors reduced
 motion preferences and pauses when the page is hidden. All playable positions remain
 keyboard accessible, with screen-reader labels and stable placement targets.
