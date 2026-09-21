@@ -43,3 +43,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ONNX Runtime web files are copied from the locked npm package before build/dev.
+/public/onnxruntime/

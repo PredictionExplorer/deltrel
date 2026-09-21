@@ -23,6 +23,10 @@ export const DELTREL_BROWSER_MODEL_MANIFEST_SCHEMA_ID =
 export const DELTREL_BROWSER_MODEL_MANIFEST_VERSION = 3 as const;
 export const DELTREL_BROWSER_MODEL_ARCHITECTURE_VERSION = 3 as const;
 export const DELTREL_BROWSER_MODEL_PRECISION = 'float16' as const;
+export const DELTREL_AUXILIARY_MODEL_OUTPUT_NAMES = [
+  'opponent_reply_logits', 'second_stone_logits', 'final_shores_logits',
+  'final_networks_logits', 'final_capes_logits',
+] as const;
 export const MAX_BROWSER_AI_SIMULATIONS = 1_024;
 export const MAX_BROWSER_AI_MAX_CONSIDERED = 128;
 export const MAX_BROWSER_AI_FIRST_VISIT_BATCH_SIZE = 64;
@@ -41,7 +45,9 @@ export interface DeltrelBrowserModelManifest {
   format: typeof DELTREL_BROWSER_MODEL_MANIFEST_SCHEMA_ID;
   schemaVersion: typeof DELTREL_BROWSER_MODEL_MANIFEST_VERSION;
   modelVersion: string;
+  modelStep: number | null;
   weights: 'ema';
+  auxiliaryStatus: 'ready' | 'untrained' | 'absent';
   rulesSchema: typeof DELTREL_RULES_SCHEMA_ID;
   rulesHash: typeof DELTREL_RULES_HASH;
   featureSchema: typeof DELTREL_FEATURE_SCHEMA_ID;
@@ -70,8 +76,8 @@ export interface DeltrelBrowserModelManifest {
   search: {
     simulations: number;
     maxConsidered: number;
-    maximumSimulations: typeof MAX_BROWSER_AI_SIMULATIONS;
-    maximumMaxConsidered: typeof MAX_BROWSER_AI_MAX_CONSIDERED;
+    maximumSimulations: number;
+    maximumMaxConsidered: number;
     cVisit: number;
     cScale: number;
     /** A pie responder swaps when the selected keep continuation is below -deadZone. */
@@ -205,6 +211,8 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
   const artifacts = payload.artifacts;
   const tensors = payload.tensors;
   const search = payload.recommended_local_search;
+  const hasAuxiliary = isRecord(tensors) && isRecord(tensors.outputs) &&
+    Object.keys(tensors.outputs).length === 11;
 
   if (
     !hasExactKeys(payload, topLevelKeys) ||
@@ -315,6 +323,13 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
       ['ownership_logits', 'float16', ['batch', 'nodes', 3]],
       ['alive_logits', 'float16', ['batch', 'nodes']],
       ['soft_policy_logits', 'float16', ['batch', 'nodes']],
+      ...(hasAuxiliary ? [
+        ['opponent_reply_logits', 'float16', ['batch', 'nodes+1']],
+        ['second_stone_logits', 'float16', ['batch', 'nodes']],
+        ['final_shores_logits', 'float16', ['batch', 2, 51]],
+        ['final_networks_logits', 'float16', ['batch', 2, 26]],
+        ['final_capes_logits', 'float16', ['batch', 2, 6]],
+      ] as const : []),
     ]) ||
     !isRecord(search) ||
     !hasExactKeys(search, [
@@ -323,11 +338,15 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
       'c_visit',
       'c_scale',
       'swap_dead_zone',
-      ...['first_visit_batch_size', 'subtree_reuse', 'subtree_reuse_max_nodes']
+      ...['first_visit_batch_size', 'subtree_reuse', 'subtree_reuse_max_nodes', 'maximum_simulations', 'maximum_max_considered']
         .filter((key) => Object.hasOwn(search, key)),
     ]) ||
     !positiveInteger(search.simulations, MAX_BROWSER_AI_SIMULATIONS) ||
     !positiveInteger(search.max_considered, MAX_BROWSER_AI_MAX_CONSIDERED) ||
+    (search.maximum_simulations !== undefined &&
+      (!positiveInteger(search.maximum_simulations, MAX_BROWSER_AI_SIMULATIONS) || search.maximum_simulations < search.simulations)) ||
+    (search.maximum_max_considered !== undefined &&
+      (!positiveInteger(search.maximum_max_considered, MAX_BROWSER_AI_MAX_CONSIDERED) || search.maximum_max_considered < search.max_considered)) ||
     !positiveFinite(search.c_visit) ||
     !positiveFinite(search.c_scale) ||
     typeof search.swap_dead_zone !== 'number' ||
@@ -348,7 +367,10 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
   return {
     format: DELTREL_BROWSER_MODEL_MANIFEST_SCHEMA_ID,
     schemaVersion: DELTREL_BROWSER_MODEL_MANIFEST_VERSION,
+    auxiliaryStatus: !hasAuxiliary ? 'absent' : payload.training.auxiliary_predictions_ready === true ? 'ready' : 'untrained',
     modelVersion: payload.model_version as string,
+    modelStep: typeof payload.training.steps === 'number' && Number.isSafeInteger(payload.training.steps) && payload.training.steps >= 0
+      ? payload.training.steps : null,
     weights: 'ema',
     rulesSchema: DELTREL_RULES_SCHEMA_ID,
     rulesHash: DELTREL_RULES_HASH,
@@ -373,13 +395,13 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
       bytes: onnx.bytes as number,
       opset: onnx.opset as number,
       inputs: [...DELTREL_MODEL_INPUT_NAMES],
-      outputs: [...DELTREL_MODEL_OUTPUT_NAMES],
+      outputs: [...DELTREL_MODEL_OUTPUT_NAMES, ...(hasAuxiliary ? DELTREL_AUXILIARY_MODEL_OUTPUT_NAMES : [])],
     },
     search: {
       simulations: search.simulations,
       maxConsidered: search.max_considered,
-      maximumSimulations: MAX_BROWSER_AI_SIMULATIONS,
-      maximumMaxConsidered: MAX_BROWSER_AI_MAX_CONSIDERED,
+      maximumSimulations: search.maximum_simulations === undefined ? MAX_BROWSER_AI_SIMULATIONS : search.maximum_simulations as number,
+      maximumMaxConsidered: search.maximum_max_considered === undefined ? MAX_BROWSER_AI_MAX_CONSIDERED : search.maximum_max_considered as number,
       cVisit: search.c_visit,
       cScale: search.c_scale,
       swapDeadZone: search.swap_dead_zone,

@@ -2,6 +2,8 @@
   isolation: isolate;
   overflow: visible;
   touch-action: manipulation;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 .surfaceLight {
@@ -13,14 +15,12 @@
   opacity: 0.3;
 }
 
-.coordinate {
+.coordinateTooltip {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 5.8px;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.08em;
-  paint-order: stroke;
-  stroke: #0b3a44;
-  stroke-width: 0.85px;
-  stroke-linejoin: round;
+  letter-spacing: 0.05em;
 }
 
 .moveRipple {
@@ -40,9 +40,8 @@
 }
 
 @media (max-width: 600px) {
-  .coordinate {
-    font-size: 5.25px;
-    letter-spacing: 0.015em;
+  .coordinateTooltip {
+    font-size: 7px;
   }
 }
 
@@ -55,5 +54,6 @@
 @media (forced-colors: active) {
   .board [data-water-decoration] { display: none; }
   .board [data-channel-layer] { stroke: CanvasText; }
-  .coordinate { fill: CanvasText; stroke: Canvas; }
+  .board [data-coordinate-tooltip] rect { fill: Canvas; stroke: CanvasText; }
+  .coordinateTooltip { fill: CanvasText; }
 }

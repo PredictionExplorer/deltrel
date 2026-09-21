@@ -14,15 +14,21 @@ import {
   Undo2,
 } from 'lucide-react';
 import { controllerLabel, type ControllerType } from '@/lib/deltrel/ai/controllers';
+import { INITIAL_AI_CAPABILITIES, checkAiCapabilities, type AiCapabilities } from '@/lib/deltrel/ai/capabilities';
 import {
   DeltrelAiError,
   asDeltrelAiError,
   type DeltrelAiErrorCode,
 } from '@/lib/deltrel/ai/errors';
 import type {
-  DeltrelAiAnalysis,
   DeltrelAiSearchBudget,
 } from '@/lib/deltrel/ai/decision';
+import {
+  analysisConfigKey,
+  recordEngineAnalysis,
+  selectEngineAnalysis,
+  type StoredEngineAnalysis,
+} from '@/lib/deltrel/ai/analysis-history';
 import {
   acceptAiResponse,
   buildAiRequest,
@@ -39,10 +45,12 @@ import {
   validateTerminalWinner,
 } from '@/lib/deltrel/scoring';
 import { buildTimeline, lastCompletedTurnMoves } from '@/lib/deltrel/timeline';
-import { useAppStore } from '@/lib/store';
+import { DEFAULT_AI_SEARCH_SETTINGS, useAppStore } from '@/lib/store';
 import { BoardStage } from './BoardStage';
 import { DeltrelMark } from './DeltrelMark';
 import { EngineEstimatePanel } from './EngineEstimatePanel';
+import { BrowserAiPreparation, browserAiIsPreparing } from './BrowserAiPreparation';
+import { useBrowserAiPreparation } from './useBrowserAiPreparation';
 import {
   ClinchDialog,
   EndGameConfirmDialog,
@@ -81,11 +89,6 @@ interface AiFlight {
   settled: boolean;
 }
 
-interface PublishedAiAnalysis {
-  key: string;
-  analysis: DeltrelAiAnalysis;
-}
-
 function reducedSearchBudget(
   budget: DeltrelAiSearchBudget,
 ): DeltrelAiSearchBudget | null {
@@ -115,6 +118,7 @@ export function GameScreen() {
   const rematch = useAppStore((state) => state.rematch);
   const toSetup = useAppStore((state) => state.toSetup);
   const resumeAi = useAppStore((state) => state.resumeAi);
+  const pauseAi = useAppStore((state) => state.pauseAi);
   const setPlayerController = useAppStore((state) => state.setPlayerController);
   const setAiSearchBudget = useAppStore((state) => state.setAiSearchBudget);
   const setReviewing = useAppStore((state) => state.setReviewing);
@@ -122,6 +126,24 @@ export function GameScreen() {
   const endClinchedGame = useAppStore((state) => state.endClinchedGame);
   const resign = useAppStore((state) => state.resign);
   const devtools = deltrelAiDevtoolsEnabled();
+  const { status: browserStatus, authorized: browserAuthorized, notice: browserNotice, prepare: prepareBrowserAi, cancel: cancelBrowserAi } = useBrowserAiPreparation();
+  const [runtimeCapabilities, setRuntimeCapabilities] = useState<AiCapabilities>(INITIAL_AI_CAPABILITIES);
+  const [availabilityRefresh, setAvailabilityRefresh] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    void checkAiCapabilities(controller.signal).then((capabilities) => {
+      if (!controller.signal.aborted) setRuntimeCapabilities(capabilities);
+    });
+    return () => controller.abort();
+  }, [availabilityRefresh]);
+  const browserSearch = useMemo(() => {
+    const capability = runtimeCapabilities.local;
+    const maximum = capability.status === 'available' ? capability.search?.maximum : undefined;
+    return {
+      simulations: Math.min(aiSearchSettings.local.simulations, maximum?.simulations ?? DEFAULT_AI_SEARCH_SETTINGS.local.simulations),
+      maxConsidered: Math.min(aiSearchSettings.local.maxConsidered, maximum?.maxConsidered ?? DEFAULT_AI_SEARCH_SETTINGS.local.maxConsidered),
+    };
+  }, [aiSearchSettings.local, runtimeCapabilities.local]);
 
   const [rulesOpen, setRulesOpen] = useState(false);
   const [showInfluence, setShowInfluence] = useState(false);
@@ -131,11 +153,24 @@ export function GameScreen() {
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
   const [resignConfirmOpen, setResignConfirmOpen] = useState(false);
   const [aiStatus, setAiStatus] = useState<AiStatus>({ kind: 'idle' });
-  const [publishedAnalysis, setPublishedAnalysis] =
-    useState<PublishedAiAnalysis | null>(null);
+  const [analysisHistory, setAnalysisHistory] = useState<StoredEngineAnalysis[]>([]);
+  const [inspectionStatus, setInspectionStatus] = useState<
+    { kind: 'idle' } |
+    { kind: 'thinking'; stateHash: string } |
+    { kind: 'error'; stateHash: string; message: string }
+  >({ kind: 'idle' });
+  const inspectionRef = useRef<AbortController | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const flightRef = useRef<AiFlight | null>(null);
   const boardStageRef = useRef<HTMLElement>(null);
+
+  const cancelInspection = useCallback(() => {
+    inspectionRef.current?.abort();
+    inspectionRef.current = null;
+    setInspectionStatus({ kind: 'idle' });
+  }, []);
+
+  useEffect(() => () => { inspectionRef.current?.abort(); }, []);
 
   const game = useMemo(() => {
     try {
@@ -159,10 +194,11 @@ export function GameScreen() {
   const viewingHistory = historyView !== null;
 
   const seek = useCallback((ply: number | null) => {
+    cancelInspection();
     const total = useAppStore.getState().log.length;
     setViewPly(ply === null || ply >= total ? null : Math.max(0, ply));
     setProofMode(false);
-  }, []);
+  }, [cancelInspection]);
 
   const shownGame = useMemo(() => {
     if (!game || historyView === null) return game;
@@ -235,21 +271,28 @@ export function GameScreen() {
   }, [controllers, game, uiBlocksPlay]);
 
   const cancelActiveAi = useCallback(() => {
-    setPublishedAnalysis(null);
+    cancelInspection();
+    setAiStatus({ kind: 'idle' });
     const flight = flightRef.current;
     if (!flight) return;
     flight.cancelScheduled = false;
     flight.cancelled = true;
     flightRef.current = null;
     flight.abortController.abort();
-  }, []);
+  }, [cancelInspection]);
+
+  const autoplayUsesBrowser = game !== null && controllers[game.toMove] === 'local';
+  const autoplayReady = !autoplayUsesBrowser || (browserAuthorized && runtimeCapabilities.local.status === 'available');
+  const autoplaySimulations = autoplayUsesBrowser ? browserSearch.simulations : aiSearchSettings.server.simulations;
+  const autoplayMaxConsidered = autoplayUsesBrowser ? browserSearch.maxConsidered : aiSearchSettings.server.maxConsidered;
 
   useEffect(() => {
     if (!game || game.over || aiPaused || uiBlocksPlay) return;
     const controller = controllers[game.toMove];
     if (controller === 'human' || !aiPositionKey) return;
+    if (!autoplayReady) return;
 
-    const selectedSearch = aiSearchSettings[controller];
+    const selectedSearch = { simulations: autoplaySimulations, maxConsidered: autoplayMaxConsidered };
     const key = `${aiPositionKey}:${retryNonce}:${selectedSearch.simulations}:${selectedSearch.maxConsidered}`;
     const scheduleCancellation = (flight: AiFlight) => {
       if (flight.settled) return;
@@ -259,7 +302,6 @@ export function GameScreen() {
         flight.cancelled = true;
         flightRef.current = null;
         flight.abortController.abort();
-        setPublishedAnalysis(null);
       });
     };
 
@@ -274,7 +316,6 @@ export function GameScreen() {
       existing.cancelled = true;
       existing.abortController.abort();
       flightRef.current = null;
-      if (!existing.settled) setPublishedAnalysis(null);
     }
 
     let request: DeltrelAiRequest;
@@ -283,7 +324,6 @@ export function GameScreen() {
     } catch (error) {
       const aiError = asDeltrelAiError(error);
       queueMicrotask(() => {
-        setPublishedAnalysis(null);
         setAiStatus({
           kind: 'error',
           controller,
@@ -314,6 +354,7 @@ export function GameScreen() {
     const options = {
       signal: flight.abortController.signal,
       search: selectedSearch,
+      includeNetworkOutput: true,
     };
     const response =
       controller === 'server'
@@ -328,7 +369,6 @@ export function GameScreen() {
         const current = useAppStore.getState();
         if (current.phase !== 'playing') {
           flight.settled = true;
-          setPublishedAnalysis(null);
           return;
         }
         const accepted = acceptAiResponse(
@@ -340,7 +380,6 @@ export function GameScreen() {
         if (!accepted.ok) {
           if (accepted.code === 'stale') {
             flight.settled = true;
-            setPublishedAnalysis(null);
             setAiStatus({ kind: 'idle' });
             return;
           }
@@ -353,21 +392,24 @@ export function GameScreen() {
           current.controllers[currentGame.toMove] !== flight.controller
         ) {
           flight.settled = true;
-          setPublishedAnalysis(null);
           return;
         }
         flight.settled = true;
         setAiStatus({ kind: 'idle' });
         current.act(accepted.action);
-        setPublishedAnalysis({
-          key: `${decision.analysis.stateHash}:${decision.analysis.perspective}`,
+        setAnalysisHistory((history) => recordEngineAnalysis(history, {
           analysis: decision.analysis,
-        });
+          source: controller,
+          ply: log.length,
+          configKey: analysisConfigKey(config),
+          prefix: log,
+          action: accepted.action,
+          applied: true,
+        }));
       })
       .catch((error) => {
         if (flight.cancelled || flightRef.current !== flight) return;
         flight.settled = true;
-        setPublishedAnalysis(null);
         const aiError = asDeltrelAiError(error);
         if (aiError.code === 'cancelled' || aiError.code === 'stale') {
           setAiStatus({ kind: 'idle' });
@@ -389,7 +431,9 @@ export function GameScreen() {
   }, [
     aiPaused,
     aiPositionKey,
-    aiSearchSettings,
+    autoplayReady,
+    autoplaySimulations,
+    autoplayMaxConsidered,
     config,
     controllers,
     devtools,
@@ -407,6 +451,7 @@ export function GameScreen() {
 
   const leaveGame = useCallback(() => {
     cancelActiveAi();
+    setAnalysisHistory([]);
     setProofMode(false);
     setViewPly(null);
     setEndConfirmOpen(false);
@@ -436,6 +481,7 @@ export function GameScreen() {
 
   const rematchAction = useCallback(() => {
     cancelActiveAi();
+    setAnalysisHistory([]);
     setRulesOpen(false);
     setProofMode(false);
     setViewPly(null);
@@ -455,9 +501,16 @@ export function GameScreen() {
   );
 
   const resumeAiAction = useCallback(() => {
+    cancelInspection();
     setAiStatus({ kind: 'idle' });
     resumeAi();
-  }, [resumeAi]);
+  }, [cancelInspection, resumeAi]);
+
+  const pauseAiAction = useCallback(() => {
+    cancelActiveAi();
+    setAiStatus({ kind: 'idle' });
+    pauseAi();
+  }, [cancelActiveAi, pauseAi]);
 
   const retryWithLessEffort = useCallback(
     (controller: Exclude<ControllerType, 'human'>) => {
@@ -465,7 +518,6 @@ export function GameScreen() {
         useAppStore.getState().aiSearchSettings[controller],
       );
       if (!reduced) return;
-      setPublishedAnalysis(null);
       setAiStatus({ kind: 'idle' });
       setAiSearchBudget(controller, reduced);
     },
@@ -501,11 +553,85 @@ export function GameScreen() {
   const placeStone = useCallback(
     (node: number) => {
       if (!humanCanAct) return;
-      setPublishedAnalysis(null);
+      cancelInspection();
       act({ type: 'place', node });
     },
-    [act, humanCanAct],
+    [act, cancelInspection, humanCanAct],
   );
+
+  const shownPositionHash = useMemo(() => {
+    if (!shownGame || typeof BigInt !== 'function') return null;
+    return semanticStateHash(semanticStateFromGame(shownGame));
+  }, [shownGame]);
+  const inspectedAnalysis = useMemo(() => selectEngineAnalysis(analysisHistory, {
+    config, log, positionHash: shownPositionHash, ply: currentPly,
+    allowPrevious: !viewingHistory,
+  }), [analysisHistory, config, currentPly, log, shownPositionHash, viewingHistory]);
+  const positionController = shownGame ? controllers[shownGame.toMove] : 'human';
+  const inspectionRuntime = positionController !== 'human' && runtimeCapabilities[positionController].status === 'available' ? positionController
+    : controllers.includes('server') && runtimeCapabilities.server.status === 'available' ? 'server'
+      : controllers.includes('local') && runtimeCapabilities.local.status === 'available' ? 'local'
+        : runtimeCapabilities.server.status === 'available' ? 'server'
+          : runtimeCapabilities.local.status === 'available' ? 'local'
+            : positionController !== 'human' ? positionController : 'server';
+  const inspectionRuntimeReady = runtimeCapabilities[inspectionRuntime].status === 'available' &&
+    (inspectionRuntime !== 'local' || browserAuthorized);
+  // Cancelling any request resets the shared browser worker. An inspection
+  // must not share that worker with autoplay, including the next mixed-engine turn.
+  const localInspectionNeedsPause = inspectionRuntime === 'local' &&
+    currentController !== 'human' && !aiPaused && !uiBlocksPlay;
+
+  const analyzePosition = useCallback(() => {
+    if (!shownGame || shownGame.over || validProofMode || localInspectionNeedsPause || !inspectionRuntimeReady ||
+        typeof BigInt !== 'function') return;
+    // A separate, read-only request never applies the returned suggested move.
+    if (!viewingHistory && currentController !== 'human' && !aiPaused && !effectiveOver) return;
+    cancelInspection();
+    const prefix = log.slice(0, currentPly);
+    let request: DeltrelAiRequest;
+    try { request = buildAiRequest(config, prefix); }
+    catch (error) {
+      setInspectionStatus({ kind: 'error', stateHash: shownPositionHash ?? '', message: asDeltrelAiError(error).message });
+      return;
+    }
+    const abortController = new AbortController();
+    inspectionRef.current = abortController;
+    setInspectionStatus({ kind: 'thinking', stateHash: request.stateHash });
+    const options = {
+      signal: abortController.signal,
+      search: inspectionRuntime === 'local' ? browserSearch : aiSearchSettings.server,
+      includeNetworkOutput: true,
+    };
+    const pending = inspectionRuntime === 'server'
+      ? requestServerAiDecision(request, options)
+      : import('@/lib/deltrel/ai/local-client').then(({ requestLocalAiDecision }) =>
+          requestLocalAiDecision(request, options));
+    void pending.then((decision) => {
+      if (inspectionRef.current !== abortController || abortController.signal.aborted) return;
+      const accepted = acceptAiResponse(request, decision.response, config, prefix);
+      if (!accepted.ok || decision.analysis.stateHash !== request.stateHash ||
+          decision.analysis.perspective !== request.state.toMove) {
+        throw new DeltrelAiError('protocol', 'Engine analysis does not match the requested position.');
+      }
+      const current = useAppStore.getState();
+      const entry: StoredEngineAnalysis = {
+        analysis: decision.analysis, source: inspectionRuntime, ply: prefix.length,
+        configKey: analysisConfigKey(config), prefix, action: accepted.action,
+        applied: false,
+      };
+      if (current.phase === 'playing' && selectEngineAnalysis([entry], {
+        config: current.config, log: current.log, positionHash: request.stateHash,
+        ply: prefix.length, allowPrevious: false,
+      })) setAnalysisHistory((history) => recordEngineAnalysis(history, entry));
+      setInspectionStatus({ kind: 'idle' });
+    }).catch((error) => {
+      if (inspectionRef.current !== abortController || abortController.signal.aborted) return;
+      setInspectionStatus({ kind: 'error', stateHash: request.stateHash, message: asDeltrelAiError(error).message });
+    }).finally(() => {
+      if (inspectionRef.current === abortController) inspectionRef.current = null;
+    });
+  }, [aiPaused, aiSearchSettings, browserSearch, cancelInspection, config, currentController, currentPly,
+    effectiveOver, inspectionRuntime, inspectionRuntimeReady, localInspectionNeedsPause, log, shownGame, shownPositionHash, validProofMode, viewingHistory]);
 
   // Arrow keys step through the move history whenever no dialog needs them.
   // Board-focused arrow presses call preventDefault first and are skipped.
@@ -671,6 +797,36 @@ export function GameScreen() {
         ? ({ kind: 'ended' } as const)
         : ({ kind: 'live' } as const);
 
+  const analysisSelection = proofActive ? null : inspectedAnalysis;
+  const inspectionThinking = inspectionStatus.kind === 'thinking' &&
+    inspectionStatus.stateHash === shownPositionHash;
+  const inspectionError = inspectionStatus.kind === 'error' &&
+    inspectionStatus.stateHash === shownPositionHash ? inspectionStatus.message : null;
+  const estimateThinking = inspectionThinking || (!viewingHistory && thinking && !aiPaused && !uiBlocksPlay);
+  const canAnalyze = !shownGame.over && !proofActive && !inspectionThinking && !localInspectionNeedsPause && inspectionRuntimeReady &&
+    typeof BigInt === 'function' &&
+    (viewingHistory || currentController === 'human' || aiPaused || effectiveOver);
+  const estimateMessage = proofActive
+    ? 'This proof board is hypothetical. Return to the game to inspect engine forecasts.'
+    : inspectionRuntime === 'local' && !browserAuthorized
+      ? 'Prepare browser AI to analyze this position on your device.'
+    : localInspectionNeedsPause && viewingHistory
+      ? 'Pause AI to analyze this position with the browser engine.'
+    : inspectionThinking
+      ? 'Analyzing this position without playing a move. Results appear after the search completes.'
+      : estimateThinking
+        ? analysisSelection
+          ? 'The next position is being searched. The last completed forecast stays visible.'
+          : 'The engine is searching. Predictions appear when this search completes.'
+        : inspectionError ?? (!viewingHistory ? activeAiError?.message : null)
+      ?? (analysisSelection?.isExact
+        ? undefined
+        : viewingHistory
+          ? 'No engine estimate is recorded for this position. Analyze it without changing the game.'
+          : analysisSelection
+            ? 'Showing the last completed estimate, from before the indicated move.'
+            : 'Analyze this position, or wait for the first AI search to finish.');
+
   return (
     <main
       className={`${styles.screen} relative z-10 mx-auto flex w-full max-w-[100rem] flex-col`}
@@ -808,7 +964,7 @@ export function GameScreen() {
                     />
                     <div className="min-w-0 flex-1">
                       {aiPaused ? (
-                        <p>AI is paused after history navigation.</p>
+                        <p>AI play is paused. Inspect the forecasts, then resume when ready.</p>
                       ) : activeAiError ? (
                         <p role="alert">
                           {activeAiError.message}{' '}
@@ -833,7 +989,6 @@ export function GameScreen() {
                       <button
                         type="button"
                         onClick={() => {
-                          setPublishedAnalysis(null);
                           setAiStatus({ kind: 'idle' });
                           setRetryNonce((value) => value + 1);
                         }}
@@ -873,7 +1028,7 @@ export function GameScreen() {
                 disabled={!humanCanAct}
                 onClick={() => {
                   if (humanCanAct) {
-                    setPublishedAnalysis(null);
+                    cancelInspection();
                     act({ type: 'swap' });
                   }
                 }}
@@ -955,6 +1110,58 @@ export function GameScreen() {
               </section>
             )}
 
+            {(controllers.includes('local') || inspectionRuntime === 'local') &&
+              (!browserAuthorized || browserAiIsPreparing(browserStatus) || browserStatus.phase === 'error') && (
+              <BrowserAiPreparation
+                status={browserStatus}
+                authorized={browserAuthorized}
+                capability={runtimeCapabilities.local}
+                notice={browserNotice}
+                selected={controllers.includes('local')}
+                inGame
+                onPrepare={() => {
+                  void prepareBrowserAi().then((prepared) => {
+                    if (prepared && browserAuthorized && currentController === 'local') {
+                      setAiStatus({ kind: 'idle' });
+                      setRetryNonce((value) => value + 1);
+                    }
+                  });
+                }}
+                onCancel={() => {
+                  pauseAi();
+                  cancelActiveAi();
+                  cancelBrowserAi();
+                }}
+                onCheck={() => {
+                  setRuntimeCapabilities(INITIAL_AI_CAPABILITIES);
+                  setAvailabilityRefresh((value) => value + 1);
+                }}
+              />
+            )}
+            <EngineEstimatePanel
+              analysis={analysisSelection?.entry.analysis ?? null}
+              board={board}
+              playerNames={config.playerNames}
+              context={{
+                analyzedPly: analysisSelection?.entry.ply ?? null,
+                displayedPly: currentPly,
+                source: analysisSelection?.entry.source ?? inspectionRuntime,
+                status: estimateThinking ? 'thinking'
+                  : inspectionError || (!viewingHistory && activeAiError) ? 'error'
+                  : analysisSelection || canAnalyze ? 'ready' : 'unavailable',
+                message: estimateMessage,
+                action: analysisSelection?.entry.action,
+                applied: analysisSelection?.entry.applied,
+                isExact: analysisSelection?.isExact ?? false,
+                proof: proofActive,
+                phase: viewingHistory ? 'review' : effectiveOver ? 'ended' : 'live',
+              }}
+              onAnalyze={analyzePosition}
+              canAnalyze={canAnalyze}
+              onPause={pauseAiAction}
+              canPause={currentController !== 'human' && !aiPaused && !uiBlocksPlay}
+            />
+
           <ScorePanel
             game={shownGame}
             score={displayedScore}
@@ -971,15 +1178,6 @@ export function GameScreen() {
               onSeek={seek}
               onRewind={rewindToViewed}
             />
-
-            {publishedAnalysis && (
-              <EngineEstimatePanel
-                analysis={publishedAnalysis.analysis}
-                board={board}
-                playerNames={config.playerNames}
-                showSearchDetails={devtools}
-              />
-            )}
 
             <details className="rounded-xl border border-white/10 bg-white/[0.025] px-3">
               <summary className="flex min-h-11 cursor-pointer items-center text-xs font-medium text-muted">

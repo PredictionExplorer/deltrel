@@ -8,6 +8,7 @@
  */
 
 import { getBoard, SUPPORTED_RINGS, type Board } from './board';
+import { DELTREL_NOTATION_CONTRACT } from './notation';
 import {
   applyAction,
   configHandicap,
@@ -529,6 +530,7 @@ export function createDeltrelConformance() {
 
   return {
     schema: DELTREL_CONFORMANCE_SCHEMA_ID,
+    notation: DELTREL_NOTATION_CONTRACT,
     schemas: {
       rules: DELTREL_RULES_SCHEMA_ID,
       conformance: DELTREL_CONFORMANCE_SCHEMA_ID,

@@ -29,6 +29,13 @@ ONNX_OUTPUT_NAMES = (
     "alive_logits",
     "soft_policy_logits",
 )
+ONNX_AUXILIARY_OUTPUT_NAMES = (
+    "opponent_reply_logits",
+    "second_stone_logits",
+    "final_shores_logits",
+    "final_networks_logits",
+    "final_capes_logits",
+)
 
 
 class ONNXDeltrelModel(nn.Module):
@@ -39,9 +46,14 @@ class ONNXDeltrelModel(nn.Module):
     tensors the training encoders produce.
     """
 
-    def __init__(self, model: GraphResTNet) -> None:
+    def __init__(self, model: GraphResTNet, *, include_auxiliary: bool = False) -> None:
         super().__init__()
+        if include_auxiliary and not model.config.auxiliary_predictions:
+            raise ValueError(
+                "auxiliary export requires a model trained with those heads"
+            )
         self.model = model
+        self.include_auxiliary = include_auxiliary
 
     def forward(
         self,
@@ -53,7 +65,7 @@ class ONNXDeltrelModel(nn.Module):
         node_mask: Tensor,
         legal_action_mask: Tensor,
         rings: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    ) -> tuple[Tensor, ...]:
         output = self.model(
             node_features,
             global_features,
@@ -63,11 +75,11 @@ class ONNXDeltrelModel(nn.Module):
             node_mask,
             legal_action_mask,
             rings,
-            include_auxiliary=False,
+            include_auxiliary=self.include_auxiliary,
         )
-        # Browser artifacts keep their six-output wire contract. Auxiliary
-        # predictions are served separately by the full-model analysis API.
-        return tuple(output[:6])  # type: ignore[return-value]
+        # Six-output artifacts remain compatible. Direct champion publication
+        # can retain every supervised auxiliary head without changing weights.
+        return tuple(output if self.include_auxiliary else output[:6])  # type: ignore[return-value]
 
 
 def export_onnx(
@@ -76,12 +88,13 @@ def export_onnx(
     destination: str | Path,
     *,
     opset_version: int = 18,
+    include_auxiliary: bool = False,
 ) -> Path:
     """Export variable batch/node axes using the stable ONNX exporter."""
 
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    wrapper = ONNXDeltrelModel(model)
+    wrapper = ONNXDeltrelModel(model, include_auxiliary=include_auxiliary)
     was_training = model.training
     wrapper.eval()
     batch = torch.export.Dim("batch")
@@ -108,10 +121,16 @@ def export_onnx(
                 example_batch.model_args(),
                 str(destination),
                 input_names=list(ONNX_INPUT_NAMES),
-                output_names=list(ONNX_OUTPUT_NAMES),
+                output_names=list(
+                    ONNX_OUTPUT_NAMES
+                    + (ONNX_AUXILIARY_OUTPUT_NAMES if include_auxiliary else ())
+                ),
                 dynamic_shapes=dynamic_shapes,
                 opset_version=opset_version,
                 dynamo=True,
+                # Browsers verify/download one immutable model file. Sidecar
+                # tensors would bypass that checksum and break atomic publish.
+                external_data=False,
             )
     except (ImportError, ModuleNotFoundError) as exc:
         raise RuntimeError("ONNX export requires the optional onnx package") from exc

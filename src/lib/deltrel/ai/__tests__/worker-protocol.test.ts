@@ -340,6 +340,39 @@ describe('local worker protocol', () => {
     ).toThrow(/fields are invalid/i);
   });
 
+  it('validates download stages and readiness without confusing them with move results', () => {
+    expect(parseWorkerCommand({ type: 'prepare', taskId: 'download' })).toEqual({ type: 'prepare', taskId: 'download' });
+    const progress = { phase: 'downloading', loadedBytes: 40, totalBytes: 100, modelVersion: 'champion-v1', cached: false };
+    expect(parseWorkerEvent({ type: 'progress', taskId: 'download', progress })).toMatchObject({ progress });
+    for (const changes of [{ loadedBytes: -1 }, { loadedBytes: 101 }, { totalBytes: 0 }, { phase: 'ready' }, { cached: 'yes' }]) {
+      expect(() => parseWorkerEvent({ type: 'progress', taskId: 'download', progress: { ...progress, ...changes } })).toThrow();
+    }
+    const info = { modelVersion: 'champion-v1', bytes: 100, backend: 'wasm', cached: true };
+    expect(parseWorkerEvent({ type: 'prepared', taskId: 'download', info })).toMatchObject({ info });
+    expect(() => parseWorkerEvent({ type: 'prepared', taskId: 'download', info: { ...info, backend: 'unknown' } })).toThrow();
+  });
+
+  it('accepts the complete champion export without treating unsupervised heads as trained', () => {
+    const expanded = {
+      ...manifest,
+      tensors: { ...manifest.tensors, outputs: { ...manifest.tensors.outputs,
+        opponent_reply_logits: { dtype: 'float16', shape: ['batch', 'nodes+1'] },
+        second_stone_logits: { dtype: 'float16', shape: ['batch', 'nodes'] },
+        final_shores_logits: { dtype: 'float16', shape: ['batch', 2, 51] },
+        final_networks_logits: { dtype: 'float16', shape: ['batch', 2, 26] },
+        final_capes_logits: { dtype: 'float16', shape: ['batch', 2, 6] },
+      } },
+      training: { ...manifest.training, auxiliary_predictions_ready: true },
+    };
+    expect(parseDeltrelBrowserModelManifest(expanded)).toMatchObject({ auxiliaryStatus: 'ready' });
+    expect(parseDeltrelBrowserModelManifest(expanded).model.outputs).toHaveLength(11);
+    expect(parseDeltrelBrowserModelManifest({ ...expanded, training: {} }).auxiliaryStatus).toBe('untrained');
+    expect(parseDeltrelBrowserModelManifest(manifest).auxiliaryStatus).toBe('absent');
+    expect(() => parseDeltrelBrowserModelManifest({ ...expanded, tensors: { ...expanded.tensors,
+      outputs: { ...expanded.tensors.outputs, final_networks_logits: { dtype: 'float16', shape: ['batch', 2, 25] } },
+    } })).toThrow();
+  });
+
   it('accepts bounded optional execution fields without adding them to old manifests', () => {
     expect(parseDeltrelBrowserModelManifest(manifest).search).not.toHaveProperty('subtreeReuse');
     expect(parseDeltrelBrowserModelManifest({ ...manifest, recommended_local_search: {

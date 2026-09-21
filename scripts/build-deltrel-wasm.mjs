@@ -63,6 +63,12 @@ for (const filename of ['deltrel_wasm.js', 'deltrel_wasm_bg.wasm']) {
   }
 }
 
+// Ship the generated rules/search package with the website. wasm-pack's
+// blanket ignore would otherwise hide the files from Git-based deployments.
+for (const filename of ['.gitignore', 'deltrel_wasm.d.ts', 'deltrel_wasm_bg.wasm.d.ts']) {
+  rmSync(resolve(output, filename), { force: true });
+}
+
 writeFileSync(
   resolve(output, 'contract.json'),
   `${JSON.stringify(

@@ -1,6 +1,7 @@
 import { DELTREL_RULES_HASH } from '../rules';
 import { DeltrelAiError } from './errors';
 import { parsePredictions, validatePredictionState, type DeltrelAiPredictions } from './predictions';
+import { parseNetworkOutput, validateNetworkOutputState, type DeltrelNetworkOutput } from './network-output';
 import {
   DELTREL_AI_PROTOCOL_SCHEMA_ID,
   DELTREL_AI_PROTOCOL_VERSION,
@@ -59,6 +60,8 @@ export interface DeltrelAiAnalysis {
   timingMs: DeltrelAiTiming;
   /** Missing or null for models without the auxiliary prediction heads. */
   predictions?: DeltrelAiPredictions | null;
+  /** Complete root network heads, independent of search visits and leaf values. */
+  networkOutput?: DeltrelNetworkOutput | null;
 }
 
 export interface DeltrelAiDecision {
@@ -207,6 +210,7 @@ function parseAnalysis(value: unknown, response: DeltrelAiResponse): DeltrelAiAn
       'maxConsidered',
       'timingMs',
       ...('predictions' in value ? ['predictions'] : []),
+      ...('networkOutput' in value ? ['networkOutput'] : []),
     ]) ||
     (value.perspective !== 0 && value.perspective !== 1) ||
     value.stateHash !== response.stateHash
@@ -333,6 +337,11 @@ function parseAnalysis(value: unknown, response: DeltrelAiResponse): DeltrelAiAn
     throw new DeltrelAiError('protocol', 'AI decision model identity is invalid.');
   }
 
+  const networkOutput = 'networkOutput' in value ? parseNetworkOutput(value.networkOutput) : undefined;
+  if (networkOutput && (networkOutput.perspective !== value.perspective ||
+      rootActions.some(action => action.node >= networkOutput.nodeCount))) {
+    throw new DeltrelAiError('protocol', 'AI network outputs disagree with the analysis root.');
+  }
   return {
     perspective: value.perspective,
     stateHash: response.stateHash,
@@ -353,6 +362,7 @@ function parseAnalysis(value: unknown, response: DeltrelAiResponse): DeltrelAiAn
     maxConsidered: value.maxConsidered,
     timingMs: parseTiming(value.timingMs),
     ...('predictions' in value ? { predictions: parsePredictions(value.predictions) } : {}),
+    ...('networkOutput' in value ? { networkOutput } : {}),
   };
 }
 
@@ -393,6 +403,7 @@ export function parseDeltrelAiDecision(
     throw new DeltrelAiError('protocol', 'AI decision contains an illegal root action.');
   }
   if (decision.analysis.predictions) validatePredictionState(decision.analysis.predictions, request);
+  if (decision.analysis.networkOutput) validateNetworkOutputState(decision.analysis.networkOutput, request, decision.analysis.swapRecommended);
   if (decision.analysis.swapRecommended && decision.analysis.predictions?.secondStone) {
     throw new DeltrelAiError('protocol', 'AI predictions cannot include a second stone after a pie swap.');
   }

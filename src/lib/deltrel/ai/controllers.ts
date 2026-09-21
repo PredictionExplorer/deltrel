@@ -55,6 +55,6 @@ export function controllerLabel(controller: ControllerType): string {
     case 'server':
       return 'Server AI';
     case 'local':
-      return 'Local AI';
+      return 'Browser AI';
   }
 }

@@ -20,6 +20,7 @@ export type AiCapability =
       search?: AiSearchCapability;
       device?: string;
       champion?: AiChampionCapability;
+      browserModel?: { modelVersion: string; bytes: number; sha256: string };
     }
   | {
       status: 'unavailable';
@@ -345,7 +346,7 @@ export async function checkLocalAiCapability(
       return unavailable(
         'Local AI',
         'local_assets_missing',
-        'Local AI model is not installed.',
+        'The browser AI model is not available yet.',
         false,
       );
     }
@@ -361,7 +362,7 @@ export async function checkLocalAiCapability(
       return unavailable(
         'Local AI',
         'local_assets_missing',
-        'Local AI assets are incomplete.',
+        'The browser AI download is temporarily unavailable.',
         false,
       );
     }
@@ -376,6 +377,11 @@ export async function checkLocalAiCapability(
     return {
       status: 'available',
       label: 'Local AI',
+      browserModel: {
+        modelVersion: manifest.modelVersion,
+        bytes: manifest.model.bytes,
+        sha256: manifest.model.sha256,
+      },
       search: {
         default: defaultBudget,
         maximum,

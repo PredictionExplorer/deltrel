@@ -2,8 +2,6 @@
 
 import {
   memo,
-  useCallback,
-  useState,
   type RefObject,
 } from 'react';
 import { History } from 'lucide-react';
@@ -67,9 +65,6 @@ export const BoardStage = memo(function BoardStage({
   focusRef,
   className = '',
 }: BoardStageProps) {
-  const [hoverNode, setHoverNode] = useState(-1);
-  const handleHover = useCallback((node: number) => setHoverNode(node), []);
-
   return (
     <section
       ref={focusRef}
@@ -98,7 +93,6 @@ export const BoardStage = memo(function BoardStage({
           interactive={interactive}
           playerNames={playerNames}
           onPlace={onPlace}
-          onHover={handleHover}
           className="block h-full w-full"
         />
         {review && (
@@ -132,9 +126,9 @@ export const BoardStage = memo(function BoardStage({
         )}
         <div
           aria-live="polite"
-          className={`pointer-events-none absolute bottom-2 left-2 max-w-[calc(100%-1rem)] rounded-lg border px-2.5 py-1 font-mono text-xs backdrop-blur-sm ${
+          className={`pointer-events-none absolute top-2 left-4 max-w-[calc(50%-2rem)] rounded-lg border px-2.5 py-1 font-mono text-xs backdrop-blur-sm ${review ? 'sr-only' : ''} ${
             proof
-              ? 'border-sand/35 bg-estuary-surface-strong/90 text-ink shadow-lg'
+              ? 'truncate border-sand/35 bg-estuary-surface-strong/90 text-ink shadow-lg'
               : 'truncate border-white/10 bg-black/45 text-muted'
           }`}
         >
@@ -145,17 +139,8 @@ export const BoardStage = memo(function BoardStage({
               </span>
               <span className="ml-2 text-muted">{proof.detail}</span>
             </>
-          ) : hoverNode >= 0 ? (
-            <>
-              node <span className="text-sand">{board.labels[hoverNode]}</span>
-              {board.isCape[hoverNode]
-                ? ' · cape'
-                : board.isShore[hoverNode]
-                  ? ' · shore'
-                  : ''}
-            </>
           ) : (
-            `${filledCount} / ${board.n} nodes filled`
+            `${filledCount} / ${board.n} placed`
           )}
         </div>
       </div>

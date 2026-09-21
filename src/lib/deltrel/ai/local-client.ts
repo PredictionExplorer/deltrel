@@ -6,6 +6,9 @@ import {
   type DeltrelAiSearchBudget,
 } from './decision';
 import type { DeltrelAiRequest, DeltrelAiResponse } from './protocol';
+import { publishLocalAiStatus, type LocalAiReadyInfo, type LocalAiStatus } from './local-ai-status';
+export { getLocalAiStatus, getServerLocalAiStatus, subscribeLocalAiStatus } from './local-ai-status';
+export type { LocalAiProgress, LocalAiReadyInfo, LocalAiStatus } from './local-ai-status';
 import {
   parseBrowserSearchBudget,
   parseWorkerEvent,
@@ -24,6 +27,18 @@ interface PendingRequest {
 
 type WorkerFactory = () => Worker;
 
+interface PendingPreparation {
+  resolve: (info: LocalAiReadyInfo) => void;
+  reject: (error: DeltrelAiError) => void;
+  signal?: AbortSignal;
+  abortListener?: () => void;
+  timeout?: ReturnType<typeof setTimeout>;
+}
+export interface LocalAiPreparationOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
 export interface LocalAiRequestOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -33,6 +48,7 @@ export interface LocalAiRequestOptions {
 export const DEFAULT_LOCAL_AI_TIMEOUT_MS = 90_000;
 export const LOCAL_AI_HANDSHAKE_TIMEOUT_MS = 5_000;
 export const LOCAL_AI_IDLE_TIMEOUT_MS = 60_000;
+export const LOCAL_AI_PREPARATION_TIMEOUT_MS = 10 * 60_000;
 
 function createLocalWorker(): Worker {
   return new Worker(new URL('../../../workers/deltrel-ai.worker.ts', import.meta.url), {
@@ -44,13 +60,48 @@ function createLocalWorker(): Worker {
 export class LocalDeltrelAiClient {
   private worker: Worker | null = null;
   private readonly pending = new Map<string, PendingRequest>();
+  private readonly preparations = new Map<string, PendingPreparation>();
+  private preparationSequence = 0;
   private readyPromise: Promise<Worker> | null = null;
   private readyResolve: ((worker: Worker) => void) | null = null;
   private readyReject: ((error: DeltrelAiError) => void) | null = null;
   private handshakeTimeout: ReturnType<typeof setTimeout> | null = null;
   private idleTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly workerFactory: WorkerFactory = createLocalWorker) {}
+  constructor(
+    private readonly workerFactory: WorkerFactory = createLocalWorker,
+    private readonly onStatus: (status: LocalAiStatus) => void = () => {},
+  ) {}
+
+  prepare(options: LocalAiPreparationOptions = {}): Promise<LocalAiReadyInfo> {
+    const { signal, timeoutMs = LOCAL_AI_PREPARATION_TIMEOUT_MS } = options;
+    if (signal?.aborted) return Promise.reject(new DeltrelAiError('cancelled', 'AI preparation cancelled.'));
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return Promise.reject(new DeltrelAiError('protocol', 'Local AI timeout is invalid.'));
+    let taskId: string;
+    do { taskId = `prepare-${++this.preparationSequence}`; } while (this.pending.has(taskId));
+    return new Promise((resolve, reject) => {
+      const pending: PendingPreparation = { resolve, reject, signal };
+      pending.abortListener = () => {
+        if (this.preparations.has(taskId)) this.resetWorker(new DeltrelAiError('cancelled', 'AI preparation cancelled.'));
+      };
+      signal?.addEventListener('abort', pending.abortListener, { once: true });
+      pending.timeout = setTimeout(() => {
+        if (this.preparations.has(taskId)) this.resetWorker(new DeltrelAiError('timeout', 'Preparing the AI took too long. Please retry.', true));
+      }, timeoutMs);
+      this.preparations.set(taskId, pending);
+      this.clearIdleTimeout();
+      this.onStatus({ phase: 'checking', loadedBytes: 0, totalBytes: null, modelVersion: null, cached: false });
+      try {
+        void this.ensureWorker().then((worker) => {
+          if (this.preparations.has(taskId)) worker.postMessage({ type: 'prepare', taskId } satisfies DeltrelAiWorkerCommand);
+        }).catch((error) => {
+          if (this.preparations.has(taskId)) this.resetWorker(error instanceof DeltrelAiError ? error : new DeltrelAiError('unavailable', 'Browser AI could not start. Please retry.', true, error));
+        });
+      } catch (error) {
+        this.resetWorker(error instanceof DeltrelAiError ? error : new DeltrelAiError('unavailable', 'Browser AI could not start. Please retry.', true, error));
+      }
+    });
+  }
 
   request(
     request: DeltrelAiRequest,
@@ -60,7 +111,7 @@ export class LocalDeltrelAiClient {
     if (signal?.aborted) {
       return Promise.reject(new DeltrelAiError('cancelled', 'AI request cancelled.'));
     }
-    if (this.pending.has(request.requestId)) {
+    if (this.pending.has(request.requestId) || this.preparations.has(request.requestId)) {
       return Promise.reject(new DeltrelAiError('protocol', 'Duplicate local AI request id.'));
     }
 
@@ -191,12 +242,41 @@ export class LocalDeltrelAiClient {
       resolve(this.worker);
       return;
     }
+    if (!this.pending.has(message.taskId) && !this.preparations.has(message.taskId)) return;
+    if (message.type === 'progress') {
+      this.onStatus(message.progress);
+      return;
+    }
+    if (message.type === 'prepared') {
+      this.onStatus({ phase: 'ready', info: message.info });
+      const preparation = this.preparations.get(message.taskId);
+      if (preparation) {
+        this.preparations.delete(message.taskId);
+        this.cleanPending(preparation);
+        preparation.resolve(message.info);
+        this.scheduleIdleDisposal();
+      }
+      return;
+    }
+    const preparation = this.preparations.get(message.taskId);
+    if (preparation) {
+      this.preparations.delete(message.taskId);
+      this.cleanPending(preparation);
+      const error = message.type === 'error'
+        ? new DeltrelAiError(message.error.code, message.error.message, message.error.retryable)
+        : new DeltrelAiError('protocol', 'Browser AI preparation returned an unexpected result.');
+      this.onStatus({ phase: 'error', message: error.message, retryable: error.retryable });
+      preparation.reject(error);
+      this.scheduleIdleDisposal();
+      return;
+    }
     const pending = this.pending.get(message.taskId);
     if (!pending) return;
     this.pending.delete(message.taskId);
     this.cleanPending(pending);
 
     if (message.type === 'error') {
+      this.onStatus({ phase: 'error', message: message.error.message, retryable: message.error.retryable });
       pending.reject(
         new DeltrelAiError(
           message.error.code,
@@ -230,13 +310,13 @@ export class LocalDeltrelAiClient {
     );
   };
 
-  private removeAbortListener(pending: PendingRequest): void {
+  private removeAbortListener(pending: PendingPreparation | PendingRequest): void {
     if (pending.signal && pending.abortListener) {
       pending.signal.removeEventListener('abort', pending.abortListener);
     }
   }
 
-  private cleanPending(pending: PendingRequest): void {
+  private cleanPending(pending: PendingPreparation | PendingRequest): void {
     this.removeAbortListener(pending);
     if (pending.timeout) clearTimeout(pending.timeout);
   }
@@ -247,12 +327,16 @@ export class LocalDeltrelAiClient {
   }
 
   private scheduleIdleDisposal(): void {
-    if (this.pending.size > 0 || !this.worker) return;
+    if (this.pending.size > 0 || this.preparations.size > 0 || !this.worker) return;
     this.clearIdleTimeout();
     this.idleTimeout = setTimeout(() => this.dispose(), LOCAL_AI_IDLE_TIMEOUT_MS);
   }
 
   private resetWorker(error: DeltrelAiError): void {
+    if (this.preparations.size > 0 || this.pending.size > 0) {
+      this.onStatus(error.code === 'cancelled' ? { phase: 'idle' }
+        : { phase: 'error', message: error.message, retryable: error.retryable });
+    }
     this.clearIdleTimeout();
     if (this.handshakeTimeout) clearTimeout(this.handshakeTimeout);
     this.handshakeTimeout = null;
@@ -265,6 +349,11 @@ export class LocalDeltrelAiClient {
       pending.reject(error);
     }
     this.pending.clear();
+    for (const pending of this.preparations.values()) {
+      this.cleanPending(pending);
+      pending.reject(error);
+    }
+    this.preparations.clear();
     if (this.worker) {
       this.worker.removeEventListener('message', this.onMessage);
       this.worker.removeEventListener('error', this.onWorkerError);
@@ -274,7 +363,11 @@ export class LocalDeltrelAiClient {
   }
 }
 
-const localClient = new LocalDeltrelAiClient();
+const localClient = new LocalDeltrelAiClient(createLocalWorker, publishLocalAiStatus);
+
+export function prepareLocalAi(options: LocalAiPreparationOptions = {}): Promise<LocalAiReadyInfo> {
+  return localClient.prepare(options);
+}
 
 export function requestLocalAiAction(
   request: DeltrelAiRequest,

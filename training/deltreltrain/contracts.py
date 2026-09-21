@@ -12,6 +12,31 @@ RULES_HASH_HEX = "46e4fbcff4e17fd3"
 RULES_HASH_WIRE = f"{RULES_HASH_ALGORITHM}:{RULES_HASH_HEX}"
 RULES_HASH = 0x46E4FBCFF4E17FD3
 
+# Presentation is independently versioned: changing coordinates never changes
+# gameplay, model inputs, checkpoints, or the serving compatibility fingerprint.
+BOARD_NOTATION_SCHEMA_ID = "deltrel.board-notation.v2"
+BOARD_NOTATION_VERSION = 2
+BOARD_NOTATION_CELL = 800_000_000
+BOARD_NOTATION_VERTEX_X = (587_785_252, -587_785_252, -951_056_516, 0, 951_056_516)
+BOARD_NOTATION_VERTEX_Y_UP = (
+    -809_016_994,
+    -809_016_994,
+    309_016_994,
+    1_000_000_000,
+    309_016_994,
+)
+BOARD_NOTATION_CONTRACT = {
+    "schema": BOARD_NOTATION_SCHEMA_ID,
+    "version": BOARD_NOTATION_VERSION,
+    "files": "letters left to right",
+    "ranks": "positive integers bottom to top",
+    "cellUnits": BOARD_NOTATION_CELL,
+    "vertexX": list(BOARD_NOTATION_VERTEX_X),
+    "vertexYUp": list(BOARD_NOTATION_VERTEX_Y_UP),
+    "rounding": "nearest integer; exact halves away from zero",
+    "origin": "minimum rounded cape column and rank on the selected board",
+}
+
 # Search behavior changes independently of model inputs and game rules. Arena
 # evidence and resumed games must never span incompatible search algorithms.
 SEARCH_ALGORITHM_ID = "gumbel-completed-q-v2-finite-noise-selected-keep"
@@ -24,8 +49,10 @@ LEGACY_RULES_HASH_HEX = "2da3783519381453"
 LEGACY_RULES_HASH_WIRE = f"{RULES_HASH_ALGORITHM}:{LEGACY_RULES_HASH_HEX}"
 LEGACY_RULES_HASH = 0x2DA3783519381453
 
-# Exact canonical bytes from ``src/lib/deltrel/rules.ts``. This gameplay contract
-# is deliberately independent from FEATURE_CONTRACT below.
+# Exact, frozen rules-v3 wire bytes from ``src/lib/deltrel/rules.ts``. Its label
+# clause records historical presentation metadata, not today's notation. The
+# independently versioned BOARD_NOTATION_* constants define current coordinates.
+# This gameplay contract is deliberately independent from FEATURE_CONTRACT below.
 RULES_CANONICAL = (
     "double-deltrel/rules-v3;"
     "rings=even:{4,6,8,10};"

@@ -3,10 +3,10 @@
 use std::sync::{Arc, LazyLock};
 
 use deltrel_engine::{
-    ACTION_LAYOUT_SCHEMA, Action, BitBoard, Board, CONFORMANCE_SCHEMA, D5Maps, FEATURE_SCHEMA,
-    GameState, Mode, Player, PlayerScore, RULES_CANONICAL, RULES_HASH, RULES_HASH_VALUE,
-    RULES_SCHEMA, RULES_VERSION, SUPPORTED_RINGS, ScoreResult, ScoringScratch, Symmetry, Variant,
-    rules_hash, terminal_value,
+    ACTION_LAYOUT_SCHEMA, Action, BOARD_NOTATION_SCHEMA, BOARD_NOTATION_VERSION, BitBoard, Board,
+    CONFORMANCE_SCHEMA, D5Maps, FEATURE_SCHEMA, GameState, Mode, Player, PlayerScore,
+    RULES_CANONICAL, RULES_HASH, RULES_HASH_VALUE, RULES_SCHEMA, RULES_VERSION, SUPPORTED_RINGS,
+    ScoreResult, ScoringScratch, Symmetry, Variant, rules_hash, terminal_value,
 };
 use serde::Deserialize;
 
@@ -20,6 +20,7 @@ static FIXTURE: LazyLock<ConformanceFixture> = LazyLock::new(|| {
 #[serde(rename_all = "camelCase")]
 struct ConformanceFixture {
     schema: String,
+    notation: NotationFixture,
     schemas: SchemasFixture,
     rules: RulesFixture,
     outcome_encoding: OutcomeEncodingFixture,
@@ -30,6 +31,12 @@ struct ConformanceFixture {
     games: Vec<GameFixture>,
     pair_equivalences: Vec<PairEquivalenceFixture>,
     swap_equivalences: Vec<SwapEquivalenceFixture>,
+}
+
+#[derive(Deserialize)]
+struct NotationFixture {
+    schema: String,
+    version: u8,
 }
 
 #[derive(Deserialize)]
@@ -342,6 +349,8 @@ struct SwapEquivalenceFixture {
 #[test]
 fn finalized_v3_schema_hash_and_encodings_match_runtime_constants() {
     let fixture = &*FIXTURE;
+    assert_eq!(fixture.notation.schema, BOARD_NOTATION_SCHEMA);
+    assert_eq!(fixture.notation.version, BOARD_NOTATION_VERSION);
     assert_eq!(fixture.schema, CONFORMANCE_SCHEMA);
     assert_eq!(fixture.schemas.conformance, CONFORMANCE_SCHEMA);
     assert_eq!(fixture.schemas.rules, RULES_SCHEMA);

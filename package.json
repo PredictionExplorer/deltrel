@@ -15,8 +15,13 @@
     "test:mutation": "stryker run",
     "test:e2e": "npm run build && playwright test",
     "test:e2e:run": "playwright test",
-    "check": "npm run check:brand && npm run typecheck && npm run lint && npm run test:coverage && npm run build",
-    "check:brand": "node --test scripts/audit-brand.test.mjs && node scripts/audit-brand.mjs"
+    "check": "npm run check:brand && npm run test:browser-assets && npm run typecheck && npm run lint && npm run test:coverage && npm run build",
+    "check:brand": "node --test scripts/audit-brand.test.mjs && node scripts/audit-brand.mjs",
+    "prepare:browser-assets": "node scripts/prepare-browser-assets.mjs",
+    "predev": "npm run prepare:browser-assets",
+    "prebuild": "npm run prepare:browser-assets && npm run verify:browser-release",
+    "verify:browser-release": "node scripts/verify-browser-release.mjs",
+    "test:browser-assets": "node --test scripts/prepare-browser-assets.test.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.24.0",

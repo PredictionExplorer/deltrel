@@ -33,6 +33,8 @@ import {
 } from './EngineDeveloperSettings';
 import { DeltrelBoard } from './DeltrelBoard';
 import { ChampionPanel } from './ChampionPanel';
+import { BrowserAiPreparation } from './BrowserAiPreparation';
+import { useBrowserAiPreparation } from './useBrowserAiPreparation';
 import {
   engineControllerLabel,
   deltrelAiDevtoolsEnabled,
@@ -49,6 +51,7 @@ export function SetupScreen() {
   const aiSearchSettings = useAppStore((s) => s.aiSearchSettings);
   const setAiSearchBudget = useAppStore((s) => s.setAiSearchBudget);
   const devtools = deltrelAiDevtoolsEnabled();
+  const browserAi = useBrowserAiPreparation();
 
   const [showRules, setShowRules] = useState(false);
   const [mode, setMode] = useState<Mode>(lastConfig.mode);
@@ -88,7 +91,7 @@ export function SetupScreen() {
   );
   const controllersReady = selectedCapabilities.every(
     (capability) => capability.status === 'available',
-  );
+  ) && (!controllers.includes('local') || browserAi.authorized);
   const engineSettingsReady =
     selectedAiRuntimes.every((runtime) => {
       const capability = capabilities[runtime];
@@ -124,6 +127,20 @@ export function SetupScreen() {
     });
   };
 
+  const chooseBrowserChampion = () => {
+    setControllers(['human', 'local']);
+    setNames((previous) => [previous[0] === 'Player 1' ? 'You' : previous[0], 'Champion']);
+    if (capabilities.local.status === 'available' && capabilities.local.search) {
+      setAiSearchBudget('local', { ...capabilities.local.search.default });
+    }
+  };
+
+  const checkCapabilitiesAgain = () => {
+    setCapabilities(INITIAL_AI_CAPABILITIES);
+    setEngineDraftValidity({});
+    setCapabilityCheck((value) => value + 1);
+  };
+
   const handleEngineValidityChange = useCallback(
     (runtime: AiRuntime, valid: boolean) => {
       setEngineDraftValidity((previous) =>
@@ -146,6 +163,7 @@ export function SetupScreen() {
     const validControllers = normalizeControllers(config, controllers);
     if (
       !engineSettingsReady ||
+      (validControllers.includes('local') && !browserAi.authorized) ||
       validControllers.some(
         (controller) =>
           capabilityForController(capabilities, controller).status !== 'available',
@@ -219,7 +237,7 @@ export function SetupScreen() {
             <h2>Set your course.</h2>
           </div>
           <div className={`${styles.setupScroll} thin-scroll`}>
-          <ChampionPanel
+          {capabilities.server.status !== 'unavailable' && <ChampionPanel
             capability={capabilities.server}
             selected={controllers.includes('server')}
             onChoose={() => {
@@ -229,6 +247,20 @@ export function SetupScreen() {
                 'Champion',
               ]);
             }}
+          />}
+          <BrowserAiPreparation
+            status={browserAi.status}
+            authorized={browserAi.authorized}
+            capability={capabilities.local}
+            selected={controllers.includes('local')}
+            notice={browserAi.notice}
+            onSelect={chooseBrowserChampion}
+            onPrepare={() => {
+              chooseBrowserChampion();
+              void browserAi.prepare();
+            }}
+            onCancel={browserAi.cancel}
+            onCheck={checkCapabilitiesAgain}
           />
 
           {/* Mode */}
@@ -440,7 +472,9 @@ export function SetupScreen() {
                               disabled={capability.status !== 'available'}
                               className="bg-[#103e40]"
                             >
-                              {controller === 'server' && capabilities.server.status === 'available' && capabilities.server.champion
+                              {controller === 'server' && capabilities.server.status !== 'available'
+                                ? 'Online AI'
+                                : controller === 'server' && capabilities.server.status === 'available' && capabilities.server.champion
                                 ? 'Current champion'
                                 : devtools
                                   ? engineControllerLabel(controller)
@@ -493,14 +527,13 @@ export function SetupScreen() {
                   }>Use recommended thinking time</button>
                 </p>;
               })}
+              {controllers.includes('local') && !browserAi.authorized && (
+                <p className="mb-2 text-sand-strong">Prepare browser AI above before beginning the game.</p>
+              )}
               {aiAllowed && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setCapabilities(INITIAL_AI_CAPABILITIES);
-                      setEngineDraftValidity({});
-                      setCapabilityCheck((value) => value + 1);
-                    }}
+                    onClick={checkCapabilitiesAgain}
                     className="mt-1 min-h-8 text-left text-sand-strong underline decoration-sand/40 underline-offset-2"
                   >
                     Check AI availability again

@@ -41,7 +41,12 @@ from .contracts import (
     RULES_HASH_WIRE,
     RULES_SCHEMA_ID,
 )
-from .export import ONNX_INPUT_NAMES, ONNX_OUTPUT_NAMES, export_onnx
+from .export import (
+    ONNX_INPUT_NAMES,
+    ONNX_OUTPUT_NAMES,
+    ONNX_AUXILIARY_OUTPUT_NAMES,
+    export_onnx,
+)
 from .features import (
     GLOBAL_FEATURE_DIM,
     NODE_FEATURE_DIM,
@@ -210,8 +215,23 @@ class BrowserSearchConfig:
     first_visit_batch_size: int = 1
     subtree_reuse: bool = False
     subtree_reuse_max_nodes: int = 4_096
+    maximum_simulations: int | None = None
+    maximum_max_considered: int | None = None
 
     def __post_init__(self) -> None:
+        for name, value, minimum, ceiling in (
+            ("maximum_simulations", self.maximum_simulations, self.simulations, 1024),
+            (
+                "maximum_max_considered",
+                self.maximum_max_considered,
+                self.max_considered,
+                128,
+            ),
+        ):
+            if value is not None and (
+                type(value) is not int or not minimum <= value <= ceiling
+            ):
+                raise DistillationConfigError(f"browser {name} is invalid")
         if (
             type(self.simulations) is not int
             or self.simulations <= 0
@@ -242,6 +262,9 @@ class BrowserSearchConfig:
         """Keep default exports identical to the original browser contract."""
 
         fields = asdict(self)
+        for name in ("maximum_simulations", "maximum_max_considered"):
+            if fields[name] is None:
+                fields.pop(name)
         if self.first_visit_batch_size == 1:
             fields.pop("first_visit_batch_size")
         if not self.subtree_reuse:
@@ -861,7 +884,9 @@ def _artifact_entry(path: Path, checksum: str) -> dict[str, object]:
     }
 
 
-def _browser_tensor_schema(model: ModelConfig) -> dict[str, object]:
+def _browser_tensor_schema(
+    model: ModelConfig, *, include_auxiliary: bool = False
+) -> dict[str, object]:
     inputs = {
         ONNX_INPUT_NAMES[0]: {
             "dtype": "float16",
@@ -892,6 +917,19 @@ def _browser_tensor_schema(model: ModelConfig) -> dict[str, object]:
         ONNX_OUTPUT_NAMES[4]: {"dtype": "float16", "shape": ["batch", "nodes"]},
         ONNX_OUTPUT_NAMES[5]: {"dtype": "float16", "shape": ["batch", "nodes"]},
     }
+    if include_auxiliary:
+        for name, shape in zip(
+            ONNX_AUXILIARY_OUTPUT_NAMES,
+            (
+                ["batch", "nodes+1"],
+                ["batch", "nodes"],
+                ["batch", 2, 51],
+                ["batch", 2, 26],
+                ["batch", 2, 6],
+            ),
+            strict=True,
+        ):
+            outputs[name] = {"dtype": "float16", "shape": shape}
     return {"inputs": inputs, "outputs": outputs}
 
 
@@ -903,16 +941,21 @@ def sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def validate_browser_onnx(path: str | Path) -> None:
+def validate_browser_onnx(path: str | Path, *, include_auxiliary: bool = False) -> None:
     try:
         import onnx
     except (ImportError, ModuleNotFoundError) as exc:
         raise RuntimeError("browser export validation requires the onnx extra") from exc
-    model = onnx.load(Path(path), load_external_data=True)
+    model = onnx.load(Path(path), load_external_data=False)
+    if any(tensor.external_data for tensor in model.graph.initializer):
+        raise RuntimeError("browser ONNX must embed all tensor data in one file")
     onnx.checker.check_model(model, full_check=True)
     inputs = [value.name for value in model.graph.input]
     outputs = [value.name for value in model.graph.output]
-    if inputs != list(ONNX_INPUT_NAMES) or outputs != list(ONNX_OUTPUT_NAMES):
+    expected_outputs = ONNX_OUTPUT_NAMES + (
+        ONNX_AUXILIARY_OUTPUT_NAMES if include_auxiliary else ()
+    )
+    if inputs != list(ONNX_INPUT_NAMES) or outputs != list(expected_outputs):
         raise RuntimeError(
             "exported ONNX tensor names do not match the browser contract"
         )

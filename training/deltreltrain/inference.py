@@ -25,7 +25,7 @@ from .contracts import (
     SCORE_MARGIN_MIN,
 )
 from .device import resolve_precision
-from .features import EncodedBatch
+from .features import DoubleDeltrelPosition, EncodedBatch, encode_batch
 from .features_v3 import encode_legacy_batch
 from .auxiliary_inference import (
     AuxiliaryPrediction,
@@ -625,6 +625,62 @@ class GraphInferenceAdapter:
             response, details = self._evaluate(requests, include_details=True)
         assert details is not None
         return details
+
+    def evaluate_network_output(
+        self, position: DoubleDeltrelPosition
+    ) -> dict[str, torch.Tensor | None]:
+        """One opt-in root diagnostic forward, independent of search/cache state.
+
+        Search caches intentionally retain only utility/policy and compact beliefs.
+        All eleven output heads are transferred together here; no leaf diagnostics
+        are retained and no search visits, policies, or weight values are changed.
+        """
+        if self.config.legacy_features:
+            raise ValueError("network diagnostics require production feature schema")
+        autocast = self.config.precision == "bf16"
+        if autocast and self.device.type not in ("cpu", "cuda"):
+            raise ValueError(f"BF16 inference is unsupported on {self.device.type}")
+        with self._evaluation_lock:
+            encoded = self._to_device(encode_batch([position]))
+            was_training = self.model.training
+            self.model.eval()
+            try:
+                with (
+                    torch.inference_mode(),
+                    torch.autocast(
+                        device_type=self.device.type,
+                        dtype=torch.bfloat16,
+                        enabled=autocast,
+                    ),
+                ):
+                    output = self.model(
+                        *encoded.model_args(),
+                        **(
+                            {"include_auxiliary": True}
+                            if self.has_auxiliary_predictions
+                            else {}
+                        ),
+                    )
+                    self._neural_calls += 1
+                    self._neural_rows += 1
+                    values = output._asdict()
+                    present = [value for value in values.values() if value is not None]
+                    packed = torch.cat(
+                        [value.float().reshape(-1) for value in present]
+                    ).cpu()
+            finally:
+                if was_training:
+                    self.model.train()
+            result: dict[str, torch.Tensor | None] = {}
+            offset = 0
+            for name, value in values.items():
+                if value is None:
+                    result[name] = None
+                else:
+                    count = value.numel()
+                    result[name] = packed[offset : offset + count].reshape(value.shape)
+                    offset += count
+            return result
 
     def prepare_requests(
         self,

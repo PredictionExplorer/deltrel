@@ -58,7 +58,7 @@ export const DELTREL_RULES_CONTRACT = {
     edgeOrder:
       'iterate nodes in node-id order; attempt cycle, radial, diagonal, corner-cross edges in that order; then ring-1 K5 pairs in lexicographic arm order; keep first undirected insertion',
     csrOrder: 'neighbors retain undirected edge insertion order',
-    labels: 'bijective base-26 uppercase letters of node id + 1: A..Z, AA..AZ, BA..',
+    labels: 'display notation is versioned independently by deltrel.board-notation.v2',
   },
   scoring: {
     emptyValue: -1,
@@ -124,6 +124,9 @@ export const DELTREL_RULES_CONTRACT = {
 /**
  * Compact ASCII wire contract. Rust and Python consumers mirror these exact
  * bytes so every runtime derives the same unsigned 64-bit fingerprint.
+ * These v3 bytes are immutable. The historical label clause is retained only
+ * for wire compatibility; current display coordinates use the independently
+ * versioned notation contract and never change game or model identity.
  */
 export const DELTREL_RULES_CANONICAL = [
   'double-deltrel/rules-v3;',

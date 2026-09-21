@@ -1,5 +1,6 @@
 import {
   cleanup,
+  act,
   fireEvent,
   render,
   screen,
@@ -20,6 +21,15 @@ import {
   type AppState,
 } from '@/lib/store';
 import { SetupScreen } from '../SetupScreen';
+import { prepareLocalAi } from '@/lib/deltrel/ai/local-client';
+import { publishLocalAiStatus } from '@/lib/deltrel/ai/local-ai-status';
+
+vi.mock('@/lib/deltrel/ai/local-client', async () => ({
+  ...await vi.importActual<typeof import('@/lib/deltrel/ai/local-client')>('@/lib/deltrel/ai/local-client'),
+  prepareLocalAi: vi.fn(),
+}));
+
+const browserReady = { modelVersion: 'browser-champion', bytes: 37_577_312, backend: 'wasm' as const, cached: false };
 
 vi.mock('@/lib/deltrel/ai/capabilities', async () => {
   const actual = await vi.importActual<typeof import('@/lib/deltrel/ai/capabilities')>(
@@ -102,6 +112,12 @@ beforeEach(() => {
   resetStore();
   vi.mocked(checkAiCapabilities).mockReset();
   vi.mocked(checkAiCapabilities).mockResolvedValue(availableCapabilities);
+  publishLocalAiStatus({ phase: 'idle' });
+  vi.mocked(prepareLocalAi).mockReset();
+  vi.mocked(prepareLocalAi).mockImplementation(async () => {
+    publishLocalAiStatus({ phase: 'ready', info: browserReady });
+    return browserReady;
+  });
 });
 
 afterEach(() => {
@@ -111,6 +127,72 @@ afterEach(() => {
 });
 
 describe('SetupScreen', () => {
+  it('promotes browser AI on a public site and requires explicit preparation before beginning', async () => {
+    vi.mocked(checkAiCapabilities).mockResolvedValue({
+      server: { status: 'unavailable', label: 'Online AI', code: 'not_configured', reason: 'Online AI is not configured.', retryable: false },
+      local: {
+        status: 'available', label: 'Browser AI',
+        browserModel: { modelVersion: browserReady.modelVersion, bytes: browserReady.bytes, sha256: 'a'.repeat(64) },
+        search: { default: { simulations: 8, maxConsidered: 4 }, maximum: { simulations: 64, maxConsidered: 8 }, presets: {} },
+      },
+    });
+    let finish!: (value: typeof browserReady) => void;
+    vi.mocked(prepareLocalAi).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    const download = await screen.findByRole('button', { name: 'Download browser AI' });
+    expect(prepareLocalAi).not.toHaveBeenCalled();
+    expect(screen.queryByRole('heading', { name: 'Current champion' })).not.toBeInTheDocument();
+    expect(screen.getByText(/37.6 MB for the model/)).toBeInTheDocument();
+    await user.click(download);
+    await waitFor(() => expect(prepareLocalAi).toHaveBeenCalledOnce());
+    expect(screen.getByRole('combobox', { name: 'Player 2 controller' })).toHaveValue('local');
+    expect(screen.getByRole('button', { name: 'Begin the game' })).toBeDisabled();
+    act(() => publishLocalAiStatus({ phase: 'downloading', loadedBytes: 10_000_000, totalBytes: 20_000_000, modelVersion: browserReady.modelVersion, cached: false }));
+    expect(screen.getByRole('progressbar')).toHaveAttribute('value', '50');
+    await act(async () => {
+      publishLocalAiStatus({ phase: 'ready', info: browserReady });
+      finish(browserReady);
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Begin the game' })).toBeEnabled());
+    expect(screen.getByRole('button', { name: 'Browser AI selected' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'Begin the game' }));
+    expect(useAppStore.getState().controllers).toEqual(['human', 'local']);
+    expect(useAppStore.getState().aiSearchSettings.local).toEqual({ simulations: 8, maxConsidered: 4 });
+  });
+
+  it('cancels preparation without starting a game and allows a successful retry', async () => {
+    vi.mocked(prepareLocalAi).mockImplementationOnce(({ signal } = {}) => new Promise((_, reject) => {
+      signal?.addEventListener('abort', () => {
+        publishLocalAiStatus({ phase: 'idle' });
+        reject(new Error('cancelled'));
+      }, { once: true });
+    }));
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    await user.click(await screen.findByRole('button', { name: 'Download browser AI' }));
+    await waitFor(() => expect(prepareLocalAi).toHaveBeenCalledOnce());
+    const signal = vi.mocked(prepareLocalAi).mock.calls[0][0]!.signal!;
+    act(() => publishLocalAiStatus({ phase: 'downloading', loadedBytes: 1, totalBytes: 10, modelVersion: 'browser-champion', cached: false }));
+    await user.click(screen.getByRole('button', { name: 'Cancel browser AI preparation' }));
+    expect(signal.aborted).toBe(true);
+    expect(useAppStore.getState().phase).toBe('setup');
+    expect(screen.getByRole('button', { name: 'Begin the game' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Retry browser AI' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Begin the game' })).toBeEnabled());
+    expect(prepareLocalAi).toHaveBeenCalledTimes(2);
+  });
+
+  it('reuses an already prepared browser model without another preparation request', async () => {
+    publishLocalAiStatus({ phase: 'ready', info: { ...browserReady, cached: true } });
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    await user.click(screen.getByRole('button', { name: 'Play against browser AI' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Begin the game' })).toBeEnabled());
+    expect(prepareLocalAi).not.toHaveBeenCalled();
+    expect(screen.getByText('Loaded from this browser’s saved model.')).toBeInTheDocument();
+  });
+
   it.each(['classic', 'double'] as const)(
     'offers only pie even games on smaller boards in %s mode',
     async (mode) => {
@@ -405,7 +487,7 @@ describe('SetupScreen', () => {
     );
     expect(
       within(playerOneController).getByRole('option', {
-        name: 'Browser AI — lightweight',
+        name: 'Browser AI — trained champion',
       }),
     ).toBeEnabled();
     await user.selectOptions(playerOneController, 'server');

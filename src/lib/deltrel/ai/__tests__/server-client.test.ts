@@ -73,6 +73,7 @@ function representativeAnalyzeResponse(
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
@@ -429,4 +430,80 @@ describe('deltrelserve v3 adapter', () => {
     ).resolves.toEqual(makeAiResponse(request, { type: 'place', node: 0 }));
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+  it('opts into diagnostics and retries only an explicit unknown-field rejection', async () => {
+    const rejected = {error: {code: 'invalid_request', message: 'unknown field', details: [
+      {type: 'extra_forbidden', location: ['body', 'include_network_output']},
+    ]}};
+    const calls: Record<string, unknown>[] = [];
+    const fetchMock = vi.fn(async (_url: unknown, init: RequestInit) => {
+      calls.push(JSON.parse(String(init.body)));
+      return calls.length === 1 ? new Response(JSON.stringify(rejected), {status: 422})
+        : new Response(JSON.stringify(representativeAnalyzeResponse()), {status: 200});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(requestServerAiDecision(request, {includeNetworkOutput: true,
+      search: {simulations: 4, maxConsidered: 2}})).resolves.toBeDefined();
+    expect(calls).toHaveLength(2);
+    expect(calls[0].include_network_output).toBe(true);
+    expect(calls[1].include_network_output).toBeUndefined();
+    expect(fetchMock.mock.calls[0][1].signal).toBe(fetchMock.mock.calls[1][1].signal);
+    expect(toAnalyzeRequest(request).include_network_output).toBeUndefined();
+  });
+
+  it('does not retry ordinary validation or inference failures', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({error: {
+      code: 'invalid_request', message: 'invalid state', details: [
+        {type: 'extra_forbidden', location: ['body', 'include_network_output']},
+        {type: 'value_error', location: ['body', 'stones']},
+      ],
+    }}), {status: 422}));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(requestServerAiDecision(request, {includeNetworkOutput: true})).rejects.toThrow('invalid state');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains caller cancellation across the compatibility retry', async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async (_url: unknown, init: RequestInit) => {
+      if (fetchMock.mock.calls.length === 1) return new Response(JSON.stringify({error: {
+        code: 'invalid_request', details: [{type: 'extra_forbidden', location: ['body', 'include_network_output']}],
+      }}), {status: 422});
+      controller.abort();
+      expect(init.signal?.aborted).toBe(true);
+      throw new DOMException('aborted', 'AbortError');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(requestServerAiDecision(request, {includeNetworkOutput: true, signal: controller.signal})).rejects.toMatchObject({code: 'cancelled'});
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('bounds diagnostic responses before parsing JSON', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('x'.repeat(1024 * 1024 + 1))));
+    await expect(requestServerAiDecision(request, {includeNetworkOutput: true})).rejects.toThrow(/size limit/);
+  });
+
+  it('shares the original timeout across an older-service compatibility retry', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const started: number[] = [];
+    const fetchMock = vi.fn(async (_url: unknown, init: RequestInit) => {
+      started.push(Date.now());
+      if (started.length === 1) {
+        await new Promise(resolve => setTimeout(resolve, 7));
+        return new Response(JSON.stringify({error: {code: 'invalid_request', details: [
+          {type: 'extra_forbidden', location: ['body', 'include_network_output']},
+        ]}}), {status: 422});
+      }
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), {once: true});
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const expected = expect(requestServerAiDecision(request, {includeNetworkOutput: true, timeoutMs: 10})).rejects.toMatchObject({code: 'timeout'});
+    await vi.advanceTimersByTimeAsync(10);
+    await expected;
+    expect(started).toEqual([0, 7]);
+    expect(Date.now()).toBe(10);
+  });
+
 });

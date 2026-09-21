@@ -16,6 +16,7 @@ import {
   DELTREL_RULES_SCHEMA_ID,
   DELTREL_RULES_VERSION,
 } from '../rules';
+import { DELTREL_NOTATION_CONTRACT } from '../notation';
 
 const EXPECTED_RULES_HASH = 'fnv1a64:46e4fbcff4e17fd3';
 
@@ -70,7 +71,7 @@ describe('versioned rules contract', () => {
 
 describe('v3 conformance export', () => {
   it('preserves the established numeric gameplay and topology fingerprint', () => {
-    const presentationFields = new Set(['label', 'labels', 'rules', 'schemas', 'schema']);
+    const presentationFields = new Set(['label', 'labels', 'notation', 'rules', 'schemas', 'schema']);
     const numericSemantics = (value: unknown): unknown => {
       if (Array.isArray(value)) return value.map(numericSemantics);
       if (value !== null && typeof value === 'object') {
@@ -99,6 +100,7 @@ describe('v3 conformance export', () => {
   it('exports exact topology and D5 maps only for supported rings', () => {
     const conformance = createDeltrelConformance();
     expect(conformance.schema).toBe(DELTREL_CONFORMANCE_SCHEMA_ID);
+    expect(conformance.notation).toEqual(DELTREL_NOTATION_CONTRACT);
     expect(conformance.schemas).toEqual({
       rules: DELTREL_RULES_SCHEMA_ID,
       conformance: DELTREL_CONFORMANCE_SCHEMA_ID,

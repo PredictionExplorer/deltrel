@@ -38,6 +38,33 @@ AUXILIARY_PREFIXES = tuple(
 )
 
 
+def auxiliary_heads_ready(config: ModelConfig, metadata: Mapping[str, Any]) -> bool:
+    """Require observed supervision for every newly added prediction head."""
+    if not config.auxiliary_predictions:
+        return False
+    step = metadata.get("step")
+    if type(step) is not int or step <= 0:
+        return False
+    extra = metadata.get("extra", {})
+    if not isinstance(extra, Mapping):
+        return False
+    if "auxiliary_upgrade" not in extra:
+        return True
+    upgrade = extra["auxiliary_upgrade"]
+    supervision = extra.get("auxiliary_supervision")
+    if not isinstance(upgrade, Mapping) or not isinstance(supervision, Mapping):
+        return False
+    source_step = upgrade.get("source_step")
+    if type(source_step) is not int or not 0 <= source_step < step:
+        return False
+    # Old replay can teach final counts before any new future-move labels are
+    # sampled. Advancing the learner alone does not establish head readiness.
+    return all(
+        type(supervision.get(name)) is int and source_step < supervision[name] <= step
+        for name in AUXILIARY_LOSSES
+    )
+
+
 def is_auxiliary_parameter(name: str) -> bool:
     return name.startswith(AUXILIARY_PREFIXES)
 

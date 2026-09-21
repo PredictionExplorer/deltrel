@@ -95,7 +95,7 @@ export function GameStatus({
           ? {
               icon: PauseCircle,
               title: 'AI turn paused',
-              detail: 'History navigation paused automatic play.',
+              detail: 'Automatic play is paused.',
             }
           : state === 'error'
             ? {

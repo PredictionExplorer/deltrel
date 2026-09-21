@@ -21,5 +21,5 @@ test('allows unrelated programming terms and ordinary English', () => {
 test('detects retired coordinates and symbols without rejecting new coordinates', () => {
   assert.ok(inspectBrand('board.ts', "'" + '*' + "10'").length);
   assert.ok(inspectBrand('board.ts', String.fromCharCode(0x2605)).length);
-  assert.deepEqual(inspectBrand('board.ts', "['A', 'Z', 'AA', 'JO']"), []);
+  assert.deepEqual(inspectBrand('board.ts', "['A1', 'A10', 'S15', 'T4', 'R12', 'Y15']"), []);
 });

@@ -1,17 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
   getBoard,
-  parseLabel,
   SUPPORTED_RINGS,
   type Board,
 } from '../board';
 import { EMPTY, scorePosition, validateTerminalWinner } from '../scoring';
 import { referenceScore } from './reference';
 
-function position(board: Board, blue: string[], red: string[]): Int8Array {
+// Mechanical fixtures use stable node IDs, independently of display notation.
+function position(
+  board: Board,
+  blue: readonly number[],
+  red: readonly number[],
+): Int8Array {
   const stones = new Int8Array(board.n).fill(EMPTY);
-  for (const label of blue) stones[parseLabel(board, label)] = 0;
-  for (const label of red) stones[parseLabel(board, label)] = 1;
+  for (const node of blue) stones[node] = 0;
+  for (const node of red) stones[node] = 1;
   return stones;
 }
 
@@ -30,25 +34,25 @@ describe('scorePosition: hand-built fixtures', () => {
     const b = getBoard(4);
     const stones = position(
       b,
-      // Blue: S arm + A arm joined through the central bridge = ONE network.
-      ['B', 'H', 'S', 'AI', 'D', 'L', 'Y', 'AQ', 'AR'],
-      // Red: * arm + T arm joined through the bridge (one network), a separate
-      // two-shore network AV-AW (kept clear of AE, which is ring-adjacent to
-      // AX), and a dead lone stone on shore AK.
-      ['A', 'F', 'P', 'AE', 'AF', 'C', 'J', 'V', 'AM', 'AV', 'AW', 'AK'],
+      // Blue: sector 1 + sector 3 joined through the central bridge = ONE network.
+      [1, 7, 18, 34, 3, 11, 24, 42, 43],
+      // Red: sectors 0 and 2 joined through the bridge (one network), a separate
+      // two-shore network 47-48 (kept clear of 30, which is ring-adjacent to
+      // 49), and a dead lone stone on shore 36.
+      [0, 5, 15, 30, 31, 2, 9, 21, 38, 47, 48, 36],
     );
     const r = scorePosition(b, stones);
     expect(r.players[0]).toEqual({
-      shores: 3, // AI, AQ, AR
-      capes: 2, // AI, AQ
+      shores: 3, // 34, 42, 43
+      capes: 2, // 34, 42
       networks: 1,
       capeBonus: 0,
       award: 2, // 2 x (2 - 1)
       total: 5,
     });
     expect(r.players[1]).toEqual({
-      shores: 5, // AE, AF, AM, AV, AW
-      capes: 2, // AE, AM
+      shores: 5, // 30, 31, 38, 47, 48
+      capes: 2, // 30, 38
       networks: 2,
       capeBonus: 0,
       award: -2,
@@ -56,38 +60,38 @@ describe('scorePosition: hand-built fixtures', () => {
     });
     expect(r.contestedShores).toBe(12);
     expect(r.leader).toBe(0);
-    // The lone red stone on AK is dead and its region touches both colors.
-    expect(r.aliveStone[parseLabel(b, 'AK')]).toBe(0);
-    expect(r.nodeOwner[parseLabel(b, 'AK')]).toBe(-1);
+    // The lone red stone on 36 is dead and its region touches both colors.
+    expect(r.aliveStone[36]).toBe(0);
+    expect(r.nodeOwner[36]).toBe(-1);
   });
 
   it('gives an enclosed dead stone’s shore to the surrounding network (B)', () => {
     const b = getBoard(4);
-    // Red walls off the corner shore AH completely: AG (ring cycle), AI
-    // (cycle wrap), R (diagonal), S (corner cross). A lone blue stone on
-    // AH is dead; its shore is claimed by the surrounding red network.
-    const stones = position(b, ['AH', 'AO', 'AP'], ['AG', 'R', 'S', 'AI']);
+    // Red walls off the corner shore 33 completely: 32 (ring cycle), 34
+    // (cycle wrap), 17 (diagonal), 18 (corner cross). A lone blue stone on
+    // 33 is dead; its shore is claimed by the surrounding red network.
+    const stones = position(b, [33, 40, 41], [32, 17, 18, 34]);
     const r = scorePosition(b, stones);
     expect(r.players[1]).toEqual({
-      shores: 3, // AG, AI occupied + AH enclosed
-      capes: 1, // AI
+      shores: 3, // 32, 34 occupied + 33 enclosed
+      capes: 1, // 34
       networks: 1,
       capeBonus: 0,
       award: 0,
       total: 3,
     });
     expect(r.players[0]).toEqual({
-      shores: 2, // AO, AP
+      shores: 2, // 40, 41
       capes: 0,
       networks: 1,
       capeBonus: 0,
       award: 0,
       total: 2,
     });
-    const dead = parseLabel(b, 'AH');
+    const dead = 33;
     expect(r.aliveStone[dead]).toBe(0);
     expect(r.nodeOwner[dead]).toBe(1);
-    // Same position with AH empty instead: red still owns the shore.
+    // Same position with 33 empty instead: red still owns the shore.
     stones[dead] = EMPTY;
     const r2 = scorePosition(b, stones);
     expect(r2.players[1].shores).toBe(3);
@@ -98,15 +102,15 @@ describe('scorePosition: hand-built fixtures', () => {
     const b = getBoard(4);
     const stones = position(
       b,
-      // Blue: one six-shore network spanning the A and R sectors.
-      ['AQ', 'AR', 'AS', 'AT', 'AU', 'AV'],
+      // Blue: one six-shore network spanning sectors 3 and 4.
+      [42, 43, 44, 45, 46, 47],
       // Red: three separate two-stone corner networks.
-      ['AE', 'AF', 'AI', 'AJ', 'AM', 'AN'],
+      [30, 31, 34, 35, 38, 39],
     );
     const r = scorePosition(b, stones);
     expect(r.players[0]).toEqual({
       shores: 6,
-      capes: 2, // AQ, AU
+      capes: 2, // 42, 46
       networks: 1,
       capeBonus: 0,
       award: 4,
@@ -114,7 +118,7 @@ describe('scorePosition: hand-built fixtures', () => {
     });
     expect(r.players[1]).toEqual({
       shores: 6,
-      capes: 3, // AE, AI, AM
+      capes: 3, // 30, 34, 38
       networks: 3,
       capeBonus: 1,
       award: -4,
@@ -125,7 +129,7 @@ describe('scorePosition: hand-built fixtures', () => {
 
   it('breaks ties by cape count (D)', () => {
     const b = getBoard(4);
-    const r = scorePosition(b, position(b, ['AE', 'AF'], ['AJ', 'AK']));
+    const r = scorePosition(b, position(b, [30, 31], [35, 36]));
     expect(r.players[0].total).toBe(2);
     expect(r.players[1].total).toBe(2);
     expect(r.players[0].capes).toBe(1);
@@ -139,8 +143,8 @@ describe('scorePosition: hand-built fixtures', () => {
       b,
       position(
         b,
-        ['A', 'F', 'P', 'AE', 'D', 'L', 'Y', 'AQ'], // non-adjacent arms
-        ['B', 'H', 'S', 'AI', 'C', 'J', 'V', 'AM'],
+        [0, 5, 15, 30, 3, 11, 24, 42], // non-adjacent arms
+        [1, 7, 18, 34, 2, 9, 21, 38],
       ),
     );
     // Each pair of arms is one network thanks to the K5 bridge.

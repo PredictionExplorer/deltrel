@@ -71,6 +71,7 @@ export interface AppState {
   rematch: () => void;
   toSetup: () => void;
   resumeAi: () => void;
+  pauseAi: () => void;
   setPlayerController: (player: 0 | 1, controller: ControllerType) => void;
   setAiSearchBudget: (runtime: AiRuntime, budget: DeltrelAiSearchBudget) => void;
   setReviewing: (reviewing: boolean) => void;
@@ -102,7 +103,7 @@ export const DEFAULT_CONFIG: GameConfig = {
 export const DEFAULT_CONTROLLERS: PlayerControllers = [...HUMAN_CONTROLLERS];
 export const DEFAULT_AI_SEARCH_SETTINGS: AiSearchSettings = {
   server: { simulations: 512, maxConsidered: 16 },
-  local: { simulations: 64, maxConsidered: 16 },
+  local: { simulations: 8, maxConsidered: 4 },
 };
 export const APP_STORE_VERSION = 6;
 
@@ -527,6 +528,7 @@ export const useAppStore = create<AppState>()(
           clinchAcknowledgement: null,
         }),
       resumeAi: () => set({ aiPaused: false }),
+      pauseAi: () => set({ aiPaused: true }),
       setPlayerController: (player, controller) =>
         set((state) => {
           if ((player !== 0 && player !== 1) || !isControllerType(controller)) return state;

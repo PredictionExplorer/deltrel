@@ -1,7 +1,8 @@
 """Bounded CPU-producer / single-owner neural inference batching.
 
-Independent game cohorts submit owned host snapshots. Only the worker invokes
-models or their caches; identities and board sizes never mix in a neural batch.
+Independent game cohorts submit owned host snapshots. Neural work is serialized
+by a shared device lock; identities and board sizes never mix in a neural batch.
+Optional root diagnostics use that same lock.
 """
 
 from __future__ import annotations
@@ -12,6 +13,9 @@ from dataclasses import asdict, dataclass, replace
 import threading
 import time
 import weakref
+
+from torch import Tensor
+from .features import DoubleDeltrelPosition
 
 from .inference import (
     DetailedInferenceResponse,
@@ -451,3 +455,12 @@ class CohortInferenceAdapter:
         if not isinstance(result, DetailedInferenceResponse):
             raise RuntimeError("missing detailed inference response")
         return result
+
+    def evaluate_network_output(
+        self, position: DoubleDeltrelPosition
+    ) -> dict[str, Tensor | None]:
+        """Serialize an optional root inspection with the broker's GPU work."""
+        if self.base.namespace != self._namespace:
+            raise RuntimeError("cohort model identity changed before root inspection")
+        with self.broker.device_lock:
+            return self.base.evaluate_network_output(position)

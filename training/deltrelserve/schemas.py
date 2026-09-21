@@ -114,6 +114,8 @@ class AnalyzeRequest(BaseModel):
     search: SearchBudget
     # Additive opt-in keeps strict schema-v3 clients' existing response shape.
     include_predictions: bool = False
+    # Complete root head diagnostics are opt-in and never streamed for leaves.
+    include_network_output: bool = False
 
     @model_validator(mode="after")
     def validate_semantic_state(self) -> "AnalyzeRequest":
@@ -288,6 +290,124 @@ class AuxiliaryPredictions(BaseModel):
         return self
 
 
+class NetworkHead(BaseModel):
+    """Flattened row-major model head; null logits represent structural masks."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    shape: Annotated[
+        list[Annotated[int, Field(strict=True, ge=1, le=303)]],
+        Field(min_length=1, max_length=2),
+    ]
+    activation: Literal["softmax", "sigmoid"]
+    logits: Annotated[
+        list[Annotated[float, Field(allow_inf_nan=False)] | None],
+        Field(min_length=1, max_length=825),
+    ]
+    probabilities: Annotated[list[Probability], Field(min_length=1, max_length=825)]
+    mask: Annotated[list[bool], Field(min_length=1, max_length=825)]
+    applicable: bool
+
+    @model_validator(mode="after")
+    def validate_values(self) -> "NetworkHead":
+        size = math.prod(self.shape)
+        if not len(self.logits) == len(self.probabilities) == len(self.mask) == size:
+            raise ValueError("network head dimensions do not match its values")
+        for logit, probability, active in zip(
+            self.logits, self.probabilities, self.mask, strict=True
+        ):
+            if (active and logit is None) or (
+                not active and (logit is not None or probability != 0)
+            ):
+                raise ValueError("network head masks and values disagree")
+        if self.activation == "softmax":
+            width = self.shape[-1]
+            for start in range(0, size, width):
+                row = self.probabilities[start : start + width]
+                if not math.isclose(math.fsum(row), 1, abs_tol=1e-6):
+                    raise ValueError("network head probabilities are not normalized")
+                logits = self.logits[start : start + width]
+                active_logits = [x for x in logits if x is not None]
+                maximum = max(active_logits)
+                denominator = math.fsum(math.exp(x - maximum) for x in active_logits)
+                for logit, probability in zip(logits, row, strict=True):
+                    expected = (
+                        0.0
+                        if logit is None
+                        else math.exp(logit - maximum) / denominator
+                    )
+                    if not math.isclose(probability, expected, abs_tol=1e-6):
+                        raise ValueError(
+                            "network head activation disagrees with logits"
+                        )
+        else:
+            for logit, probability in zip(self.logits, self.probabilities, strict=True):
+                if logit is None:
+                    raise ValueError("alive logits cannot be masked")
+                # Stable sigmoid avoids overflow on valid extreme logits.
+                expected = (
+                    1 / (1 + math.exp(-logit))
+                    if logit >= 0
+                    else math.exp(logit) / (1 + math.exp(logit))
+                )
+                if not math.isclose(probability, expected, abs_tol=1e-6):
+                    raise ValueError("alive activation disagrees with logits")
+        return self
+
+
+class NetworkHeads(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    policy: NetworkHead
+    outcome: NetworkHead
+    score_margin: NetworkHead
+    ownership: NetworkHead
+    alive: NetworkHead
+    soft_policy: NetworkHead
+    opponent_reply: NetworkHead | None
+    second_stone: NetworkHead | None
+    final_shores: NetworkHead | None
+    final_networks: NetworkHead | None
+    final_capes: NetworkHead | None
+
+
+class NetworkOutput(BaseModel):
+    """Complete root outputs, all player-relative rows current then opponent."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    schema_version: Literal[1]
+    perspective: StrictPlayer
+    node_count: Literal[50, 105, 180, 275]
+    auxiliary_status: Literal["ready", "untrained", "absent"]
+    heads: NetworkHeads
+
+    @model_validator(mode="after")
+    def validate_head_contract(self) -> "NetworkOutput":
+        shapes = {
+            "policy": [self.node_count],
+            "outcome": [2],
+            "score_margin": [303],
+            "ownership": [self.node_count, 3],
+            "alive": [self.node_count],
+            "soft_policy": [self.node_count],
+            "opponent_reply": [self.node_count + 1],
+            "second_stone": [self.node_count],
+            "final_shores": [2, 51],
+            "final_networks": [2, 26],
+            "final_capes": [2, 6],
+        }
+        for index, (name, shape) in enumerate(shapes.items()):
+            head = getattr(self.heads, name)
+            absent = index >= 6 and self.auxiliary_status == "absent"
+            if absent:
+                if head is not None:
+                    raise ValueError("absent auxiliary head cannot have values")
+                continue
+            if head is None or head.shape != shape:
+                raise ValueError("network head has an incompatible shape")
+            if head.activation != ("sigmoid" if name == "alive" else "softmax"):
+                raise ValueError("network head activation is incompatible")
+        return self
+
+
 class AnalyzeResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -314,6 +434,7 @@ class AnalyzeResponse(BaseModel):
     model_step: NonnegativeInt
     timing_ms: Timing
     predictions: AuxiliaryPredictions | None = None
+    network_output: NetworkOutput | None = None
 
     @model_validator(mode="after")
     def validate_response_shapes(self) -> "AnalyzeResponse":

@@ -12,6 +12,7 @@ import {
   type DeltrelAiSearchBudget,
 } from './decision';
 import { DeltrelAiError, asDeltrelAiError, type DeltrelAiErrorCode } from './errors';
+import type { LocalAiProgress, LocalAiReadyInfo } from './local-ai-status';
 import {
   MAX_BROWSER_AI_MAX_CONSIDERED,
   MAX_BROWSER_AI_SIMULATIONS,
@@ -34,12 +35,15 @@ export type DeltrelAiWorkerCommand =
       request: DeltrelAiRequest;
       search: DeltrelAiSearchBudget | null;
     }
+  | { type: 'prepare'; taskId: string }
   | { type: 'cancel'; taskId: string };
 
 export const DELTREL_AI_WORKER_PROTOCOL_VERSION = 3 as const;
 
 export type DeltrelAiWorkerEvent =
   | { type: 'ready'; protocolVersion: typeof DELTREL_AI_WORKER_PROTOCOL_VERSION }
+  | { type: 'progress'; taskId: string; progress: LocalAiProgress }
+  | { type: 'prepared'; taskId: string; info: LocalAiReadyInfo }
   | { type: 'result'; taskId: string; decision: DeltrelAiDecision }
   | {
       type: 'error';
@@ -263,6 +267,9 @@ export function parseWorkerCommand(value: unknown): DeltrelAiWorkerCommand {
     }
     return { type: 'cancel', taskId: value.taskId };
   }
+  if (value.type === 'prepare' && hasExactKeys(value, ['type', 'taskId'])) {
+    return { type: 'prepare', taskId: value.taskId };
+  }
   if (value.type === 'choose') {
     if (!hasExactKeys(value, ['type', 'taskId', 'request', 'search'])) {
       throw new DeltrelAiError('protocol', 'Worker choose command is invalid.');
@@ -294,6 +301,24 @@ export function parseWorkerEvent(value: unknown): DeltrelAiWorkerEvent {
   }
   if (!isTaskId(value.taskId)) {
     throw new DeltrelAiError('protocol', 'Local AI worker returned an invalid message.');
+  }
+  if (value.type === 'progress' && hasExactKeys(value, ['type', 'taskId', 'progress'])) {
+    const p = value.progress;
+    if (isRecord(p) && hasExactKeys(p, ['phase', 'loadedBytes', 'totalBytes', 'modelVersion', 'cached']) &&
+        ['checking', 'downloading', 'verifying', 'initializing'].includes(String(p.phase)) &&
+        typeof p.loadedBytes === 'number' && Number.isSafeInteger(p.loadedBytes) && p.loadedBytes >= 0 &&
+        (p.totalBytes === null || (typeof p.totalBytes === 'number' && Number.isSafeInteger(p.totalBytes) && p.totalBytes > 0 && p.loadedBytes <= p.totalBytes)) &&
+        (p.modelVersion === null || isTaskId(p.modelVersion)) && typeof p.cached === 'boolean') {
+      return { type: 'progress', taskId: value.taskId, progress: p as unknown as LocalAiProgress };
+    }
+  }
+  if (value.type === 'prepared' && hasExactKeys(value, ['type', 'taskId', 'info'])) {
+    const info = value.info;
+    if (isRecord(info) && hasExactKeys(info, ['modelVersion', 'bytes', 'backend', 'cached']) &&
+        isTaskId(info.modelVersion) && typeof info.bytes === 'number' && Number.isSafeInteger(info.bytes) && info.bytes > 0 &&
+        (info.backend === 'webgpu' || info.backend === 'wasm') && typeof info.cached === 'boolean') {
+      return { type: 'prepared', taskId: value.taskId, info: info as unknown as LocalAiReadyInfo };
+    }
   }
   if (value.type === 'result') {
     if (!hasExactKeys(value, ['type', 'taskId', 'decision'])) {

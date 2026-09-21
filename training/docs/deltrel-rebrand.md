@@ -1,8 +1,11 @@
 # Deltrel identity and model migration
 
 Deltrel retains every node id, edge, turn rule, scoring calculation, symmetry,
-feature position, action slot, and numeric feature value. Coordinates are now
-sequential letters in node-id order: A through Z, then AA, AB, and onward to JO.
+feature position, action slot, and numeric feature value. Display coordinates use an independent spatial notation contract: letters run
+left to right and numbers bottom to top, with the full board spanning A–Y and
+ranks 1–24. The rules-v3 canonical bytes retain their historical label clause
+only for compatibility; it is not the current display notation. Label updates
+do not require model migration or restarting a serving champion.
 Shoreline nodes, capes, and established waterway networks replace the earlier
 terminology. The checked-in cross-language vectors preserve all numeric gameplay
 values, including every full-game state, score, and graph adjacency.
@@ -74,8 +77,8 @@ From the repository root, start the migrated service with:
 training/.venv/bin/deltrelserve --config "$HOME/.local/share/deltrel/champion-478534-identity-v1/deltrelserve-mac.yaml"
 ```
 
-This serves the trained champion on MPS at `http://127.0.0.1:8081`. Configure
-`.env.local` with `DELTREL_AI_SERVER_URL=http://127.0.0.1:8081` and restart the web
+This serves the trained champion on MPS at `http://127.0.0.1:8082`. Configure
+`.env.local` with `DELTREL_AI_SERVER_URL=http://127.0.0.1:8082` and restart the web
 server so it reads that setting. The same-origin `/v2/health` route must report
 `ready: true`, rules fingerprint `fnv1a64:46e4fbcff4e17fd3`, and feature fingerprint
 `058eb071d77948a7`. A command started in a terminal needs to be started again after
@@ -83,7 +86,7 @@ the machine restarts; this repository does not install a login service implicitl
 
 The current local instance runs as a detached process. Its PID is recorded in
 `~/.local/share/deltrel/champion-478534-identity-v1/deltrelserve.pid`, and its log is
-`~/.local/share/deltrel/champion-478534-identity-v1/logs/deltrelserve.log`. To stop
+`~/.local/share/deltrel/champion-478534-identity-v1/logs/deltrelserve-network-output-8082.log`. To stop
 that instance safely, read the PID file, confirm `ps -p <PID> -o pid=,args=` names
 this snapshot's `deltrelserve-mac.yaml`, then send `kill -TERM <PID>` to that exact
 process. The previous service on port 8080 and its original snapshot were retained

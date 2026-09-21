@@ -1,8 +1,8 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'vitest-axe';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getBoard, parseLabel } from '@/lib/deltrel/board';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getBoard, SUPPORTED_RINGS } from '@/lib/deltrel/board';
 import { scoreCompletionBounds } from '@/lib/deltrel/completion-bounds';
 import { EMPTY, scorePosition } from '@/lib/deltrel/scoring';
 import { DeltrelBoard } from '../DeltrelBoard';
@@ -14,7 +14,14 @@ function emptyBoard(): Int8Array {
   return new Int8Array(board.n).fill(EMPTY);
 }
 
-afterEach(cleanup);
+function nodeButton(node: number) {
+  return screen.getByRole('button', { name: new RegExp(`^Node ${board.labels[node]},`) });
+}
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('DeltrelBoard', () => {
   it('uses one tab stop and spatial arrow-key navigation', async () => {
@@ -31,9 +38,8 @@ describe('DeltrelBoard', () => {
     );
 
     const nodes = screen.getAllByRole('button');
-    const initialNode = screen.getByRole('button', {
-      name: /node a, empty interior node; ada may place here/i,
-    });
+    const initialNode = nodeButton(0);
+    expect(initialNode).toHaveAccessibleName(`Node ${board.labels[0]}, empty interior node; Ada may place here`);
 
     expect(nodes).toHaveLength(board.n);
     expect(nodes.filter((node) => node.tabIndex === 0)).toEqual([initialNode]);
@@ -73,7 +79,7 @@ describe('DeltrelBoard', () => {
       />,
     );
 
-    const firstNode = screen.getByRole('button', { name: /node a, empty/i });
+    const firstNode = nodeButton(0);
     fireEvent.mouseEnter(firstNode);
     expect(onHover).toHaveBeenLastCalledWith(0);
 
@@ -124,9 +130,8 @@ describe('DeltrelBoard', () => {
       />,
     );
 
-    const occupiedNode = screen.getByRole('button', {
-      name: /node a, ada stone on interior node, last move/i,
-    });
+    const occupiedNode = nodeButton(0);
+    expect(occupiedNode).toHaveAccessibleName(/Ada stone on interior node, last move/);
     expect(occupiedNode).toHaveAttribute('aria-disabled', 'true');
 
     occupiedNode.focus();
@@ -158,8 +163,8 @@ describe('DeltrelBoard', () => {
 
   it('draws same-color connections and highlights a whole group', () => {
     const stones = emptyBoard();
-    const first = parseLabel(board, 'AE');
-    const second = parseLabel(board, 'AF');
+    const first = board.idx(0, 4, 0);
+    const second = board.idx(0, 4, 1);
     stones[first] = 0;
     stones[second] = 0;
     const score = scorePosition(board, stones);
@@ -184,7 +189,7 @@ describe('DeltrelBoard', () => {
     expect(networkPath?.getAttribute('d')).toContain('M');
 
     fireEvent.mouseEnter(
-      screen.getByRole('button', { name: /node ae, ada stone/i }),
+      nodeButton(first),
     );
     expect(
       container
@@ -196,10 +201,10 @@ describe('DeltrelBoard', () => {
 
   it('does not cross out rescuable stones in projected opponent territory', () => {
     const stones = emptyBoard();
-    const amber = [parseLabel(board, 'B'), parseLabel(board, 'E')];
+    const amber = [board.idx(1, 1, 0), board.idx(4, 1, 0)];
     for (const node of amber) stones[node] = 0;
-    stones[parseLabel(board, 'AE')] = 1;
-    stones[parseLabel(board, 'AF')] = 1;
+    stones[board.idx(0, 4, 0)] = 1;
+    stones[board.idx(0, 4, 1)] = 1;
     const score = scorePosition(board, stones);
     const bounds = scoreCompletionBounds(board, stones);
     const { container, rerender } = render(
@@ -249,15 +254,15 @@ describe('DeltrelBoard', () => {
 
   it('marks a provably dead stone without influence enabled', () => {
     const stones = emptyBoard();
-    for (const label of ['AH', 'AO', 'AP']) {
-      stones[parseLabel(board, label)] = 0;
+    for (const node of [board.idx(0, 4, 3), board.idx(2, 4, 2), board.idx(2, 4, 3)]) {
+      stones[node] = 0;
     }
-    for (const label of ['AG', 'R', 'S', 'AI']) {
-      stones[parseLabel(board, label)] = 1;
+    for (const node of [board.idx(0, 4, 2), board.idx(0, 3, 2), board.idx(1, 3, 0), board.idx(1, 4, 0)]) {
+      stones[node] = 1;
     }
     const score = scorePosition(board, stones);
     const bounds = scoreCompletionBounds(board, stones);
-    const captured = parseLabel(board, 'AH');
+    const captured = board.idx(0, 4, 3);
     const { container } = render(
       <DeltrelBoard
         board={board}
@@ -276,16 +281,14 @@ describe('DeltrelBoard', () => {
       container.querySelector(`[data-provably-dead-stone="${captured}"]`),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', {
-        name: /node ah, ada stone on shore, provably dead; cannot form a living network in any completion/i,
-      }),
-    ).toBeInTheDocument();
+      nodeButton(captured),
+    ).toHaveAccessibleName(/Ada stone on shore, provably dead; cannot form a living network in any completion/);
   });
 
   it('crosses every stone in a supplied provably dead group', () => {
     const stones = emptyBoard();
-    const first = parseLabel(board, 'H');
-    const second = parseLabel(board, 'S');
+    const first = board.idx(1, 2, 0);
+    const second = board.idx(1, 3, 0);
     stones[first] = 0;
     stones[second] = 0;
     const dead = new Uint8Array(board.n);
@@ -381,15 +384,11 @@ describe('DeltrelBoard', () => {
     ).toHaveTextContent('1');
 
     expect(
-      screen.getByRole('button', {
-        name: /node b, grace stone on interior node, placed last turn \(stone 1 of 2\)/i,
-      }),
-    ).toBeInTheDocument();
+      nodeButton(1),
+    ).toHaveAccessibleName(/Grace stone on interior node, placed last turn \(stone 1 of 2\)/);
     expect(
-      screen.getByRole('button', {
-        name: /node d, ada stone on interior node, last move, placed this turn \(stone 1 of 2\)/i,
-      }),
-    ).toBeInTheDocument();
+      nodeButton(3),
+    ).toHaveAccessibleName(/Ada stone on interior node, last move, placed this turn \(stone 1 of 2\)/);
   });
 
   it('has no detectable accessibility violations', async () => {
@@ -427,7 +426,7 @@ describe('DeltrelBoard', () => {
     }
   });
 
-  it('renders recessed confluence crossings and alphabetic shoreline coordinates', () => {
+  it('renders recessed confluence crossings without persistent coordinate labels or guides', () => {
     const { container } = render(<DeltrelBoard board={board} stones={emptyBoard()} interactive />);
     expect(container.querySelector('polygon')).not.toBeInTheDocument();
     expect(container.querySelectorAll('[data-channel-crossing]')).toHaveLength(5);
@@ -435,10 +434,280 @@ describe('DeltrelBoard', () => {
       expect(crossing.querySelectorAll('path')).toHaveLength(2);
       expect(crossing.querySelector('[data-channel-layer="confluence"]')).toHaveAttribute('d', expect.stringContaining('C'));
     }
-    const coordinates = Array.from(container.querySelectorAll('text'), (label) => label.textContent);
-    expect(coordinates).toHaveLength(board.shoreCount);
-    expect(coordinates.every((label) => /^[A-Z]+$/.test(label ?? ''))).toBe(true);
+    expect(container.querySelector('[data-coordinate-axes], [data-coordinate-axis], [data-coordinate-guides], [data-coordinate-band], [data-coordinate-cell]')).not.toBeInTheDocument();
+    expect(container.querySelector('text')).not.toBeInTheDocument();
     expect(screen.getByRole('group')).toHaveAccessibleDescription(/crossings are not playable junctions/i);
+  });
+
+  it.each(SUPPORTED_RINGS)('shows only the hovered point coordinate on a %i-ring board', (rings) => {
+    const atlas = getBoard(rings);
+    const { container } = render(<DeltrelBoard board={atlas} stones={new Int8Array(atlas.n).fill(EMPTY)} interactive />);
+    const nodes = screen.getAllByRole('button');
+    expect(nodes).toHaveLength(atlas.n);
+    expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+    for (let node = 0; node < atlas.n; node++) {
+      expect(nodes[node]).toHaveAccessibleName(new RegExp(`^Node ${atlas.labels[node]}, empty`));
+      fireEvent.mouseEnter(nodes[node]);
+      expect(container.querySelectorAll('[data-coordinate-tooltip]')).toHaveLength(1);
+      expect(container.querySelector('[data-coordinate-tooltip]')).toHaveAttribute('data-coordinate-tooltip', atlas.labels[node]);
+      expect(container.querySelector('[data-coordinate-tooltip]')).toHaveTextContent(atlas.labels[node]);
+      expect(container.querySelectorAll('text')).toHaveLength(1);
+    }
+    fireEvent.mouseLeave(screen.getByRole('group'));
+    expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+    expect(container.querySelector('text')).not.toBeInTheDocument();
+  });
+
+  it('reveals the focused point coordinate through keyboard navigation and keeps proof boards read-only', async () => {
+    const user = userEvent.setup();
+    const { container, rerender } = render(<DeltrelBoard board={board} stones={emptyBoard()} interactive />);
+    nodeButton(0).focus();
+    await user.keyboard('{End}');
+    const last = board.n - 1;
+    expect(document.activeElement).toBe(nodeButton(last));
+    expect(container.querySelector('[data-coordinate-tooltip]')).toHaveAttribute('data-coordinate-tooltip', board.labels[last]);
+    expect(container.querySelector('[data-coordinate-axes], [data-coordinate-band]')).not.toBeInTheDocument();
+    await user.keyboard('{Home}');
+    expect(container.querySelector('[data-coordinate-tooltip]')).toHaveAttribute('data-coordinate-tooltip', board.labels[0]);
+    await user.keyboard('{Escape}');
+    expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(nodeButton(0));
+    expect(container.querySelector('[data-keyboard-focus]')).toHaveAttribute('data-keyboard-focus', board.labels[0]);
+    await user.keyboard('{ArrowRight}');
+    const focusedCoordinate = document.activeElement?.getAttribute('aria-label')?.match(/^Node ([A-Z]+\d+),/)?.[1];
+    expect(container.querySelector('[data-coordinate-tooltip]')).toHaveAttribute('data-coordinate-tooltip', focusedCoordinate);
+    await user.keyboard('{Home}');
+    fireEvent.blur(nodeButton(0));
+    expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+
+    rerender(<DeltrelBoard board={board} stones={emptyBoard()} interactive syntheticStone={new Uint8Array(board.n)} proofDescription="Hypothetical completion." />);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-coordinate-axes], [data-coordinate-guides]')).not.toBeInTheDocument();
+    expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+  });
+
+  describe('touch coordinate inspection', () => {
+    beforeEach(() => vi.useFakeTimers());
+
+    function touchBoard(stones = emptyBoard()) {
+      const onPlace = vi.fn();
+      const onHover = vi.fn();
+      const rendered = render(<DeltrelBoard board={board} stones={stones} interactive onPlace={onPlace} onHover={onHover} />);
+      const svg = screen.getByRole('group');
+      vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+        x: 0, y: 0, top: 0, left: 0,
+        right: BOARD_VIEWBOX_SIZE, bottom: BOARD_VIEWBOX_SIZE,
+        width: BOARD_VIEWBOX_SIZE, height: BOARD_VIEWBOX_SIZE,
+        toJSON: () => ({}),
+      });
+      return { ...rendered, svg, onPlace, onHover };
+    }
+
+    function point(node: number, pointerType = 'touch') {
+      return {
+        pointerId: 7,
+        pointerType,
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: board.xs[node] * 100 + BOARD_VIEWBOX_HALF,
+        clientY: board.ys[node] * 100 + BOARD_VIEWBOX_HALF,
+      };
+    }
+
+    it('places exactly once on a short tap and cancels its pending inspection timer', () => {
+      const { container, onPlace } = touchBoard();
+      const target = nodeButton(0);
+      const pointer = point(0);
+      fireEvent.pointerDown(target, pointer);
+      // A real touch can focus its target and emit compatibility mouse events.
+      act(() => target.focus());
+      fireEvent.mouseEnter(target);
+      act(() => vi.advanceTimersByTime(349));
+      expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+      fireEvent.pointerUp(target, { ...pointer, buttons: 0 });
+      fireEvent.click(target, { ...pointer, detail: 1 });
+      fireEvent.mouseEnter(target);
+      fireEvent.focus(target);
+      expect(onPlace).toHaveBeenCalledExactlyOnceWith(0);
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+      expect(onPlace).toHaveBeenCalledOnce();
+    });
+
+    it.each(['touch', 'pen'])('shows a coordinate after a %s hold without placing on release', (pointerType) => {
+      const { container, onPlace } = touchBoard();
+      const target = nodeButton(0);
+      const pointer = point(0, pointerType);
+      fireEvent.pointerDown(target, pointer);
+      act(() => vi.advanceTimersByTime(350));
+      expect(container.querySelector('[data-coordinate-tooltip]')).toHaveAttribute('data-coordinate-tooltip', board.labels[0]);
+      expect(container.querySelector('[data-coordinate-tooltip]')).toHaveTextContent(board.labels[0]);
+      expect(onPlace).not.toHaveBeenCalled();
+      fireEvent.pointerUp(target, { ...pointer, buttons: 0 });
+      // Browsers may synthesize a click after releasing a press-and-hold.
+      fireEvent.click(target, { ...pointer, detail: 1 });
+      expect(onPlace).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-coordinate-axis], [data-coordinate-band]')).not.toBeInTheDocument();
+
+      const next = nodeButton(1);
+      const nextPointer = point(1, pointerType);
+      fireEvent.pointerDown(next, nextPointer);
+      act(() => vi.advanceTimersByTime(100));
+      fireEvent.pointerUp(next, { ...nextPointer, buttons: 0 });
+      fireEvent.click(next, { ...nextPointer, detail: 1 });
+      expect(onPlace).toHaveBeenCalledExactlyOnceWith(1);
+    });
+
+    it('cancels a hold when a finger moves to scroll and suppresses any following click', () => {
+      const { container, svg, onPlace } = touchBoard();
+      const target = nodeButton(0);
+      const pointer = point(0);
+      fireEvent.pointerDown(target, pointer);
+      act(() => vi.advanceTimersByTime(100));
+      const moved = { ...pointer, clientY: pointer.clientY + 11 };
+      fireEvent.pointerMove(svg, moved);
+      act(() => vi.advanceTimersByTime(500));
+      expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+      fireEvent.pointerUp(target, { ...moved, buttons: 0 });
+      fireEvent.click(target, { ...moved, detail: 1 });
+      expect(onPlace).not.toHaveBeenCalled();
+    });
+
+    it('does not turn a hold that began on empty coastline into a placement', () => {
+      const { container, svg, onPlace } = touchBoard();
+      const outside = { ...point(0), clientX: 1, clientY: 1 };
+      fireEvent.pointerDown(svg, outside);
+      act(() => vi.advanceTimersByTime(350));
+      expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+      fireEvent.pointerUp(svg, { ...point(0), buttons: 0 });
+      fireEvent.click(nodeButton(0), { ...point(0), detail: 1 });
+      expect(onPlace).not.toHaveBeenCalled();
+    });
+
+    it('accepts a fresh mouse click immediately after touch inspection', () => {
+      const { onPlace } = touchBoard();
+      const target = nodeButton(0);
+      fireEvent.pointerDown(target, point(0));
+      act(() => vi.advanceTimersByTime(350));
+      fireEvent.pointerUp(target, { ...point(0), buttons: 0 });
+      const next = nodeButton(1);
+      fireEvent.pointerDown(next, point(1, 'mouse'));
+      fireEvent.pointerUp(next, { ...point(1, 'mouse'), buttons: 0 });
+      fireEvent.click(next, { ...point(1, 'mouse'), detail: 1 });
+      expect(onPlace).toHaveBeenCalledExactlyOnceWith(1);
+    });
+
+    it.each([100, 350])('clears a cancelled gesture after %ims without a move or delayed tooltip', (elapsed) => {
+      const { container, svg, onPlace } = touchBoard();
+      const target = nodeButton(0);
+      const pointer = point(0);
+      fireEvent.pointerDown(target, pointer);
+      act(() => vi.advanceTimersByTime(elapsed));
+      fireEvent.pointerCancel(svg, pointer);
+      fireEvent.click(target, { ...pointer, detail: 1 });
+      expect(onPlace).not.toHaveBeenCalled();
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+      expect(onPlace).not.toHaveBeenCalled();
+    });
+
+    it('can inspect an occupied point without placing another stone', () => {
+      const stones = emptyBoard();
+      stones[0] = 1;
+      const { container, onPlace } = touchBoard(stones);
+      const target = nodeButton(0);
+      const pointer = point(0);
+      fireEvent.pointerDown(target, pointer);
+      act(() => vi.advanceTimersByTime(350));
+      expect(container.querySelector('[data-coordinate-tooltip]')).toHaveTextContent(board.labels[0]);
+      fireEvent.pointerUp(target, { ...pointer, buttons: 0 });
+      fireEvent.click(target, { ...pointer, detail: 1 });
+      expect(onPlace).not.toHaveBeenCalled();
+    });
+
+    it('clears the pending hold timer when the board unmounts', () => {
+      const { unmount, onPlace, onHover } = touchBoard();
+      fireEvent.pointerDown(nodeButton(0), point(0));
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+      unmount();
+      expect(vi.getTimerCount()).toBe(0);
+      const hoverCalls = onHover.mock.calls.length;
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(onPlace).not.toHaveBeenCalled();
+      expect(onHover).toHaveBeenCalledTimes(hoverCalls);
+    });
+
+    it('does not resurrect a held coordinate after Escape cancels the pending gesture', () => {
+      const { container, onPlace } = touchBoard();
+      const target = nodeButton(0);
+      const pointer = point(0);
+      fireEvent.pointerDown(target, pointer);
+      act(() => vi.advanceTimersByTime(100));
+      fireEvent.keyDown(target, { key: 'Escape' });
+      act(() => vi.advanceTimersByTime(500));
+      expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+      fireEvent.pointerUp(target, { ...pointer, buttons: 0 });
+      fireEvent.click(target, { ...pointer, detail: 1 });
+      expect(onPlace).not.toHaveBeenCalled();
+    });
+
+    it('restores keyboard inspection when tabbing into the board after using touch', async () => {
+      render(<button type="button">Before the board</button>);
+      const { container, onPlace } = touchBoard();
+      const target = nodeButton(0);
+      const pointer = point(0);
+      fireEvent.pointerDown(target, pointer);
+      act(() => vi.advanceTimersByTime(350));
+      fireEvent.pointerUp(target, { ...pointer, buttons: 0 });
+      fireEvent.click(target, { ...pointer, detail: 1 });
+      expect(onPlace).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+
+      // The timed gesture has finished; exercise real keyboard focus traversal.
+      vi.useRealTimers();
+      const user = userEvent.setup();
+      screen.getByRole('button', { name: 'Before the board' }).focus();
+      await user.keyboard('{Tab}');
+      expect(document.activeElement).toBe(target);
+      expect(container.querySelector('[data-coordinate-tooltip]')).toHaveTextContent(board.labels[0]);
+    });
+
+    it.each(['preview', 'proof'])('allows mouse and long-press inspection on a read-only %s without any move', (kind) => {
+      const onPlace = vi.fn();
+      const { container } = render(
+        <DeltrelBoard
+          board={board}
+          stones={emptyBoard()}
+          interactive={kind === 'proof'}
+          syntheticStone={kind === 'proof' ? new Uint8Array(board.n) : undefined}
+          proofDescription={kind === 'proof' ? 'Hypothetical completion.' : undefined}
+          onPlace={onPlace}
+        />,
+      );
+      const svg = screen.getByRole('img');
+      vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+        x: 0, y: 0, top: 0, left: 0,
+        right: BOARD_VIEWBOX_SIZE, bottom: BOARD_VIEWBOX_SIZE,
+        width: BOARD_VIEWBOX_SIZE, height: BOARD_VIEWBOX_SIZE,
+        toJSON: () => ({}),
+      });
+      fireEvent.pointerMove(svg, point(0, 'mouse'));
+      expect(container.querySelector('[data-coordinate-tooltip]')).toHaveTextContent(board.labels[0]);
+      fireEvent.click(svg, { ...point(0, 'mouse'), detail: 1 });
+      expect(onPlace).not.toHaveBeenCalled();
+      fireEvent.mouseLeave(svg);
+      expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
+
+      fireEvent.pointerDown(svg, point(1));
+      act(() => vi.advanceTimersByTime(350));
+      expect(container.querySelector('[data-coordinate-tooltip]')).toHaveTextContent(board.labels[1]);
+      fireEvent.pointerUp(svg, { ...point(1), buttons: 0 });
+      fireEvent.click(svg, { ...point(1), detail: 1 });
+      expect(onPlace).not.toHaveBeenCalled();
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+      expect(container.querySelector('[data-coordinate-axis], [data-coordinate-band]')).not.toBeInTheDocument();
+    });
   });
 
   it('keeps connected-group overlays on the same curved confluence route', () => {
@@ -449,7 +718,7 @@ describe('DeltrelBoard', () => {
     const waterway = container.querySelector('[data-channel-crossing="0-2"] [data-channel-layer="confluence"]');
     const group = container.querySelector('[data-connection-layer="group"][data-player="0"]');
     expect(group?.getAttribute('d')).toBe(waterway?.getAttribute('d'));
-    fireEvent.mouseEnter(screen.getByRole('button', { name: /^Node A, / }));
+    fireEvent.mouseEnter(nodeButton(0));
     expect(container.querySelector('[data-connection-layer="highlight"]')?.getAttribute('d')).toBe(waterway?.getAttribute('d'));
   });
 

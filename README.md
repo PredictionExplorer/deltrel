@@ -12,6 +12,25 @@ connection between the five innermost nodes. Decorative motion honors reduced
 motion preferences and pauses when the page is hidden. All playable positions remain
 keyboard accessible, with screen-reader labels and stable placement targets.
 
+## Coordinates
+
+Letters identify columns from left to right; numbers identify ranks from bottom
+to top. For example, `G4` names the marked point inside column G and rank 4.
+Coordinates appear only when you hover or keyboard-focus a point. On touchscreens,
+press and hold to inspect without playing; a quick tap still places a stone.
+There are no permanent axis labels or grid guides. The curved coast
+leaves some cells empty; only marked points are playable.
+
+| Board | Columns | Ranks |
+| --- | --- | --- |
+| Mini | A–K | 1–10 |
+| Small | A–O | 1–15 |
+| Medium | A–U | 1–19 |
+| Full | A–Y | 1–24 |
+
+Display notation has its own version. Numeric move IDs, saved games, AI models,
+and the rules fingerprint remain unchanged when labels change.
+
 ## Features
 
 - **Both variants**: classic Deltrel (one stone per turn) and Double Deltrel (two stones per
@@ -39,15 +58,38 @@ to the 10-ring board in both modes. Existing game histories retain their origina
 - a PyTorch graph ResTNet with node policy, binary outcome, score, ownership, and
   alive heads;
 - replay, learner, candidate/champion arenas and single-host 4/8-H100 orchestration;
-- a private GPU `deltrelserve` backend and a distilled ONNX + Rust/WASM browser runtime.
+- a private GPU `deltrelserve` backend and an ONNX + Rust/WASM browser runtime.
 
-No trained model is checked in. Server and local AI choices remain unavailable until an
-operator trains a champion or publishes a distilled browser model. This is implemented
-training infrastructure, not a claim of superhuman playing strength. See the
+The site ships a verified browser export of champion step **478,534**, with its
+trained EMA weights and all eleven network outputs. Browser play needs no private
+AI service. This is not a claim of superhuman playing strength. See the
 [training operator guide](training/README.md) and
 [production H100 training runbook](training/docs/production-h100-training-runbook.md), then the
 [target-host benchmark results](training/docs/h100-target-host-benchmark-results.md) and
 [serving/distillation details](training/docs/serving-and-distillation.md).
+
+### Playing in the browser
+
+Choose **Download browser AI** to prepare the current published champion, then
+begin a game. The first preparation downloads the **37.6 MB model**, plus the
+browser runtime. A progress bar shows model bytes received, followed by integrity
+checking and engine initialization. Preparation can be cancelled and retried.
+No application, extension, account, or other installation is needed.
+
+Moves run in a background worker on the player's device. WebGPU is used when
+supported, with a single-threaded WebAssembly CPU fallback. The browser checks
+the latest published manifest when preparing and reuses a complete, SHA-256
+verified cached model when available. Private browsing, storage limits, or browser
+cache eviction can require another download; storage failure does not block play.
+Refreshing a saved game asks the player to prepare the browser AI again, reusing
+the cached model rather than silently downloading it on page load.
+
+The browser default uses eight search simulations to keep the full champion
+responsive. More search costs more time, especially on phones. All board sizes,
+both variants, pie swaps, handicap games, and AI-versus-AI play are supported.
+Rules and learned weights match the published champion; the browser export uses
+FP16 numerical precision. New trained champions must be exported, validated, and
+published using the [model release instructions](training/docs/serving-and-distillation.md).
 
 ### Playing the full champion locally
 
@@ -64,7 +106,35 @@ Set `DELTREL_AI_SERVER_URL=http://127.0.0.1:8080` in `.env.local` and run
 `http://127.0.0.1:3001`, choose the champion opponent, and select one of the two
 variants and three openings. Thinking-time choices use the same full model;
 larger search budgets take longer. The separate browser AI option requires a
-published lightweight model.
+published browser model; the current release includes one.
+
+### Inspecting the engine
+
+The **Engine estimate** panel shows each player's win probability and expected
+final points during human–AI and AI–AI games. Forecasts update after each completed
+search. The panel identifies the analyzed position and keeps the last completed
+forecast visible while the next search runs.
+
+Expand the panel's sections to inspect every search candidate, final-count
+forecasts, and all network outputs: move and soft-move policies, win/loss and
+score-margin distributions, ownership and living-network probabilities at every
+point, future moves, and final shore, network, and cape counts. Tables include
+every entry, with filtering, pagination, masks, and optional raw logits. The full
+analysis is also available as downloadable JSON. Both the server champion and
+the shipped browser champion expose all eleven outputs. Older six-head browser
+exports remain supported and clearly mark unavailable auxiliary outputs.
+
+Use **Pause AI** to stop automatic play and **Analyze position** to inspect a
+position without making a move, including positions selected from move history.
+Use **Resume AI** to continue. The latest 64 analyzed positions are kept in memory
+for the current game and matched to their exact history; an uncached position can
+be analyzed again. Reloading the page restores the game, but not this analysis cache.
+
+Win probabilities come from the outcome distribution. Expected points come from
+the score-margin distribution and the board's fixed final total. The independent
+count-based forecast is shown separately because those predictions can disagree.
+See the [network-output contract](training/docs/network-output.md) for output
+semantics and the optional serving API.
 
 ## Development
 
@@ -80,6 +150,7 @@ npm run typecheck        # strict TypeScript
 npm run build            # production Next.js build
 npm run start            # serve the production build
 npm run build:deltrel-wasm  # optional local-AI Rust/WASM artifacts
+npm run test:browser-assets # verify packaged ONNX runtime deployment assets
 node scripts/export-deltrel-conformance.mjs # regenerate conformance-v3.json
 python training/scripts/export_feature_fixture.py # regenerate features-v4.json
 ```
@@ -91,7 +162,7 @@ and a container smoke. CUDA, NCCL, and soak tests are separate hardware tiers; s
 
 The rules engine lives in `src/lib/deltrel/`:
 
-- `board.ts` — pentagonal mesh generation, sequential letter coordinates (A–Z, AA onward), CSR adjacency, layout
+- `board.ts` — pentagonal mesh generation, spatial letter/number coordinates (letters across, numbers upward), CSR adjacency, layout
 - `scoring.ts` — the scoring engine (see the file header for the exact rule semantics)
 - `game.ts` — turn protocol for both modes, handicap openings, the pie swap, and the
   replayable action log with retained placement history
@@ -108,7 +179,13 @@ vercel         # preview
 vercel --prod  # production
 ```
 
-Human play and published local-AI assets need no private service. Server AI uses
+Human play and browser AI need no private service or Vercel environment variables.
+The trained model and rules/search WASM are checked in. `npm run build` automatically
+copies the matching ONNX runtime files from the locked dependency into public
+assets, so Vercel does not need Python or Rust to build the site. Immutable model
+and runtime files are cached; the current-model manifest is revalidated.
+
+Optional server AI uses
 same-origin Next.js routes at `/v2/move`, `/v2/analyze`, and `/v2/health`; configure
 the deployment with server-only `DELTREL_AI_SERVER_URL` and, when enabled by `deltrelserve`,
 `DELTREL_AI_BEARER_TOKEN`. Never expose the bearer token through a `NEXT_PUBLIC_*`

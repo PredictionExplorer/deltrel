@@ -322,6 +322,7 @@ def create_app(
             "status": "degraded" if degraded else ("ok" if ready else "starting"),
             "service_version": SERVICE_VERSION,
             "api_schema_version": API_SCHEMA_VERSION,
+            "network_output_schema_version": 1,
             "server_config_schema_version": SERVER_CONFIG_SCHEMA_VERSION,
             "model_schema_version": MODEL_SCHEMA_VERSION,
             "device": settings.device,

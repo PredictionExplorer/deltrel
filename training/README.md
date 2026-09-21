@@ -12,10 +12,10 @@ and never use pie. The 85/5/5/5 board allocation is retained. See the
 [pie-even training](docs/pie-even-training.md) for replay exclusions, evaluation,
 and preparing profiles while preserving their measured execution settings.
 
-**No trained model is checked into this repository.** The code and tests establish the
-pipeline contracts; they do not establish strong or superhuman play. `deltrelserve` needs a
-valid `champion.json`, and local browser AI needs a separately distilled and published
-model.
+**A trained browser model is included.** It is a verified FP16 export of EMA champion
+478,534, with all eleven output heads. Visitors download it automatically and play
+locally through WebGPU or WebAssembly. Server inference remains optional and requires
+a valid `champion.json`; browser play needs no Python installation or local service.
 
 For an actual multi-H100 launch, follow the
 [production H100 training runbook](docs/production-h100-training-runbook.md) from
@@ -811,7 +811,44 @@ npm run dev
 See [serving and distillation](docs/serving-and-distillation.md) for the API contract and
 container notes.
 
-## Distill and publish browser AI
+## Export and publish the trained browser champion
+
+The repository includes a direct FP16 export of the trained EMA champion at step
+478,534, with all eleven supervised output heads. It is 37,577,312 bytes and runs
+in browser WebAssembly when WebGPU is unavailable. No desktop installation or
+local Python service is required for players. The browser downloads the model
+from the website, verifies its checksum, and caches it locally.
+
+For a future champion, run these operator commands from the repository root.
+Use a new release directory; source checkpoints and existing releases are never
+overwritten. The source pointer can live in any verified training publication.
+
+```bash
+source_champion="/absolute/path/to/champion.json"
+release_dir="training/runs/browser-new-champion"
+training/.venv/bin/python -m deltreltrain.browser_export \
+  --champion "$source_champion" --output "$release_dir"
+training/.venv/bin/deltreltrain-publish-browser \
+  --manifest "$release_dir/browser.json" \
+  --target public/models/deltrel \
+  --wasm-source public/models/deltrel/wasm-46e4fbcff4e17fd3
+node training/scripts/verify_browser_artifact.mjs
+```
+
+The exporter loads the original EMA weights, emits a single-file FP16 graph,
+removes debug paths, and checks fifty real legal positions against the FP32
+champion across every board size and rule variant. The browser verifier runs
+forty positions in real Chromium with GPU disabled. Direct export performs no
+training or distillation. The public manifest records source checkpoint identity,
+all tensor shapes, observed precision errors, and bounded search defaults (8/4,
+maximum 64/8 for this full-size model). Publication verifies ONNX and checkpoint
+hashes and atomically replaces the canonical manifest last. Only the ONNX and
+manifest are published; the source checkpoint remains in the private release.
+
+The checked-in game WASM is sufficient for ordinary Vercel builds. Developers who
+change native game/search code can rebuild it with `npm run build:deltrel-wasm`.
+
+## Optional smaller-model distillation
 
 Edit `configs/distill-browser.yaml` to point at validated replay and a champion. Choose
 a new `export.model_version` for every release; output artifacts are immutable.
@@ -839,5 +876,5 @@ encoder in `src/lib/deltrel/ai/features.ts` is pinned to the Python encoder thro
 `testdata/deltrel/features-v4.json` (regenerate with
 `python scripts/export_feature_fixture.py`). Publication verifies checkpoint, ONNX and WASM
 integrity, copies the immutable ONNX artifact, and replaces
-`public/models/deltrel/manifest.json` last. The web app reports local AI unavailable until
-that canonical manifest and all referenced artifacts exist.
+`public/models/deltrel/manifest.json` last. The app loads the published release automatically; incomplete or incompatible
+release manifests are rejected.

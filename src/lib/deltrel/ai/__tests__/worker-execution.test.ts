@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import * as ort from 'onnxruntime-web';
 import { buildAiRequest, codeToAction, type DeltrelAiRequest } from '../protocol';
 import { encodeDeltrelFeatures, float16ToFloat32Array, float32ToFloat16Array } from '../features';
+import { validateNetworkOutputState } from '../network-output';
 
 let worker: typeof import('@/workers/deltrel-ai.worker');
 beforeAll(async () => {
@@ -260,5 +261,189 @@ describe('completed browser session ownership', () => {
     await expect(failing.search(request())).rejects.toThrow('model failed');
     expect(failing.runtime.completedSearch).toBeUndefined();
     expect(failing.sessions[0].free).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe('root-only browser network reporting', () => {
+  it.each([4, 6, 8, 10])('exposes all trained heads with board-specific masks on %i rings', async rings => {
+    const f = fixture();
+    const normal = f.run.getMockImplementation()!;
+    const root = buildAiRequest({ ...config, rings }, [{ type: 'place', node: 0 }]);
+    const nodes = root.state.stones.length;
+    f.run.mockImplementationOnce(async feeds => {
+      const outputs = await normal(feeds);
+      const head = (dims: number[]) => ({ dims, data: new Uint16Array(dims.reduce((a, b) => a * b, 1)), dispose: f.outputDisposals });
+      return { ...outputs,
+        opponent_reply_logits: head([1, nodes + 1]), second_stone_logits: head([1, nodes]),
+        final_shores_logits: head([1, 2, 51]), final_networks_logits: head([1, 2, 26]), final_capes_logits: head([1, 2, 6]),
+      };
+    });
+    const output = await worker.captureRootNetworkOutput({ ...f.runtime,
+      manifest: { ...f.runtime.manifest, auxiliaryStatus: 'ready' },
+    } as never, root.state, () => {});
+    expect(output.auxiliaryStatus).toBe('ready');
+    expect(Object.values(output.heads).every(Boolean)).toBe(true);
+    expect(output.heads.secondStone?.applicable).toBe(true);
+    expect(output.heads.opponentReply?.probabilities[0]).toBe(0);
+    expect(output.heads.opponentReply?.mask[nodes]).toBe(true);
+    expect(output.heads.finalShores?.mask.slice(0, 51).filter(Boolean)).toHaveLength(5 * rings + 1);
+    expect(output.heads.finalNetworks?.mask.slice(0, 26).filter(Boolean)).toHaveLength(Math.floor(5 * rings / 2) + 1);
+    expect(() => validateNetworkOutputState(output, root, false)).not.toThrow();
+    expect(f.outputDisposals).toHaveBeenCalledTimes(11);
+  });
+
+  it('reports six decoded FP16 heads, exact root perspective and row-wise activations', async () => {
+    const f = fixture();
+    const root = nextRequest(request(), 0);
+    const normal = f.run.getMockImplementation()!;
+    f.run.mockImplementationOnce(async (feeds) => {
+      const outputs = await normal(feeds);
+      outputs.ownership_logits.data.set(float32ToFloat16Array(new Float32Array([1, 0, -1, 0, 2, 0])));
+      outputs.alive_logits.data.set(float32ToFloat16Array(new Float32Array([-2, 0, 2])));
+      outputs.soft_policy_logits.data.fill(0);
+      outputs.soft_policy_logits.data[2] = float32ToFloat16Array(new Float32Array([3]))[0];
+      outputs.score_margin_logits.data[302] = float32ToFloat16Array(new Float32Array([0.1]))[0];
+      return outputs;
+    });
+    const output = await worker.captureRootNetworkOutput(f.runtime as never, root.state, () => {});
+    expect(output.perspective).toBe(1);
+    expect(output.nodeCount).toBe(50);
+    expect(output.auxiliaryStatus).toBe('absent');
+    expect(Object.keys(output.heads)).toHaveLength(11);
+    expect(output.heads.policy?.shape).toEqual([50]);
+    expect(output.heads.outcome?.shape).toEqual([2]);
+    expect(output.heads.scoreMargin?.shape).toEqual([303]);
+    expect(output.heads.ownership?.shape).toEqual([50, 3]);
+    expect(output.heads.alive?.shape).toEqual([50]);
+    expect(output.heads.softPolicy?.shape).toEqual([50]);
+    for (const name of ['opponentReply', 'secondStone', 'finalShores', 'finalNetworks', 'finalCapes'] as const) {
+      expect(output.heads[name]).toBeNull();
+    }
+    for (const name of ['policy', 'softPolicy'] as const) {
+      const head = output.heads[name]!;
+      expect(head.mask).toEqual(root.state.stones.map(stone => stone === -1));
+      expect(head.logits[0]).toBeNull();
+      expect(head.probabilities[0]).toBe(0);
+      expect(head.probabilities.reduce((sum, p) => sum + p, 0)).toBeCloseTo(1, 12);
+    }
+    expect(output.heads.policy?.logits[1]).toBe(21);
+    expect(output.heads.softPolicy?.logits[2]).toBe(3);
+    expect(output.heads.softPolicy!.probabilities[2]).toBeGreaterThan(output.heads.softPolicy!.probabilities[1]);
+    expect(output.heads.outcome?.logits).toEqual([0, 2]);
+    expect(output.heads.outcome?.probabilities[1]).toBeCloseTo(1 / (1 + Math.exp(-2)), 12);
+    expect(output.heads.scoreMargin?.logits[302]).toBe(0.0999755859375);
+    expect(output.heads.scoreMargin!.probabilities.reduce((sum, p) => sum + p, 0)).toBeCloseTo(1, 12);
+    expect(output.heads.ownership!.probabilities[0]).toBeCloseTo(Math.exp(1) / (Math.exp(1) + 1 + Math.exp(-1)), 12);
+    for (let node = 0; node < 50; node++) {
+      expect(output.heads.ownership!.probabilities.slice(node * 3, node * 3 + 3).reduce((sum, p) => sum + p, 0)).toBeCloseTo(1, 12);
+    }
+    expect(output.heads.alive?.activation).toBe('sigmoid');
+    expect(output.heads.alive?.probabilities.slice(0, 3)).toEqual([
+      1 / (1 + Math.exp(2)), 0.5, 1 / (1 + Math.exp(-2)),
+    ]);
+    expect(() => validateNetworkOutputState(output, root, false)).not.toThrow();
+    expect(f.outputDisposals).toHaveBeenCalledTimes(6);
+    f.tensors.forEach(dispose => expect(dispose).toHaveBeenCalledOnce());
+  });
+
+  it('uses actual board dimensions and preserves perspective after a pie swap', async () => {
+    const f = fixture();
+    const root = buildAiRequest({ ...config, rings: 10, pieRule: true }, [
+      { type: 'place', node: 274 }, { type: 'swap' },
+    ]);
+    const output = await worker.captureRootNetworkOutput(f.runtime as never, root.state, () => {});
+    expect(output.perspective).toBe(0);
+    expect(output.nodeCount).toBe(275);
+    expect(output.heads.ownership?.shape).toEqual([275, 3]);
+    expect(output.heads.policy?.mask[274]).toBe(false);
+    expect(output.heads.policy?.logits[274]).toBeNull();
+    expect(output.heads.alive?.probabilities).toHaveLength(275);
+    expect(() => validateNetworkOutputState(output, root, false)).not.toThrow();
+  });
+
+  it('reports cached roots without adding full vectors to the leaf prediction cache', async () => {
+    const f = fixture();
+    const root = request();
+    const legal = Int32Array.from(root.legalActions);
+    const prediction = await worker.evaluate(f.runtime as never, root.state, legal);
+    const get = vi.spyOn(f.runtime.predictions, 'get');
+    const set = vi.spyOn(f.runtime.predictions, 'set');
+    const report = await worker.captureRootNetworkOutput(f.runtime as never, root.state, () => {});
+    expect(get).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+    expect(f.run).toHaveBeenCalledTimes(2);
+    expect(report.heads.policy?.logits).toHaveLength(50);
+    const cached = await worker.evaluate(f.runtime as never, root.state, legal);
+    expect(f.run).toHaveBeenCalledTimes(2);
+    expect(Object.keys(cached).sort()).toEqual(['expectedMargin', 'logits', 'outcome', 'value']);
+    expect(cached).toEqual(prediction);
+  });
+
+  it('does not allocate or infer when capture was already cancelled', async () => {
+    const f = fixture();
+    await expect(worker.captureRootNetworkOutput(f.runtime as never, request().state, () => {
+      throw new Error('cancelled');
+    })).rejects.toThrow('cancelled');
+    expect(f.run).not.toHaveBeenCalled();
+    expect(f.tensors).toHaveLength(0);
+    expect(f.outputDisposals).not.toHaveBeenCalled();
+  });
+
+  it('releases all root tensors when cancellation arrives during the additional forward', async () => {
+    const f = fixture();
+    const normal = f.run.getMockImplementation()!;
+    let cancelled = false;
+    f.run.mockImplementationOnce(async feeds => {
+      const outputs = await normal(feeds);
+      cancelled = true;
+      return outputs;
+    });
+    await expect(worker.captureRootNetworkOutput(f.runtime as never, request().state, () => {
+      if (cancelled) throw new Error('cancelled');
+    })).rejects.toThrow('cancelled');
+    expect(f.tensors).toHaveLength(8);
+    f.tensors.forEach(dispose => expect(dispose).toHaveBeenCalledOnce());
+    expect(f.outputDisposals).toHaveBeenCalledTimes(6);
+  });
+
+  it.each(['shape', 'length', 'non-finite'] as const)('rejects %s root reports and still releases every tensor', async fault => {
+    const f = fixture();
+    const normal = f.run.getMockImplementation()!;
+    f.run.mockImplementationOnce(async feeds => {
+      const outputs = await normal(feeds);
+      if (fault === 'shape') outputs.ownership_logits.dims = [1, 50, 2];
+      if (fault === 'length') outputs.alive_logits.data = new Uint16Array(49);
+      if (fault === 'non-finite') outputs.soft_policy_logits.data[2] = 0x7e00;
+      return outputs;
+    });
+    await expect(worker.captureRootNetworkOutput(f.runtime as never, request().state, () => {})).rejects.toThrow(
+      fault === 'shape' ? /wrong shape/ : fault === 'length' ? /wrong data length/ : /non-finite/,
+    );
+    expect(f.outputDisposals).toHaveBeenCalledTimes(6);
+    f.tensors.forEach(dispose => expect(dispose).toHaveBeenCalledOnce());
+  });
+
+  it('cleans up a failed root inference and partially allocated inputs', async () => {
+    const f = fixture();
+    const normal = f.run.getMockImplementation()!;
+    f.run.mockImplementationOnce(async feeds => {
+      // Record disposals as the real runtime would, then fail before outputs exist.
+      Object.values(feeds).forEach(tensor => { f.tensors.push(vi.spyOn(tensor, 'dispose')); });
+      throw new Error('root inference failed');
+    });
+    await expect(worker.captureRootNetworkOutput(f.runtime as never, request().state, () => {})).rejects.toThrow('root inference failed');
+    expect(f.outputDisposals).not.toHaveBeenCalled();
+    f.tensors.forEach(dispose => expect(dispose).toHaveBeenCalledOnce());
+    f.run.mockImplementation(normal);
+    const dispose = vi.fn();
+    let allocations = 0;
+    class FailingTensor {
+      dispose = dispose;
+      constructor() { if (++allocations === 3) throw new Error('allocation failed'); }
+    }
+    await expect(worker.captureRootNetworkOutput({ ...f.runtime, ort: { Tensor: FailingTensor } } as never,
+      request().state, () => {})).rejects.toThrow('allocation failed');
+    expect(dispose).toHaveBeenCalledTimes(2);
   });
 });

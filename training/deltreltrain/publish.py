@@ -1,4 +1,4 @@
-"""Verified atomic publication of distilled browser artifacts."""
+"""Verified atomic publication of trained browser inference artifacts."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .checkpoint import sha256_file, verify_file
 from .contracts import RULES_HASH_HEX
-from .distill import BROWSER_MANIFEST_FORMAT, BROWSER_MANIFEST_SCHEMA_VERSION
+from .distill import BROWSER_MANIFEST_FORMAT, BROWSER_MANIFEST_SCHEMA_VERSION, validate_browser_onnx
 
 WASM_ASSET_DIRECTORY = f"wasm-{RULES_HASH_HEX}"
 
@@ -34,7 +34,7 @@ def publish_browser_artifacts(
         or payload.get("format") != BROWSER_MANIFEST_FORMAT
         or payload.get("schema_version") != BROWSER_MANIFEST_SCHEMA_VERSION
     ):
-        raise ValueError("unsupported browser distillation manifest")
+        raise ValueError("unsupported browser model manifest")
     artifacts = payload.get("artifacts")
     if not isinstance(artifacts, Mapping):
         raise ValueError("browser manifest artifacts are missing")
@@ -57,6 +57,11 @@ def publish_browser_artifacts(
             expected_bytes=_positive_int("bytes", entry.get("bytes")),
         )
         resolved[name] = source
+
+    tensors = payload.get("tensors")
+    if not isinstance(tensors, Mapping) or not isinstance(tensors.get("outputs"), Mapping):
+        raise ValueError("browser model output contract is missing")
+    validate_browser_onnx(resolved["onnx"], include_auxiliary=len(tensors["outputs"]) == 11)
 
     if wasm_build_command:
         subprocess.run(
@@ -133,7 +138,7 @@ def publish_browser_artifacts(
 
 def publish_browser_main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Verify and atomically publish distilled browser artifacts"
+        description="Verify and atomically publish trained browser inference artifacts"
     )
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--target", required=True)
@@ -167,6 +172,7 @@ def _stage_copy(source: Path, destination: Path) -> Path:
             temporary.flush()
             os.fsync(temporary.fileno())
         staged = Path(temporary_name)
+        staged.chmod(0o644)
         temporary_name = None
         return staged
     finally:

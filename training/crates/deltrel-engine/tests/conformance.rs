@@ -4,8 +4,9 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use deltrel_engine::{
-    Action, BITBOARD_WORDS, BitBoard, Board, D5Maps, GameState, Player, PlayerScore,
-    RULES_HASH_VALUE, SUPPORTED_RINGS, ScoringScratch, Symmetry, rules_hash,
+    Action, BITBOARD_WORDS, BOARD_NOTATION_SCHEMA, BOARD_NOTATION_VERSION, BitBoard, Board, D5Maps,
+    GameState, Player, PlayerScore, RULES_HASH_VALUE, SUPPORTED_RINGS, ScoringScratch, Symmetry,
+    coordinate_label, rules_hash,
 };
 
 fn edge_count(rings: u8) -> usize {
@@ -63,10 +64,10 @@ fn typescript_known_board_counts_and_topology_match() {
 #[test]
 fn typescript_known_labels_and_adjacencies_match() {
     let ten = Board::new(10).unwrap();
-    assert_eq!(ten.label(ten.index(0, 10, 0).unwrap()), "HR");
-    assert_eq!(ten.label(ten.index(4, 10, 0).unwrap()), "JF");
-    assert_eq!(ten.label(ten.index(1, 3, 2).unwrap()), "U");
-    for label in ["HR", "U", "AN", "HQ"] {
+    assert_eq!(ten.label(ten.index(0, 10, 0).unwrap()), "T1");
+    assert_eq!(ten.label(ten.index(4, 10, 0).unwrap()), "Y15");
+    assert_eq!(ten.label(ten.index(1, 3, 2).unwrap()), "J11");
+    for label in ["T1", "J11", "I13", "T3"] {
         assert_eq!(ten.label(ten.parse_label(label).unwrap()), label);
     }
 
@@ -77,24 +78,78 @@ fn typescript_known_labels_and_adjacencies_match() {
         board.neighbors(left).contains(&right)
     };
     for (left, right) in [
-        ("AE", "AF"),
-        ("AH", "AI"),
-        ("AX", "AE"),
-        ("AE", "P"),
-        ("AH", "R"),
-        ("AJ", "S"),
-        ("G", "B"),
-        ("AH", "S"),
-        ("AL", "V"),
-        ("A", "B"),
-        ("A", "C"),
-        ("B", "D"),
+        ("I1", "G1"),
+        ("E1", "C1"),
+        ("I2", "I1"),
+        ("I1", "H2"),
+        ("E1", "E2"),
+        ("C2", "D2"),
+        ("F3", "E4"),
+        ("E1", "D2"),
+        ("B5", "B6"),
+        ("G4", "E4"),
+        ("G4", "E5"),
+        ("E4", "F6"),
     ] {
         assert!(adjacent(left, right), "{left} must touch {right}");
     }
-    for (left, right) in [("AE", "AG"), ("AE", "AI"), ("A", "P")] {
+    for (left, right) in [("I1", "F1"), ("I1", "C1"), ("G4", "H2")] {
         assert!(!adjacent(left, right), "{left} must not touch {right}");
     }
+}
+
+#[test]
+fn spatial_coordinates_are_unique_round_trip_and_board_specific() {
+    assert_eq!(BOARD_NOTATION_SCHEMA, "deltrel.board-notation.v2");
+    assert_eq!(BOARD_NOTATION_VERSION, 2);
+    for (rings, first, last, max_file, max_rank) in [
+        (4, "G4", "I2", 'K', 10),
+        (6, "I6", "M2", 'O', 15),
+        (8, "L8", "Q2", 'U', 19),
+        (10, "N10", "U2", 'Y', 24),
+    ] {
+        let board = Board::new(rings).unwrap();
+        assert_eq!(board.label(0), first);
+        assert_eq!(board.label(board.node_count() - 1), last);
+        let mut labels = BTreeSet::new();
+        let mut files = BTreeSet::new();
+        let mut ranks = BTreeSet::new();
+        for node in 0..board.node_count() {
+            let label = board.label(node);
+            assert_eq!(coordinate_label(node, rings).unwrap(), label);
+            assert_eq!(board.parse_label(label).unwrap(), node);
+            assert_eq!(
+                board
+                    .parse_label(&format!("\u{feff}{}\u{00a0}", label.to_lowercase()))
+                    .unwrap(),
+                node
+            );
+            assert_eq!(
+                board
+                    .parse_label(&format!(" {}\n", label.to_lowercase()))
+                    .unwrap(),
+                node
+            );
+            assert!(labels.insert(label));
+            files.insert(char::from(label.as_bytes()[0]));
+            ranks.insert(label[1..].parse::<u8>().unwrap());
+        }
+        assert_eq!(files.first(), Some(&'A'));
+        assert_eq!(files.last(), Some(&max_file));
+        assert_eq!(ranks.first(), Some(&1));
+        assert_eq!(ranks.last(), Some(&max_rank));
+        for invalid in ["A", "G04", "G 4", "G0", "Z999", "A1"] {
+            assert!(board.parse_label(invalid).is_err());
+        }
+        assert!(coordinate_label(board.node_count(), rings).is_err());
+        assert!(
+            board
+                .parse_label(&format!("\u{0085}{}", board.label(0)))
+                .is_err()
+        );
+    }
+    assert!(coordinate_label(0, 5).is_err());
+    assert!(coordinate_label(u16::MAX, 10).is_err());
 }
 
 #[test]
@@ -188,9 +243,9 @@ fn typescript_scoring_fixtures_match_exactly() {
 
     let fixture_a = position(
         &board,
-        &["B", "H", "S", "AI", "D", "L", "Y", "AQ", "AR"],
+        &["E4", "E3", "D2", "C1", "F6", "F8", "F9", "F10", "G9"],
         &[
-            "A", "F", "P", "AE", "AF", "C", "J", "V", "AM", "AV", "AW", "AK",
+            "G4", "G3", "H2", "I1", "G1", "E5", "D6", "B6", "A7", "J5", "J4", "B4",
         ],
     );
     let score = scratch.score(&board, fixture_a);
@@ -217,11 +272,11 @@ fn typescript_scoring_fixtures_match_exactly() {
         }
     );
     assert_eq!(score.contested_shores, 12);
-    let dead = board.parse_label("AK").unwrap();
+    let dead = board.parse_label("B4").unwrap();
     assert!(!score.alive_stones.contains(dead));
     assert_eq!(score.owner(dead), None);
 
-    let fixture_b = position(&board, &["AH", "AO", "AP"], &["AG", "R", "S", "AI"]);
+    let fixture_b = position(&board, &["E1", "D8", "E9"], &["F1", "E2", "D2", "C1"]);
     let score = scratch.score(&board, fixture_b);
     assert_eq!(
         score.players[1],
@@ -235,14 +290,14 @@ fn typescript_scoring_fixtures_match_exactly() {
         }
     );
     assert_eq!(
-        score.owner(board.parse_label("AH").unwrap()),
+        score.owner(board.parse_label("E1").unwrap()),
         Some(Player::One)
     );
 
     let fixture_c = position(
         &board,
-        &["AQ", "AR", "AS", "AT", "AU", "AV"],
-        &["AE", "AF", "AI", "AJ", "AM", "AN"],
+        &["F10", "G9", "H8", "J7", "K7", "J5"],
+        &["I1", "G1", "C1", "C2", "A7", "B7"],
     );
     let score = scratch.score(&board, fixture_c);
     assert_eq!(score.players[0].total, 10);
@@ -251,7 +306,7 @@ fn typescript_scoring_fixtures_match_exactly() {
     assert_eq!(score.players[1].networks, 3);
     assert_eq!(score.players[1].cape_bonus, 1);
 
-    let fixture_d = position(&board, &["AE", "AF"], &["AJ", "AK"]);
+    let fixture_d = position(&board, &["I1", "G1"], &["C2", "B4"]);
     let score = scratch.score(&board, fixture_d);
     assert_eq!(score.players[0].total, 2);
     assert_eq!(score.players[1].total, 2);
@@ -259,8 +314,8 @@ fn typescript_scoring_fixtures_match_exactly() {
 
     let fixture_e = position(
         &board,
-        &["A", "F", "P", "AE", "D", "L", "Y", "AQ"],
-        &["B", "H", "S", "AI", "C", "J", "V", "AM"],
+        &["G4", "G3", "H2", "I1", "F6", "F8", "F9", "F10"],
+        &["E4", "E3", "D2", "C1", "E5", "D6", "B6", "A7"],
     );
     let score = scratch.score(&board, fixture_e);
     assert_eq!(score.players[0].networks, 1);

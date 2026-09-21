@@ -1,5 +1,6 @@
 import { DeltrelAiError } from './errors';
-import type { DeltrelAiRequest } from './protocol';
+import type { DeltrelAiRequest, DeltrelAiSemanticState } from './protocol';
+import type { DeltrelNetworkHead, DeltrelNetworkOutput } from './network-output';
 
 export interface FinalPlayerPrediction {
   player: 0 | 1;
@@ -102,4 +103,66 @@ export function validatePredictionState(predictions: DeltrelAiPredictions, reque
   }
   if (predictions.opponentReply?.kind === 'swap' && (!state.pie || !state.opening)) return invalid();
   if (predictions.secondStone && (state.mode !== 'double' || state.opening || state.movesLeft !== 2)) return invalid();
+}
+
+
+/** Derive the browser's compact forecasts from its validated root-head report. */
+export function predictionsFromNetworkOutput(
+  output: DeltrelNetworkOutput,
+  state: DeltrelAiSemanticState,
+  swapRecommended: boolean,
+): DeltrelAiPredictions | null {
+  if (output.auxiliaryStatus !== 'ready') return null;
+  if (output.perspective !== state.toMove || output.nodeCount !== state.stones.length) return invalid();
+  const { finalShores, finalNetworks, finalCapes, opponentReply, secondStone } = output.heads;
+  if (!finalShores || !finalNetworks || !finalCapes || !opponentReply || !secondStone) return invalid();
+
+  const rowMean = (head: DeltrelNetworkHead, row: number, width: number, maximum: number) => {
+    const probabilities = head.probabilities.slice(row * width, (row + 1) * width);
+    const value = probabilities.reduce((sum, probability, count) => sum + probability * count, 0);
+    if (probabilities.length !== width || !bounded(value, maximum + 1e-5)) return invalid();
+    // Match the server's handling of floating-point roundoff at a legal maximum.
+    return Math.min(value, maximum);
+  };
+  const finalCounts = ([0, 1] as const).map((player): FinalPlayerPrediction => {
+    const row = player === output.perspective ? 0 : 1;
+    const bonus = finalCapes.probabilities.slice(row * 6 + 3, row * 6 + 6)
+      .reduce((sum, probability) => sum + probability, 0);
+    if (!bounded(bonus, 1 + 1e-5)) return invalid();
+    return {
+      player,
+      shores: rowMean(finalShores, row, 51, 5 * state.rings),
+      networks: rowMean(finalNetworks, row, 26, Math.floor(5 * state.rings / 2)),
+      corners: rowMean(finalCapes, row, 6, 5),
+      cornerBonusProbability: Math.min(bonus, 1),
+    };
+  }) as [FinalPlayerPrediction, FinalPlayerPrediction];
+
+  const futureMove = (head: DeltrelNetworkHead, player: 0 | 1, allowSwap: boolean): FutureMovePrediction | null => {
+    if (!head.applicable) return null;
+    const candidates = state.stones.flatMap((stone, node) => stone === -1 ? [node] : []);
+    if (allowSwap && state.pie && state.opening) candidates.push(state.stones.length);
+    if (candidates.length === 0) return null;
+    // Stable node order breaks ties, just like the server. Preserve the original
+    // probability rather than renormalizing after excluding the optional swap.
+    let selected = candidates[0];
+    for (const node of candidates) {
+      if (head.probabilities[node] > head.probabilities[selected]) selected = node;
+    }
+    return {
+      player,
+      kind: selected === state.stones.length ? 'swap' : 'place',
+      node: selected === state.stones.length ? null : selected,
+      probability: head.probabilities[selected],
+    };
+  };
+
+  return parsePredictions({
+    perspective: output.perspective,
+    finalBasis: 'official_end',
+    finalCounts,
+    opponentReply: futureMove(opponentReply, (1 - output.perspective) as 0 | 1, true),
+    secondStone: state.mode === 'double' && !state.opening && state.movesLeft === 2 && !swapRecommended
+      ? futureMove(secondStone, output.perspective, false) : null,
+  });
 }

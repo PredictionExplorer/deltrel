@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { getBoard, parseLabel, SUPPORTED_RINGS } from '../board';
+import { getBoard, SUPPORTED_RINGS } from '../board';
 import { scoreCompletionBounds } from '../completion-bounds';
 import {
   applyAction,
@@ -11,6 +11,7 @@ import {
 import { EMPTY, scorePosition, validateTerminalWinner } from '../scoring';
 import completionFixtures from '../../../../testdata/deltrel/completion-bounds-v1.json';
 
+// Mechanical fixtures address stable node IDs, independently of display notation.
 const configFor = (rings: number) => ({
   rings,
   mode: 'double' as const,
@@ -116,10 +117,10 @@ describe('completion score bounds', () => {
   it('does not confuse projected opponent territory with permanent death', () => {
     const board = getBoard(4);
     const stones = new Int8Array(board.n).fill(EMPTY);
-    const amber = [parseLabel(board, 'B'), parseLabel(board, 'E')];
+    const amber = [1, 4];
     for (const node of amber) stones[node] = 0;
-    stones[parseLabel(board, 'AE')] = 1;
-    stones[parseLabel(board, 'AF')] = 1;
+    stones[30] = 1;
+    stones[31] = 1;
 
     const live = scorePosition(board, stones);
     const bounds = scoreCompletionBounds(board, stones);
@@ -135,31 +136,30 @@ describe('completion score bounds', () => {
   it('marks a walled group only when maximal rescue cannot reach a second shore', () => {
     const board = getBoard(4);
     const stones = new Int8Array(board.n).fill(EMPTY);
-    for (const label of ['AH', 'AO', 'AP']) {
-      stones[parseLabel(board, label)] = 0;
+    for (const node of [33, 40, 41]) {
+      stones[node] = 0;
     }
-    for (const label of ['AG', 'R', 'S', 'AI']) {
-      stones[parseLabel(board, label)] = 1;
+    for (const node of [32, 17, 18, 34]) {
+      stones[node] = 1;
     }
 
     const bounds = scoreCompletionBounds(board, stones);
-    expect(bounds.provablyDeadStone[parseLabel(board, 'AH')]).toBe(1);
-    expect(bounds.provablyDeadStone[parseLabel(board, 'AO')]).toBe(0);
-    expect(bounds.provablyDeadStone[parseLabel(board, 'AP')]).toBe(0);
+    expect(bounds.provablyDeadStone[33]).toBe(1);
+    expect(bounds.provablyDeadStone[40]).toBe(0);
+    expect(bounds.provablyDeadStone[41]).toBe(0);
   });
 
   it('allows lone shores and bridge-separated arms to be rescued', () => {
     const board = getBoard(4);
     const stones = new Int8Array(board.n).fill(EMPTY);
-    for (const label of ['AE', 'P', 'F', 'AQ', 'Y', 'L']) {
-      stones[parseLabel(board, label)] = 0;
+    for (const node of [30, 15, 5, 42, 24, 11]) {
+      stones[node] = 0;
     }
 
     const live = scorePosition(board, stones);
     const bounds = scoreCompletionBounds(board, stones);
     expect(live.players[0].networks).toBe(0);
-    for (const label of ['AE', 'AQ']) {
-      const node = parseLabel(board, label);
+    for (const node of [30, 42]) {
       expect(bounds.scenarios[0].score.aliveStone[node]).toBe(1);
       expect(bounds.provablyDeadStone[node]).toBe(0);
     }
@@ -314,9 +314,9 @@ describe('completion-bound properties', () => {
 
   it('does not confuse terminal monotonicity with the live score', () => {
     const board = getBoard(4);
-    const labels = ['B', 'AR', 'AS', 'AQ', 'AJ', 'AG', 'AH'];
-    const actions = labels.map(
-      (label): GameAction => ({ type: 'place', node: parseLabel(board, label) }),
+    const nodes = [1, 43, 44, 42, 35, 32, 33];
+    const actions = nodes.map(
+      (node): GameAction => ({ type: 'place', node }),
     );
     const before = replay(configFor(4), actions.slice(0, -1));
     const after = replay(configFor(4), actions);

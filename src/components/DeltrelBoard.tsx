@@ -26,6 +26,16 @@ import {
 } from './boardGeometry';
 import styles from './DeltrelBoard.module.css';
 
+interface InspectionGesture {
+  pointerId: number;
+  node: number;
+  x: number;
+  y: number;
+  held: boolean;
+  cancelled: boolean;
+  allowPlacement: boolean;
+}
+
 interface GroupPresentation {
   groupOf: Int32Array;
   groupSize: Int32Array;
@@ -199,9 +209,17 @@ export const DeltrelBoard = memo(function DeltrelBoard({
   playerNames,
   className,
 }: DeltrelBoardProps) {
-  const [hovered, setHovered] = useState(-1);
+  const [hoverSelection, setHoverSelection] = useState<{ board: Board; node: number } | null>(null);
+  const hovered = hoverSelection?.board === board ? hoverSelection.node : -1;
   const [activeNode, setActiveNode] = useState(0);
   const [focusedNode, setFocusedNode] = useState(-1);
+  const [coordinateDismissed, setCoordinateDismissed] = useState(false);
+  const [touchInspection, setTouchInspection] = useState(false);
+  const gesture = useRef<InspectionGesture | null>(null);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blockClickUntil = useRef(0);
+  const touchInput = useRef(false);
+  const keyboardInput = useRef(true);
   const svgRef = useRef<SVGSVGElement>(null);
   const nodeRefs = useRef(new Map<number, SVGCircleElement>());
   const instructionsId = useId();
@@ -210,18 +228,34 @@ export const DeltrelBoard = memo(function DeltrelBoard({
   const paint = (name: string) => `url(#${svgId}-${name})`;
   const boardInteractive = interactive && syntheticStone == null;
 
+  useEffect(() => () => {
+    if (holdTimer.current !== null) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+    gesture.current = null;
+  }, [board]);
+
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
     const syncVisibility = () => {
       svg.style.setProperty('--water-motion-state', document.hidden ? 'paused' : 'running');
     };
+    const useKeyboard = () => {
+      touchInput.current = false;
+      keyboardInput.current = true;
+    };
     syncVisibility();
     document.addEventListener('visibilitychange', syncVisibility);
-    return () => document.removeEventListener('visibilitychange', syncVisibility);
+    document.addEventListener('keydown', useKeyboard, true);
+    return () => {
+      document.removeEventListener('visibilitychange', syncVisibility);
+      document.removeEventListener('keydown', useKeyboard, true);
+    };
   }, []);
 
   const stoneR = Math.min(board.minEdge * 0.46 * S, 9.5);
+  const selectedCandidate = hovered >= 0 ? hovered : boardInteractive ? focusedNode : -1;
+  const selectedNode = !coordinateDismissed && selectedCandidate >= 0 && selectedCandidate < board.n ? selectedCandidate : -1;
   const groups = useMemo(
     () => buildGroupPresentation(board, stones, aliveStone, syntheticStone),
     [aliveStone, board, stones, syntheticStone],
@@ -240,9 +274,10 @@ export const DeltrelBoard = memo(function DeltrelBoard({
   }, [board]);
 
   const hover = useCallback((u: number) => {
-    setHovered(u);
+    if (u >= 0) setCoordinateDismissed(false);
+    setHoverSelection(u < 0 ? null : { board, node: u });
     onHover?.(u);
-  }, [onHover]);
+  }, [board, onHover]);
 
   const nodeAtPointer = useCallback(
     (clientX: number, clientY: number): number => {
@@ -274,14 +309,101 @@ export const DeltrelBoard = memo(function DeltrelBoard({
     [board, stoneR],
   );
 
+  const clearHoldTimer = useCallback(() => {
+    if (holdTimer.current !== null) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+  }, []);
+
+  const cancelInspection = useCallback(() => {
+    clearHoldTimer();
+    if (gesture.current) {
+      gesture.current.cancelled = true;
+      blockClickUntil.current = Date.now() + 800;
+    }
+    hover(-1);
+    setTouchInspection(false);
+  }, [clearHoldTimer, hover]);
+
+  const handlePointerDown = useCallback((event: PointerEvent<SVGSVGElement>) => {
+    const isTouch = event.pointerType === 'touch' || event.pointerType === 'pen';
+    touchInput.current = isTouch;
+    keyboardInput.current = false;
+    setFocusedNode(-1);
+    if (!isTouch) {
+      // A fresh mouse press is intentional; touch compatibility clicks have no
+      // matching mouse pointerdown and remain suppressed by the capture handler.
+      blockClickUntil.current = 0;
+      return;
+    }
+    if (event.isPrimary === false) {
+      cancelInspection();
+      return;
+    }
+    clearHoldTimer();
+    blockClickUntil.current = 0;
+    hover(-1);
+    setTouchInspection(false);
+    const node = nodeAtPointer(event.clientX, event.clientY);
+    const next: InspectionGesture = {
+      pointerId: event.pointerId,
+      node,
+      x: event.clientX,
+      y: event.clientY,
+      held: false,
+      cancelled: false,
+      allowPlacement: boardInteractive,
+    };
+    gesture.current = next;
+    // Capture keeps release/cancel handling reliable outside the small node target.
+    if (event.nativeEvent.isTrusted) event.currentTarget.setPointerCapture?.(event.pointerId);
+    holdTimer.current = setTimeout(() => {
+      holdTimer.current = null;
+      if (gesture.current !== next || next.cancelled) return;
+      next.held = true;
+      setTouchInspection(next.node >= 0);
+      hover(next.node);
+    }, 350);
+  }, [boardInteractive, cancelInspection, clearHoldTimer, hover, nodeAtPointer]);
+
   const handlePointerMove = useCallback(
     (event: PointerEvent<SVGSVGElement>) => {
-      if (!boardInteractive) return;
+      if (event.pointerType === 'touch' || event.pointerType === 'pen') {
+        const current = gesture.current;
+        if (current?.pointerId === event.pointerId &&
+            Math.hypot(event.clientX - current.x, event.clientY - current.y) > 10) {
+          cancelInspection();
+        }
+        return;
+      }
+      touchInput.current = false;
+      keyboardInput.current = false;
+      setTouchInspection(false);
+      setFocusedNode(-1);
       const node = nodeAtPointer(event.clientX, event.clientY);
       if (node !== hovered) hover(node);
     },
-    [boardInteractive, hover, hovered, nodeAtPointer],
+    [cancelInspection, hover, hovered, nodeAtPointer],
   );
+
+  const handlePointerUp = useCallback((event: PointerEvent<SVGSVGElement>) => {
+    const current = gesture.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    touchInput.current = true;
+    clearHoldTimer();
+    if (current.held || current.cancelled || current.node < 0 || !current.allowPlacement) {
+      blockClickUntil.current = Date.now() + 800;
+    }
+    gesture.current = null;
+    hover(-1);
+    setTouchInspection(false);
+  }, [clearHoldTimer, hover]);
+
+  const handlePointerCancel = useCallback((event: PointerEvent<SVGSVGElement>) => {
+    if (gesture.current?.pointerId !== event.pointerId) return;
+    touchInput.current = true;
+    cancelInspection();
+    gesture.current = null;
+  }, [cancelInspection]);
 
   const handleBoardClick = useCallback(
     (event: MouseEvent<SVGSVGElement>) => {
@@ -304,7 +426,9 @@ export const DeltrelBoard = memo(function DeltrelBoard({
 
   const focusNode = (node: number) => {
     setActiveNode(node);
+    setFocusedNode(node);
     nodeRefs.current.get(node)?.focus();
+    hover(node);
   };
 
   const handleNodeKeyDown = (
@@ -312,6 +436,17 @@ export const DeltrelBoard = memo(function DeltrelBoard({
     node: number,
     isEmpty: boolean,
   ) => {
+    if (event.key === 'Escape') {
+      cancelInspection();
+      setFocusedNode(node);
+      setCoordinateDismissed(true);
+      event.preventDefault();
+      return;
+    }
+    touchInput.current = false;
+    blockClickUntil.current = 0;
+    setCoordinateDismissed(false);
+    setFocusedNode(node);
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       if (isEmpty) onPlace?.(node);
@@ -350,16 +485,31 @@ export const DeltrelBoard = memo(function DeltrelBoard({
           : `Deltrel board with ${board.rings} rings, ${occupiedCount} of ${board.n} nodes occupied`
       }
       aria-describedby={instructionsId}
+      onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onMouseLeave={() => hover(-1)}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onPointerLeave={(event) => {
+        if (event.pointerType === 'touch' || event.pointerType === 'pen') cancelInspection();
+        else hover(-1);
+      }}
+      onMouseLeave={() => { if (!touchInput.current) hover(-1); }}
+      onClickCapture={(event) => {
+        if (Date.now() < blockClickUntil.current) {
+          event.preventDefault();
+          event.stopPropagation();
+          blockClickUntil.current = 0;
+        }
+      }}
+      onContextMenu={(event) => { if (touchInput.current) event.preventDefault(); }}
       onClick={handleBoardClick}
     >
       <desc id={instructionsId}>
         {proofDescription
           ? `${proofDescription} This proof board is read-only.`
           : boardInteractive
-          ? 'Use the arrow keys to move between nodes. Press Enter or Space to place a stone on an empty node. Curved channels connect nodes; channel crossings are not playable junctions.'
-          : 'A non-interactive preview of the game board.'}
+          ? 'Hover or focus a point to see its coordinate. On a touchscreen, press and hold to inspect without placing; a quick tap places a stone. Use arrow keys to move between nodes, Enter or Space to place, and Escape to hide the coordinate. Curved channels connect nodes; crossings are not playable junctions.'
+          : 'A read-only game board. Hover or press and hold a point to inspect its coordinate.'}
       </desc>
       <defs>
         <radialGradient id={`${svgId}-water`} cx="32%" cy="20%" r="96%">
@@ -637,24 +787,6 @@ export const DeltrelBoard = memo(function DeltrelBoard({
               </g>
             )}
 
-            {shore && (
-              <text
-                aria-hidden
-                pointerEvents="none"
-                className={styles.coordinate}
-                x={x + (x / Math.hypot(x, y)) * Math.min(stoneR * 1.72 + 2.3, 16.5)}
-                y={y + (y / Math.hypot(x, y)) * Math.min(stoneR * 1.72 + 2.3, 16.5)}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fontSize={board.rings <= 6 ? 2.9 : 2.55}
-                fontWeight={500}
-                fill="#fff3d7"
-                fillOpacity=".96"
-              >
-                {board.labels[u]}
-              </text>
-            )}
-
             {/* hover ghost */}
             {isEmpty && hovered === u && boardInteractive && (
               <circle
@@ -873,6 +1005,7 @@ export const DeltrelBoard = memo(function DeltrelBoard({
             {boardInteractive && focusedNode === u && (
               <circle
                 aria-hidden
+                data-keyboard-focus={board.labels[u]}
                 cx={x}
                 cy={y}
                 r={Math.max(stoneR * 1.45, 5.5)}
@@ -899,11 +1032,13 @@ export const DeltrelBoard = memo(function DeltrelBoard({
                 aria-label={`Node ${board.labels[u]}, ${nodeState}`}
                 aria-disabled={!isEmpty}
                 style={{ cursor: isEmpty ? 'pointer' : 'default', outline: 'none' }}
-                onMouseEnter={() => hover(u)}
-                onFocus={() => {
+                onMouseEnter={() => { if (!touchInput.current) hover(u); }}
+                onFocus={(event) => {
                   setActiveNode(u);
-                  setFocusedNode(u);
-                  hover(u);
+                  if (!touchInput.current && (keyboardInput.current || event.currentTarget.matches(':focus-visible')) && !gesture.current) {
+                    setFocusedNode(u);
+                    if (!touchInput.current) hover(u);
+                  }
                 }}
                 onBlur={() => {
                   setFocusedNode((current) => (current === u ? -1 : current));
@@ -919,6 +1054,19 @@ export const DeltrelBoard = memo(function DeltrelBoard({
           </g>
         );
       })}
+      {selectedNode >= 0 && (
+        <g
+          aria-hidden
+          pointerEvents="none"
+          data-coordinate-tooltip={board.labels[selectedNode]}
+          transform={`translate(${board.xs[selectedNode] * S} ${Math.max(-BOARD_VIEWBOX_HALF + 8, board.ys[selectedNode] * S - (touchInspection ? 30 : stoneR + 7.5))})`}
+        >
+          <rect x="-11.5" y="-5" width="23" height="10" rx="3.3" fill="#092f38" fillOpacity=".97" stroke="#e4c9a1" strokeOpacity=".7" strokeWidth=".4" />
+          <text className={styles.coordinateTooltip} textAnchor="middle" dominantBaseline="central" fill="#fff2d8">
+            {board.labels[selectedNode]}
+          </text>
+        </g>
+      )}
     </svg>
   );
 });

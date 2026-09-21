@@ -16,7 +16,9 @@ mod scoring;
 mod symmetry;
 
 pub use bitboard::{BITBOARD_WORDS, BitBoard, BitIter};
-pub use board::{Board, BoardError, coordinate_label};
+pub use board::{
+    BOARD_NOTATION_SCHEMA, BOARD_NOTATION_VERSION, Board, BoardError, coordinate_label,
+};
 pub use endgame::{ExactEndgame, solve_exact_endgame};
 pub use game::{
     Action, GameError, GameState, LegalActions, MAX_HANDICAP, MAX_TURN_PLACEMENTS, Mode, Player,
@@ -54,7 +56,10 @@ pub const FEATURE_SCHEMA: &str = "deltrel.model-features.external.v3";
 /// Schema of the native nodes-only action layout.
 pub const ACTION_LAYOUT_SCHEMA: &str = "deltrel.action-layout.nodes-only.v1";
 
-/// Exact canonical bytes of the rules contract. The web client
+/// Exact frozen canonical bytes of the rules-v3 contract. Its label clause is
+/// historical presentation metadata; BOARD_NOTATION_SCHEMA defines today's
+/// notation independently, without invalidating models or changing game rules.
+/// The web client
 /// (`src/lib/deltrel/rules.ts`) and the Python mirror (`deltreltrain/contracts.py`)
 /// carry the same bytes so every runtime derives the same fingerprint.
 pub const RULES_CANONICAL: &str = concat!(

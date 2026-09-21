@@ -1,4 +1,4 @@
-# Model serving and browser distillation
+# Model serving and browser publication
 
 Start with the [operator guide](../README.md) to install Rust 1.93, Python 3.11,
 CUDA PyTorch and the native extension. Production trainers should complete the
@@ -332,6 +332,27 @@ Adjust manifest paths in the mounted server YAML for the container layout.
 
 ## Browser model
 
+The public release is a direct export of the trained EMA champion at step
+478,534: `deltrel-champion-478534-1aa623983d22.fp16.onnx` (37,577,312 bytes). It
+retains all eleven trained output heads. Fifty legal positions covering all sizes,
+Classic, Double, handicap, pie pending, swapped positions, and near-full boards
+were compared with the original FP32 EMA. Maximum win-probability drift was
+0.002048 and maximum expected-margin drift was 0.00786 points. Forty additional
+positions passed real Chromium CPU/WASM inference with GPU disabled.
+
+Players download this model automatically from the website and need no installed
+runtime or local server. The worker can use WebGPU or the bundled WASM fallback.
+The published manifest recommends 8 simulations / 4 candidates and caps this
+large network at 64 / 8 for interactive browser play.
+
+See [the exact export/publish commands](../README.md#export-and-publish-the-trained-browser-champion)
+for publishing a future champion without retraining. The exported graph embeds all
+weights, contains no external data files, and strips local exporter debug paths.
+The source checkpoint remains private; public provenance contains only identities,
+hashes, training step, architecture, and validation results.
+
+### Optional smaller-model distillation
+
 `deltreltrain-distill` trains a newly initialized, configurable smaller
 `GraphResTNet` from validated replay search/outcome/spatial targets. When a
 teacher EMA manifest is configured, per-head logit KL can be enabled for policy,
@@ -360,7 +381,7 @@ encoder through `testdata/deltrel/features-v4.json`.
 Artifact versions are immutable: the command refuses to overwrite an existing
 checkpoint, ONNX model, or manifest. Choose a new `model_version` for each run.
 
-Publish a verified browser release only after distillation succeeds:
+Publish a verified browser release after direct champion export or optional distillation:
 
 ```bash
 cd ..
@@ -387,9 +408,9 @@ deltreltrain-publish-browser \
 ```
 
 The verified WASM artifacts are
-`wasm/deltrel_wasm.js` and `wasm/deltrel_wasm_bg.wasm`. The build runs first; the
+`wasm-46e4fbcff4e17fd3/deltrel_wasm.js` and `wasm-46e4fbcff4e17fd3/deltrel_wasm_bg.wasm`. The build runs first; the
 release command stages and verifies both WASM files and the ONNX model, then
 replaces the canonical `manifest.json` strictly last.
 
-No placeholder model is checked into the repository. A browser model exists only
-after a successful distillation run and ONNX export.
+The checked-in browser model is the verified trained champion export, not a
+placeholder. Distillation remains an optional future optimization for model size.

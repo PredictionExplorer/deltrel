@@ -8,6 +8,12 @@ from functools import lru_cache
 import torch
 from torch import Tensor
 
+from .contracts import (
+    BOARD_NOTATION_CELL,
+    BOARD_NOTATION_VERTEX_X,
+    BOARD_NOTATION_VERTEX_Y_UP,
+)
+
 SUPPORTED_RINGS = (4, 6, 8, 10)
 MIN_RINGS = SUPPORTED_RINGS[0]
 MAX_RINGS = SUPPORTED_RINGS[-1]
@@ -16,6 +22,11 @@ EDGE_TANGENTIAL = 0
 EDGE_RADIAL_DIAGONAL = 1
 EDGE_BRIDGE = 2
 EDGE_CLASS_COUNT = 3
+# Match JavaScript String.trim exactly for cross-runtime coordinate input.
+_COORDINATE_WHITESPACE = (
+    "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005"
+    "\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
+)
 
 # D5-invariant pairwise relations for the global attention bias. Every node
 # pair maps to one vocabulary entry keyed by ring difference, the canonical
@@ -92,8 +103,10 @@ class DeltrelTopology:
         return ring_start(ring) + (sector % 5) * ring + position
 
     def label_to_id(self, label: str) -> int:
+        if not isinstance(label, str):
+            raise ValueError(f"unknown node label: {label}")
         try:
-            return self.labels.index(label)
+            return self.labels.index(label.strip(_COORDINATE_WHITESPACE).upper())
         except ValueError as exc:
             raise ValueError(f"unknown node label: {label}") from exc
 
@@ -112,17 +125,42 @@ class DeltrelTopology:
         return permutation
 
 
-def coordinate_label(node_id: int) -> str:
-    """Sequential bijective base-26 labels independent of board size."""
+def _rounded_cell(value: int) -> int:
+    """Signed round-half-away-from-zero without floating-point drift."""
+    magnitude = (abs(value) + BOARD_NOTATION_CELL // 2) // BOARD_NOTATION_CELL
+    return -magnitude if value < 0 else magnitude
 
-    if isinstance(node_id, bool) or not isinstance(node_id, int) or node_id < 0:
-        raise ValueError("node id must be a non-negative integer")
-    remaining = node_id + 1
-    label = ""
-    while remaining:
-        remaining, offset = divmod(remaining - 1, 26)
-        label = chr(65 + offset) + label
-    return label
+
+def coordinate_label(node_id: int, rings: int) -> str:
+    """Spatial file/rank coordinate for a stable dense node id on this board.
+
+    Files run left to right and ranks run bottom to top. The fixed-point lattice
+    only assigns names; physical rendering positions and model geometry stay
+    unchanged. The same node id can have different labels on different sizes.
+    """
+    count = node_count(rings)
+    if (
+        isinstance(node_id, bool)
+        or not isinstance(node_id, int)
+        or not 0 <= node_id < count
+    ):
+        raise ValueError("node id must be an in-range non-negative integer")
+    ring = 1
+    while ring_start(ring + 1) <= node_id:
+        ring += 1
+    sector, position = divmod(node_id - ring_start(ring), ring)
+    successor = (sector + 1) % 5
+    x = (ring - position) * BOARD_NOTATION_VERTEX_X[
+        sector
+    ] + position * BOARD_NOTATION_VERTEX_X[successor]
+    y_up = (ring - position) * BOARD_NOTATION_VERTEX_Y_UP[
+        sector
+    ] + position * BOARD_NOTATION_VERTEX_Y_UP[successor]
+    minimum_column = _rounded_cell(-951_056_516 * rings)
+    minimum_row = _rounded_cell(-809_016_994 * rings)
+    file_index = _rounded_cell(x) - minimum_column
+    rank = _rounded_cell(y_up) - minimum_row + 1
+    return f"{chr(65 + file_index)}{rank}"
 
 
 @lru_cache(maxsize=len(SUPPORTED_RINGS))
@@ -152,7 +190,7 @@ def get_topology(rings: int) -> DeltrelTopology:
                 if ring == rings:
                     is_shore[node] = True
                     is_cape[node] = position == 0
-                labels[node] = coordinate_label(node)
+                labels[node] = coordinate_label(node, rings)
 
     edge_indices: dict[tuple[int, int], int] = {}
     edges: list[tuple[int, int, int]] = []

@@ -61,8 +61,13 @@ export function RulesDialog({ open, onClose }: RulesDialogProps) {
           <p>
             Every node on the boundary is a <strong className="text-sand">shore point</strong>,
             worth one point. Five special shore points are marked as{' '}
-            <strong className="text-sand">capes</strong>. Coordinates run A–Z, then AA, AB,
-            and onward; they identify positions without changing their connections.
+            <strong className="text-sand">capes</strong>. Coordinates work like a map:
+            letters run left to right and numbers run bottom to top. Point to a node
+            or focus it with the keyboard to see its coordinate. On a touchscreen,
+            press and hold to inspect a point without placing a stone; a quick tap
+            still makes a move.
+            Only the marked nodes are playable; some grid cells fall outside the coast
+            or between nodes.
           </p>
           <p>
             A connected group of your stones that directly occupies at least two shore points is a{' '}

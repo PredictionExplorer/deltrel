@@ -71,6 +71,89 @@ afterEach(() => {
 });
 
 describe('local worker construction lifecycle', () => {
+  const readyInfo = { modelVersion: 'champion-browser', bytes: 128, backend: 'wasm', cached: false } as const;
+
+  it('prepares without choosing a move and keeps progress nonterminal', async () => {
+    vi.stubGlobal('Worker', class {});
+    const worker = new FakeWorker();
+    const status = vi.fn();
+    const client = new LocalDeltrelAiClient(() => worker as unknown as Worker, status);
+    const result = client.prepare();
+    const resolved = vi.fn();
+    void result.then(resolved);
+    worker.emit({ type: 'ready', protocolVersion: 3 });
+    await Promise.resolve();
+    expect(worker.messages).toEqual([{ type: 'prepare', taskId: 'prepare-1' }]);
+    const progress = { phase: 'downloading', loadedBytes: 64, totalBytes: 128, modelVersion: 'champion-browser', cached: false };
+    worker.emit({ type: 'progress', taskId: 'prepare-1', progress });
+    await Promise.resolve();
+    expect(status).toHaveBeenLastCalledWith(progress);
+    expect(resolved).not.toHaveBeenCalled();
+    worker.emit({ type: 'prepared', taskId: 'prepare-1', info: readyInfo });
+    await expect(result).resolves.toEqual(readyInfo);
+    expect(status).toHaveBeenLastCalledWith({ phase: 'ready', info: readyInfo });
+    client.dispose();
+  });
+
+  it('cancels preparation, ignores late progress, and permits retry in a fresh worker', async () => {
+    vi.stubGlobal('Worker', class {});
+    const workers = [new FakeWorker(), new FakeWorker()];
+    let index = 0;
+    const status = vi.fn();
+    const client = new LocalDeltrelAiClient(() => workers[index++] as unknown as Worker, status);
+    const controller = new AbortController();
+    const first = client.prepare({ signal: controller.signal });
+    const cancelled = expect(first).rejects.toMatchObject({ code: 'cancelled' });
+    workers[0].emit({ type: 'ready', protocolVersion: 3 });
+    await Promise.resolve();
+    controller.abort();
+    await cancelled;
+    expect(workers[0].terminated).toBe(true);
+    expect(status).toHaveBeenLastCalledWith({ phase: 'idle' });
+    workers[0].emit({ type: 'prepared', taskId: 'prepare-1', info: readyInfo });
+    expect(status).toHaveBeenLastCalledWith({ phase: 'idle' });
+    const retry = client.prepare();
+    workers[1].emit({ type: 'ready', protocolVersion: 3 });
+    await Promise.resolve();
+    workers[1].emit({ type: 'prepared', taskId: 'prepare-2', info: { ...readyInfo, cached: true } });
+    await expect(retry).resolves.toMatchObject({ cached: true });
+    client.dispose();
+  });
+
+  it('does not consume a playing request when its model becomes prepared', async () => {
+    vi.stubGlobal('Worker', class {});
+    const worker = new FakeWorker();
+    const client = new LocalDeltrelAiClient(() => worker as unknown as Worker);
+    const request = buildAiRequest(config, [], 'playing-while-loading');
+    const result = client.request(request);
+    worker.emit({ type: 'ready', protocolVersion: 3 });
+    await Promise.resolve();
+    worker.emit({ type: 'prepared', taskId: request.requestId, info: readyInfo });
+    worker.emit({ type: 'result', taskId: request.requestId, decision: decisionFor(request) });
+    await expect(result).resolves.toEqual(decisionFor(request));
+    client.dispose();
+  });
+
+  it('rejects preparation errors and timeouts without leaving its timer or worker pending', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('Worker', class {});
+    const worker = new FakeWorker();
+    const status = vi.fn();
+    const client = new LocalDeltrelAiClient(() => worker as unknown as Worker, status);
+    const first = client.prepare();
+    worker.emit({ type: 'ready', protocolVersion: 3 });
+    await Promise.resolve();
+    worker.emit({ type: 'error', taskId: 'prepare-1', error: { code: 'network', message: 'Disconnected', retryable: true } });
+    await expect(first).rejects.toMatchObject({ code: 'network' });
+    expect(status).toHaveBeenLastCalledWith({ phase: 'error', message: 'Disconnected', retryable: true });
+    const retry = client.prepare({ timeoutMs: 50 });
+    const rejection = expect(retry).rejects.toMatchObject({ code: 'timeout', retryable: true });
+    await vi.advanceTimersByTimeAsync(50);
+    await rejection;
+    expect(worker.terminated).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('waits for the worker handshake before choosing and disposes cleanly', async () => {
     vi.stubGlobal('Worker', class {});
     const worker = new FakeWorker();

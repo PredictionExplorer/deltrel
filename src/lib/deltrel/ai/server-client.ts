@@ -1,5 +1,6 @@
 import { DeltrelAiError } from './errors';
 import { parseServerPredictions } from './predictions';
+import { parseServerNetworkOutput } from './network-output';
 import {
   parseDeltrelAiDecision,
   responseFromDeltrelAiDecision,
@@ -50,6 +51,7 @@ export interface AnalyzeRequestV3 {
   /** Browser games are symmetric: neither side holds a playout advantage. */
   pda: 0;
   include_predictions: true;
+  include_network_output?: true;
   search: {
     simulations: number;
     max_considered: number;
@@ -65,6 +67,8 @@ export interface ServerAiRequestOptions {
   timeoutMs?: number;
   url?: string;
   search?: Partial<ServerSearchBudget>;
+  /** Explicitly request complete root diagnostics; older callers remain unchanged. */
+  includeNetworkOutput?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -148,6 +152,7 @@ export function deterministicServerSeed(stateHash: string): number {
 export function toAnalyzeRequest(
   request: DeltrelAiRequest,
   search: ServerSearchBudget = resolveServerSearchBudget(),
+  includeNetworkOutput = false,
 ): AnalyzeRequestV3 {
   const simulations = strictBudgetInteger(
     'Server AI simulations',
@@ -187,6 +192,7 @@ export function toAnalyzeRequest(
     },
     pda: 0,
     include_predictions: true,
+    ...(includeNetworkOutput ? { include_network_output: true as const } : {}),
     search: {
       simulations,
       max_considered: maxConsidered,
@@ -346,7 +352,7 @@ export function parseAnalyzeResponse(
   ] as const;
   if (
     !isRecord(payload) ||
-    !hasExactKeys(payload, [...responseKeys, ...('predictions' in payload ? ['predictions'] : [])]) ||
+    !hasExactKeys(payload, [...responseKeys, ...('predictions' in payload ? ['predictions'] : []), ...('network_output' in payload ? ['network_output'] : [])]) ||
     payload.schema_version !== DELTRELSERVE_API_SCHEMA_VERSION
   ) {
     throw new DeltrelAiError('protocol', 'Deltrelserve response schema is incompatible.');
@@ -530,6 +536,7 @@ export function parseAnalyzeResponse(
       swapRecommended,
       expectedMargin: payload.score_belief.expected_margin,
       ...('predictions' in payload ? { predictions: parseServerPredictions(payload.predictions) } : {}),
+      ...('network_output' in payload ? { networkOutput: parseServerNetworkOutput(payload.network_output) } : {}),
       rootActions: rootActions.map((rootAction) =>
         codeToAction(rootAction.code, nodeCount),
       ),
@@ -551,6 +558,45 @@ export function parseAnalyzeResponse(
   });
 }
 
+const MAX_SERVER_RESPONSE_BYTES = 1024 * 1024;
+
+async function readBoundedServerJson(response: Response): Promise<unknown> {
+  const declared = response.headers.get('Content-Length');
+  if (declared !== null && (!Number.isSafeInteger(Number(declared)) || Number(declared) < 0 || Number(declared) > MAX_SERVER_RESPONSE_BYTES)) {
+    throw new DeltrelAiError('protocol', 'Server AI response exceeds its size limit.');
+  }
+  if (!response.body) throw new DeltrelAiError('protocol', 'Server AI returned an empty response.');
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > MAX_SERVER_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new DeltrelAiError('protocol', 'Server AI response exceeds its size limit.');
+      }
+      chunks.push(value);
+    }
+  } finally { reader.releaseLock(); }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  try { return JSON.parse(new TextDecoder().decode(bytes)); }
+  catch (error) { throw new DeltrelAiError('protocol', 'Server AI returned invalid JSON.', false, error); }
+}
+
+function rejectsOnlyNetworkOutput(response: Response, payload: unknown): boolean {
+  if ((response.status !== 400 && response.status !== 422) || !isRecord(payload) ||
+      !isRecord(payload.error) || payload.error.code !== 'invalid_request' ||
+      !Array.isArray(payload.error.details) || payload.error.details.length !== 1) return false;
+  const error = payload.error.details[0];
+  return isRecord(error) && error.type === 'extra_forbidden' && Array.isArray(error.location) &&
+    error.location.length === 2 && error.location[0] === 'body' && error.location[1] === 'include_network_output';
+}
+
 export async function requestServerAiDecision(
   request: DeltrelAiRequest,
   options: ServerAiRequestOptions = {},
@@ -570,7 +616,7 @@ export async function requestServerAiDecision(
     throw new DeltrelAiError('protocol', 'AI request id is not accepted by deltrelserve.');
   }
   const search = resolveServerSearchBudget(options.search);
-  const analyzeRequest = toAnalyzeRequest(request, search);
+  const analyzeRequest = toAnalyzeRequest(request, search, options.includeNetworkOutput ?? false);
 
   const controller = new AbortController();
   let timedOut = false;
@@ -582,7 +628,7 @@ export async function requestServerAiDecision(
   }, timeoutMs);
 
   try {
-    const response = await fetch(url, {
+    const send = (body: AnalyzeRequestV3) => fetch(url, {
       method: 'POST',
       cache: 'no-store',
       headers: {
@@ -590,14 +636,19 @@ export async function requestServerAiDecision(
         'Content-Type': 'application/json',
         'X-Request-ID': request.requestId,
       },
-      body: JSON.stringify(analyzeRequest),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch (error) {
-      throw new DeltrelAiError('protocol', 'Server AI returned invalid JSON.', false, error);
+    let response = await send(analyzeRequest);
+    let payload = await readBoundedServerJson(response);
+    // Request validation happens before search. Retry once only when an older
+    // service explicitly rejects this one new opt-in field; share the original
+    // abort signal and deadline, never retry an inference/search failure.
+    if (analyzeRequest.include_network_output && rejectsOnlyNetworkOutput(response, payload)) {
+      const compatible = { ...analyzeRequest };
+      delete compatible.include_network_output;
+      response = await send(compatible);
+      payload = await readBoundedServerJson(response);
     }
     if (!response.ok) {
       if (isRecord(payload) && isRecord(payload.error)) {

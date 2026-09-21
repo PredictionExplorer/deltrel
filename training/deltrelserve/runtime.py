@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -23,12 +23,19 @@ from deltreltrain.config import ExperimentConfig, load_config
 from deltreltrain.contracts import SCORE_MARGIN_MAX, SCORE_MARGIN_MIN
 from deltreltrain.features import GLOBAL_FEATURE_DIM, NODE_FEATURE_DIM
 from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
-from deltreltrain.inference_batching import BoundedInferenceBroker, CohortInferenceAdapter
+from deltreltrain.inference_batching import (
+    BoundedInferenceBroker,
+    CohortInferenceAdapter,
+)
 from deltreltrain.auxiliary_inference import AuxiliaryPrediction
-from deltreltrain.auxiliary_upgrade import AUXILIARY_LOSSES
-from deltreltrain.model import GraphResTNet, ModelConfig
+from deltreltrain.auxiliary_upgrade import auxiliary_heads_ready as _auxiliary_heads_ready
+from deltreltrain.model import GraphResTNet
 from deltreltrain.contracts import MODE_INDEX
-from deltreltrain.native import BITBOARD_WORDS, load_deltrel_native, positions_from_native
+from deltreltrain.native import (
+    BITBOARD_WORDS,
+    load_deltrel_native,
+    positions_from_native,
+)
 from deltreltrain.training import maybe_compile_model
 from deltreltrain.search_options import (
     require_search_execution,
@@ -39,6 +46,7 @@ from deltreltrain.search_sessions import CompletedSearchCache
 
 from .config import ServerConfig
 from .schemas import API_SCHEMA_VERSION, AnalyzeRequest
+from .network_output import network_output_payload
 
 
 class AnalysisError(RuntimeError):
@@ -492,6 +500,18 @@ class NativeAnalysisService:
             if cancellation.is_set():
                 raise SearchCancelled()
             results = search.results()
+            network_values = None
+            if request.include_network_output:
+                try:
+                    network_values = evaluator.evaluate_network_output(
+                        request.position()
+                    )
+                except (ValueError, RuntimeError) as exc:
+                    raise AnalysisError(
+                        "model_output_error", "root network inspection failed"
+                    ) from exc
+                if cancellation.is_set():
+                    raise SearchCancelled()
             search_ms = (time.perf_counter() - search_started) * 1_000.0
             payload = self._response_payload(
                 results,
@@ -505,6 +525,18 @@ class NativeAnalysisService:
                 swap_dead_zone=self.config.search.swap_dead_zone,
                 auxiliary_ready=lease.model.auxiliary_predictions_ready,
             )
+            if network_values is not None:
+                try:
+                    payload["network_output"] = network_output_payload(
+                        network_values,
+                        request,
+                        auxiliary_ready=lease.model.auxiliary_predictions_ready,
+                        swap_recommended=bool(payload["swap_recommended"]),
+                    )
+                except ValueError as exc:
+                    raise AnalysisError(
+                        "model_output_error", "root network outputs are invalid"
+                    ) from exc
             if cancellation.is_set():
                 raise SearchCancelled()
             if pool is not None:
@@ -796,32 +828,6 @@ class NativeAnalysisService:
         return payload
 
 
-def _auxiliary_heads_ready(config: ModelConfig, metadata: Mapping[str, Any]) -> bool:
-    """Require observed supervision for every newly added prediction head."""
-    if not config.auxiliary_predictions:
-        return False
-    step = metadata.get("step")
-    if type(step) is not int or step <= 0:
-        return False
-    extra = metadata.get("extra", {})
-    if not isinstance(extra, Mapping):
-        return False
-    if "auxiliary_upgrade" not in extra:
-        return True
-    upgrade = extra["auxiliary_upgrade"]
-    supervision = extra.get("auxiliary_supervision")
-    if not isinstance(upgrade, Mapping) or not isinstance(supervision, Mapping):
-        return False
-    source_step = upgrade.get("source_step")
-    if type(source_step) is not int or not 0 <= source_step < step:
-        return False
-    # Old replay can teach final counts before any new future-move labels are
-    # sampled. Advancing the learner alone does not establish head readiness.
-    return all(
-        type(supervision.get(name)) is int and source_step < supervision[name] <= step
-        for name in AUXILIARY_LOSSES
-    )
-
 
 def _auxiliary_payload(
     prediction: AuxiliaryPrediction,
@@ -894,7 +900,7 @@ def _auxiliary_payload(
         "final_counts": counts,
         "opponent_reply": future_move(
             prediction.opponent_reply_probabilities, 1 - request.to_move, swap=True
-        ),
+        ) if sum(stone == -1 for stone in request.stones) > request.moves_left else None,
         "second_stone": future_move(
             prediction.second_stone_probabilities, request.to_move, swap=False
         )

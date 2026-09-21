@@ -46,7 +46,7 @@ describe('MovesPanel', () => {
     ).not.toBeInTheDocument();
 
     await user.click(
-      within(panel).getByRole('button', { name: 'Go to move 2: Grace at B' }),
+      within(panel).getByRole('button', { name: 'Go to move 2: Grace at E4' }),
     );
     expect(onSeek).toHaveBeenCalledWith(2);
   });
@@ -69,7 +69,7 @@ describe('MovesPanel', () => {
     );
 
     const current = screen.getByRole('button', {
-      name: 'Go to move 2: Grace at B',
+      name: 'Go to move 2: Grace at E4',
     });
     expect(current).toHaveAttribute('aria-current', 'step');
     expect(screen.getByText('Viewing move 2 of 4')).toBeInTheDocument();

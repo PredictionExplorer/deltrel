@@ -4,17 +4,59 @@ use std::fmt;
 
 use crate::{BitBoard, NodeId, SUPPORTED_RINGS};
 
-/// Sequential alphabetic coordinates: A..Z, AA..AZ, BA, and so on.
-#[must_use]
-pub fn coordinate_label(node: NodeId) -> String {
-    let mut remaining = usize::from(node) + 1;
-    let mut letters = Vec::new();
-    while remaining > 0 {
-        remaining -= 1;
-        letters.push(char::from(b'A' + (remaining % 26) as u8));
-        remaining /= 26;
+/// Schema for presentation-only spatial file/rank coordinates.
+pub const BOARD_NOTATION_SCHEMA: &str = "deltrel.board-notation.v2";
+/// Current presentation-only notation version.
+pub const BOARD_NOTATION_VERSION: u8 = 2;
+const NOTATION_CELL: i64 = 800_000_000;
+const VERTEX_X: [i64; 5] = [587_785_252, -587_785_252, -951_056_516, 0, 951_056_516];
+const VERTEX_Y_UP: [i64; 5] = [
+    -809_016_994,
+    -809_016_994,
+    309_016_994,
+    1_000_000_000,
+    309_016_994,
+];
+
+fn rounded_cell(value: i64) -> i64 {
+    let magnitude = (value.abs() + NOTATION_CELL / 2) / NOTATION_CELL;
+    if value < 0 { -magnitude } else { magnitude }
+}
+
+// JavaScript String.trim whitespace, including BOM and excluding NEL.
+fn coordinate_whitespace(value: char) -> bool {
+    matches!(value,
+        '\u{0009}'..='\u{000d}' | ' ' | '\u{00a0}' | '\u{1680}' |
+        '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' |
+        '\u{205f}' | '\u{3000}' | '\u{feff}')
+}
+
+/// Spatial file/rank coordinate, with files left-to-right and ranks bottom-to-top.
+/// This fixed-point projection changes names only; node ids and geometry remain
+/// unchanged. Labels are specific to the selected board size.
+pub fn coordinate_label(node: NodeId, rings: u8) -> Result<String, BoardError> {
+    if !SUPPORTED_RINGS.contains(&rings) {
+        return Err(BoardError::InvalidRingCount(rings));
     }
-    letters.into_iter().rev().collect()
+    if node >= ring_start(rings + 1) {
+        return Err(BoardError::InvalidNodeId { node, rings });
+    }
+    let mut ring = 1;
+    while ring_start(ring + 1) <= node {
+        ring += 1;
+    }
+    let offset = node - ring_start(ring);
+    let sector = usize::from(offset / u16::from(ring));
+    let position = i64::from(offset % u16::from(ring));
+    let successor = (sector + 1) % 5;
+    let x = (i64::from(ring) - position) * VERTEX_X[sector] + position * VERTEX_X[successor];
+    let y_up =
+        (i64::from(ring) - position) * VERTEX_Y_UP[sector] + position * VERTEX_Y_UP[successor];
+    let minimum_column = rounded_cell(-951_056_516 * i64::from(rings));
+    let minimum_row = rounded_cell(-809_016_994 * i64::from(rings));
+    let file_index = rounded_cell(x) - minimum_column;
+    let rank = rounded_cell(y_up) - minimum_row + 1;
+    Ok(format!("{}{rank}", char::from(b'A' + file_index as u8)))
 }
 
 /// Errors returned while constructing or addressing a board.
@@ -22,6 +64,13 @@ pub fn coordinate_label(node: NodeId) -> String {
 pub enum BoardError {
     /// The ring count is outside the supported range.
     InvalidRingCount(u8),
+    /// A numeric node id is outside the selected board.
+    InvalidNodeId {
+        /// The invalid dense node id.
+        node: NodeId,
+        /// Ring count of the selected board.
+        rings: u8,
+    },
     /// A textual node label is unknown on this board.
     UnknownLabel(String),
 }
@@ -31,6 +80,9 @@ impl fmt::Display for BoardError {
         match self {
             Self::InvalidRingCount(rings) => {
                 write!(f, "rings must be one of 4, 6, 8, or 10, got {rings}")
+            }
+            Self::InvalidNodeId { node, rings } => {
+                write!(f, "node id {node} is outside the {rings}-ring board")
             }
             Self::UnknownLabel(label) => write!(f, "unknown node label: {label}"),
         }
@@ -89,7 +141,7 @@ impl Board {
                             capes.insert(node);
                         }
                     }
-                    let label = coordinate_label(node);
+                    let label = coordinate_label(node, rings)?;
                     labels[node_index].clone_from(&label);
                     label_to_id.insert(label, node);
                 }
@@ -273,16 +325,16 @@ impl Board {
         &self.adjacency[start..end]
     }
 
-    /// Official label for a node.
+    /// Display coordinate for a node on this board.
     #[must_use]
     pub fn label(&self, node: NodeId) -> &str {
         &self.labels[usize::from(node)]
     }
 
-    /// Parses an official label on this board.
+    /// Resolves a display coordinate, ignoring case and surrounding whitespace.
     pub fn parse_label(&self, label: &str) -> Result<NodeId, BoardError> {
         self.label_to_id
-            .get(label)
+            .get(&label.trim_matches(coordinate_whitespace).to_uppercase())
             .copied()
             .ok_or_else(|| BoardError::UnknownLabel(label.to_owned()))
     }

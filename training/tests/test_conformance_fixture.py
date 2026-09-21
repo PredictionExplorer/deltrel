@@ -8,6 +8,7 @@ import torch
 from deltreltrain.actions import extract_sample_actions, relocate_sample_actions
 from deltreltrain.contracts import (
     ACTION_LAYOUT_SCHEMA_ID,
+    BOARD_NOTATION_CONTRACT,
     CONFORMANCE_SCHEMA_ID,
     EXTERNAL_FEATURE_SCHEMA_ID,
     LEGACY_RULES_HASH_WIRE,
@@ -127,8 +128,8 @@ def test_all_supported_topologies_follow_canonical_node_and_d5_layout() -> None:
         assert topology.n == 5 * rings * (rings + 1) // 2
         assert topology.n <= MAX_NODES
         assert topology.shore_count == 5 * rings
-        assert topology.labels[0] == "A"
-        assert topology.labels[-1].isalpha()
+        assert topology.labels[0] == {4: "G4", 6: "I6", 8: "L8", 10: "N10"}[rings]
+        assert topology.labels[-1] == {4: "I2", 6: "M2", 8: "Q2", 10: "U2"}[rings]
         for index in range(10):
             transform = D5Transform.from_index(index)
             mapping = topology.d5_permutation(transform.rotation, transform.reflected)
@@ -225,6 +226,7 @@ def test_fixture_v3_identifiers_and_exact_canonical_bytes(conformance: dict) -> 
 
 
 def test_fixture_topology_csr_and_every_d5_vector(conformance: dict) -> None:
+    assert conformance["notation"] == BOARD_NOTATION_CONTRACT
     assert [board["rings"] for board in conformance["boards"]] == list(SUPPORTED_RINGS)
     for expected in conformance["boards"]:
         topology = get_topology(expected["rings"])

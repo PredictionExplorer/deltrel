@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import math
 
 import pytest
 import torch
@@ -150,22 +151,62 @@ def test_headless_checkpoints_migrate_only_unambiguous_disabled_count_losses(
         migrate_payload(payload)
 
 
-def test_alphabetic_coordinates_are_unique_round_trip_and_board_independent() -> None:
-    assert [coordinate_label(n) for n in (0, 25, 26, 51, 52, 274)] == [
-        "A",
-        "Z",
-        "AA",
-        "AZ",
-        "BA",
-        "JO",
+@pytest.mark.parametrize("rings", [4, 6, 8, 10])
+def test_spatial_coordinates_are_unique_round_trip_and_ordered(rings: int) -> None:
+    topology = get_topology(rings)
+    assert len(set(topology.labels)) == topology.n
+    expected_capes = {
+        4: ["I1", "C1", "A7", "F10", "K7"],
+        6: ["L1", "D1", "A9", "H15", "O9"],
+        8: ["Q1", "E1", "A12", "K19", "U12"],
+        10: ["T1", "F1", "A15", "M24", "Y15"],
+    }
+    assert [
+        topology.labels[topology.idx(s, rings, 0)] for s in range(5)
+    ] == expected_capes[rings]
+    rows: dict[int, list[tuple[float, int]]] = {}
+    files: dict[int, list[tuple[float, int]]] = {}
+    for node, label in enumerate(topology.labels):
+        assert label[0].isupper() and label[1:].isdecimal()
+        assert topology.label_to_id(label) == node
+        assert topology.label_to_id(f" {label.lower()}\n") == node
+        assert topology.label_to_id(f"\ufeff{label.lower()}\u00a0") == node
+        assert coordinate_label(node, rings) == label
+        file_index, rank = ord(label[0]) - ord("A"), int(label[1:])
+        sector = int(topology.sector_of[node])
+        ring, position = int(topology.ring_of[node]), int(topology.pos_of[node])
+        # Independently recover the physical layout from trigonometry. The
+        # coordinate implementation uses fixed-point integer arithmetic instead.
+        angle = math.radians(54 + 72 * sector)
+        successor = math.radians(54 + 72 * (sector + 1))
+        x = (ring - position) * math.cos(angle) + position * math.cos(successor)
+        y_up = -((ring - position) * math.sin(angle) + position * math.sin(successor))
+        rows.setdefault(rank, []).append((x, file_index))
+        files.setdefault(file_index, []).append((y_up, rank))
+    for values in (*rows.values(), *files.values()):
+        ordered = [value for _, value in sorted(values)]
+        assert ordered == sorted(set(ordered))
+    assert min(rows) == 1
+    assert min(files) == 0
+    assert max(files) == {4: 10, 6: 14, 8: 20, 10: 24}[rings]
+    assert max(rows) == {4: 10, 6: 15, 8: 19, 10: 24}[rings]
+    for invalid in ("A", "G04", "G 4", "G0", "Z999", "A1"):
+        with pytest.raises(ValueError, match="unknown node label"):
+            topology.label_to_id(invalid)
+    with pytest.raises(ValueError, match="unknown node label"):
+        topology.label_to_id(f"\u0085{topology.labels[0]}")
+
+
+def test_spatial_coordinate_validation_and_size_specific_origin() -> None:
+    assert [coordinate_label(0, rings) for rings in (4, 6, 8, 10)] == [
+        "G4",
+        "I6",
+        "L8",
+        "N10",
     ]
-    for rings in (4, 6, 8, 10):
-        topology = get_topology(rings)
-        assert len(set(topology.labels)) == topology.n
-        for node, label in enumerate(topology.labels):
-            assert label.isalpha() and label.isupper()
-            assert topology.label_to_id(label) == node
-            assert get_topology(10).labels[node] == label
-    for invalid in (-1, 0.5, True):
+    for invalid in (-1, 0.5, True, 50):
         with pytest.raises(ValueError):
-            coordinate_label(invalid)  # type: ignore[arg-type]
+            coordinate_label(invalid, 4)  # type: ignore[arg-type]
+    for rings in (0, 5, 12, True):
+        with pytest.raises((ValueError, TypeError)):
+            coordinate_label(0, rings)

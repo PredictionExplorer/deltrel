@@ -3,7 +3,7 @@ import type { AiRuntime } from '@/lib/store';
 
 const ENGINE_LABELS: Record<AiRuntime, string> = {
   server: 'Mac engine — current champion',
-  local: 'Browser AI — lightweight',
+  local: 'Browser AI — trained champion',
 };
 
 export function deltrelAiDevtoolsEnabled(): boolean {

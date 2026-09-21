@@ -30,7 +30,7 @@ test('starts a named human game and places a stone with the mouse', async ({ pag
 
   await page
     .getByRole('button', {
-      name: /Node A, empty interior node; Ada may place here/i,
+      name: /Node G4, empty interior node; Ada may place here/i,
     })
     .click();
 
@@ -42,7 +42,7 @@ test('starts a named human game and places a stone with the mouse', async ({ pag
   ).toBeVisible();
   await expect(
     page.getByRole('button', {
-      name: /Node A, Ada stone on interior node, last move/i,
+      name: /Node G4, Ada stone on interior node, last move/i,
     }),
   ).toHaveAttribute('aria-disabled', 'true');
 });
@@ -50,7 +50,7 @@ test('starts a named human game and places a stone with the mouse', async ({ pag
 test('undoes and redoes a placement through the visible controls', async ({ page }) => {
   await startMiniHumanGame(page);
   await page
-    .getByRole('button', { name: /Node A, empty interior node/i })
+    .getByRole('button', { name: /Node G4, empty interior node/i })
     .click();
 
   const undo = page.getByRole('button', { name: 'Undo' });
@@ -60,14 +60,14 @@ test('undoes and redoes a placement through the visible controls', async ({ page
 
   await undo.click();
   await expect(
-    page.getByRole('button', { name: /Node A, empty interior node/i }),
+    page.getByRole('button', { name: /Node G4, empty interior node/i }),
   ).toBeVisible();
   await expect(undo).toBeDisabled();
   await expect(redo).toBeEnabled();
 
   await redo.click();
   await expect(
-    page.getByRole('button', { name: /Node A, Ada stone on interior node/i }),
+    page.getByRole('button', { name: /Node G4, Ada stone on interior node/i }),
   ).toBeVisible();
   await expect(undo).toBeEnabled();
   await expect(redo).toBeDisabled();
@@ -76,16 +76,16 @@ test('undoes and redoes a placement through the visible controls', async ({ page
 test('reviews earlier moves without disturbing the live game', async ({ page }) => {
   await startMiniHumanGame(page);
   await page
-    .getByRole('button', { name: /Node A, empty interior node/i })
+    .getByRole('button', { name: /Node G4, empty interior node/i })
     .click();
   await page
-    .getByRole('button', { name: /Node B, empty interior node/i })
+    .getByRole('button', { name: /Node E4, empty interior node/i })
     .click();
 
   const movesPanel = page.getByRole('region', { name: 'Move history' });
   await expect(movesPanel.getByText('Live position')).toBeVisible();
   await movesPanel
-    .getByRole('button', { name: 'Go to move 1: Ada at A' })
+    .getByRole('button', { name: 'Go to move 1: Ada at G4' })
     .click();
 
   // The board becomes a read-only snapshot of the position after move 1.
@@ -113,7 +113,7 @@ test('reviews earlier moves without disturbing the live game', async ({ page }) 
 
 test('branches from a reviewed position with play-from-here', async ({ page }) => {
   await startMiniHumanGame(page);
-  for (const label of ['A', 'B', 'C'] as const) {
+  for (const label of ['G4', 'E4', 'E5'] as const) {
     await page
       .getByRole('button', {
         name: new RegExp(`Node ${label}, empty interior node`, 'i'),
@@ -141,7 +141,7 @@ test('branches from a reviewed position with play-from-here', async ({ page }) =
 test('restores the current game and history after reload', async ({ page }) => {
   await startMiniHumanGame(page);
   await page
-    .getByRole('button', { name: /Node A, empty interior node/i })
+    .getByRole('button', { name: /Node G4, empty interior node/i })
     .click();
 
   await page.reload();
@@ -149,7 +149,7 @@ test('restores the current game and history after reload', async ({ page }) => {
   await expect(page.getByText('Grace to play')).toBeVisible();
   await expect(
     page.getByRole('button', {
-      name: /Node A, Ada stone on interior node, last move/i,
+      name: /Node G4, Ada stone on interior node, last move/i,
     }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();

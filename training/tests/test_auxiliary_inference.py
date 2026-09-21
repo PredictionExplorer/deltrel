@@ -32,7 +32,8 @@ from test_deltrelserve import (
 @pytest.fixture
 def adapter(monkeypatch):
     monkeypatch.setattr(
-        "deltreltrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
+        "deltreltrain.inference.encode_native_feature_data",
+        lambda data, **_: data.encoded,
     )
     model = GraphResTNet(
         ModelConfig(
@@ -234,6 +235,23 @@ def test_legacy_model_reports_no_predictions_only_when_requested():
         **arguments,
     )
     assert result["predictions"] is None
+
+
+def test_compact_reply_is_absent_when_current_turn_fills_the_board():
+    request = AnalyzeRequest.model_validate(request_payload()).model_copy(
+        update={
+            "stones": [0] * 48 + [-1, -1],
+            "opening": False,
+            "moves_left": 2,
+            "history": None,
+        }
+    )
+    assert _auxiliary_payload(prediction(), request)["opponent_reply"] is None
+    one_placement_left = request.model_copy(update={"moves_left": 1})
+    assert (
+        _auxiliary_payload(prediction(), one_placement_left)["opponent_reply"]
+        is not None
+    )
 
 
 @pytest.mark.parametrize(
