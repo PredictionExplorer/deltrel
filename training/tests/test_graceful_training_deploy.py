@@ -964,6 +964,8 @@ def test_interrupted_source_only_forward_recovery_reuses_intent_and_latest_check
     deployment, monkeypatch, interruption
 ):
     subject, checkpoint, preserved = activate_source_only_target(deployment)
+    original_checkpoint_path = subject.root / "learner" / checkpoint["checkpoint"]
+    original_checkpoint_bytes = original_checkpoint_path.read_bytes()
     mock_stop(subject, monkeypatch)
     monkeypatch.setattr(
         subject, "migrate", lambda *a, **k: pytest.fail("unexpected migration")
@@ -990,13 +992,19 @@ def test_interrupted_source_only_forward_recovery_reuses_intent_and_latest_check
         # The failed start may have trained before its readiness gate failed.
         # Recover the newly checkpointed state, never the original rollout step.
         payload = b"new checkpoint from interrupted recovery"
-        (subject.root / "learner" / checkpoint["checkpoint"]).write_bytes(payload)
+        checksum = hashlib.sha256(payload).hexdigest()
+        checkpoint_relative_path = f"recovery/sha256-{checksum}.pt"
+        new_checkpoint_path = subject.root / "learner" / checkpoint_relative_path
+        assert new_checkpoint_path != original_checkpoint_path
+        assert not new_checkpoint_path.exists()
+        new_checkpoint_path.write_bytes(payload)
         checkpoint = {
             **checkpoint,
+            "checkpoint": checkpoint_relative_path,
             "step": 6,
             "examples_consumed": 3072,
             "checkpoint_bytes": len(payload),
-            "checkpoint_sha256": hashlib.sha256(payload).hexdigest(),
+            "checkpoint_sha256": checksum,
         }
         write(subject.root / "learner/recovery.json", checkpoint)
         write(
@@ -1024,6 +1032,7 @@ def test_interrupted_source_only_forward_recovery_reuses_intent_and_latest_check
         resumed.base / "source-only-forward-recovery.json"
     ).read_bytes() == intent_before
     assert all(path.read_bytes() == content for path, content in preserved.items())
+    assert original_checkpoint_path.read_bytes() == original_checkpoint_bytes
 
 
 @pytest.mark.parametrize(
