@@ -255,10 +255,27 @@ ring10-optimizer-calibration`.
 Use `run_frozen_replay_optimizer_calibration_queue.py` to execute deterministic
 learner-only arms against one hash-pinned replay cutoff. Each arm opens SQLite
 in read-only/query-only mode, starts from the same champion EMA with fresh
-optimizer/scheduler state, uses disjoint deterministic train/holdout samples,
+optimizer/scheduler state, uses disjoint deterministic train/holdout games,
 and is capped at two H100-hours. The queue falls back to deterministic
 sequential waves until shared-replay concurrency has separately cleared its
 throughput gate.
+
+Schema-two calibration identifies a game by run, family, actor, generation and
+game ID, and a logical position by that game plus ply. It scans newest ready
+shards at the pinned cutoff until the logical-position cap is reached, retaining
+the newest ready revision of each position. All selected rows from one game go
+to the same partition; explicit sorted game identities and partition hashes
+travel with the evidence. Row model identity must agree with its shard, and a
+game's model and variant cannot change between publications.
+
+Holdout loss is normalized separately for each game's available target-weight
+mass in each head, then combined with the configured policy/value loss weights.
+The aggregate is a position-weighted mean of these game means. Evaluation chunks
+carry head-specific numerators and denominators so partial labels and mixed
+fast/full weights cannot change the result merely by moving a chunk boundary.
+The paired bootstrap resamples whole games with their row weights; a single
+held-out game cannot qualify a treatment. Schema-one results and resume states
+remain historical artifacts and are rejected by the new comparator and runner.
 
 Compiled calibration must retain the hardened systemd sandbox. Every arm owns
 `<arm-output>/compile-cache/v1/` with distinct Inductor, Triton, XDG, and CUDA

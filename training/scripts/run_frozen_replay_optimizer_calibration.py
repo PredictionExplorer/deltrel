@@ -83,7 +83,11 @@ else:
     )
 
 FORMAT = "deltreltrain.frozen-replay-optimizer-calibration"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+PARTITION_METHOD = "bounded-latest-window-game-disjoint-v2"
+OBSERVATION_UNIT = "immutable-game"
+COMPONENT_NORMALIZATION = "per-game-target-weight-mass-v1"
+HOLDOUT_AGGREGATION = "position-weighted-game-means"
 STATE_FORMAT = "deltreltrain.frozen-replay-optimizer-calibration-state"
 MAX_H100_HOURS_PER_ARM = 2.0
 CONTROL_ARM = "ring10-optimizer-runtime-effective-control"
@@ -177,12 +181,14 @@ class ReplayReference:
     sample_index: int
     stable_id: str
     order_sha256: str
+    game_identity: str
 
     def as_hash_record(self) -> dict[str, object]:
         return {
             "shard_id": self.shard.shard_id,
             "sample_index": self.sample_index,
             "stable_id": self.stable_id,
+            "game_identity": self.game_identity,
         }
 
 
@@ -200,13 +206,18 @@ class FrozenReplay:
 
     def partition_dict(self) -> dict[str, object]:
         return {
-            "method": "bounded-latest-window-hash-order-exact-split-v1",
+            "method": PARTITION_METHOD,
             "train_samples": len(self.train),
             "holdout_samples": len(self.holdout),
             "train_sha256": self.train_sha256,
             "holdout_sha256": self.holdout_sha256,
             "partition_sha256": self.partition_sha256,
             "disjoint": True,
+            "game_disjoint": True,
+            "train_games": len({row.game_identity for row in self.train}),
+            "holdout_games": len({row.game_identity for row in self.holdout}),
+            "train_game_ids": sorted({row.game_identity for row in self.train}),
+            "holdout_game_ids": sorted({row.game_identity for row in self.holdout}),
         }
 
 
@@ -429,10 +440,7 @@ def _champion_pin(path: Path, config: ExperimentConfig) -> ChampionPin:
         raise ValueError("champion publication pins disagree")
     verified = extract_verified_manifest_config(manifest, require_ema=True)
     serialized = config.as_dict()
-    if (
-        verified.model != config.model
-        or verified.game_config != serialized["game"]
-    ):
+    if verified.model != config.model or verified.game_config != serialized["game"]:
         raise ValueError("champion architecture/game contract differs from config")
     return ChampionPin(
         pointer=pointer,
@@ -528,13 +536,33 @@ def _frozen_shard(
 
 
 def _stable_reference(
-    shard: FrozenShard, sample_index: int, seed: int
+    shard: FrozenShard,
+    sample_index: int,
+    seed: int,
+    *,
+    game_identity: str,
+    ply: int,
 ) -> ReplayReference:
-    stable_id = f"{shard.shard_id}:{sample_index}:{shard.checksum_sha256}"
+    # Publication revisions enrich the same logical position; neither a new
+    # shard nor a different checksum creates an independent observation.
+    stable_id = f"{game_identity}:{ply}"
     order = hashlib.sha256(
-        f"optimizer-calibration-v1:{seed}:{stable_id}".encode()
+        f"optimizer-calibration-v2:{seed}:{stable_id}".encode()
     ).hexdigest()
-    return ReplayReference(shard, sample_index, stable_id, order)
+    return ReplayReference(shard, sample_index, stable_id, order, game_identity)
+
+
+def _replay_game_identity(decoded: DecodedReplayShard, sample_index: int) -> str:
+    arrays = decoded.arrays
+    return _digest(
+        {
+            "run_id": str(arrays["run_id"][sample_index]),
+            "generation_family": str(arrays["generation_family"][sample_index]),
+            "actor_id": str(arrays["actor_id"][sample_index]),
+            "generation": int(arrays["generation"][sample_index]),
+            "game_id": str(arrays["game_id"][sample_index]),
+        }
+    )
 
 
 def _partition_hash(references: Sequence[ReplayReference]) -> str:
@@ -587,49 +615,83 @@ def freeze_replay(
     }
     cutoff_sha256 = _digest(cutoff_document)
 
-    window: list[FrozenShard] = []
-    capacity = 0
+    decoded: dict[int, DecodedReplayShard] = {}
+    logical_positions: dict[str, ReplayReference] = {}
+    game_contexts: dict[str, tuple[str, int, int, bool]] = {}
     for shard in reversed(shards):
-        window.append(shard)
-        capacity += shard.sample_count
-        if capacity >= settings.max_samples:
+        if not shard.path.is_file() or shard.path.is_symlink():
+            raise ValueError(f"source replay shard is unsafe: {shard.path}")
+        if sha256_file(shard.path) != shard.checksum_sha256:
+            raise ValueError(f"source replay shard hash failed: {shard.path}")
+        materialized = decode_replay_shard(shard.path)
+        if len(materialized) != shard.sample_count:
+            raise ValueError("source replay shard count disagrees with manifest")
+        contributed = False
+        # Visit newest ready shards and rows first. The capacity limit counts
+        # logical positions, so repeated publication cannot crowd out games.
+        for sample_index in reversed(range(shard.sample_count)):
+            arrays = materialized.arrays
+            if (
+                int(arrays["rings"][sample_index]) != 10
+                or str(arrays["run_id"][sample_index]) != champion.run_id
+                or str(arrays["generation_family"][sample_index])
+                != champion.generation_family
+                or str(arrays["model_identity"][sample_index]) != shard.model_identity
+            ):
+                raise ValueError("optimizer calibration replay identity differs")
+            game_identity = _replay_game_identity(materialized, sample_index)
+            context = (
+                str(arrays["model_identity"][sample_index]),
+                int(arrays["mode"][sample_index]),
+                int(arrays["handicap"][sample_index]),
+                bool(arrays["pie"][sample_index]),
+            )
+            if game_contexts.setdefault(game_identity, context) != context:
+                raise ValueError("immutable replay game model/variant context changed")
+            reference = _stable_reference(
+                shard,
+                sample_index,
+                settings.seed,
+                game_identity=game_identity,
+                ply=int(arrays["ply"][sample_index]),
+            )
+            if reference.stable_id not in logical_positions:
+                logical_positions[reference.stable_id] = reference
+                contributed = True
+        if decode and contributed:
+            decoded[shard.shard_id] = materialized
+        if len(logical_positions) >= settings.max_samples:
             break
-    references = [
-        _stable_reference(shard, sample_index, settings.seed)
-        for shard in reversed(window)
-        for sample_index in range(shard.sample_count)
-    ]
-    references.sort(key=lambda reference: (reference.order_sha256, reference.stable_id))
+    references = sorted(
+        logical_positions.values(),
+        key=lambda reference: (reference.order_sha256, reference.stable_id),
+    )
     selected = references[: settings.max_samples]
     if len(selected) < 3:
         raise ValueError("frozen replay has fewer than three eligible samples")
-    holdout_count = round(len(selected) * settings.holdout_fraction)
-    holdout_count = max(1, min(len(selected) - 1, holdout_count))
-    partition_order = sorted(
-        selected,
-        key=lambda reference: hashlib.sha256(
-            f"holdout-v1:{settings.seed}:{reference.stable_id}".encode()
+    groups: dict[str, list[ReplayReference]] = {}
+    for reference in selected:
+        groups.setdefault(reference.game_identity, []).append(reference)
+    if len(groups) < 2:
+        raise ValueError("game-disjoint calibration requires at least two games")
+    ordered_games = sorted(
+        groups,
+        key=lambda game: hashlib.sha256(
+            f"holdout-game-v2:{settings.seed}:{game}".encode()
         ).hexdigest(),
     )
-    holdout_ids = {reference.stable_id for reference in partition_order[:holdout_count]}
-    train = tuple(
-        sorted(
-            (
-                reference
-                for reference in selected
-                if reference.stable_id not in holdout_ids
-            ),
-            key=lambda reference: (reference.order_sha256, reference.stable_id),
-        )
-    )
-    holdout = tuple(
-        sorted(
-            (reference for reference in selected if reference.stable_id in holdout_ids),
-            key=lambda reference: (reference.order_sha256, reference.stable_id),
-        )
-    )
-    if {reference.stable_id for reference in train} & holdout_ids:
-        raise RuntimeError("frozen replay partitions overlap")
+    target_count = len(selected) * settings.holdout_fraction
+    count = 0
+    boundaries = []
+    for index, game in enumerate(ordered_games[:-1], start=1):
+        count += len(groups[game])
+        boundaries.append((abs(count - target_count), index))
+    _, holdout_game_count = min(boundaries)
+    holdout_games = set(ordered_games[:holdout_game_count])
+    train = tuple(row for row in selected if row.game_identity not in holdout_games)
+    holdout = tuple(row for row in selected if row.game_identity in holdout_games)
+    if {row.game_identity for row in train} & holdout_games:
+        raise RuntimeError("frozen replay game partitions overlap")
     batch_size = (
         settings.batch_size or load_config(settings.config).train.per_rank_batch_size
     )
@@ -639,29 +701,19 @@ def freeze_replay(
     holdout_sha256 = _partition_hash(holdout)
     partition_sha256 = _digest(
         {
-            "method": "bounded-latest-window-hash-order-exact-split-v1",
+            "method": PARTITION_METHOD,
             "train_sha256": train_sha256,
             "holdout_sha256": holdout_sha256,
             "cutoff_sha256": cutoff_sha256,
         }
     )
 
-    decoded: dict[int, DecodedReplayShard] = {}
-    selected_shards = {
-        reference.shard.shard_id: reference.shard for reference in (*train, *holdout)
-    }
-    for shard in selected_shards.values():
-        if not shard.path.is_file() or shard.path.is_symlink():
-            raise ValueError(f"source replay shard is unsafe: {shard.path}")
-        if sha256_file(shard.path) != shard.checksum_sha256:
-            raise ValueError(f"source replay shard hash failed: {shard.path}")
-        if decode:
-            materialized = decode_replay_shard(shard.path)
-            if len(materialized) != shard.sample_count:
-                raise ValueError("source replay shard count disagrees with manifest")
-            if int(materialized.arrays["rings"][0]) != 10:
-                raise ValueError("optimizer calibration replay must contain ring 10")
-            decoded[shard.shard_id] = materialized
+    selected_shards = {row.shard.shard_id for row in (*train, *holdout)}
+    decoded = (
+        {key: value for key, value in decoded.items() if key in selected_shards}
+        if decode
+        else {}
+    )
     return FrozenReplay(
         cutoff=settings.replay_cutoff,
         cutoff_sha256=cutoff_sha256,
@@ -855,7 +907,9 @@ def _run_contract(
                 "policy_weight*policy + soft_policy_weight*soft_policy + "
                 "outcome_weight*outcome + score_margin_weight*score_margin"
             ),
-            "observation_unit": "deterministic-held-out-batch",
+            "observation_unit": OBSERVATION_UNIT,
+            "component_normalization": COMPONENT_NORMALIZATION,
+            "aggregation": HOLDOUT_AGGREGATION,
         },
     }
 
@@ -1137,14 +1191,14 @@ def _save_progress(
     return pin
 
 
-def _component_losses(
+def _component_loss_totals(
     model: nn.Module,
     batch: ReplayBatch,
     config: ExperimentConfig,
     *,
     device: torch.device,
     precision: str,
-) -> dict[str, float]:
+) -> dict[str, tuple[float, float]]:
     moved = batch.to(device)
     with (
         torch.no_grad(),
@@ -1166,10 +1220,58 @@ def _component_losses(
     host = {name: float(value.detach().float().cpu()) for name, value in losses.items()}
     if any(not math.isfinite(value) for value in host.values()):
         raise FloatingPointError("held-out evaluation produced non-finite loss")
+    # Losses normalize each head by its own available target weight. Carry
+    # sufficient statistics across chunks instead of weighting chunk means by
+    # raw rows, which biases partially labelled and fast/full mixed games.
+    targets = batch.targets
+    sample_weight = (
+        targets.sample_weight
+        if targets.sample_weight is not None
+        else torch.ones(targets.policy.shape[0])
+    )
+    policy_weight = sample_weight * (
+        targets.policy_weight
+        if targets.policy_weight is not None
+        else torch.ones_like(sample_weight)
+    )
+    legal = batch.inputs.legal_action_mask
+    masses = {
+        "policy": float(
+            (
+                policy_weight
+                * targets.policy_mask.bool()
+                * ((targets.policy * legal).sum(-1) > 0)
+            ).sum()
+        ),
+        "soft_policy": float(
+            (
+                policy_weight
+                * targets.soft_policy_mask.bool()
+                * ((targets.soft_policy * legal).sum(-1) > 0)
+            ).sum()
+        ),
+        "outcome": float((sample_weight * targets.outcome_mask.bool()).sum()),
+        "score_margin": float((sample_weight * targets.score_margin_mask.bool()).sum()),
+    }
+    if any(not math.isfinite(value) or value < 0 for value in masses.values()):
+        raise ValueError("held-out target weight mass is invalid")
+    return {name: (host[name] * mass, mass) for name, mass in masses.items()}
+
+
+def _components_from_totals(
+    totals: Mapping[str, Sequence[float]], config: ExperimentConfig
+) -> dict[str, float]:
+    means = {
+        name: numerator / denominator if denominator > 0 else 0.0
+        for name, (numerator, denominator) in totals.items()
+    }
     weights = config.loss
-    policy = weights.policy * host["policy"] + weights.soft_policy * host["soft_policy"]
+    policy = (
+        weights.policy * means["policy"] + weights.soft_policy * means["soft_policy"]
+    )
     value = (
-        weights.outcome * host["outcome"] + weights.score_margin * host["score_margin"]
+        weights.outcome * means["outcome"]
+        + weights.score_margin * means["score_margin"]
     )
     return {
         "policy": policy,
@@ -1209,38 +1311,53 @@ def _evaluate_holdout(
     candidate.eval()
 
     observations: list[dict[str, object]] = []
-    for start in range(0, len(replay.holdout), batch_size):
-        count = min(batch_size, len(replay.holdout) - start)
-        batch = _materialize(
-            replay,
-            replay.holdout,
-            start=start,
-            batch_size=count,
-            seed=config.train.seed,
-            augment=False,
-        )
-        reference_losses = _component_losses(
-            reference,
-            batch,
-            config,
-            device=device,
-            precision=precision,
-        )
-        candidate_losses = _component_losses(
-            candidate,
-            batch,
-            config,
-            device=device,
-            precision=precision,
-        )
+    groups: dict[str, list[ReplayReference]] = {}
+    for row in replay.holdout:
+        groups.setdefault(row.game_identity, []).append(row)
+    evaluated_batches = 0
+    for game_identity, references in sorted(groups.items()):
+        totals = {
+            side: {
+                key: [0.0, 0.0]
+                for key in ("policy", "soft_policy", "outcome", "score_margin")
+            }
+            for side in ("reference", "candidate")
+        }
+        for start in range(0, len(references), batch_size):
+            count = min(batch_size, len(references) - start)
+            batch = _materialize(
+                replay,
+                references,
+                start=start,
+                batch_size=count,
+                seed=config.train.seed,
+                augment=False,
+            )
+            for side, evaluated_model in (
+                ("reference", reference),
+                ("candidate", candidate),
+            ):
+                losses = _component_loss_totals(
+                    evaluated_model, batch, config, device=device, precision=precision
+                )
+                for component, (numerator, denominator) in losses.items():
+                    totals[side][component][0] += numerator
+                    totals[side][component][1] += denominator
+            evaluated_batches += 1
+        components = {
+            side: _components_from_totals(values, config)
+            for side, values in totals.items()
+        }
         observations.append(
             {
                 "index": len(observations),
-                "samples": count,
-                "reference": reference_losses,
-                "candidate": candidate_losses,
+                "game_identity": game_identity,
+                "samples": len(references),
+                "reference": components["reference"],
+                "candidate": components["candidate"],
                 "composite_improvement": (
-                    reference_losses["composite"] - candidate_losses["composite"]
+                    components["reference"]["composite"]
+                    - components["candidate"]["composite"]
                 ),
             }
         )
@@ -1292,8 +1409,9 @@ def _evaluate_holdout(
     return {
         "finite": True,
         "samples": total_samples,
-        "batches": len(observations),
-        "observation_unit": "deterministic-held-out-batch",
+        "batches": evaluated_batches,
+        "games": len(observations),
+        "observation_unit": OBSERVATION_UNIT,
         "reference": reference_aggregate,
         "candidate": candidate_aggregate,
         "composite_improvement": (

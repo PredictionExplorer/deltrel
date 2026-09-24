@@ -23,6 +23,8 @@ from deltreltrain.config_compatibility import (
     without_selfplay_pipeline_defaults,
     without_training_execution_defaults,
     without_fresh_data_defaults,
+    without_history_horizon_defaults,
+    without_measurement_scheduler_defaults,
 )
 from deltreltrain.learner import UTDSegmentState
 from test_continuous_profile_migration import _fixture, _snapshot, _write_json
@@ -151,7 +153,11 @@ def test_pipeline_omission_matches_the_exact_previous_production_config_hash():
     old = without_arena_clinch_default(
         without_fresh_data_defaults(
             without_training_execution_defaults(
-                without_selfplay_pipeline_defaults(payload)
+                without_selfplay_pipeline_defaults(
+                    without_history_horizon_defaults(
+                        without_measurement_scheduler_defaults(payload)
+                    )
+                )
             )
         )
     )

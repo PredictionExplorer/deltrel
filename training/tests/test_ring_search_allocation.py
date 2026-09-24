@@ -92,6 +92,18 @@ def test_empty_group_preserves_canonical_authority_and_nonempty_never_disappears
 ):
     base = load_config(PROFILE)
     old_payload = asdict(base)
+    for section, names in (
+        (
+            "historical_evaluation",
+            ("measurement_service_fraction", "measurement_max_wait_seconds"),
+        ),
+        (
+            "model_refresh",
+            ("history_horizon_enabled", "history_horizon_initial_seconds"),
+        ),
+    ):
+        for name in names:
+            del old_payload["orchestration"][section][name]
     del old_payload["selfplay"]["ring_search_allocations"]
     # Reproduce the pre-addition canonical representation. Typed, disabled
     # release defaults do not change authority for an existing run.

@@ -23,8 +23,13 @@ from pathlib import Path
 
 import yaml
 
+from deltreltrain.worker_inventory import actor_metric_exclusion
+from deltreltrain.efficiency_telemetry import learner_efficiency
+
 from deltreltrain.config import load_config
 from deltreltrain.continuity import ContinuityError, load_continuity_manifest
+from deltreltrain.measurement_scheduling import measurement_service_status
+from deltreltrain.runtime import RunIdentity
 
 if __package__:
     from .validate_continuous_profile import validate_continuous_config
@@ -1395,6 +1400,7 @@ def _strength_efficiency_status(
             "available": False,
             "path": str(path),
             "present": path.is_file(),
+            **({"headline_source": "balanced_champion_frontier"} if balanced else {}),
         }
     run_identity = _read_json(run_root / "run.json", attempts=1) or {}
     observed_until_ns = report.get("observed_until_ns")
@@ -1427,6 +1433,7 @@ def _strength_efficiency_status(
             "path": str(path),
             "present": True,
             "reason": "report_contract_invalid",
+            **({"headline_source": "balanced_champion_frontier"} if balanced else {}),
         }
     autonomous = _mapping(report.get("autonomous_elo"))
     headline = _mapping(autonomous.get("headline"))
@@ -1480,11 +1487,33 @@ def _strength_efficiency_status(
             "rating": None,
             "confidence_interval": [None, None],
         }
+    champion: dict[str, object] = {}
     if balanced:
         # A valid report with insufficient balanced evidence is different from
         # a corrupt report. Never substitute standard-only/latest-candidate Elo.
+        champion = _read_json(run_root / "learner" / "champion.json", attempts=1) or {}
+        champion_identity = champion.get("model_identity")
+        if (
+            isinstance(champion_identity, str)
+            and balanced_strength.get("frontier_identity") != champion_identity
+        ):
+            balanced_strength = {
+                **balanced_strength,
+                "available": False,
+                "rating": None,
+                "confidence_interval": [None, None],
+                "elo_per_wall_hour": None,
+                "elo_per_provisioned_gpu_hour": None,
+                "reason": "champion_changed_since_report",
+                "rate_status": "awaiting_current_champion_measurement",
+                "frontier_identity": champion_identity,
+            }
         headline = dict(balanced_strength)
-        headline_elo = _number(balanced_strength.get("rating"))
+        headline_elo = (
+            _number(balanced_strength.get("rating"))
+            if balanced_strength.get("available") is True
+            else None
+        )
         source = "balanced_champion_frontier"
         balanced_interval = balanced_strength.get("confidence_interval")
         confidence_interval = (
@@ -1493,6 +1522,32 @@ def _strength_efficiency_status(
             and len(balanced_interval) == 2
             and all(_number(value) is not None for value in balanced_interval)
             else None
+        )
+    current_strength = dict(_mapping(report.get("current_strength")))
+    if balanced:
+        if current_strength.get("frontier_identity") != balanced_strength.get(
+            "frontier_identity"
+        ):
+            current_strength["measurement_completed_ns"] = None
+        current_strength.update(
+            frontier_identity=balanced_strength.get("frontier_identity"),
+            model_step=champion.get("model_step"),
+            available=balanced_strength.get("available") is True,
+            rate_available=balanced_strength.get("available") is True
+            and _number(balanced_strength.get("elo_per_wall_hour")) is not None,
+            rating=headline_elo,
+            confidence_interval=balanced_strength.get("confidence_interval")
+            if headline_elo is not None
+            else [None, None],
+            elo_per_wall_hour=balanced_strength.get("elo_per_wall_hour"),
+            elo_per_provisioned_gpu_hour=balanced_strength.get(
+                "elo_per_provisioned_gpu_hour"
+            ),
+            rate_status=balanced_strength.get("rate_status"),
+            measurement_age_seconds=_age_seconds(
+                current_strength.get("measurement_completed_ns"), now_ns
+            ),
+            reason=balanced_strength.get("reason"),
         )
     return {
         "available": True,
@@ -1509,6 +1564,10 @@ def _strength_efficiency_status(
         "adoption_ranking_authorized": aggregate.get("adoption_ranking_authorized"),
         "balanced_strength": dict(balanced_strength) if balanced else None,
         "contract_matches_active_profile": contract_matches,
+        "current_strength": current_strength,
+        "measurement_age_seconds": _age_seconds(
+            current_strength.get("measurement_completed_ns"), now_ns
+        ),
     }
 
 
@@ -1820,26 +1879,27 @@ def collect_snapshot(
     else:
         _add_warning(warnings, "ERROR", "workers_missing", "worker map is missing")
 
-    learner_metric = (
-        _latest_jsonl(
-            root / "learner" / "metrics.jsonl",
-            predicate=lambda row: isinstance(row.get("losses"), dict),
-        )
-        or {}
+    learner_records = _recent_jsonl(root / "learner" / "metrics.jsonl")
+    learner_metric = next(
+        (
+            row
+            for row in reversed(learner_records)
+            if isinstance(row.get("losses"), dict)
+        ),
+        {},
     )
-    loader_pool_metric = (
-        _latest_jsonl(
-            root / "learner" / "metrics.jsonl",
-            predicate=lambda row: (
-                row.get("event")
-                in {
-                    "replay_loader_pool_started",
-                    "replay_loader_pool_rebound",
-                    "replay_loader_pool_shutdown",
-                }
-            ),
-        )
-        or {}
+    loader_pool_metric = next(
+        (
+            row
+            for row in reversed(learner_records)
+            if row.get("event")
+            in {
+                "replay_loader_pool_started",
+                "replay_loader_pool_rebound",
+                "replay_loader_pool_shutdown",
+            }
+        ),
+        {},
     )
     learner_heartbeat = _read_json(root / "status" / "learner.heartbeat.json") or {}
     losses = learner_metric.get("losses")
@@ -2037,6 +2097,7 @@ def collect_snapshot(
             f"{int(training_age // 60)} minutes (phase={phase}, reason={reason})",
         )
     learner = {
+        "efficiency": learner_efficiency(learner_records, now_ns=now),
         "step": learner_heartbeat.get("step", learner_metric.get("step")),
         "target_steps": target_steps,
         "epoch": learner_heartbeat.get("epoch", learner_metric.get("epoch")),
@@ -2156,10 +2217,28 @@ def collect_snapshot(
             )
 
     actors = []
+    excluded_actor_rows = []
+    worker_map = workers if isinstance(workers, dict) else {}
+    inventory_heartbeats = {
+        name: _read_json(Path(path)) or {}
+        for name, worker in worker_map.items()
+        if isinstance(path := _mapping(worker).get("heartbeat"), str)
+    }
     for metrics_path in sorted((root / "metrics").glob("*.jsonl")):
         metric = _latest_jsonl(metrics_path, predicate=_is_actor_metric)
         if metric is not None:
-            actors.append(metric)
+            exclusion = actor_metric_exclusion(
+                metric,
+                workers=worker_map,
+                heartbeats=inventory_heartbeats,
+                run_identity=run_identity,
+            )
+            if exclusion is None:
+                actors.append(metric)
+            else:
+                excluded_actor_rows.append(
+                    {"worker": metric.get("worker"), "reason": exclusion}
+                )
     actor_samples = sum(int(row.get("samples", 0) or 0) for row in actors)
     actor_policy_samples = sum(int(row.get("policy_samples", 0) or 0) for row in actors)
     worker_map = workers if isinstance(workers, dict) else {}
@@ -2341,6 +2420,11 @@ def collect_snapshot(
         )
     actor_fleet = {
         "workers": len(actors),
+        "inventory_source": "coordinator-current-processes",
+        "excluded_latest": excluded_actor_rows,
+        "legacy_identity_workers": [
+            row.get("worker") for row in actors if "pid" not in row
+        ],
         "throughput": actor_throughput,
         "physical_inference": _actor_physical_inference(worker_map, now_ns=now),
         "policy_supervision_rate": policy_supervision_rate,
@@ -2752,6 +2836,40 @@ def collect_snapshot(
         balanced=balanced_objective,
         expected_balanced_contract=expected_balanced_contract,
     )
+    historical_settings = _mapping(orchestration.get("historical_evaluation"))
+    measurement_service = measurement_service_status(
+        root,
+        RunIdentity(
+            root / "run.json",
+            str(run_identity.get("run_id", "")),
+            str(run_identity.get("generation_family", "")),
+            int(_number(run_identity.get("created_ns")) or 0),
+        ),
+        now_ns=now,
+        target_fraction=_number(historical_settings.get("measurement_service_fraction"))
+        or 0.0,
+    )
+    if measurement_service.get("status") == "invalid":
+        _add_warning(
+            warnings,
+            "ERROR",
+            "measurement_service_invalid",
+            str(measurement_service.get("reason")),
+        )
+    elif measurement_service.get("status") == "missing":
+        _add_warning(
+            warnings,
+            "WARN",
+            "measurement_service_missing",
+            "enabled measurement reservation has no durable service accounting yet",
+        )
+    elif measurement_service.get("accounting_complete") is False:
+        _add_warning(
+            warnings,
+            "WARN",
+            "measurement_service_accounting_gap",
+            "a disaster restore preserved settled service but left an explicitly uncredited interval",
+        )
     if balanced_objective and strength_efficiency.get("available") is True:
         balanced_evidence = _mapping(strength_efficiency.get("balanced_strength"))
         if balanced_evidence.get("available") is not True:
@@ -2965,7 +3083,7 @@ def collect_snapshot(
             warnings,
             "ERROR",
             "disaster_backup_stale",
-            f"latest Lambda snapshot age={float(disaster_age):.0f}s",
+            f"latest Lambda protected source age={float(disaster_age):.0f}s",
         )
 
     status = max(
@@ -3000,6 +3118,7 @@ def collect_snapshot(
         "arena_history": arena_history,
         "weighted_promotion": weighted_promotion,
         "strength_efficiency": strength_efficiency,
+        "measurement_service": measurement_service,
         "pause": pause,
         "disk": disk,
         "gpus": gpus,
@@ -3060,14 +3179,18 @@ def format_text(snapshot: Mapping[str, object]) -> str:
         if isinstance(item, Mapping) and item.get("code")
     )
     headline_elo = _number(strength_efficiency.get("headline_elo"))
+    balanced_headline = (
+        strength_efficiency.get("headline_source") == "balanced_champion_frontier"
+        or snapshot.get("training_objective") == "ring10_pie"
+    )
     displayed_elo = (
         headline_elo
-        if headline_elo is not None
+        if headline_elo is not None or balanced_headline
         else latest_evaluation.get("elo_difference")
     )
     elo_source = (
         strength_efficiency.get("headline_source")
-        if headline_elo is not None
+        if headline_elo is not None or balanced_headline
         else "latest_arena"
     )
     segment_target = learner.get("utd_segment_target_updates_per_new_sample")

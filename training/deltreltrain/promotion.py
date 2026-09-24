@@ -42,6 +42,7 @@ from .checkpoint import (
     load_model_manifest,
 )
 from .checkpoint import write_model_pointer
+from .checkpoint_manifest_cache import ControlManifestCache
 from .config import ArenaConfig, ExperimentConfig, load_config
 from .config_compatibility import without_search_execution_defaults
 from .device import (
@@ -58,6 +59,7 @@ from .historical_evaluation import (
     load_historical_manifests,
     select_historical_evaluation,
 )
+from .measurement_scheduling import MeasurementServiceLedger
 from .model import GraphResTNet
 from .balanced_evaluation import completed_counts_by_ring
 from .native import load_deltrel_native
@@ -647,6 +649,22 @@ class PromotionSupervisor:
                     return evaluated
                 self.sleep(promotion.poll_seconds)
                 continue
+            if self.experiment.orchestration.historical_evaluation.measurement_service_fraction:
+                try:
+                    measured = self._evaluate_historical_if_due(
+                        champion=champion,
+                        stop_requested=stop_requested,
+                        progress=progress,
+                        once=once,
+                        protected=True,
+                    )
+                except PauseLeaseInterrupted:
+                    return evaluated
+                evaluated += measured
+                if self._historical_slice_started:
+                    if once:
+                        return evaluated
+                    continue
             if not started:
                 for skipped in viable:
                     if skipped.model_identity != candidate.model_identity:
@@ -1215,26 +1233,26 @@ class PromotionSupervisor:
         progress: Callable[..., None] | None,
         once: bool,
         kinds: frozenset[str] = frozenset({"measurement", "anchor"}),
+        protected: bool = False,
     ) -> int:
         """Run one due crossplay plan whose kind is in ``kinds``.
 
-        Both measurement and anchor links are background work. Cooldown checks
-        never block the caller; newly ready candidates preempt a running slice.
+        Legacy work remains background-only. An opted-in protected slice uses
+        durable service debt and cannot be preempted by new candidate arrivals.
         """
 
         configured = self.experiment.orchestration.historical_evaluation
+        self._historical_slice_started = False
         if (
             not configured.enabled
             or stop_requested()
-            or self._has_ready_candidate()
-            or not self._historical_cooldown_ready()
+            or (not protected and self._has_ready_candidate())
+            or (not protected and not self._historical_cooldown_ready())
         ):
             return 0
-        manifests = load_historical_manifests(
-            self.manifest_directory,
-            run_identity=self.run_identity,
-        )
-        manifests[champion.model_identity] = champion
+        service = self._measurement_service()
+        if protected and service is None:
+            raise ValueError("protected measurement requires a service reservation")
         arena_results = load_arena_results(self.results_directory)
         strength_contract: dict[str, object] = {}
         if self.experiment.arena.balanced_cells:
@@ -1249,13 +1267,109 @@ class PromotionSupervisor:
                 if result.get("result_kind") != HISTORICAL_CROSSPLAY_RESULT_KIND
                 or result.get("evaluation_contract") == strength_contract
             ]
+        anchor_identity = None
+        if service is not None:
+            marker_path = self.results_directory.parent / "strength-epoch.json"
+            if marker_path.exists():
+                if marker_path.is_symlink():
+                    raise ValueError("measurement epoch must not be a symlink")
+                marker = json.loads(marker_path.read_text())
+                if (
+                    not isinstance(marker, dict)
+                    or type(marker.get("schema_version")) is not int
+                    or marker.get("schema_version") != 1
+                    or not isinstance(marker.get("anchor_identity"), str)
+                    or not marker["anchor_identity"]
+                    or type(marker.get("minimum_candidate_step")) is not int
+                    or marker["minimum_candidate_step"] < 0
+                    or marker.get("evaluation_contract_identity")
+                    != strength_contract.get("identity")
+                ):
+                    raise ValueError("protected measurement epoch is incompatible")
+                anchor_identity = marker["anchor_identity"]
+                if champion.model_step <= marker["minimum_candidate_step"]:
+                    # Qualify the service on the present champion/predecessor.
+                    # The strength reporter excludes this pre-boundary model;
+                    # it is operational evidence, never new-epoch training gain.
+                    anchor_identity = None
+            pinned = service.pinned_job
+            if pinned is not None and any(
+                row.get("candidate") == pinned["candidate"]
+                and row.get("baseline") == pinned["baseline"]
+                and row.get("result_kind") == HISTORICAL_CROSSPLAY_RESULT_KIND
+                and row.get("terminal") is True
+                for _, row in arena_results
+            ):
+                service.complete_job()
+            # A pinned unfinished matchup already proves that work is due.
+            # Check cheap result/epoch metadata first so completed jobs still
+            # clear their pins, but avoid manifest scans while service is not
+            # owed. Unpinned planning must establish due/no-due before resetting
+            # scheduling debt.
+            if (
+                protected
+                and service.pinned_job is not None
+                and not service.should_serve(
+                    due=True,
+                    now_ns=self.wall_clock_ns(),
+                    max_wait_seconds=configured.measurement_max_wait_seconds,
+                )
+            ):
+                return 0
+        cache = getattr(self, "_historical_manifest_cache", None)
+        if cache is None:
+            cache = self._historical_manifest_cache = ControlManifestCache()
+        required_identities = None
+        if service is not None:
+            pinned = service.pinned_job
+            if pinned is not None:
+                required_identities = frozenset(pinned.values())
+            elif anchor_identity is not None:
+                required_identities = frozenset(
+                    (champion.model_identity, anchor_identity)
+                )
+            else:
+                # Before the epoch boundary the only protected job is current
+                # champion versus its predecessor. Include every recorded
+                # predecessor option so the existing chronological selector
+                # retains authority; verify their actual manifests below.
+                predecessors = {
+                    str(row["baseline"])
+                    for _, row in arena_results
+                    if row.get("candidate") == champion.model_identity
+                    and isinstance(row.get("baseline"), str)
+                    and row.get("result_kind", "promotion") == "promotion"
+                    and isinstance((assessment := row.get("promotion")), Mapping)
+                    and assessment.get("decision") == "promote"
+                    and type(row.get("completed_ns")) is int
+                }
+                required_identities = frozenset(
+                    {champion.model_identity, *predecessors}
+                )
+        manifests = load_historical_manifests(
+            self.manifest_directory,
+            run_identity=self.run_identity,
+            cache=cache,
+            required_identities=required_identities,
+        )
+        manifests[champion.model_identity] = champion
         plan = select_historical_evaluation(
             config=configured,
             champion=champion,
             manifests=manifests,
             arena_results=arena_results,
             results_directory=self.results_directory,
+            anchor_identity=anchor_identity,
+            pinned_job=service.pinned_job if service else None,
         )
+        if service is not None:
+            eligible = service.should_serve(
+                due=plan is not None,
+                now_ns=self.wall_clock_ns(),
+                max_wait_seconds=configured.measurement_max_wait_seconds,
+            )
+            if protected and not eligible:
+                return 0
         if plan is None or plan.kind not in kinds:
             return 0
         if self.experiment.arena.balanced_cells and plan.previous is None:
@@ -1266,11 +1380,28 @@ class PromotionSupervisor:
                     f"{plan.result_path.stem}-{identity}.json"
                 ),
             )
-        with self._gpu_pause(
+        if service is not None:
+            service.pin_job(
+                plan.candidate.model_identity,
+                plan.baseline.model_identity,
+                candidate_manifest=plan.candidate.artifact_manifest
+                or plan.candidate.path,
+                baseline_manifest=plan.baseline.artifact_manifest or plan.baseline.path,
+            )
+            if not self._wait_between_leases(
+                candidate=plan.candidate,
+                champion=champion,
+                stop_requested=stop_requested,
+                progress=progress,
+            ):
+                return 0
+        with self._historical_lease(
+            candidate=plan.candidate,
+            service=service,
             stop_requested=stop_requested,
             progress=progress,
-            candidate_identity=plan.candidate.model_identity,
         ):
+            self._historical_slice_started = True
             started = self.clock()
             deadline = started + configured.session_seconds
             reason = "completed"
@@ -1291,7 +1422,7 @@ class PromotionSupervisor:
                     next_candidate_check = now + min(
                         10.0, self.experiment.orchestration.promotion.poll_seconds
                     )
-                    if self._has_ready_candidate():
+                    if not protected and self._has_ready_candidate():
                         reason = "candidate_ready"
                         return True
                 return False
@@ -1305,11 +1436,12 @@ class PromotionSupervisor:
                     stop_requested=stop_slice,
                     progress=progress,
                     once=True,
-                    yield_to_candidates=True,
+                    yield_to_candidates=not protected,
                     crossplay_kind=plan.kind,
                 )
             finally:
-                self._record_historical_cooldown(plan.candidate)
+                if not protected:
+                    self._record_historical_cooldown(plan.candidate)
                 self._session_event(
                     kind=plan.kind,
                     candidate=plan.candidate,
@@ -2475,12 +2607,59 @@ class PromotionSupervisor:
         )
 
     @contextmanager
+    def _historical_lease(
+        self,
+        *,
+        candidate: ModelManifest,
+        service: MeasurementServiceLedger | None,
+        stop_requested: Callable[[], bool],
+        progress: Callable[..., None] | None,
+    ):
+        entered = False
+        try:
+            with self._gpu_pause(
+                stop_requested=stop_requested,
+                progress=progress,
+                candidate_identity=candidate.model_identity,
+                service_kind="measurement",
+            ):
+                entered = True
+                yield
+        finally:
+            if entered and service is not None:
+                # Start actor catch-up only after the coordinator has released
+                # the GPU; a slow release must not consume that catch-up time.
+                self._record_inter_wave_cooldown(candidate)
+
+    def _measurement_service(self) -> MeasurementServiceLedger | None:
+        config = self.experiment.orchestration.historical_evaluation
+        if not config.measurement_service_fraction:
+            return None
+        if self.gpu_pause_path is None:
+            raise ValueError(
+                "measurement reservation requires coordinator GPU lease accounting"
+            )
+        service = getattr(self, "_measurement_service_ledger", None)
+        if service is None:
+            service = MeasurementServiceLedger(
+                path=self.results_directory / "measurement-service.json",
+                coordinator_events=self.results_directory.parent
+                / "metrics"
+                / "coordinator.jsonl",
+                request_path=self.gpu_pause_path,
+                run_identity=self.run_identity,
+            )
+            self._measurement_service_ledger = service
+        return service
+
+    @contextmanager
     def _gpu_pause(
         self,
         *,
         stop_requested: Callable[[], bool],
         progress: Callable[..., None] | None,
         candidate_identity: str,
+        service_kind: str = "promotion",
     ):
         if self.gpu_pause_path is None:
             yield
@@ -2508,8 +2687,19 @@ class PromotionSupervisor:
             clock=self.clock,
             sleep=self.sleep,
         )
-        with lease:
-            yield
+        service = self._measurement_service()
+        if service is not None:
+            service.register_lease(
+                lease.token,
+                service_kind,
+                self.experiment.orchestration.historical_evaluation.measurement_service_fraction,
+            )
+        try:
+            with lease:
+                yield
+        finally:
+            if service is not None:
+                service.refresh()
 
     def _result_path(self, candidate: ModelManifest, champion: ModelManifest) -> Path:
         if self.experiment.arena.balanced_cells:

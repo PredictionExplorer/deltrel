@@ -18,7 +18,8 @@ from typing import cast
 import yaml
 
 from deltreltrain.autonomous_elo import DecisiveMatch, fit_bradley_terry_elo
-from deltreltrain.runtime import atomic_json
+from deltreltrain.runtime import RunIdentity, atomic_json
+from deltreltrain.measurement_scheduling import measurement_service_status
 from deltreltrain.balanced_strength import balanced_strength_summary
 from deltreltrain.config import ArenaConfig, load_config
 
@@ -2259,6 +2260,7 @@ def _active_strength_config(
         "sha256": actual_sha256,
         "training_objective": config.orchestration.training_objective,
         "balanced_cells": config.arena.balanced_cells,
+        "measurement_service_fraction": config.orchestration.historical_evaluation.measurement_service_fraction,
     }
     if not config.arena.balanced_cells:
         return None, provenance
@@ -2274,6 +2276,71 @@ def _active_strength_config(
         ),
         provenance,
     )
+
+
+def _current_strength_headline(
+    root: Path,
+    *,
+    balanced: Mapping[str, object],
+    arenas: list[dict[str, object]],
+    observed_until_ns: int,
+    active_balanced: bool,
+) -> dict[str, object]:
+    """Pin the headline and observation age to the deployed champion's evidence."""
+    try:
+        pointer = json.loads((root / "learner" / "champion.json").read_text())
+    except (OSError, ValueError):
+        pointer = {}
+    pointer = pointer if isinstance(pointer, dict) else {}
+    identity = pointer.get("model_identity")
+    step = pointer.get("model_step")
+    pointer_valid = (
+        isinstance(identity, str) and bool(identity) and type(step) is int and step >= 0
+    )
+    matched = pointer_valid and identity == balanced.get("frontier_identity")
+    available = active_balanced and matched and balanced.get("available") is True
+    path = balanced.get("path")
+    path = path if isinstance(path, list) else []
+    paths = {edge.get("source") for edge in path if isinstance(edge, dict)}
+    timestamps: list[int] = []
+    for row in arenas:
+        completed_ns = row.get("completed_ns")
+        if (
+            row.get("_path") in paths
+            and identity in (row.get("candidate"), row.get("baseline"))
+            and type(completed_ns) is int
+            and 0 < completed_ns <= observed_until_ns
+        ):
+            timestamps.append(completed_ns)
+    completed = max(timestamps) if timestamps else None
+    return {
+        "source": "balanced_champion_frontier"
+        if active_balanced
+        else "independent_contract_unavailable",
+        "frontier_identity": identity if pointer_valid else None,
+        "model_step": step if pointer_valid else None,
+        "available": available,
+        "rate_available": available
+        and _number(balanced.get("elo_per_wall_hour")) is not None,
+        "rating": balanced.get("rating") if available else None,
+        "confidence_interval": balanced.get("confidence_interval")
+        if available
+        else [None, None],
+        "elo_per_wall_hour": balanced.get("elo_per_wall_hour") if available else None,
+        "elo_per_provisioned_gpu_hour": balanced.get("elo_per_provisioned_gpu_hour")
+        if available
+        else None,
+        "rate_status": balanced.get("rate_status"),
+        "reason": balanced.get("reason")
+        if matched
+        else "champion_evidence_unavailable_or_changed",
+        "measurement_completed_ns": completed,
+        "measurement_age_seconds": (observed_until_ns - completed) / 1e9
+        if completed is not None
+        else None,
+        "report_observed_until_ns": observed_until_ns,
+        "absolute_elo": False,
+    }
 
 
 def build_strength_efficiency_report(
@@ -2362,6 +2429,36 @@ def build_strength_efficiency_report(
         provisioned_gpus=provisioned_gpus,
     )
     strength_config, strength_profile = _active_strength_config(root, profile_path)
+    balanced = balanced_strength_summary(
+        root,
+        arenas,
+        wall_seconds=wall_seconds,
+        observed_until_ns=observed_until_ns,
+        provisioned_gpus=provisioned_gpus,
+        strength_simulations=strength_config.simulations
+        if strength_config is not None
+        else 1024,
+        evaluation_config=strength_config,
+    )
+    autonomous = _autonomous_elo_summary(
+        root,
+        arena_results=arenas,
+        actor_records=actor_records,
+        actor_summary=actor_summary,
+        provisioned_gpu_hours=provisioned_gpu_hours,
+    )
+    if strength_config is not None:
+        # Keep historical diagnostic evidence, but old standard-only checkpoints
+        # must not remain a numeric headline for today's balanced objective.
+        autonomous["historical_headline"] = autonomous.get("headline")
+        autonomous["historical_efficiency"] = autonomous.get("efficiency")
+        autonomous["headline"] = None
+        autonomous["headline_elo"] = None
+        autonomous["efficiency"] = {
+            "available": False,
+            "reason": "inactive_historical_ladder",
+        }
+        autonomous["current_objective"] = False
     return {
         "schema_version": SCHEMA_VERSION,
         "report": REPORT_NAME,
@@ -2386,23 +2483,28 @@ def build_strength_efficiency_report(
             run_started_ns=started_ns,
             provisioned_gpus=provisioned_gpus,
         ),
-        "autonomous_elo": _autonomous_elo_summary(
+        "autonomous_elo": autonomous,
+        "balanced_strength": balanced,
+        "current_strength": _current_strength_headline(
             root,
-            arena_results=arenas,
-            actor_records=actor_records,
-            actor_summary=actor_summary,
-            provisioned_gpu_hours=provisioned_gpu_hours,
-        ),
-        "balanced_strength": balanced_strength_summary(
-            root,
-            arenas,
-            wall_seconds=wall_seconds,
+            balanced=balanced,
+            arenas=arenas,
             observed_until_ns=observed_until_ns,
-            provisioned_gpus=provisioned_gpus,
-            strength_simulations=strength_config.simulations
-            if strength_config is not None
-            else 1024,
-            evaluation_config=strength_config,
+            active_balanced=strength_config is not None,
+        ),
+        "measurement_service": measurement_service_status(
+            root,
+            RunIdentity(
+                run_path,
+                str(run.get("run_id", "")),
+                str(run.get("generation_family", "")),
+                started_ns,
+            ),
+            now_ns=observed_until_ns,
+            target_fraction=_number(
+                strength_profile.get("measurement_service_fraction")
+            )
+            or 0.0,
         ),
         "strength_profile": strength_profile,
         "parse_failure_count": len(failures),

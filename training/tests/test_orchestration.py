@@ -471,7 +471,9 @@ def test_autonomous_resume_accepts_only_unchanged_omitted_handicap_defaults(
     provenance = json.loads(directories.autonomous_provenance.read_text())
     legacy_config = configured.as_dict()
     if prior_session_epoch:
-        from deltreltrain.config_compatibility import without_evaluation_session_defaults
+        from deltreltrain.config_compatibility import (
+            without_evaluation_session_defaults,
+        )
 
         legacy_config = without_evaluation_session_defaults(legacy_config)
     if prior_efficiency_epoch:
@@ -661,7 +663,8 @@ def test_actor_scheduling_step_uses_fresh_learner_heartbeat_with_fallback(
     actor.learner_heartbeat_path = tmp_path / "learner.heartbeat.json"
     actor.experiment = SimpleNamespace(
         orchestration=SimpleNamespace(
-            shutdown=SimpleNamespace(stale_heartbeat_seconds=60.0)
+            shutdown=SimpleNamespace(stale_heartbeat_seconds=60.0),
+            model_refresh=SimpleNamespace(history_horizon_enabled=False),
         )
     )
     actor.learner_heartbeat_path.write_text(
@@ -1558,11 +1561,19 @@ def test_pause_lease_reaps_actor_before_ready_and_restarts_once(tmp_path) -> Non
         "pause_target_reaped",
         "pause_lease_ready",
         "pause_lease_release_requested",
+        "pause_lease_released",
         "pause_target_restarted",
     ]
     assert [event_names.index(name) for name in ordered] == sorted(
         event_names.index(name) for name in ordered
     )
+    releases = [
+        row
+        for row in coordinator_events(directories)
+        if row["event"] == "pause_lease_released"
+    ]
+    assert len(releases) == 1
+    assert releases[0]["token"] == token and releases[0]["restart"] is True
 
 
 def test_pause_lease_never_acknowledges_live_actor(tmp_path) -> None:
@@ -1882,6 +1893,9 @@ def test_arena_failure_or_stale_lease_restores_actor(tmp_path, failure: str) -> 
     event_names = [event["event"] for event in coordinator_events(directories)]
     assert "pause_owner_reaped" in event_names
     assert "pause_target_restarted" in event_names
+    assert event_names.index("pause_lease_released") < event_names.index(
+        "pause_target_restarted"
+    )
 
 
 def test_learner_pause_sharing_waits_for_fresh_progress_ack(tmp_path) -> None:

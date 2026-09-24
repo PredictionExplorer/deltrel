@@ -9,11 +9,199 @@ import pytest
 import deltreltrain.promotion as promotion_module
 from deltreltrain.arena import ArenaRunner, summarize_completed_arena_pairs
 from deltreltrain.checkpoint import write_model_pointer
-from deltreltrain.config import HistoricalEvaluationConfig
+from deltreltrain.config import GPUWorkerConfig, HistoricalEvaluationConfig
 from deltreltrain.historical_evaluation import HistoricalEvaluationPlan
+from deltreltrain.measurement_scheduling import MeasurementServiceLedger
 from deltreltrain.promotion import PromotionSupervisor
 
 from test_promotion import _promotion_wave_case
+
+
+def protected_case(tmp_path, monkeypatch):
+    case = _promotion_wave_case(tmp_path, monkeypatch)
+    subject = case.supervisor
+    subject.experiment = replace(
+        case.experiment,
+        arena=replace(
+            case.experiment.arena, balanced_cells=True, strength_simulations=1024
+        ),
+        orchestration=replace(
+            case.experiment.orchestration,
+            enabled=True,
+            gpus=(
+                GPUWorkerConfig(0, "learner", 1),
+                GPUWorkerConfig(1, "actor", 1, actor_batch_size=1),
+            ),
+            promotion=replace(
+                case.experiment.orchestration.promotion,
+                gpu_id=1,
+                pause_sharing_mode=True,
+            ),
+            historical_evaluation=HistoricalEvaluationConfig(
+                enabled=True,
+                measure_direct_predecessor=True,
+                measurement_service_fraction=0.2,
+                session_seconds=5.0,
+            ),
+        ),
+    )
+    events = tmp_path / "coordinator.jsonl"
+    events.write_text("")
+    service = MeasurementServiceLedger(
+        path=tmp_path / "measurement-service.json",
+        coordinator_events=events,
+        request_path=tmp_path / "pause.json",
+        run_identity=case.identity,
+    )
+    monkeypatch.setattr(subject, "_measurement_service", lambda: service)
+    path = tmp_path / "arena" / "crossplay.json"
+    plan = HistoricalEvaluationPlan(
+        case.candidate, case.champion, path, None, "measurement"
+    )
+    monkeypatch.setattr(
+        promotion_module, "select_historical_evaluation", lambda **_options: plan
+    )
+    return case, service
+
+
+def test_protected_measurement_ignores_new_candidate_preemption_but_keeps_deadline(
+    tmp_path, monkeypatch
+):
+    case, service = protected_case(tmp_path, monkeypatch)
+    subject = case.supervisor
+    clock = SimpleNamespace(now=10.0)
+    subject.clock = lambda: clock.now
+    subject.wall_clock_ns = lambda: int(clock.now * 1e9)
+    monkeypatch.setattr(subject, "_has_ready_candidate", lambda: True)
+    subject._record_historical_cooldown(case.champion)
+
+    def evaluate(*, stop_requested, yield_to_candidates, **_options):
+        assert yield_to_candidates is False
+        assert subject._historical_arena_config().simulations == 1024
+        assert not stop_requested()
+        clock.now += 6
+        assert stop_requested()
+        return 1
+
+    monkeypatch.setattr(subject, "_evaluate_historical_waves", evaluate)
+    assert (
+        subject._evaluate_historical_if_due(
+            champion=case.champion,
+            stop_requested=lambda: False,
+            progress=None,
+            once=True,
+            protected=True,
+        )
+        == 1
+    )
+    assert service.pinned_job == {
+        "candidate": case.candidate.model_identity,
+        "baseline": case.champion.model_identity,
+    }
+    assert subject._historical_slice_started
+    assert (
+        json.loads(subject.session_events_path.read_text())["reason"] == "time_budget"
+    )
+
+
+def test_negative_credit_skips_manifest_planning_until_pinned_job_deadline(
+    tmp_path, monkeypatch
+):
+    case, service = protected_case(tmp_path, monkeypatch)
+    subject = case.supervisor
+    service.pin_job(case.candidate.model_identity, case.champion.model_identity)
+    service.state["debt_ns"] = -1_000_000_000_000
+    service._save()
+    clock = [10 * 10**9]
+    subject.wall_clock_ns = lambda: clock[0]
+    calls = []
+    original = promotion_module.load_historical_manifests
+
+    def load(*args, **kwargs):
+        calls.append(kwargs["cache"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(promotion_module, "load_historical_manifests", load)
+    options = dict(
+        champion=case.champion,
+        stop_requested=lambda: False,
+        progress=None,
+        once=True,
+        protected=True,
+    )
+    assert subject._evaluate_historical_if_due(**options) == 0
+    assert not calls
+    clock[0] += 3601 * 10**9
+    monkeypatch.setattr(subject, "_evaluate_historical_waves", lambda **kwargs: 1)
+    assert subject._evaluate_historical_if_due(**options) == 1
+    assert len(calls) == 1
+    assert calls[0] is subject._historical_manifest_cache
+
+
+def test_completed_pinned_job_is_cleared_before_negative_credit_fast_path(
+    tmp_path, monkeypatch
+):
+    from deltreltrain.balanced_evaluation import evaluation_contract
+
+    case, service = protected_case(tmp_path, monkeypatch)
+    subject = case.supervisor
+    service.pin_job(case.candidate.model_identity, case.champion.model_identity)
+    service.state["debt_ns"] = -1_000_000_000_000
+    service._save()
+    monkeypatch.setattr(
+        promotion_module,
+        "load_arena_results",
+        lambda _path: [
+            (
+                tmp_path / "finished.json",
+                {
+                    "candidate": case.candidate.model_identity,
+                    "baseline": case.champion.model_identity,
+                    "result_kind": "historical_crossplay",
+                    "evaluation_contract": evaluation_contract(
+                        subject._historical_arena_config()
+                    ),
+                    "terminal": True,
+                },
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        promotion_module, "select_historical_evaluation", lambda **kwargs: None
+    )
+    assert (
+        subject._evaluate_historical_if_due(
+            champion=case.champion,
+            stop_requested=lambda: False,
+            progress=None,
+            once=True,
+            protected=True,
+        )
+        == 0
+    )
+    assert service.pinned_job is None
+    assert service.state["pending_since_ns"] is None
+    assert subject._historical_slice_started is False
+
+
+def test_ready_promotion_queue_cannot_starve_reserved_measurement_dispatch(
+    tmp_path, monkeypatch
+):
+    case, _service = protected_case(tmp_path, monkeypatch)
+    subject = case.supervisor
+    dispatched = []
+    monkeypatch.setattr(
+        subject,
+        "_evaluate_historical_waves",
+        lambda **_options: dispatched.append("measurement") or 1,
+    )
+    monkeypatch.setattr(
+        subject,
+        "_evaluate_candidate_session",
+        lambda **_options: dispatched.append("promotion") or (1, "once"),
+    )
+    assert subject.run(stop_requested=lambda: False, once=True) == 1
+    assert dispatched == ["measurement"]
 
 
 def test_balanced_time_slices_preserve_moves_before_first_complete_pair(

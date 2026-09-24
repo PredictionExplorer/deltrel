@@ -92,6 +92,10 @@ _ALLOWED_PROFILE_PATHS = {
     ("orchestration", "promotion", "session_seconds"),
     ("orchestration", "promotion", "pause_strategy"),
     ("orchestration", "promotion", "inter_wave_cooldown_seconds"),
+    ("orchestration", "historical_evaluation", "measurement_service_fraction"),
+    ("orchestration", "historical_evaluation", "measurement_max_wait_seconds"),
+    ("orchestration", "model_refresh", "history_horizon_enabled"),
+    ("orchestration", "model_refresh", "history_horizon_initial_seconds"),
     ("orchestration", "historical_evaluation", "session_seconds"),
     ("orchestration", "historical_evaluation", "cooldown_seconds"),
     ("arena", "continuation_pairs_per_ring"),
@@ -1773,7 +1777,15 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
         timestamp_ns=timestamp_ns,
     )
     strength_epoch_payload = None
-    if old_config.arena.variant_policy != new_config.arena.variant_policy:
+    protected_measurement_activation = (
+        old_config.orchestration.historical_evaluation.measurement_service_fraction == 0
+        and new_config.orchestration.historical_evaluation.measurement_service_fraction
+        > 0
+    )
+    if (
+        old_config.arena.variant_policy != new_config.arena.variant_policy
+        or protected_measurement_activation
+    ):
         from dataclasses import replace
         from deltreltrain.balanced_evaluation import evaluation_contract
 
@@ -1784,7 +1796,11 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
         )
         strength_config = replace(
             new_config.arena,
-            simulations=simulations,
+            simulations=(
+                new_config.arena.strength_simulations
+                if new_config.arena.balanced_cells
+                else simulations
+            ),
             max_considered=candidates,
             allocation_policy="equal_cells",
         )
@@ -1798,6 +1814,9 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
             ],
             "source_commit": to_source_commit,
         }
+        if protected_measurement_activation:
+            strength_epoch_payload["reason"] = "protected_measurement_activation"
+            strength_epoch_payload["anchor_manifest"] = str(champion_manifest)
     change_records = [
         {"path": path, "from": before, "to": after} for path, before, after in changes
     ]
@@ -1884,6 +1903,7 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
         (run_root / "strength-epoch.json", "strength epoch"),
         (resume_cutover_path, "resume cutover"),
         (run_root / "arena" / "promotion-status.json", "promotion status"),
+        (run_root / "arena" / "measurement-service.json", "measurement service"),
         (run_root / "replay" / "initialized.json", "replay initialization"),
     )
     artifacts_by_source: dict[Path, _BackupArtifact] = {}

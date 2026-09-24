@@ -1927,3 +1927,38 @@ def test_inference_execution_cutover_is_reversible_and_preserves_pending_work(
         assert "evaluation_contract_transition" not in record
         source_profile = plan.target_profile
         source_commit = request.to_source_commit
+
+
+def test_protected_measurement_activation_archives_epoch_without_replay_credit_reset(
+    tmp_path,
+):
+    fixture = _fixture(tmp_path)
+    raw = yaml.safe_load(fixture.old_profile.read_text())
+    raw["orchestration"].setdefault("historical_evaluation", {}).update(
+        enabled=True,
+        measure_direct_predecessor=True,
+        measurement_service_fraction=0.2,
+        measurement_max_wait_seconds=3600.0,
+    )
+    raw["orchestration"]["promotion"]["finish_inflight_candidate"] = True
+    raw["arena"]["continuation_pairs_per_ring"] = 25
+    fixture.candidate_profile.write_text(yaml.safe_dump(raw))
+    old_epoch = {"schema_version": 1, "started_ns": 12, "anchor_identity": "old"}
+    _write_json(fixture.root / "strength-epoch.json", old_epoch)
+    checkpoint = fixture.checkpoint.read_bytes()
+    plan = migration.plan_migration(fixture.request)
+    assert plan.strength_epoch_payload["reason"] == "protected_measurement_activation"
+    assert (
+        plan.strength_epoch_payload["anchor_identity"] == plan.champion_model_identity
+    )
+    assert plan.utd_segment_payload is None
+    migration.apply_migration(plan)
+    assert fixture.checkpoint.read_bytes() == checkpoint
+    assert (
+        json.loads((plan.backup_directory / "strength-epoch.json").read_text())
+        == old_epoch
+    )
+    assert (
+        json.loads((fixture.root / "strength-epoch.json").read_text())
+        == plan.strength_epoch_payload
+    )

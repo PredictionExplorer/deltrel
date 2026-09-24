@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import time
 
 import pytest
 
@@ -17,7 +18,8 @@ from test_inference_efficiency import (
 @pytest.fixture
 def feature_requests(monkeypatch):
     monkeypatch.setattr(
-        "deltreltrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
+        "deltreltrain.inference.encode_native_feature_data",
+        lambda data, **_: data.encoded,
     )
     return encoded_requests
 
@@ -195,6 +197,8 @@ def test_broker_idle_proof_includes_active_owned_inference(feature_requests):
         assert base.model.started.wait(2)
         assert broker.metrics_snapshot()["pending_requests"] == 0
         assert broker.metrics_snapshot()["active_requests"] == 1
+        assert broker.metrics_snapshot()["worker_phase"] == "inference"
+        assert broker.metrics_snapshot()["oldest_request_age_seconds"] >= 0
         assert not broker.is_idle()
         # Closing admission does not make an in-flight inference safe to pause.
         broker.shutdown(wait=False)
@@ -205,6 +209,29 @@ def test_broker_idle_proof_includes_active_owned_inference(feature_requests):
     assert future.result(timeout=1).tokens == [1]
     assert broker.is_idle()
     assert broker.metrics_snapshot()["active_requests"] == 0
+
+
+def test_diagnostics_distinguish_device_lock_wait_from_active_inference(
+    feature_requests,
+):
+    base = GraphInferenceAdapter(ObservedNetwork(), model_identity="a")
+    broker = BoundedInferenceBroker(max_wait_seconds=0)
+    try:
+        with broker.device_lock:
+            future = broker.submit(base, feature_requests(encode_batch([position()])))
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                metrics = broker.metrics_snapshot()
+                if metrics["worker_phase"] == "waiting_for_device":
+                    break
+                time.sleep(0.001)
+            assert metrics["worker_phase"] == "waiting_for_device"
+            assert metrics["active_requests"] == 1
+            assert not broker.is_idle()
+            assert not future.done()
+        assert future.result(timeout=2).tokens == [1]
+    finally:
+        broker.shutdown()
 
 
 def test_shutdown_cancels_a_request_waiting_for_batch_partners(feature_requests):

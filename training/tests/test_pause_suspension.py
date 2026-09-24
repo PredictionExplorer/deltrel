@@ -213,6 +213,136 @@ def test_cancel_before_quiescence_keeps_release_ack_until_actor_confirms(
     assert case.signals == [] and case.target.live
 
 
+def test_release_event_is_durable_before_arena_can_observe_released_ack(
+    tmp_path, monkeypatch
+):
+    case = suspension_case(tmp_path, monkeypatch)
+    original = case.subject._write_pause_ack
+    observations = []
+
+    def checked_ack(lease, *, state, reason=None):
+        if state in ("released", "recovered", "draining"):
+            events = [
+                json.loads(line)
+                for line in case.subject.metrics_path.read_text().splitlines()
+            ]
+            assert any(
+                row.get("token") == lease.token
+                and row["event"] == "pause_lease_released"
+                for row in events
+            )
+            observations.append(state)
+        return original(lease, state=state, reason=reason)
+
+    monkeypatch.setattr(case.subject, "_write_pause_ack", checked_ack)
+    acknowledge(case)
+    release(case)
+    confirm(case)
+    assert observations == ["released"]
+
+
+@pytest.mark.parametrize("state", ["cancelled", "released"])
+def test_cancel_before_first_coordinator_poll_settles_token_once_without_parking(
+    tmp_path, monkeypatch, state
+):
+    case = suspension_case(tmp_path, monkeypatch)
+    write_pause_request(
+        case.directories.gpu_pause,
+        token="suspend-lease-token",
+        owner_pid=case.owner.process.pid,
+        state=state,
+    )
+    original = case.subject._write_pause_ack
+
+    def checked_ack(lease, *, state, reason=None):
+        events = [
+            json.loads(line)
+            for line in case.subject.metrics_path.read_text().splitlines()
+        ]
+        assert any(
+            row.get("token") == lease.token and row["event"] == "pause_lease_released"
+            for row in events
+        )
+        return original(lease, state=state, reason=reason)
+
+    monkeypatch.setattr(case.subject, "_write_pause_ack", checked_ack)
+    case.subject._reconcile_pause_lease(0.0)
+    case.subject._reconcile_pause_lease(0.1)
+    events = [
+        json.loads(line) for line in case.subject.metrics_path.read_text().splitlines()
+    ]
+    releases = [row for row in events if row["event"] == "pause_lease_released"]
+    assert len(releases) == 1
+    assert releases[0]["outcome"] == "cancelled_before_admission"
+    assert not any(row["event"] == "pause_lease_ready" for row in events)
+    assert case.subject.pause_lease is None and case.signals == []
+    assert case.target.live and case.target.state == "running"
+    assert json.loads(case.subject.pause_ack_path.read_text())["state"] == "released"
+
+
+def test_unadmitted_cancellation_still_requires_supervised_owner(tmp_path, monkeypatch):
+    case = suspension_case(tmp_path, monkeypatch)
+    write_pause_request(
+        case.directories.gpu_pause,
+        token="suspend-lease-token",
+        owner_pid=case.owner.process.pid + 1,
+        state="cancelled",
+    )
+    case.subject._reconcile_pause_lease(0.0)
+    events = [
+        json.loads(line) for line in case.subject.metrics_path.read_text().splitlines()
+    ]
+    assert events[-1]["event"] == "pause_request_rejected"
+    assert not any(row["event"] == "pause_lease_released" for row in events)
+    assert json.loads(case.subject.pause_ack_path.read_text())["state"] == "failed"
+    assert case.subject.pause_lease is None and case.signals == []
+
+
+def test_wait_stage_diagnostics_are_durable_bounded_and_never_authorize_pause(
+    tmp_path, monkeypatch
+):
+    case = suspension_case(tmp_path, monkeypatch)
+    case.subject._reconcile_pause_lease(0.0)
+    case.target.termination_deadline = 100.0
+    heartbeat(
+        case,
+        phase="arena_gpu_quiescing",
+        pause_stage="waiting_for_cohorts",
+        actor_quiescent=False,
+        parked_cohorts=1,
+        unparked_cohort_ids=["cohort-1"],
+        unparked_cohort_stacks={"cohort-1": ["actor.py:123:refresh"]},
+        inference={"worker_phase": "idle", "active_requests": 0},
+        compatible_work={
+            "snapshot_available": False,
+            "reason": "work_coordinator_busy",
+        },
+        unrelated="not retained",
+    )
+
+    def observations():
+        return [
+            value
+            for line in case.subject.metrics_path.read_text().splitlines()
+            if (value := json.loads(line))["event"] == "pause_target_waiting"
+        ]
+
+    case.subject._reconcile_pause_lease(0.1)
+    case.subject._reconcile_pause_lease(0.2)
+    assert len(observations()) == 1
+    record = observations()[0]
+    assert record["token"] == "suspend-lease-token"
+    assert record["observed"]["unparked_cohort_ids"] == ["cohort-1"]
+    assert record["observed"]["compatible_work"]["snapshot_available"] is False
+    assert "unrelated" not in record["observed"]
+    case.subject._reconcile_pause_lease(30.2)
+    assert len(observations()) == 2
+    assert json.loads(case.subject.pause_ack_path.read_text())["state"] == "waiting"
+    heartbeat(case)
+    case.subject._reconcile_pause_lease(30.3)
+    assert json.loads(case.subject.pause_ack_path.read_text())["state"] == "ready"
+
+
 def test_next_request_cannot_overwrite_unobserved_release_ack(tmp_path, monkeypatch):
     case = suspension_case(tmp_path, monkeypatch)
     acknowledge(case)
@@ -273,6 +403,105 @@ def test_shutdown_uses_real_stop_without_os_freezing(tmp_path, monkeypatch, shut
         assert (
             json.loads(case.subject.pause_ack_path.read_text())["state"] == "draining"
         )
+
+
+@pytest.mark.parametrize("already_released", [False, True])
+def test_enabled_measurement_survives_graceful_shutdown_and_restart(
+    tmp_path, monkeypatch, already_released
+):
+    from deltreltrain.measurement_scheduling import MeasurementServiceLedger
+
+    case = suspension_case(tmp_path, monkeypatch)
+    control = case.subject.experiment.orchestration
+    case.subject.experiment = replace(
+        case.subject.experiment,
+        orchestration=replace(
+            control,
+            historical_evaluation=replace(
+                control.historical_evaluation,
+                enabled=True,
+                measure_direct_predecessor=True,
+                measurement_service_fraction=0.2,
+            ),
+            promotion=replace(control.promotion, finish_inflight_candidate=True),
+        ),
+    )
+    case.subject.metrics_path.touch()
+    options = dict(
+        path=tmp_path / "measurement-service.json",
+        coordinator_events=case.subject.metrics_path,
+        request_path=case.directories.gpu_pause,
+        run_identity=RunIdentity(tmp_path / "run.json", "run", "family", 1),
+    )
+    ledger = MeasurementServiceLedger(**options)
+    ledger.register_lease("suspend-lease-token", "measurement", 0.2)
+    acknowledge(case)
+    ledger.refresh()
+    if already_released:
+        release(case)
+    original_reap = case.subject._reap_worker_process_group
+    reaped = []
+
+    def observed_reap(worker):
+        result = original_reap(worker)
+        if worker is case.owner and result:
+            reaped.append(time.time_ns())
+        return result
+
+    monkeypatch.setattr(case.subject, "_reap_worker_process_group", observed_reap)
+    case.subject.stopping = True
+    case.subject._stop_all()
+    events = [
+        json.loads(line) for line in case.subject.metrics_path.read_text().splitlines()
+    ]
+    releases = [row for row in events if row["event"] == "pause_lease_released"]
+    assert len(releases) == 1 and reaped
+    if not already_released:
+        assert releases[0]["timestamp_ns"] >= reaped[0]
+        assert releases[0]["outcome"] == "shutdown"
+    resumed = MeasurementServiceLedger(**options)
+    ready = next(
+        row["timestamp_ns"] for row in events if row["event"] == "pause_lease_ready"
+    )
+    assert resumed.state["measurement_gpu_ns"] == releases[0]["timestamp_ns"] - ready
+    assert resumed.state["leases"] == {}
+    resumed.register_lease("next-after-restart", "promotion", 0.2)
+
+
+def test_shutdown_does_not_settle_owner_whose_process_group_survives(
+    tmp_path, monkeypatch
+):
+    case = suspension_case(tmp_path, monkeypatch)
+    acknowledge(case)
+    case.owner.process.exit_on_terminate = False
+    case.owner.process.exit_on_kill = False
+    # The lease flag alone is not process-group proof: an exit callback may
+    # have observed the leader before supervised descendant cleanup succeeded.
+    case.subject.pause_lease.owner_reaped = True
+    case.subject.stopping = True
+    case.subject._stop_all()
+    events = [
+        json.loads(line) for line in case.subject.metrics_path.read_text().splitlines()
+    ]
+    assert not any(row["event"] == "pause_lease_released" for row in events)
+    assert case.owner.state == "unkillable"
+    assert case.subject.pause_lease is not None
+
+
+def test_shutdown_settles_late_unadmitted_request_only_after_owner_reaping(
+    tmp_path, monkeypatch
+):
+    case = suspension_case(tmp_path, monkeypatch)
+    assert case.subject.pause_lease is None
+    case.subject.stopping = True
+    case.subject._stop_all()
+    events = [
+        json.loads(line) for line in case.subject.metrics_path.read_text().splitlines()
+    ]
+    releases = [row for row in events if row["event"] == "pause_lease_released"]
+    assert len(releases) == 1
+    assert releases[0]["outcome"] == "shutdown_before_admission"
+    assert not any(row["event"] == "pause_lease_ready" for row in events)
 
 
 def test_final_drain_does_not_treat_actor_shutdown_as_quiescence_escape(

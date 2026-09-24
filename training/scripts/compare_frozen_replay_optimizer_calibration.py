@@ -26,6 +26,10 @@ if __package__:
         FOLLOW_ON_ARM,
         FORMAT as RESULT_FORMAT,
         MAX_H100_HOURS_PER_ARM,
+        COMPONENT_NORMALIZATION,
+        HOLDOUT_AGGREGATION,
+        OBSERVATION_UNIT,
+        PARTITION_METHOD,
         SCHEMA_VERSION as RESULT_SCHEMA_VERSION,
     )
 else:
@@ -38,11 +42,15 @@ else:
         FOLLOW_ON_ARM,
         FORMAT as RESULT_FORMAT,
         MAX_H100_HOURS_PER_ARM,
+        COMPONENT_NORMALIZATION,
+        HOLDOUT_AGGREGATION,
+        OBSERVATION_UNIT,
+        PARTITION_METHOD,
         SCHEMA_VERSION as RESULT_SCHEMA_VERSION,
     )
 
 FORMAT = "deltreltrain.frozen-replay-optimizer-calibration-comparison"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MINIMUM_CONTROL_THROUGHPUT_FRACTION = 0.9
 DEFAULT_CONFIDENCE = 0.95
 DEFAULT_BOOTSTRAP_SAMPLES = 10_000
@@ -161,6 +169,7 @@ def _read_result(path: Path) -> tuple[dict[str, object], dict[str, object]]:
         or _digest(unsigned) != expected_result_hash
     ):
         raise ValueError(f"arm result semantic hash failed: {source}")
+    _validate_game_partition(loaded)
     pin = {
         "path": str(source),
         "sha256": sha256_file(source),
@@ -168,6 +177,81 @@ def _read_result(path: Path) -> tuple[dict[str, object], dict[str, object]]:
         "result_sha256": expected_result_hash,
     }
     return loaded, pin
+
+
+def _validate_game_partition(payload: Mapping[str, object]) -> None:
+    partition = _mapping(payload.get("partition"), "partition")
+    heldout = _mapping(payload.get("heldout"), "heldout")
+    evaluation = _mapping(payload.get("evaluation"), "evaluation")
+    if (
+        partition.get("method") != PARTITION_METHOD
+        or partition.get("game_disjoint") is not True
+        or partition.get("disjoint") is not True
+        or heldout.get("observation_unit") != OBSERVATION_UNIT
+        or evaluation.get("observation_unit") != OBSERVATION_UNIT
+        or evaluation.get("component_normalization") != COMPONENT_NORMALIZATION
+        or evaluation.get("aggregation") != HOLDOUT_AGGREGATION
+    ):
+        raise ValueError("calibration requires game-disjoint, game-clustered evidence")
+    observations = heldout.get("observations")
+    if not isinstance(observations, list) or not observations:
+        raise ValueError("held-out game observations are missing")
+
+    def game_ids(name: str) -> list[str]:
+        value = partition.get(name)
+        if (
+            not isinstance(value, list)
+            or not value
+            or any(not isinstance(identity, str) or not identity for identity in value)
+            or value != sorted(set(value))
+        ):
+            raise ValueError(
+                f"partition {name} must contain unique sorted game identities"
+            )
+        return value
+
+    train_games, holdout_games = (
+        game_ids("train_game_ids"),
+        game_ids("holdout_game_ids"),
+    )
+    if set(train_games) & set(holdout_games):
+        raise ValueError("calibration train and holdout games overlap")
+    for name, count in (
+        ("train_games", len(train_games)),
+        ("holdout_games", len(holdout_games)),
+    ):
+        if type(partition.get(name)) is not int or partition[name] != count:
+            raise ValueError(f"partition {name} disagrees with game identities")
+    train_samples = partition.get("train_samples")
+    if type(train_samples) is not int or train_samples < len(train_games):
+        raise ValueError("training sample count is inconsistent with game identities")
+    identities: list[str] = []
+    sample_count = 0
+    for index, raw in enumerate(observations):
+        observation = _mapping(raw, "game observation")
+        identity = observation.get("game_identity")
+        if not isinstance(identity, str) or not identity:
+            raise ValueError("held-out game identity is missing")
+        if type(observation.get("index")) is not int or observation["index"] != index:
+            raise ValueError("held-out game observation order is invalid")
+        samples = observation.get("samples")
+        if type(samples) is not int or samples <= 0:
+            raise ValueError("held-out game sample count is invalid")
+        sample_count += samples
+        identities.append(identity)
+    if len(set(identities)) != len(identities):
+        raise ValueError("held-out game observations are duplicated")
+    if sorted(identities) != holdout_games:
+        raise ValueError("held-out game identities disagree with partition")
+    if type(heldout.get("games")) is not int or heldout["games"] != len(identities):
+        raise ValueError("held-out game count disagrees with partition")
+    for parent in (partition, heldout):
+        name = "holdout_samples" if parent is partition else "samples"
+        if type(parent.get(name)) is not int or parent[name] != sample_count:
+            raise ValueError("held-out sample count disagrees with observations")
+    batches = heldout.get("batches")
+    if type(batches) is not int or batches < len(identities):
+        raise ValueError("held-out batch count is inconsistent with game observations")
 
 
 def _arm(payload: Mapping[str, object]) -> str:
@@ -362,6 +446,11 @@ def _common_projection(payload: Mapping[str, object]) -> dict[str, object]:
                 "holdout_sha256",
                 "partition_sha256",
                 "disjoint",
+                "game_disjoint",
+                "train_games",
+                "holdout_games",
+                "train_game_ids",
+                "holdout_game_ids",
             )
         },
         "evaluation": payload.get("evaluation"),
@@ -556,6 +645,18 @@ def _reference_parity(
     control: Mapping[str, object],
     treatment: Mapping[str, object],
 ) -> tuple[bool, str | None]:
+    def game_ids(payload: Mapping[str, object]) -> list[str]:
+        observations = _mapping(payload["heldout"], "heldout")["observations"]
+        if not isinstance(observations, list):
+            raise ValueError("held-out observations are missing")
+        return [
+            str(_mapping(row, "observation")["game_identity"]) for row in observations
+        ]
+
+    control_games = game_ids(control)
+    treatment_games = game_ids(treatment)
+    if control_games != treatment_games:
+        return False, "held-out game identities differ"
     control_observations = _reference_observations(control)
     treatment_observations = _reference_observations(treatment)
     if len(control_observations) != len(treatment_observations):
@@ -614,7 +715,7 @@ def one_sided_bootstrap_lower_bound(
     samples: int,
     seed: int,
 ) -> float | None:
-    """Return a deterministic paired-bootstrap lower bound for loss reduction."""
+    """Resample paired whole-game means, retaining each game's row weight."""
 
     if not 0 < confidence < 1:
         raise ValueError("confidence must be in (0, 1)")
@@ -861,6 +962,9 @@ def compare_results(
             "familywise_method": "bonferroni",
             "family_size": treatment_count,
             "bootstrap_samples": bootstrap_samples,
+            "observation_unit": OBSERVATION_UNIT,
+            "component_normalization": COMPONENT_NORMALIZATION,
+            "aggregation": HOLDOUT_AGGREGATION,
             "strict_positive_heldout_lower_bound_required": True,
             "clip_reduction_is_diagnostic_only": True,
             "isolated_compile_cache_required": True,

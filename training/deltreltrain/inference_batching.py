@@ -89,6 +89,8 @@ class BoundedInferenceBroker:
         self._rows = 0
         self._queue_wait_seconds = 0.0
         self._worker_seconds = 0.0
+        self._worker_phase = "idle"
+        self._worker_phase_since_ns = time.time_ns()
         self._physical = {
             name: value
             for name, value in asdict(InferenceMetrics()).items()
@@ -178,6 +180,7 @@ class BoundedInferenceBroker:
             first = self._queue.popleft()
             jobs = [first]
             self._owned_jobs = jobs
+            self._set_worker_phase("batching")
             rows = first.prepared.rows
             deadline = first.submitted + self.max_wait_seconds
             while rows < self.max_batch_rows:
@@ -207,6 +210,7 @@ class BoundedInferenceBroker:
             with self._condition:
                 self._closed = True
                 self._worker_failures += 1
+                self._set_worker_phase("failed")
                 abandoned = [*self._owned_jobs, *self._queue]
                 self._owned_jobs = []
                 self._queue.clear()
@@ -244,6 +248,12 @@ class BoundedInferenceBroker:
         with self._condition:
             return not self._queue and not self._owned_jobs
 
+    def _set_worker_phase(self, phase: str) -> None:
+        """Called while the condition is held; diagnostics do not prove idleness."""
+        if phase != self._worker_phase:
+            self._worker_phase = phase
+            self._worker_phase_since_ns = time.time_ns()
+
     def _run_batches(self) -> None:
         while True:
             jobs = self._next_batch()
@@ -262,11 +272,17 @@ class BoundedInferenceBroker:
                         self._cancelled += 1
                     self._release_owned_job(job)
             if not active:
+                with self._condition:
+                    self._set_worker_phase("idle")
                 continue
             started = time.monotonic()
             try:
                 adapter = active[0].adapter
+                with self._condition:
+                    self._set_worker_phase("waiting_for_device")
                 with self.device_lock:
+                    with self._condition:
+                        self._set_worker_phase("inference")
                     before = adapter.metrics_snapshot()
                     try:
                         results = adapter.evaluate_prepared(
@@ -304,6 +320,8 @@ class BoundedInferenceBroker:
                     self._worker_seconds += time.monotonic() - started
                 for job in active:
                     self._release_owned_job(job)
+                with self._condition:
+                    self._set_worker_phase("idle")
 
     def metrics_snapshot(self) -> dict[str, object]:
         with self._condition:
@@ -336,6 +354,15 @@ class BoundedInferenceBroker:
                 "queue_wait_seconds": self._queue_wait_seconds,
                 "worker_seconds": self._worker_seconds,
                 "worker_failures": self._worker_failures,
+                "worker_phase": self._worker_phase,
+                "worker_phase_since_ns": self._worker_phase_since_ns,
+                "oldest_request_age_seconds": max(
+                    (
+                        time.monotonic() - job.submitted
+                        for job in (*self._owned_jobs, *self._queue)
+                    ),
+                    default=0.0,
+                ),
                 "graph_residency": graph_residency,
                 "physical_inference": {
                     **self._physical,

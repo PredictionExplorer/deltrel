@@ -315,6 +315,9 @@ class PauseLease:
     target_pid: int | None = None
     resume_requested_ns: int | None = None
     resume_deadline: float = 0.0
+    last_wait_observation_at: float | None = None
+    last_wait_stage: tuple[object, ...] | None = None
+    release_recorded: bool = False
 
 
 class CoordinatorLock:
@@ -1231,18 +1234,36 @@ class Coordinator:
                 self.pause_request_path.unlink(missing_ok=True)
                 self._pause_event("pause_request_invalid")
                 return
-            if parsed.request_state != "requested":
+            if parsed.request_state in ("released", "cancelled"):
+                try:
+                    acknowledgement = json.loads(self.pause_ack_path.read_text())
+                except (OSError, json.JSONDecodeError):
+                    acknowledgement = {}
+                if (
+                    isinstance(acknowledgement, dict)
+                    and type(acknowledgement.get("schema_version")) is int
+                    and acknowledgement.get("schema_version") == 1
+                    and acknowledgement.get("protocol") == "coordinator-pause-v1"
+                    and acknowledgement.get("token") == parsed.token
+                    and acknowledgement.get("gpu_id")
+                    == self.experiment.orchestration.promotion.gpu_id
+                    and acknowledgement.get("target_worker") == parsed.target_name
+                    and acknowledgement.get("state")
+                    in ("released", "recovered", "draining")
+                    and type(acknowledgement.get("ack_ns")) is int
+                    and acknowledgement["ack_ns"] >= parsed.requested_ns
+                ):
+                    return
+            elif parsed.request_state != "requested":
                 return
             if self._pause_request_stale(parsed):
-                self._write_pause_ack(
-                    parsed,
-                    state="failed",
-                    reason="pause request heartbeat is stale",
-                )
                 self._pause_event(
                     "pause_request_rejected",
                     token=parsed.token,
                     reason="stale heartbeat",
+                )
+                self._write_pause_ack(
+                    parsed, state="failed", reason="pause request heartbeat is stale"
                 )
                 return
             owner = self.pause_owner
@@ -1251,16 +1272,28 @@ class Coordinator:
                 or owner.process.pid != parsed.owner_pid
                 or not owner.live
             ):
-                self._write_pause_ack(
-                    parsed,
-                    state="failed",
-                    reason="pause request owner is not the supervised arena",
-                )
                 self._pause_event(
                     "pause_request_rejected",
                     token=parsed.token,
                     reason="owner mismatch",
                 )
+                self._write_pause_ack(
+                    parsed,
+                    state="failed",
+                    reason="pause request owner is not the supervised arena",
+                )
+                return
+            if parsed.request_state in ("released", "cancelled"):
+                # Cancellation can win the race with the coordinator's first
+                # poll. No waiting/ready ack ever authorized actor parking or
+                # arena allocation, but the registered service token still
+                # needs a durable terminal event. Validate the owner first.
+                self._record_pause_release(
+                    parsed,
+                    restart=False,
+                    outcome="cancelled_before_admission",
+                )
+                self._write_pause_ack(parsed, state="released")
                 return
             self.pause_lease = parsed
             self._begin_pause_lease(parsed, now)
@@ -1501,10 +1534,89 @@ class Coordinator:
             self._begin_pause_owner_recovery(
                 "actor quiescence acknowledgement became stale or invalid", now
             )
-        elif now >= target.termination_deadline:
-            self._fail_pause_lease(
-                "actor did not acknowledge quiescence before timeout"
+        else:
+            self._record_pause_wait(lease, heartbeat, now)
+            if now >= target.termination_deadline:
+                self._fail_pause_lease(
+                    "actor did not acknowledge quiescence before timeout"
+                )
+
+    def _record_pause_wait(
+        self, lease: PauseLease, heartbeat: Mapping[str, object], now: float
+    ) -> None:
+        """Retain bounded diagnostics even after high-volume monitor rotation.
+
+        These observations never authorize GPU ownership; the complete existing
+        token/PID/idle/synchronization proof above remains the only ready gate.
+        """
+        fields = (
+            "pid",
+            "phase",
+            "lease_token",
+            "pause_stage",
+            "pause_stage_since_ns",
+            "parked_cohorts",
+            "live_cohorts",
+            "parked_cohort_ids",
+            "unparked_cohort_ids",
+            "unparked_cohort_stacks",
+            "inference_idle",
+            "cuda_synchronized",
+            "progress_ns",
+            "heartbeat_ns",
+        )
+        stage = tuple(
+            heartbeat.get(key)
+            for key in (
+                "pid",
+                "phase",
+                "lease_token",
+                "pause_stage",
+                "parked_cohorts",
+                "live_cohorts",
+                "inference_idle",
+                "cuda_synchronized",
             )
+        )
+        if (
+            lease.last_wait_stage == stage
+            and lease.last_wait_observation_at is not None
+            and now - lease.last_wait_observation_at < 30.0
+        ):
+            return
+        observed = {key: heartbeat[key] for key in fields if key in heartbeat}
+        inference = heartbeat.get("inference")
+        if isinstance(inference, Mapping):
+            observed["inference"] = {
+                key: inference[key]
+                for key in (
+                    "pending_requests",
+                    "active_requests",
+                    "worker_phase",
+                    "worker_phase_since_ns",
+                    "oldest_request_age_seconds",
+                    "worker_failures",
+                    "failed_requests",
+                )
+                if key in inference
+            }
+        compatible = heartbeat.get("compatible_work")
+        if isinstance(compatible, Mapping):
+            observed["compatible_work"] = {
+                key: compatible[key]
+                for key in ("snapshot_available", "reason", "pending_model_identity")
+                if key in compatible
+            }
+        self._pause_event(
+            "pause_target_waiting",
+            token=lease.token,
+            target=lease.target_name,
+            target_pid=lease.target_pid,
+            waited_seconds=max(0.0, (time.time_ns() - lease.requested_ns) / 1e9),
+            observed=observed,
+        )
+        lease.last_wait_stage = stage
+        lease.last_wait_observation_at = now
 
     def _resume_suspended_target(self, lease: PauseLease, now: float) -> bool:
         assert self.pause_target is not None
@@ -1655,6 +1767,7 @@ class Coordinator:
             target_role=lease.target_role,
             target_pid=lease.target_pid,
             target_suspended=lease.target_suspended,
+            ready_latency_seconds=lease.ready_latency_seconds,
         )
 
     def _pause_target_exited(
@@ -1789,6 +1902,12 @@ class Coordinator:
                 if self.draining or self.stopping
                 else ("recovered" if lease.failure_reason is not None else "released")
             )
+            self._record_pause_release(
+                lease,
+                target_pid=lease.target_pid,
+                restart=False,
+                outcome=state,
+            )
             lease.resume_requested_ns = self._write_pause_ack(
                 lease, state=state, reason=lease.failure_reason
             )
@@ -1796,30 +1915,16 @@ class Coordinator:
                 assert target.process is not None
                 _signal_process(target.process, signal.SIGTERM)
                 target.state = "draining" if self.draining else "stopping"
-            self._pause_event(
-                "pause_lease_released",
-                token=lease.token,
-                target=target.spec.name,
-                target_pid=lease.target_pid,
-                restart=False,
-                outcome=state,
-            )
             return
         if target.spec.role == "learner" and target.live:
             self.pause_request_path.unlink(missing_ok=True)
             state = "draining" if self.draining else "released"
-            self._write_pause_ack(
+            self._record_pause_release(
                 lease,
-                state=state,
-                reason=lease.failure_reason,
-            )
-            self._pause_event(
-                "pause_lease_released",
-                token=lease.token,
-                target=target.spec.name,
                 restart=False,
                 outcome=state,
             )
+            self._write_pause_ack(lease, state=state, reason=lease.failure_reason)
             self.pause_lease = None
             return
         if not lease.target_reaped:
@@ -1830,18 +1935,12 @@ class Coordinator:
                 target.failure_reason = None
             if target.spec.role == "learner":
                 self.pause_request_path.unlink(missing_ok=True)
-            self._write_pause_ack(
+            self._record_pause_release(
                 lease,
-                state="draining",
-                reason=lease.failure_reason,
-            )
-            self._pause_event(
-                "pause_lease_released",
-                token=lease.token,
-                target=target.spec.name,
                 restart=False,
                 outcome="draining",
             )
+            self._write_pause_ack(lease, state="draining", reason=lease.failure_reason)
             self.pause_lease = None
             return
         try:
@@ -1855,11 +1954,16 @@ class Coordinator:
         if target.spec.role == "learner":
             self.pause_request_path.unlink(missing_ok=True)
         state = "recovered" if lease.failure_reason is not None else "released"
-        self._write_pause_ack(
+        # Every completed lease publishes the same accounting boundary, even
+        # when recovery needed a new actor process. Keep the legacy restart
+        # event afterward for readers that predate canonical release events.
+        self._record_pause_release(
             lease,
-            state=state,
-            reason=lease.failure_reason,
+            target_pid=target.process.pid if target.process is not None else None,
+            restart=True,
+            outcome=state,
         )
+        self._write_pause_ack(lease, state=state, reason=lease.failure_reason)
         self._pause_event(
             "pause_target_restarted",
             token=lease.token,
@@ -1935,6 +2039,17 @@ class Coordinator:
             },
             durable=True,
         )
+
+    def _record_pause_release(self, lease: PauseLease, **details: object) -> None:
+        if lease.release_recorded:
+            return
+        self._pause_event(
+            "pause_lease_released",
+            token=lease.token,
+            target=lease.target_name,
+            **details,
+        )
+        lease.release_recorded = True
 
     @staticmethod
     def _close_worker_process(worker: ManagedWorker) -> None:
@@ -2538,6 +2653,12 @@ class Coordinator:
         )
 
     def _stop_all(self) -> None:
+        shutdown_owner_pid = (
+            self.pause_owner.process.pid
+            if self.pause_owner is not None and self.pause_owner.process is not None
+            else None
+        )
+        owner_group_reaped = False
         if self.pause_lease is not None:
             self._write_pause_ack(
                 self.pause_lease,
@@ -2573,16 +2694,63 @@ class Coordinator:
             timeout=self.experiment.orchestration.shutdown.kill_grace_seconds,
         )
         for worker in self.workers.values():
+            owned_pause_process = (
+                worker is self.pause_owner
+                and worker.process is not None
+                and worker.process.pid == shutdown_owner_pid
+            )
             reaped = worker.process is None
             if worker.process is not None:
                 worker.last_exit_code = worker.process.poll()
                 if not worker.live:
                     reaped = self._reap_worker_process_group(worker)
+            if owned_pause_process and reaped:
+                owner_group_reaped = True
             if worker.state not in ("completed", "exhausted", "fatal"):
                 worker.state = "stopped" if reaped else "unkillable"
             if worker.log_stream is not None:
                 worker.log_stream.close()
                 worker.log_stream = None
+        lease = self.pause_lease
+        if lease is not None and (
+            (
+                lease.owner_reaped
+                and self.pause_owner is not None
+                and self.pause_owner.process is None
+                and self.pause_owner.process_group_id is None
+            )
+            or (owner_group_reaped and lease.owner_pid == shutdown_owner_pid)
+        ):
+            # A shutdown request is not proof that CUDA work stopped. Publish
+            # the terminal interval only after the exact owner group is reaped.
+            self._record_pause_release(lease, restart=False, outcome="shutdown")
+            self.pause_lease = None
+        if owner_group_reaped:
+            # Registration/request publication can race the first shutdown
+            # poll. Once the owner has exited, also settle its late request.
+            payload = self._read_pause_request()
+            pending = (
+                self._parse_pause_request(payload) if payload is not None else None
+            )
+            if (
+                pending is not None
+                and pending.owner_pid == shutdown_owner_pid
+                and (lease is None or pending.token != lease.token)
+            ):
+                try:
+                    acknowledgement = json.loads(self.pause_ack_path.read_text())
+                except (OSError, json.JSONDecodeError):
+                    acknowledgement = {}
+                already_released = (
+                    isinstance(acknowledgement, dict)
+                    and acknowledgement.get("token") == pending.token
+                    and acknowledgement.get("state")
+                    in ("released", "recovered", "draining")
+                )
+                if not already_released:
+                    self._record_pause_release(
+                        pending, restart=False, outcome="shutdown_before_admission"
+                    )
 
     def _wait_for_exit(
         self, workers: Sequence[ManagedWorker], *, timeout: float

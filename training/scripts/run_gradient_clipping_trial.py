@@ -34,6 +34,8 @@ import time
 from typing import Any
 
 FORMAT = "deltreltrain.gradient-clipping-trial-replay"
+SCHEMA_VERSION = 2
+SPLIT_METHOD = "immutable-game-hash-20-percent-holdout-v2"
 RINGS = (4, 6, 8, 10)
 MODES = (
     "classic-standard",
@@ -152,6 +154,7 @@ def prepare(args) -> dict[str, object]:
         cell: {"train": [], "validation": []} for cell in CELLS
     }
     pinned_shards = []
+    seen_positions: set[str] = set()
     for row in rows:
         variant = GameVariant.parse(str(row["variant"]))
         mode = f"{variant.mode}-{'pie' if variant.pie else 'handicap' if variant.handicap > 1 else 'standard'}"
@@ -172,14 +175,24 @@ def prepare(args) -> dict[str, object]:
             raise ValueError("replay shard sample count differs from ledger")
         added = False
         references = [
-            helpers._stable_reference(shard, index, args.seed)
-            for index in range(len(decoded))
+            helpers._stable_reference(
+                shard,
+                index,
+                args.seed,
+                game_identity=helpers._replay_game_identity(decoded, index),
+                ply=int(decoded.arrays["ply"][index]),
+            )
+            for index in reversed(range(len(decoded)))
         ]
         references.sort(key=lambda ref: ref.order_sha256)
         for ref in references:
+            if ref.stable_id in seen_positions:
+                continue
+            seen_positions.add(ref.stable_id)
             game = str(decoded.arrays["game_id"][ref.sample_index])
             validation = (
-                int(digest(["holdout-game-v1", args.seed, game])[:16], 16) % 5 == 0
+                int(digest([SPLIT_METHOD, args.seed, ref.game_identity])[:16], 16) % 5
+                == 0
             )
             split = "validation" if validation else "train"
             limit = (
@@ -221,16 +234,20 @@ def prepare(args) -> dict[str, object]:
         for refs in values.values():
             refs.sort(key=lambda ref: digest([args.seed, ref["stable_id"]]))
     train_games = {
-        ref["game_id"] for values in partitions.values() for ref in values["train"]
+        ref["game_identity"]
+        for values in partitions.values()
+        for ref in values["train"]
     }
     validation_games = {
-        ref["game_id"] for values in partitions.values() for ref in values["validation"]
+        ref["game_identity"]
+        for values in partitions.values()
+        for ref in values["validation"]
     }
     if train_games & validation_games:
         raise ValueError("training and validation game identities overlap")
     document = {
         "format": FORMAT,
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSION,
         "seed": args.seed,
         "source_replay_root": str(args.replay_root.resolve()),
         "cutoff": cutoff,
@@ -242,7 +259,7 @@ def prepare(args) -> dict[str, object]:
         "recovery": pinned_recovery,
         "shards": pinned_shards,
         "cells": partitions,
-        "split_method": "game-hash-20-percent-holdout-v1",
+        "split_method": SPLIT_METHOD,
         "schedule": "120-step-block-85-percent-r10-equal-six-modes-v1",
     }
     path = output / "frozen-replay.json"
@@ -289,7 +306,11 @@ def load_frozen(path: Path):
 
     helpers = _helpers()
     document = json.loads(path.read_text())
-    if document.get("format") != FORMAT or document.get("schema_version") != 1:
+    if (
+        document.get("format") != FORMAT
+        or document.get("schema_version") != SCHEMA_VERSION
+        or document.get("split_method") != SPLIT_METHOD
+    ):
         raise ValueError("invalid frozen clipping trial manifest")
     if set(document["cells"]) != set(CELLS):
         raise ValueError("frozen replay must cover all24 board/mode cells")
@@ -318,6 +339,8 @@ def load_frozen(path: Path):
     decoded = {key: decode_replay_shard(shard.path) for key, shard in shards.items()}
     cells = {}
     games = {"train": set(), "validation": set()}
+    seen_positions: set[str] = set()
+    game_contexts = {}
     for cell, values in document["cells"].items():
         cells[cell] = {}
         for split, records in values.items():
@@ -327,17 +350,43 @@ def load_frozen(path: Path):
             for record in records:
                 shard = shards[record["shard_id"]]
                 ref = helpers._stable_reference(
-                    shard, record["sample_index"], document["seed"]
+                    shard,
+                    record["sample_index"],
+                    document["seed"],
+                    game_identity=helpers._replay_game_identity(
+                        decoded[shard.shard_id], record["sample_index"]
+                    ),
+                    ply=int(
+                        decoded[shard.shard_id].arrays["ply"][record["sample_index"]]
+                    ),
                 )
                 sample = decoded[shard.shard_id].sample(ref.sample_index)
                 mode = f"{sample.mode}-{'pie' if sample.pie else 'handicap' if sample.handicap > 1 else 'standard'}"
                 if (
                     ref.stable_id != record["stable_id"]
+                    or ref.game_identity != record["game_identity"]
                     or sample.game_id != record["game_id"]
                     or cell != f"r{sample.rings}/{mode}"
+                    or sample.run_id != document["run_id"]
+                    or sample.generation_family != document["generation_family"]
+                    or sample.model_identity != shard.model_identity
                 ):
                     raise ValueError("frozen reference identity or cell mismatch")
-                games[split].add(sample.game_id)
+                if ref.stable_id in seen_positions:
+                    raise ValueError(
+                        "frozen validation leaks or duplicates logical positions"
+                    )
+                context = (
+                    sample.rings,
+                    sample.mode,
+                    sample.handicap,
+                    sample.pie,
+                    sample.model_identity,
+                )
+                if game_contexts.setdefault(ref.game_identity, context) != context:
+                    raise ValueError("frozen immutable game context changed")
+                seen_positions.add(ref.stable_id)
+                games[split].add(ref.game_identity)
                 references.append(ref)
             cells[cell][split] = tuple(references)
     if games["train"] & games["validation"]:
@@ -564,28 +613,59 @@ def evaluate_models(model, ema, config, replay, cells, *, device, batches: int):
             references = cells[cell]["validation"]
             total: dict[str, float] = {}
             count = 0
-            for index in range(batches):
-                size = min(config.train.per_rank_batch_size, len(references))
-                batch = helpers._materialize(
-                    replay,
-                    references,
-                    start=index * size,
-                    batch_size=size,
-                    seed=config.train.seed,
-                    augment=False,
-                )
-                losses = helpers._component_losses(
-                    evaluated,
-                    batch,
-                    config,
-                    device=device,
-                    precision=config.train.precision,
-                )
+            groups: dict[str, list] = {}
+            for ref in references:
+                groups.setdefault(ref.game_identity, []).append(ref)
+            observations = []
+            # Select complete game clusters up to the requested row budget,
+            # without wrapping around and counting a validation row twice.
+            for game_identity, rows in groups.items():
+                if count >= batches * config.train.per_rank_batch_size:
+                    break
+                totals = {
+                    key: [0.0, 0.0]
+                    for key in ("policy", "soft_policy", "outcome", "score_margin")
+                }
+                for start in range(0, len(rows), config.train.per_rank_batch_size):
+                    size = min(config.train.per_rank_batch_size, len(rows) - start)
+                    batch = helpers._materialize(
+                        replay,
+                        rows,
+                        start=start,
+                        batch_size=size,
+                        seed=config.train.seed,
+                        augment=False,
+                    )
+                    measured = helpers._component_loss_totals(
+                        evaluated,
+                        batch,
+                        config,
+                        device=device,
+                        precision=config.train.precision,
+                    )
+                    for key, (numerator, denominator) in measured.items():
+                        totals[key][0] += numerator
+                        totals[key][1] += denominator
+                losses = helpers._components_from_totals(totals, config)
                 for key, value in losses.items():
-                    total[key] = total.get(key, 0.0) + value * size
-                count += size
+                    total[key] = total.get(key, 0.0) + value * len(rows)
+                count += len(rows)
+                observations.append(
+                    {
+                        "game_identity": game_identity,
+                        "samples": len(rows),
+                        "losses": losses,
+                    }
+                )
+            if not count:
+                raise ValueError("frozen cell has no held-out games")
             per_cell[cell] = {key: value / count for key, value in total.items()} | {
-                "samples": count
+                "samples": count,
+                "games": len(observations),
+                "observation_unit": helpers.OBSERVATION_UNIT,
+                "component_normalization": helpers.COMPONENT_NORMALIZATION,
+                "aggregation": helpers.HOLDOUT_AGGREGATION,
+                "observations": observations,
             }
         weighted = {
             key: sum(
@@ -701,7 +781,7 @@ def run_child(args) -> dict[str, object]:
         counts[cell] += 1
     report = {
         "format": "deltreltrain.gradient-clipping-trial",
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSION,
         "arm": arm,
         "diagnostic_only": args.diagnostic_only,
         "source_step": metadata["step"],
@@ -918,7 +998,7 @@ def validate_result(
     result = json.loads(path.read_text())
     if (
         result.get("format") != "deltreltrain.gradient-clipping-trial"
-        or result.get("schema_version") != 1
+        or result.get("schema_version") != SCHEMA_VERSION
         or result.get("status") != "complete"
         or result.get("arm") != arm
         or result.get("diagnostic_only") is not diagnostic

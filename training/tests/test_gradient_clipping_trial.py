@@ -216,7 +216,7 @@ def test_preparation_copies_game_disjoint_all_cell_replay_and_survives_source_gc
             mode, rule = kind.split("-")
             states = native.StateBatch(
                 int(ring[1:]),
-                24,
+                64,
                 mode=mode,
                 handicap=3 if rule == "handicap" else 1,
                 pie=rule == "pie",
@@ -267,6 +267,14 @@ def test_preparation_copies_game_disjoint_all_cell_replay_and_survives_source_gc
     manifest = Path(result["manifest"])
     first, replay, cells = trial.load_frozen(manifest)
     assert len(cells) == 24
+    evaluated = trial.evaluate_models(
+        model, ema, config, replay, cells, device=torch.device("cpu"), batches=4
+    )
+    for side in ("raw", "ema"):
+        for values in evaluated[side]["per_cell"].values():
+            assert values["samples"] == values["games"] == 2
+            assert len(values["observations"]) == 2
+            assert values["observation_unit"] == "immutable-game"
     for p in (production / "replay/shards").glob("*.npz"):
         p.unlink()
     second, _, again = trial.load_frozen(manifest)
@@ -297,6 +305,11 @@ def test_preparation_copies_game_disjoint_all_cell_replay_and_survives_source_gc
     bad.write_text(json.dumps(tampered))
     with pytest.raises(ValueError, match="leaks"):
         trial.load_frozen(bad)
+    legacy = dict(first, schema_version=1)
+    legacy_path = manifest.parent / "legacy-v1.json"
+    legacy_path.write_text(json.dumps(legacy))
+    with pytest.raises(ValueError, match="invalid frozen"):
+        trial.load_frozen(legacy_path)
 
 
 def test_diagnostic_backward_preserves_model_and_optimizer_state():
@@ -344,7 +357,7 @@ def trial_result(tmp_path, arm):
     }
     result = {
         "format": "deltreltrain.gradient-clipping-trial",
-        "schema_version": 1,
+        "schema_version": trial.SCHEMA_VERSION,
         "status": "complete",
         "arm": arm,
         "diagnostic_only": False,
@@ -414,6 +427,16 @@ def test_missing_incomplete_and_changed_checkpoint_results_fail_validation(tmp_p
         )
     Path(result["trial_checkpoint"]["path"]).write_bytes(b"changed")
     with pytest.raises(ValueError):
+        trial.validate_result(
+            path, arm="global", manifest_sha256="a" * 64, steps=1, diagnostic=False
+        )
+
+
+def test_legacy_trial_result_is_not_reinterpreted_as_game_clustered_evidence(tmp_path):
+    path, result = trial_result(tmp_path, "global")
+    result["schema_version"] = 1
+    path.write_text(json.dumps(result))
+    with pytest.raises(ValueError, match="completed pinned"):
         trial.validate_result(
             path, arm="global", manifest_sha256="a" * 64, steps=1, diagnostic=False
         )

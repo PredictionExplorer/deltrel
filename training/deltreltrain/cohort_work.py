@@ -641,9 +641,14 @@ class CompatibleWorkCoordinator:
                 del self._outstanding[key]
             return remaining
 
-    def metrics_snapshot(self) -> dict[str, object]:
-        with self._lock:
+    def metrics_snapshot(self, *, blocking: bool = True) -> dict[str, object]:
+        # Work creation holds this lock through model loading. The actor control
+        # loop must keep polling its pause gate while that operation is pending.
+        if not self._lock.acquire(blocking=blocking):
+            return {"snapshot_available": False, "reason": "work_coordinator_busy"}
+        try:
             return {
+                "snapshot_available": True,
                 "closed": self._closed,
                 "producer_cohorts": self.cohort_count,
                 "bundle_cohorts": self.bundle_cohorts,
@@ -673,6 +678,8 @@ class CompatibleWorkCoordinator:
                 if self._bundle
                 else None,
             }
+        finally:
+            self._lock.release()
 
     def close(self) -> None:
         with self._lock:

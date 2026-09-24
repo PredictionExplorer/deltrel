@@ -17,12 +17,17 @@ import yaml
 from scripts import run_frozen_replay_optimizer_calibration as calibration
 from deltreltrain.checkpoint import ExponentialMovingAverage, write_model_pointer
 from deltreltrain.config import load_config
-from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, RULES_HASH_WIRE
+from deltreltrain.contracts import (
+    FEATURE_SCHEMA_HASH,
+    RULES_HASH,
+    RULES_HASH_WIRE,
+    TARGET_OUTCOME,
+)
 from deltreltrain.features import DoubleDeltrelPosition
 from deltreltrain.learner import ImmutableModelPublisher
 from deltreltrain.model import GraphResTNet
 from deltreltrain.optim import build_optimizer
-from deltreltrain.replay import ReplaySample, write_replay_shard
+from deltreltrain.replay import ReplaySample, collate_replay_samples, write_replay_shard
 from deltreltrain.runtime import RunIdentity
 from deltreltrain.topology import get_topology
 from deltreltrain.training import build_scheduler, isolated_compile_cache
@@ -270,6 +275,200 @@ def test_frozen_replay_dry_run_is_hash_pinned_and_read_only(tmp_path: Path) -> N
     assert _snapshot((champion, manifest, shard)) == before
     with pytest.raises(ValueError, match=r"\(0, 2\] H100-hours"):
         calibration.run_calibration(replace(settings, budget_h100_hours=2.01))
+
+
+def test_calibration_splits_whole_games_and_deduplicates_revisions(tmp_path):
+    config, champion, replay_root, manifest, shard = _fixture(tmp_path)
+    samples = [
+        replace(_sample(index), game_id=f"shared-game-{index // 4}", ply=index % 4)
+        for index in range(8)
+    ]
+    # A later ready publication enriches a logical position. It must not receive
+    # a second sample identity or leak into the opposite partition.
+    samples.append(replace(samples[0], policy_weight=0.5))
+    write_replay_shard(shard, samples)
+    with sqlite3.connect(manifest) as connection:
+        connection.execute(
+            "UPDATE shards SET sample_count=?, checksum_sha256=?",
+            (len(samples), calibration.sha256_file(shard)),
+        )
+    settings = _settings(tmp_path, config, champion, replay_root, dry_run=True)
+    pin = calibration._champion_pin(champion, load_config(config))
+    replay = calibration.freeze_replay(settings, pin, decode=True)
+    train_games = {row.game_identity for row in replay.train}
+    holdout_games = {row.game_identity for row in replay.holdout}
+    assert train_games.isdisjoint(holdout_games)
+    assert len(train_games) == len(holdout_games) == 1
+    assert len(replay.train) + len(replay.holdout) == 8
+    selected = (*replay.train, *replay.holdout)
+    assert len({row.stable_id for row in selected}) == 8
+    assert any(row.sample_index == 8 for row in selected)
+    assert all(row.sample_index != 0 for row in selected)
+    assert replay.partition_dict()["game_disjoint"] is True
+    assert calibration.freeze_replay(settings, pin, decode=False).partition_sha256 == (
+        replay.partition_sha256
+    )
+
+    result = calibration.run_calibration(replace(settings, dry_run=False))
+    assert result["heldout"]["games"] == 1
+    assert result["heldout"]["batches"] == 4
+    assert len(result["heldout"]["observations"]) == 1
+    assert result["heldout"]["observation_unit"] == "immutable-game"
+
+
+def test_calibration_refuses_a_single_game_holdout(tmp_path):
+    config, champion, replay_root, manifest, shard = _fixture(tmp_path)
+    samples = [
+        replace(_sample(index), game_id="one-game", ply=index) for index in range(8)
+    ]
+    write_replay_shard(shard, samples)
+    with sqlite3.connect(manifest) as connection:
+        connection.execute(
+            "UPDATE shards SET checksum_sha256=?", (calibration.sha256_file(shard),)
+        )
+    settings = _settings(tmp_path, config, champion, replay_root, dry_run=True)
+    pin = calibration._champion_pin(champion, load_config(config))
+    with pytest.raises(ValueError, match="at least two games"):
+        calibration.freeze_replay(settings, pin, decode=False)
+
+
+def test_logical_capacity_looks_past_repeated_newest_ready_revisions(tmp_path):
+    config, champion, replay_root, manifest, shard = _fixture(tmp_path)
+    samples = [
+        replace(_sample(index), game_id=f"game-{index // 4}", ply=index % 4)
+        for index in range(8)
+    ]
+    write_replay_shard(shard, samples)
+    with sqlite3.connect(manifest) as connection:
+        connection.execute(
+            "UPDATE shards SET checksum_sha256=?", (calibration.sha256_file(shard),)
+        )
+        for revision in (8, 9, 10):
+            path = write_replay_shard(
+                replay_root / "shards" / f"revision-{revision}.npz",
+                [replace(row, weight=revision / 10) for row in samples[:4]],
+            )
+            connection.execute(
+                """INSERT INTO shards SELECT ?, ?, 4, ring, model_step,
+                   model_identity, run_id, generation_family, state,
+                   rules_hash, feature_schema_hash, ? FROM shards WHERE id=7""",
+                (
+                    revision,
+                    str(path.relative_to(replay_root)),
+                    calibration.sha256_file(path),
+                ),
+            )
+    settings = replace(
+        _settings(tmp_path, config, champion, replay_root, dry_run=True),
+        replay_cutoff=9,
+    )
+    pin = calibration._champion_pin(champion, load_config(config))
+    replay = calibration.freeze_replay(settings, pin, decode=True)
+    references = (*replay.train, *replay.holdout)
+    assert len(references) == 8
+    assert {row.shard.shard_id for row in references} == {7, 9}
+    assert len({row.game_identity for row in references}) == 2
+    assert all(
+        replay.decoded[row.shard.shard_id].sample(row.sample_index).weight
+        == pytest.approx(0.9)
+        for row in references
+        if row.shard.shard_id == 9
+    )
+
+
+@pytest.mark.parametrize("mismatch", ["model", "variant"])
+def test_calibration_rejects_shard_or_immutable_game_provenance_drift(
+    tmp_path, mismatch
+):
+    config, champion, replay_root, manifest, shard = _fixture(tmp_path)
+    samples = [_sample(index) for index in range(8)]
+    if mismatch == "model":
+        samples[0] = replace(samples[0], model_identity="other-model")
+    write_replay_shard(shard, samples)
+    with sqlite3.connect(manifest) as connection:
+        connection.execute(
+            "UPDATE shards SET checksum_sha256=?", (calibration.sha256_file(shard),)
+        )
+        if mismatch == "variant":
+            path = write_replay_shard(
+                replay_root / "shards" / "changed-context.npz",
+                [replace(samples[0], mode="classic")],
+            )
+            connection.execute(
+                """INSERT INTO shards SELECT 8, ?, 1, ring, model_step,
+                   model_identity, run_id, generation_family, state,
+                   rules_hash, feature_schema_hash, ? FROM shards WHERE id=7""",
+                (str(path.relative_to(replay_root)), calibration.sha256_file(path)),
+            )
+    settings = _settings(tmp_path, config, champion, replay_root, dry_run=True)
+    if mismatch == "variant":
+        settings = replace(settings, replay_cutoff=8)
+    pin = calibration._champion_pin(champion, load_config(config))
+    with pytest.raises(ValueError, match="identity differs|context changed"):
+        calibration.freeze_replay(settings, pin, decode=False)
+
+
+def test_game_loss_aggregation_preserves_masked_target_weight_mass_across_chunks(
+    tmp_path,
+):
+    config = load_config(_tiny_ring10_config(tmp_path))
+    model = GraphResTNet(config.model).eval()
+    with torch.no_grad():
+        model.outcome_head.weight.zero_()
+        model.outcome_head.bias.copy_(torch.tensor([0.0, 3.0]))
+    samples = []
+    for index, (weight, policy_weight) in enumerate(
+        ((1.0, 0.1), (9.0, 2.0), (3.0, 1.0), (2.0, 0.2))
+    ):
+        sample = replace(_sample(index), weight=weight, policy_weight=policy_weight)
+        if index != 2:
+            outcome = 0 if index == 0 else 1
+            winner = sample.to_move if outcome else 1 - sample.to_move
+            sample = replace(
+                sample,
+                target_mask=sample.target_mask | TARGET_OUTCOME,
+                outcome=outcome,
+                final_scores=np.asarray([int(winner == player) for player in (0, 1)]),
+                final_capes=np.zeros(2, dtype=np.int8),
+            )
+        samples.append(sample)
+
+    def totals(rows):
+        return calibration._component_loss_totals(
+            model,
+            collate_replay_samples(rows),
+            config,
+            device=torch.device("cpu"),
+            precision="fp32",
+        )
+
+    whole = totals(samples)
+    assert whole["outcome"][1] == 12.0
+    for chunk_size in (1, 2, 3):
+        combined = {name: [0.0, 0.0] for name in whole}
+        for start in range(0, len(samples), chunk_size):
+            for name, values in totals(samples[start : start + chunk_size]).items():
+                for index, value in enumerate(values):
+                    combined[name][index] += value
+        assert calibration._components_from_totals(combined, config) == pytest.approx(
+            calibration._components_from_totals(whole, config), rel=1e-5, abs=1e-6
+        )
+
+
+def test_v1_calibration_state_cannot_resume_under_game_disjoint_contract(tmp_path):
+    config, champion, replay_root, _, _ = _fixture(tmp_path)
+    settings = _settings(
+        tmp_path, config, champion, replay_root, dry_run=False, stop_after_steps=1
+    )
+    calibration.run_calibration(settings)
+    path = settings.output_dir / "state.json"
+    state = json.loads(path.read_text())
+    state["schema_version"] = 1
+    path.write_text(json.dumps(state))
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="resumable calibration state differs"):
+        calibration.run_calibration(replace(settings, stop_after_steps=None))
+    assert path.read_bytes() == before
 
 
 def test_cpu_calibration_resumes_from_fresh_champion_ema(tmp_path: Path) -> None:

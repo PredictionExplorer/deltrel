@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 import time
 from collections.abc import Callable, Sequence
@@ -67,6 +68,11 @@ class ActorPauseGate:
         self._last_resumed_token: str | None = None
         self._synchronized = False
         self._closed = False
+        self._cohort_threads: dict[str, int] = {}
+        self._pause_stage: str | None = None
+        self._pause_stage_since_ns = 0
+        self._last_diagnostics_at = time.monotonic()
+        self._unparked_stacks: dict[str, list[str]] = {}
 
     @staticmethod
     def _read(path: Path) -> dict[str, Any]:
@@ -154,6 +160,7 @@ class ActorPauseGate:
         with self._condition:
             if cohort_id not in self._live:
                 return
+            self._cohort_threads[cohort_id] = threading.get_ident()
             try:
                 while (
                     self._lease is not None
@@ -174,6 +181,7 @@ class ActorPauseGate:
         with self._condition:
             self._live.discard(cohort_id)
             self._parked.discard(cohort_id)
+            self._cohort_threads.pop(cohort_id, None)
             self._synchronized = False
             self._condition.notify_all()
 
@@ -198,6 +206,10 @@ class ActorPauseGate:
                     return self._resuming_details()
                 self._lease = self._requested_lease(acknowledgement)
                 self._synchronized = False
+                if self._lease is not None:
+                    self._pause_stage = None
+                    self._last_diagnostics_at = time.monotonic()
+                    self._unparked_stacks = {}
             lease = self._lease
             if lease is None:
                 return (
@@ -225,6 +237,21 @@ class ActorPauseGate:
                 self._synchronize()
                 self._synchronized = True
             ready = idle and self._synchronized and not self._stop_requested()
+            stage = (
+                "ready"
+                if ready
+                else "waiting_for_cohorts"
+                if not all_parked
+                else "waiting_for_inference"
+            )
+            if stage != self._pause_stage:
+                self._pause_stage = stage
+                self._pause_stage_since_ns = time.time_ns()
+            # Capture only frame locations, never locals or tensor contents.
+            # Sparse snapshots explain blocked producers after monitor rotation
+            # without adding changing timers to every 100ms heartbeat update.
+            if not ready and time.monotonic() - self._last_diagnostics_at >= 30:
+                self._capture_unparked_stacks()
             return {
                 "phase": "arena_gpu_pause" if ready else "arena_gpu_quiescing",
                 "lease_token": lease.token,
@@ -235,9 +262,41 @@ class ActorPauseGate:
                 "cuda_synchronized": self._synchronized,
                 "parked_cohorts": len(self._parked),
                 "live_cohorts": len(self._live),
+                "pause_stage": stage,
+                "pause_stage_since_ns": self._pause_stage_since_ns,
+                "parked_cohort_ids": sorted(self._parked),
+                "unparked_cohort_ids": sorted(self._live - self._parked),
+                "unparked_cohort_stacks": {
+                    cohort: list(stack)
+                    for cohort, stack in self._unparked_stacks.items()
+                    if cohort in self._live - self._parked
+                },
             }
 
+    def _capture_unparked_stacks(self) -> None:
+        frames = sys._current_frames()
+        self._unparked_stacks = {}
+        try:
+            for cohort in sorted(self._live - self._parked):
+                frame = frames.get(self._cohort_threads.get(cohort, -1))
+                stack = []
+                while frame is not None and len(stack) < 12:
+                    stack.append(
+                        f"{Path(frame.f_code.co_filename).name}:"
+                        f"{frame.f_lineno}:{frame.f_code.co_name}"
+                    )
+                    frame = frame.f_back
+                self._unparked_stacks[cohort] = stack
+        finally:
+            # Do not keep running threads' frames (and their objects) alive.
+            frames.clear()
+            self._last_diagnostics_at = time.monotonic()
+
     def _resuming_details(self) -> dict[str, object]:
+        stage = "resuming" if self._releasing is not None else "running"
+        if stage != self._pause_stage:
+            self._pause_stage = stage
+            self._pause_stage_since_ns = time.time_ns()
         return {
             "phase": "arena_gpu_resuming"
             if self._releasing is not None
@@ -251,6 +310,11 @@ class ActorPauseGate:
             "cuda_synchronized": False,
             "parked_cohorts": len(self._parked),
             "live_cohorts": len(self._live),
+            "pause_stage": stage,
+            "pause_stage_since_ns": self._pause_stage_since_ns,
+            "parked_cohort_ids": sorted(self._parked),
+            "unparked_cohort_ids": sorted(self._live - self._parked),
+            "unparked_cohort_stacks": {},
         }
 
     def close(self) -> None:

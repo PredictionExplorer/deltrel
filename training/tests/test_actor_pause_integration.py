@@ -5,6 +5,7 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -25,13 +26,25 @@ def wait_for(predicate, seconds=5):
 
 
 @pytest.mark.parametrize("shutdown_while_parked", [False, True])
+@pytest.mark.parametrize("busy_work_telemetry", [False, True])
 def test_shared_actor_heartbeat_proves_parking_and_confirms_release(
     tmp_path,
     monkeypatch,
     shutdown_while_parked,
+    busy_work_telemetry,
 ):
     config = load_config(
         Path(__file__).parents[1] / "configs/h100-8gpu-variant-efficiency-stage-b.yaml"
+    )
+    config = replace(
+        config,
+        orchestration=replace(
+            config.orchestration,
+            model_refresh=replace(
+                config.orchestration.model_refresh,
+                compatible_cohort_work=True,
+            ),
+        ),
     )
     gpu = next(worker for worker in config.orchestration.gpus if worker.gpu_id == 7)
     request_path = tmp_path / "arena-gpu-pause.json"
@@ -52,10 +65,12 @@ def test_shared_actor_heartbeat_proves_parking_and_confirms_release(
     )
     stop = threading.Event()
     counters = {}
+    coordinators = {}
 
     def child_run(child, *, stop_requested, startup_cancel_requested):
         assert startup_cancel_requested is not None
         counters[child.actor_id] = 0
+        coordinators[child.actor_id] = child.work_coordinator
         while not stop_requested():
             assert child._pause_checkpoint is not None
             child._pause_checkpoint()  # Same callback used between native leaves.
@@ -72,8 +87,14 @@ def test_shared_actor_heartbeat_proves_parking_and_confirms_release(
 
     with ThreadPoolExecutor(max_workers=1) as controller:
         future = controller.submit(supervisor._run_cohorts, stop_requested=stop.is_set)
+        held_lock = None
         try:
             wait_for(lambda: len(counters) == 2 and min(counters.values()) >= 3)
+            if busy_work_telemetry:
+                coordinator = next(iter(coordinators.values()))
+                assert coordinator is not None
+                held_lock = coordinator._lock
+                held_lock.acquire()
             requested_ns = time.time_ns()
             token = "cooperative-integration-token"
             atomic_json(
@@ -108,6 +129,11 @@ def test_shared_actor_heartbeat_proves_parking_and_confirms_release(
             assert parked["parked_cohorts"] == parked["live_cohorts"] == 2
             assert parked["inference_idle"] and parked["cuda_synchronized"]
             assert parked["progress_ns"] >= requested_ns
+            if busy_work_telemetry:
+                assert parked["compatible_work"] == {
+                    "snapshot_available": False,
+                    "reason": "work_coordinator_busy",
+                }
             frozen = dict(counters)
             request_path.unlink()
             time.sleep(0.15)
@@ -137,7 +163,12 @@ def test_shared_actor_heartbeat_proves_parking_and_confirms_release(
                 time.sleep(0.15)
                 assert heartbeat()["last_resumed_lease_token"] == token
             stop.set()
+            if held_lock is not None:
+                held_lock.release()
+                held_lock = None
             assert future.result(timeout=5) == sum(counters.values())
         finally:
+            if held_lock is not None:
+                held_lock.release()
             stop.set()
             future.result(timeout=5)

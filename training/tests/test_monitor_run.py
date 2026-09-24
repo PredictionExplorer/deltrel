@@ -1276,6 +1276,12 @@ def test_snapshot_discovers_custom_cpu_actor_and_ignores_non_actor_metrics(
         batch_completed_ns=now_ns,
     )
     metric_path.write_text(json.dumps(gpu_metric) + "\n")
+    coordinator_path = root / "status/coordinator.json"
+    coordinator = json.loads(coordinator_path.read_text())
+    coordinator["workers"]["small-ring-worker"] = dict(
+        coordinator["workers"]["actor-gpu-1"], gpu_ids=[]
+    )
+    _write_json(coordinator_path, coordinator)
     cpu_metric = dict(gpu_metric, worker="small-ring-worker", gpu_id=0)
     (root / "metrics" / "small-ring-worker.jsonl").write_text(
         json.dumps(cpu_metric)
@@ -1405,7 +1411,7 @@ def test_snapshot_ignores_old_parent_ring_metric_while_shared_cohorts_start(
     }
     assert snapshot["actors"]["noncompliant_weight_workers"] == []
     assert snapshot["actors"]["ring_weight_variants"] == []
-    assert snapshot["actors"]["workers"] == 1
+    assert snapshot["actors"]["workers"] == 0
 
 
 def test_snapshot_prefers_exact_cpu_worker_name_to_inferred_cohort_parent(
@@ -2128,6 +2134,65 @@ def test_changed_balanced_objective_cannot_reuse_previous_report_headline(tmp_pa
     )
     assert refreshed["headline_elo"] == 300.0
     assert refreshed["contract_matches_active_profile"] is True
+
+
+def test_balanced_text_does_not_substitute_latest_promotion_when_strength_missing():
+    snapshot = {
+        "training_objective": "ring10_pie",
+        "strength_efficiency": {
+            "headline_source": "balanced_champion_frontier",
+            "headline_elo": None,
+        },
+        "arena_history": {"recent": [{"elo_difference": 149.0}]},
+    }
+    text = monitor.format_text(snapshot)
+    assert "elo=n/a" in text
+    assert "elo_source=balanced_champion_frontier" in text
+    assert "149.00" not in text
+
+
+def test_monitor_invalidates_champion_strength_between_report_refreshes(tmp_path):
+    now_ns = 20_000_000_000
+    root = _fixture(tmp_path, now_ns=now_ns)
+    _write_json(
+        root / "learner/champion.json", {"model_identity": "new", "model_step": 200}
+    )
+    _write_json(
+        root / "strength-efficiency.json",
+        {
+            "report": "deltreltrain-strength-efficiency",
+            "schema_version": 1,
+            "status": "complete",
+            "run_id": "monitor-run",
+            "generation_family": "monitor-family",
+            "run_root": str(root),
+            "started_ns": now_ns - 1_000_000_000,
+            "observed_until_ns": now_ns,
+            "balanced_strength": {
+                "frontier_identity": "old",
+                "available": True,
+                "rating": 50.0,
+                "elo_per_wall_hour": 5.0,
+            },
+            "current_strength": {
+                "frontier_identity": "old",
+                "available": True,
+                "rate_available": True,
+                "rating": 50.0,
+                "elo_per_provisioned_gpu_hour": 0.625,
+                "measurement_completed_ns": 10_000_000_000,
+            },
+        },
+    )
+    status = monitor._strength_efficiency_status(root, now_ns=now_ns, balanced=True)
+    assert status["headline_elo"] is None
+    assert status["balanced_strength"]["reason"] == "champion_changed_since_report"
+    assert status["current_strength"]["frontier_identity"] == "new"
+    assert status["current_strength"]["model_step"] == 200
+    assert status["current_strength"]["rating"] is None
+    assert status["current_strength"]["rate_available"] is False
+    assert status["current_strength"]["elo_per_provisioned_gpu_hour"] is None
+    assert status["measurement_age_seconds"] is None
 
 
 def test_starting_actor_does_not_inherit_old_ring_allocation_alarm(

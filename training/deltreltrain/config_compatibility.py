@@ -8,6 +8,7 @@ and non-default values remain in the hash and cannot acquire legacy authority.
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -27,6 +28,23 @@ def without_pause_strategy_default(payload: Mapping[str, Any]) -> dict[str, Any]
             and promotion.get("pause_strategy") == "terminate"
         ):
             del promotion["pause_strategy"]
+    return result
+
+
+def without_history_horizon_defaults(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Preserve old profile authority only for the disabled horizon defaults."""
+    result = deepcopy(dict(payload))
+    orchestration = result.get("orchestration")
+    refresh = (
+        orchestration.get("model_refresh") if isinstance(orchestration, dict) else None
+    )
+    if isinstance(refresh, dict):
+        for name, default in (
+            ("history_horizon_enabled", False),
+            ("history_horizon_initial_seconds", 3600.0),
+        ):
+            if type(refresh.get(name)) is type(default) and refresh[name] == default:
+                del refresh[name]
     return result
 
 
@@ -132,7 +150,47 @@ def compatible_config_epoch_payloads(
         previous_clinch = without_arena_clinch_default(variant)
         if previous_clinch != variant:
             variants.append(previous_clinch)
-    return tuple(variants)
+    # Both scheduling additions belong to one release, not two independently
+    # shipped epochs. Preserve old hashes without another Cartesian dimension.
+    for variant in tuple(variants):
+        previous_scheduling = without_efficiency_program_defaults(variant)
+        if previous_scheduling != variant:
+            variants.append(previous_scheduling)
+    # Several historical omission paths converge on the same representation.
+    # Downstream provenance consumers must not hash every duplicate again.
+    unique = {
+        json.dumps(item, sort_keys=True, separators=(",", ":")): item
+        for item in variants
+    }
+    return tuple(unique.values())
+
+
+def without_efficiency_program_defaults(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """One additive epoch for disabled measurement and history scheduling."""
+    return without_measurement_scheduler_defaults(
+        without_history_horizon_defaults(payload)
+    )
+
+
+def without_measurement_scheduler_defaults(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Retain old authority only for exact disabled scheduler defaults."""
+    result = deepcopy(dict(payload))
+    orchestration = result.get("orchestration")
+    parent = (
+        orchestration.get("historical_evaluation")
+        if isinstance(orchestration, dict)
+        else None
+    )
+    if isinstance(parent, dict):
+        for name, default in (
+            ("measurement_service_fraction", 0.0),
+            ("measurement_max_wait_seconds", 3_600.0),
+        ):
+            if type(parent.get(name)) is type(default) and parent[name] == default:
+                del parent[name]
+    return result
 
 
 def without_arena_clinch_default(payload: Mapping[str, Any]) -> dict[str, Any]:

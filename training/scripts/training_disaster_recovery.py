@@ -55,7 +55,7 @@ from deltreltrain.replay_store import (
     validate_game_publications,
     training_committed_sample_count,
 )
-from deltreltrain.runtime import load_run_identity, validate_identifier
+from deltreltrain.runtime import RunIdentity, load_run_identity, validate_identifier
 
 SNAPSHOT_REPORT = "deltreltrain-disaster-recovery-snapshot"
 LATEST_REPORT = "deltreltrain-disaster-recovery-latest"
@@ -109,10 +109,12 @@ _MANIFEST_REFERENCE_KEYS = {
     "baseline_manifest",
     "candidate_manifest",
     "champion_manifest",
+    "anchor_manifest",
 }
 _ALLOWED_KINDS = {
     "arena-json",
     "checkpoint",
+    "coordinator-journal",
     "learner-metadata",
     "model-manifest",
     "model-pointer",
@@ -1526,6 +1528,10 @@ def _allocation_gate_references(
             references.append(
                 (payload["auxiliary_prediction_transition"], "status-json")
             )
+        if "efficiency_scheduling_transition" in payload:
+            references.append(
+                (payload["efficiency_scheduling_transition"], "status-json")
+            )
         result = []
         for reference, kind in references:
             if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
@@ -1579,8 +1585,9 @@ def _allocation_gate_dependency_closure(
     allow_policy_transition: bool = True,
     allow_promotion_transition: bool = True,
     allow_auxiliary_transition: bool = True,
+    allow_scheduling_transition: bool = True,
 ) -> list[tuple[str, str, str]]:
-    """Resolve original -> policy -> promotion -> auxiliary without nesting repeats.
+    """Resolve finite original -> policy -> promotion -> auxiliary -> scheduling.
 
     The supplied reader must verify the expected digest before returning JSON.
     Snapshot capture reads copied immutable objects; offline verification reads
@@ -1596,15 +1603,23 @@ def _allocation_gate_dependency_closure(
         raise DisasterRecoveryError(
             "auxiliary prediction transitions cannot be chained"
         )
+    if (
+        "efficiency_scheduling_transition" in payload
+        and not allow_scheduling_transition
+    ):
+        raise DisasterRecoveryError("scheduling transitions cannot be chained")
     references = _allocation_gate_references(payload)
     activation = payload.get("graph_cache_controlled_activation")
     if activation is not None:
         receipt = load_json(activation["path"], activation["sha256"])
         references.extend(_controlled_graph_activation_references(receipt))
+    scheduling_transition = "efficiency_scheduling_transition" in payload
     auxiliary_transition = "auxiliary_prediction_transition" in payload
     promotion_transition = "promotion_allocation_transition" in payload
     transition_key = (
-        "auxiliary_prediction_transition"
+        "efficiency_scheduling_transition"
+        if scheduling_transition
+        else "auxiliary_prediction_transition"
         if auxiliary_transition
         else "promotion_allocation_transition"
         if promotion_transition
@@ -1624,10 +1639,19 @@ def _allocation_gate_dependency_closure(
         AUXILIARY_TRANSITION_CLASS,
         AUXILIARY_TRANSITION_FORMAT,
         AUXILIARY_TRANSITION_SCOPE,
+        SCHEDULING_TRANSITION_CLASS,
+        SCHEDULING_TRANSITION_FORMAT,
+        SCHEDULING_TRANSITION_SCOPE,
     )
 
     expected_format, expected_class, expected_scope = (
         (
+            SCHEDULING_TRANSITION_FORMAT,
+            SCHEDULING_TRANSITION_CLASS,
+            SCHEDULING_TRANSITION_SCOPE,
+        )
+        if scheduling_transition
+        else (
             AUXILIARY_TRANSITION_FORMAT,
             AUXILIARY_TRANSITION_CLASS,
             AUXILIARY_TRANSITION_SCOPE,
@@ -1693,10 +1717,16 @@ def _allocation_gate_dependency_closure(
         )
     source = load_json(source_reference["path"], source_reference["sha256"])
     if (
-        "auxiliary_prediction_transition" in source
-        or (not auxiliary_transition and "promotion_allocation_transition" in source)
+        "efficiency_scheduling_transition" in source
+        or (not scheduling_transition and "auxiliary_prediction_transition" in source)
         or (
-            not auxiliary_transition
+            not scheduling_transition
+            and not auxiliary_transition
+            and "promotion_allocation_transition" in source
+        )
+        or (
+            not scheduling_transition
+            and not auxiliary_transition
             and not promotion_transition
             and "training_policy_transition" in source
         )
@@ -1716,9 +1746,12 @@ def _allocation_gate_dependency_closure(
         _allocation_gate_dependency_closure(
             source,
             load_json,
-            allow_policy_transition=auxiliary_transition or promotion_transition,
-            allow_promotion_transition=auxiliary_transition,
-            allow_auxiliary_transition=False,
+            allow_policy_transition=scheduling_transition
+            or auxiliary_transition
+            or promotion_transition,
+            allow_promotion_transition=scheduling_transition or auxiliary_transition,
+            allow_auxiliary_transition=scheduling_transition,
+            allow_scheduling_transition=False,
         )
     )
     return list(dict.fromkeys(references))
@@ -1915,8 +1948,21 @@ def _collect_payloads(
             and path.name != "run.json"
             and path.suffix in (".json", ".jsonl")
         ):
-            builder.add_run_file(path, "run-metadata")
+            _, entry = builder.add_run_file(path, "run-metadata")
+            if path.name == "strength-epoch.json":
+                epoch = _read_catalog_json(builder, entry, name="strength epoch")
+                for value in _manifest_references(epoch):
+                    manifest = _resolve_source_reference(
+                        run_root, path, value, name="strength epoch anchor manifest"
+                    )
+                    _add_model_manifest(
+                        builder,
+                        manifest,
+                        run_id=identity.run_id,
+                        generation_family=identity.generation_family,
+                    )
 
+    _capture_measurement_service(builder, identity)
     _add_json_tree(
         builder,
         run_root / "arena",
@@ -1954,6 +2000,90 @@ def _collect_payloads(
         source,
         identity.run_id,
         identity.generation_family,
+    )
+
+
+def _validate_measurement_capture(
+    ledger: dict[str, Any], journal: bytes, identity: RunIdentity
+) -> None:
+    from deltreltrain.measurement_scheduling import validate_measurement_service_state
+
+    try:
+        validate_measurement_service_state(ledger, identity)
+        offset = ledger["journal_offset"]
+        if (
+            offset > len(journal)
+            or (offset and journal[offset - 1 : offset] != b"\n")
+            or (journal and not journal.endswith(b"\n"))
+            or hashlib.sha256(journal[:offset]).hexdigest() != ledger["journal_witness"]
+        ):
+            raise ValueError("ledger cursor does not match the captured journal prefix")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise DisasterRecoveryError(
+            f"invalid measurement service recovery state: {exc}"
+        ) from exc
+
+
+def _capture_measurement_service(
+    builder: _SnapshotBuilder, identity: RunIdentity
+) -> None:
+    """Copy the atomic ledger first, then an append-safe complete journal prefix."""
+    ledger_path = builder.run_root / "arena/measurement-service.json"
+    if not ledger_path.exists() and not ledger_path.is_symlink():
+        return
+    _, entry = builder.add_run_file(ledger_path, "arena-json")
+    ledger = _read_catalog_json(builder, entry, name="measurement service ledger")
+    journal_path, journal_logical = _path_within(
+        builder.run_root,
+        builder.run_root / "metrics/coordinator.jsonl",
+        name="measurement coordinator journal",
+    )
+    _require_regular_file(journal_path, name="measurement coordinator journal")
+    descriptor = os.open(journal_path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(descriptor, "rb") as stream:
+        metadata = os.fstat(stream.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > _MAX_JSON_BYTES:
+            raise DisasterRecoveryError(
+                "measurement coordinator journal is unsafe or too large"
+            )
+        data = stream.read(metadata.st_size)
+        if (
+            len(data) != metadata.st_size
+            or os.fstat(stream.fileno()).st_size < metadata.st_size
+        ):
+            raise DisasterRecoveryError(
+                "measurement coordinator journal shrank during capture"
+            )
+    # A concurrent append may have been between write calls. Never archive a
+    # half record or follow appends indefinitely. The cursor must still fit.
+    data = data[: data.rfind(b"\n") + 1]
+    _validate_measurement_capture(ledger, data, identity)
+    builder.add_bytes(data, journal_logical, "coordinator-journal")
+
+
+def _prepare_measurement_restore(staging: Path) -> None:
+    """Authorize exact-once consumption, without inventing a crashed lease end."""
+    ledger_path = staging / "arena/measurement-service.json"
+    if not ledger_path.exists():
+        return
+    identity = load_run_identity(staging / "run.json")
+    ledger_bytes = ledger_path.read_bytes()
+    ledger = _json_loads(ledger_bytes, name="restored measurement service ledger")
+    journal = (staging / "metrics/coordinator.jsonl").read_bytes()
+    _validate_measurement_capture(ledger, journal, identity)
+    receipt = {
+        "schema_version": 1,
+        "run_id": identity.run_id,
+        "generation_family": identity.generation_family,
+        "policy": "preserve-settled-debt-unclosed-interval-uncredited-v1",
+        "ledger_sha256": hashlib.sha256(ledger_bytes).hexdigest(),
+        "journal_bytes": len(journal),
+        "journal_sha256": hashlib.sha256(journal).hexdigest(),
+        "unsettled_tokens": sorted(ledger["leases"]),
+        "restored_ns": time.time_ns(),
+    }
+    _atomic_write_bytes(
+        staging / "arena/measurement-service-restore.json", _canonical_json(receipt)
     )
 
 
@@ -2627,6 +2757,43 @@ def _verify_snapshot_document(
     ):
         raise DisasterRecoveryError("snapshot run identity is incompatible")
     run_created_ns = _positive_int("run created_ns", run_payload.get("created_ns"))
+    measurement_logical = "arena/measurement-service.json"
+    if measurement_logical in catalog:
+        if catalog[measurement_logical].kind != "arena-json":
+            raise DisasterRecoveryError("measurement service ledger has the wrong kind")
+        journal_entry = catalog.get("metrics/coordinator.jsonl")
+        if journal_entry is None or journal_entry.kind != "coordinator-journal":
+            raise DisasterRecoveryError(
+                "measurement service coordinator journal is missing"
+            )
+        measurement = reader.json(
+            measurement_logical, name="measurement service ledger"
+        )
+        _validate_measurement_capture(
+            measurement,
+            reader.data("metrics/coordinator.jsonl"),
+            RunIdentity(
+                Path(str(source["run_root"])) / "run.json",
+                run_id,
+                family,
+                run_created_ns,
+            ),
+        )
+        if measurement["pinned_job"] is not None:
+            for side in ("candidate", "baseline"):
+                manifest_logical = reader.reference(
+                    measurement_logical,
+                    measurement.get(f"{side}_manifest"),
+                    name=f"measurement {side} manifest",
+                    allow_absolute=True,
+                )
+                manifest = reader.json(
+                    manifest_logical, name="measurement model manifest"
+                )
+                if manifest.get("model_identity") != measurement["pinned_job"][side]:
+                    raise DisasterRecoveryError(
+                        "measurement pinned job disagrees with its manifest"
+                    )
 
     initialized = catalog.get("replay/initialized.json")
     legacy_missing = bool(source["legacy_initialized_missing"])
@@ -2931,7 +3098,7 @@ def _verify_snapshot_document(
                 referenced_manifests.add(manifest)
         elif entry.kind == "status-json":
             reader.json(logical, name=f"status JSON {logical}")
-        elif entry.kind in ("learner-metadata", "run-metadata"):
+        elif entry.kind in ("learner-metadata", "run-metadata", "coordinator-journal"):
             if logical.endswith(".jsonl"):
                 _validate_jsonl(
                     reader,
@@ -2949,6 +3116,31 @@ def _verify_snapshot_document(
                     raise DisasterRecoveryError(
                         f"metadata belongs to another run: {logical}"
                     )
+                if logical == "strength-epoch.json":
+                    for value in _manifest_references(metadata):
+                        manifest = reader.reference(
+                            logical,
+                            value,
+                            name="strength epoch anchor manifest",
+                            allow_absolute=True,
+                        )
+                        _validate_model_manifest(
+                            reader,
+                            manifest,
+                            run_id=run_id,
+                            generation_family=family,
+                            referenced_checkpoints=referenced_checkpoints,
+                        )
+                        if metadata.get("anchor_manifest") == value and (
+                            metadata.get("anchor_identity")
+                            != reader.json(manifest, name="strength epoch anchor").get(
+                                "model_identity"
+                            )
+                        ):
+                            raise DisasterRecoveryError(
+                                "strength epoch anchor identity disagrees with its manifest"
+                            )
+                        referenced_manifests.add(manifest)
 
     durable_examples = max(
         (
@@ -3903,6 +4095,7 @@ def restore_snapshot(
             if relocate_profile
             else None
         )
+        _prepare_measurement_restore(staging)
         restore_marker = {
             "report": RESTORE_REPORT,
             "schema_version": SCHEMA_VERSION,

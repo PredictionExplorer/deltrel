@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from deltreltrain.checkpoint import ModelManifest
 from deltreltrain.config import HistoricalEvaluationConfig
 from deltreltrain.historical_evaluation import (
@@ -44,6 +46,72 @@ def promotion(
             "promotion": {"decision": "promote"},
             "terminal": True,
         },
+    )
+
+
+def test_protected_service_measures_frontier_instead_of_ancient_unfinished_chain(
+    tmp_path,
+):
+    zero = manifest(tmp_path, identity="zero", step=0)
+    old = manifest(tmp_path, identity="old", step=10)
+    champion = manifest(tmp_path, identity="current", step=100)
+    manifests = {m.model_identity: m for m in (zero, old, champion)}
+    results = [
+        promotion(tmp_path, candidate="old", baseline="zero", completed_ns=1),
+        promotion(tmp_path, candidate="current", baseline="old", completed_ns=2),
+        crossplay(tmp_path, candidate="old", baseline="zero", terminal=False),
+    ]
+    config = HistoricalEvaluationConfig(
+        enabled=True, measure_direct_predecessor=True, measurement_service_fraction=0.2
+    )
+    options = dict(
+        config=config,
+        champion=champion,
+        manifests=manifests,
+        arena_results=results,
+        results_directory=tmp_path,
+    )
+    plan = select_historical_evaluation(**options)
+    assert plan is not None and (plan.candidate, plan.baseline) == (champion, old)
+    anchored = select_historical_evaluation(**options, anchor_identity="zero")
+    assert anchored is not None and (anchored.candidate, anchored.baseline) == (
+        champion,
+        zero,
+    )
+    # Once admitted, preserve an earlier job across champion advances.
+    pinned = select_historical_evaluation(
+        **options,
+        anchor_identity="zero",
+        pinned_job={"candidate": "old", "baseline": "zero"},
+    )
+    assert (
+        pinned is not None and pinned.candidate is old and pinned.previous is not None
+    )
+    assert len(results) == 3  # Scheduling never rewrites old evidence.
+    with pytest.raises(ValueError, match="manifest is missing"):
+        select_historical_evaluation(**options, anchor_identity="missing")
+
+
+def test_completed_frontier_measurement_does_not_restart_or_drain_old_links(tmp_path):
+    old = manifest(tmp_path, identity="old", step=10)
+    champion = manifest(tmp_path, identity="current", step=100)
+    results = [
+        promotion(tmp_path, candidate="current", baseline="old", completed_ns=1),
+        crossplay(tmp_path, candidate="current", baseline="old", terminal=True),
+    ]
+    assert (
+        select_historical_evaluation(
+            config=HistoricalEvaluationConfig(
+                enabled=True,
+                measure_direct_predecessor=True,
+                measurement_service_fraction=0.2,
+            ),
+            champion=champion,
+            manifests={m.model_identity: m for m in (old, champion)},
+            arena_results=results,
+            results_directory=tmp_path,
+        )
+        is None
     )
 
 

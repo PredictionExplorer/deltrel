@@ -1262,6 +1262,84 @@ def test_report_pins_six_cell_contract_from_registered_profile_before_new_eviden
     assert report["strength_profile"]["source"] == "registered_profile"
 
 
+def test_balanced_report_does_not_publish_old_bootstrap_as_current_headline(
+    tmp_path, monkeypatch
+):
+    (tmp_path / "run.json").write_text(
+        json.dumps(
+            {"created_ns": 1, "run_id": "largest-board", "generation_family": "family"}
+        )
+    )
+    _registered_largest_board_profile(tmp_path)
+    (tmp_path / "learner").mkdir()
+    (tmp_path / "learner/champion.json").write_text(
+        json.dumps({"model_identity": "current-champion", "model_step": 537130})
+    )
+    monkeypatch.setattr(
+        report_module,
+        "_autonomous_elo_summary",
+        lambda *_args, **_kwargs: {
+            "headline": {"identity": "old-bootstrap", "step": 39064, "rating": 1607.0},
+            "headline_elo": 1607.0,
+            "efficiency": {"headline_elo_per_provisioned_gpu_hour": 0.4},
+        },
+    )
+    report = build_strength_efficiency_report(tmp_path)
+    assert report["autonomous_elo"]["headline"] is None
+    assert report["autonomous_elo"]["headline_elo"] is None
+    assert report["autonomous_elo"]["historical_headline"]["step"] == 39064
+    current = report["current_strength"]
+    assert current["frontier_identity"] == "current-champion"
+    assert current["model_step"] == 537130
+    assert current["available"] is False
+    assert current["rate_available"] is False
+    assert current["rating"] is None
+    assert current["elo_per_wall_hour"] is None
+    assert current["measurement_age_seconds"] is None
+
+
+def test_current_measurement_age_uses_evidence_time_and_invalidates_changed_champion(
+    tmp_path,
+):
+    (tmp_path / "learner").mkdir()
+    pointer = tmp_path / "learner/champion.json"
+    pointer.write_text(json.dumps({"model_identity": "champion", "model_step": 100}))
+    balanced = {
+        "frontier_identity": "champion",
+        "available": True,
+        "rating": 25.0,
+        "elo_per_wall_hour": 2.0,
+        "path": [{"source": "measurement.json"}],
+    }
+    arenas = [
+        {
+            "_path": "measurement.json",
+            "candidate": "champion",
+            "baseline": "anchor",
+            "completed_ns": 10_000_000_000,
+        }
+    ]
+    options = dict(balanced=balanced, arenas=arenas, active_balanced=True)
+    first = report_module._current_strength_headline(
+        tmp_path, observed_until_ns=20_000_000_000, **options
+    )
+    later = report_module._current_strength_headline(
+        tmp_path, observed_until_ns=30_000_000_000, **options
+    )
+    assert first["measurement_age_seconds"] == 10
+    assert later["measurement_age_seconds"] == 20
+    assert later["available"] is True
+    pointer.write_text(
+        json.dumps({"model_identity": "new-champion", "model_step": 110})
+    )
+    changed = report_module._current_strength_headline(
+        tmp_path, observed_until_ns=30_000_000_000, **options
+    )
+    assert changed["available"] is False
+    assert changed["rating"] is None
+    assert changed["measurement_age_seconds"] is None
+
+
 @pytest.mark.parametrize("corruption", ["checksum", "profile", "explicit_path"])
 def test_report_rejects_stale_or_corrupted_active_profile(tmp_path, corruption) -> None:
     (tmp_path / "run.json").write_text(json.dumps({"created_ns": 1}))

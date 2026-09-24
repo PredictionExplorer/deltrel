@@ -17,7 +17,10 @@ import re
 from typing import Any, NoReturn
 
 from .config import ExperimentConfig, load_config
-from .config_compatibility import without_arena_clinch_default
+from .config_compatibility import (
+    without_arena_clinch_default,
+    without_efficiency_program_defaults,
+)
 from .contracts import SEARCH_ALGORITHM_ID
 
 
@@ -35,6 +38,9 @@ AUXILIARY_TRANSITION_CLASS = (
     "unchanged-search-execution-auxiliary-prediction-transition"
 )
 AUXILIARY_TRANSITION_SCOPE = POLICY_TRANSITION_SCOPE
+SCHEDULING_TRANSITION_FORMAT = "deltreltrain.search-allocation-scheduling-transition"
+SCHEDULING_TRANSITION_CLASS = "unchanged-search-execution-scheduling-transition"
+SCHEDULING_TRANSITION_SCOPE = POLICY_TRANSITION_SCOPE
 FULL_PROBABILITY_FLOOR = 0.35
 MAX_INCREMENTAL_REGRET_UPPER95 = 0.02
 TIMING_SETUP_COUNTERS = (
@@ -54,7 +60,9 @@ _VERIFIED_GATES: OrderedDict[str, dict[str, tuple[int, ...]]] = OrderedDict()
 def canonical_config_sha256(config: ExperimentConfig) -> str:
     # Adding a disabled arena optimization must not orphan existing search
     # admission artifacts. Enabled treatment values retain distinct authority.
-    payload = without_arena_clinch_default(config.as_dict())
+    payload = without_efficiency_program_defaults(
+        without_arena_clinch_default(config.as_dict())
+    )
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -600,6 +608,7 @@ def _validate_policy_transition_gate(
         "training_policy_transition" in source_gate
         or "promotion_allocation_transition" in source_gate
         or "auxiliary_prediction_transition" in source_gate
+        or "efficiency_scheduling_transition" in source_gate
     ):
         _fail("policy transition receipts cannot be chained")
     expected = dict(source_gate)
@@ -675,6 +684,7 @@ def _validate_promotion_transition_gate(
     if (
         "promotion_allocation_transition" in original
         or "auxiliary_prediction_transition" in original
+        or "efficiency_scheduling_transition" in original
     ):
         _fail("promotion transition receipts cannot be chained")
     expected = dict(original)
@@ -746,7 +756,10 @@ def _validate_auxiliary_transition_gate(
     if source_gate_path != allocation_gate_path(source):
         _fail("auxiliary transition must pin the source configuration's original gate")
     original = _json(source_contents)
-    if "auxiliary_prediction_transition" in original:
+    if (
+        "auxiliary_prediction_transition" in original
+        or "efficiency_scheduling_transition" in original
+    ):
         _fail("auxiliary transition receipts cannot be chained")
     expected = dict(original)
     expected["target_config_sha256"] = canonical_config_sha256(target)
@@ -760,6 +773,76 @@ def _validate_auxiliary_transition_gate(
     for path, signature in inherited.items():
         if path in verified and verified[path] != signature:
             _fail("source evidence changed while inheriting auxiliary admission")
+        verified[path] = signature
+
+
+def _validate_scheduling_transition_gate(
+    root: Path,
+    gate: dict[str, Any],
+    target: ExperimentConfig,
+    verified: dict[str, tuple[int, ...]],
+) -> None:
+    """Inherit original -> policy -> promotion -> auxiliary exactly once.
+
+    Scheduling receives no new performance qualification. All original report
+    bytes and every prior exact transition are independently revalidated.
+    """
+    from .efficiency_scheduling import validate_efficiency_scheduling_transition
+
+    reference = gate["efficiency_scheduling_transition"]
+    _, contents = _read_ref(root, reference, verified)
+    receipt = _json(contents)
+    if (
+        set(receipt)
+        != {
+            "format",
+            "schema_version",
+            "classification",
+            "run_id",
+            "source_profile",
+            "source_gate",
+            "source_config_sha256",
+            "target_config_sha256",
+            "measurement_scope",
+            "new_objective_performance_qualified",
+        }
+        or receipt.get("format") != SCHEDULING_TRANSITION_FORMAT
+        or type(receipt.get("schema_version")) is not int
+        or receipt["schema_version"] != 1
+        or receipt.get("classification") != SCHEDULING_TRANSITION_CLASS
+        or receipt.get("run_id") != target.orchestration.run_id
+        or receipt.get("target_config_sha256") != canonical_config_sha256(target)
+        or receipt.get("measurement_scope") != SCHEDULING_TRANSITION_SCOPE
+        or receipt.get("new_objective_performance_qualified") is not False
+    ):
+        _fail("scheduling transition receipt identity or evidence scope is invalid")
+    source_path, _ = _read_ref(root, receipt["source_profile"], verified)
+    source = load_config(source_path)
+    if receipt["source_config_sha256"] != canonical_config_sha256(source):
+        _fail("scheduling transition source configuration hash differs")
+    validate_efficiency_scheduling_transition(source, target)
+    source_gate_path, source_contents = _read_ref(
+        root, receipt["source_gate"], verified
+    )
+    if source_gate_path != allocation_gate_path(source):
+        _fail("scheduling transition must pin the source configuration's original gate")
+    original = _json(source_contents)
+    if "efficiency_scheduling_transition" in original:
+        _fail("scheduling transition receipts cannot be chained")
+    expected = dict(original)
+    expected["target_config_sha256"] = canonical_config_sha256(target)
+    expected["efficiency_scheduling_transition"] = reference
+    if gate != expected:
+        _fail(
+            "scheduling transition must preserve the complete source gate and reports"
+        )
+    validate_production_ring_allocations(source, _fresh=True)
+    inherited = _VERIFIED_GATES.get(str(source_gate_path))
+    if inherited is None:
+        _fail("scheduling transition source has no verified allocation evidence")
+    for path, signature in inherited.items():
+        if path in verified and verified[path] != signature:
+            _fail("source evidence changed while inheriting scheduling admission")
         verified[path] = signature
 
 
@@ -797,6 +880,9 @@ def validate_production_ring_allocations(
             _fresh
             or config.arena.allocation_policy == "adaptive_pie"
             or config.model.auxiliary_predictions
+            or config.orchestration.historical_evaluation.measurement_service_fraction
+            > 0
+            or config.orchestration.model_refresh.history_horizon_enabled
         )
         if cached is not None and not fresh and _unchanged(root, cached):
             _VERIFIED_GATES.move_to_end(cache_key)
@@ -815,6 +901,7 @@ def validate_production_ring_allocations(
                 "training_policy_transition",
                 "promotion_allocation_transition",
                 "auxiliary_prediction_transition",
+                "efficiency_scheduling_transition",
             }
             != {
                 "format",
@@ -831,6 +918,10 @@ def validate_production_ring_allocations(
             or gate.get("target_config_sha256") != canonical_config_sha256(config)
         ):
             _fail("gate identity/configuration fields are invalid")
+        if "efficiency_scheduling_transition" in gate:
+            _validate_scheduling_transition_gate(root, gate, config, verified)
+            _cache_verified_gate(root, cache_key, verified)
+            return
         if "auxiliary_prediction_transition" in gate:
             _validate_auxiliary_transition_gate(root, gate, config, verified)
             _cache_verified_gate(root, cache_key, verified)

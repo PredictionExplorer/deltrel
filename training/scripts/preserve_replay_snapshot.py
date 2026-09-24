@@ -393,6 +393,11 @@ def preserve_stopped_snapshot(run_root: Path, destination: Path) -> dict[str, An
         ):
             if _path(root, logical).exists():
                 capture(logical)
+        if "arena/measurement-service.json" in files:
+            # Unlike bulk learner telemetry, this journal is a required part
+            # of the scheduler's witnessed, exactly-once accounting state.
+            capture("metrics/coordinator.jsonl", kind="coordinator-journal")
+            _verify_preserved_measurement(stage, files, source_root=root)
         authority = _path(root, "profile.sha256")
         if authority.exists():
             parts = authority.read_text().strip().split(maxsplit=1)
@@ -489,6 +494,9 @@ def verify_snapshot(destination: Path) -> dict[str, Any]:
         path = _path(root, logical)
         if _regular(path).st_size != entry["bytes"] or _hash(path) != entry["sha256"]:
             raise PreservationError(f"archived artifact checksum failed: {logical}")
+    _verify_preserved_measurement(
+        root, files, source_root=Path(marker["source_run_root"])
+    )
     database = _path(root, "replay/manifest.sqlite3")
     with closing(
         sqlite3.connect(f"{database.as_uri()}?mode=ro&immutable=1", uri=True)
@@ -528,6 +536,102 @@ def verify_snapshot(destination: Path) -> dict[str, Any]:
         "checkpoint_step": marker["checkpoint_step"],
         "checkpoint_sha256": marker["checkpoint_sha256"],
     }
+
+
+def _verify_preserved_measurement(
+    root: Path, files: dict[str, Any], *, source_root: Path
+) -> None:
+    """Prove a stopped scheduler can restart using this archive alone."""
+    logical = "arena/measurement-service.json"
+    if logical not in files:
+        if _path(root, logical).exists():
+            raise PreservationError("measurement ledger is absent from inventory")
+        return
+    if "metrics/coordinator.jsonl" not in files:
+        raise PreservationError("measurement coordinator journal is missing")
+    from deltreltrain.measurement_scheduling import MeasurementServiceLedger
+    from deltreltrain.runtime import load_run_identity
+    from scripts.training_disaster_recovery import _validate_measurement_capture
+
+    ledger_bytes = _path(root, logical).read_bytes()
+    state = _json(_path(root, logical))
+    journal_path = _path(root, "metrics/coordinator.jsonl")
+    try:
+        identity = load_run_identity(_path(root, "run.json"))
+        _validate_measurement_capture(state, journal_path.read_bytes(), identity)
+        # Projection writes only a private scratch ledger. The archived and
+        # live bytes stay unchanged; any final release suffix is consumed by
+        # the same parser used after an actual restart.
+        with tempfile.TemporaryDirectory(prefix="measurement-preservation-") as name:
+            temporary = Path(name)
+            (temporary / "measurement-service.json").write_bytes(ledger_bytes)
+            receipt = _path(root, "arena/measurement-service-restore.json")
+            if receipt.exists():
+                (temporary / receipt.name).write_bytes(receipt.read_bytes())
+            projected = MeasurementServiceLedger(
+                path=temporary / "measurement-service.json",
+                coordinator_events=journal_path,
+                request_path=temporary / "no-live-request.json",
+                run_identity=identity,
+            )
+            if projected.state["leases"]:
+                raise PreservationError(
+                    "stopped measurement lease lacks a terminal journal event"
+                )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise PreservationError(
+            f"measurement recovery state is incomplete: {exc}"
+        ) from exc
+
+    def artifact(reference: object, parent: str) -> tuple[str, dict[str, Any]]:
+        if not isinstance(reference, str) or not reference:
+            raise PreservationError("measurement model reference is missing")
+        path = Path(reference)
+        source = path if path.is_absolute() else source_root / parent / path
+        try:
+            relative = os.path.normpath(source).removeprefix(str(source_root) + os.sep)
+            if Path(relative).is_absolute():
+                raise ValueError("reference is outside original root")
+            source = _path(root, relative)
+        except (ValueError, OSError) as exc:
+            raise PreservationError(
+                "measurement model reference escaped archive"
+            ) from exc
+        if relative not in files or files[relative].get("kind") != "model":
+            raise PreservationError(
+                f"measurement model dependency is missing: {relative}"
+            )
+        return relative, _json(source)
+
+    references = []
+    if state.get("pinned_job") is not None:
+        for side in ("candidate", "baseline"):
+            references.append(
+                (state.get(f"{side}_manifest"), "arena", state["pinned_job"][side])
+            )
+    epoch_path = _path(root, "strength-epoch.json")
+    if epoch_path.exists():
+        epoch = _json(epoch_path)
+        if "anchor_manifest" in epoch:
+            references.append(
+                (epoch["anchor_manifest"], ".", epoch.get("anchor_identity"))
+            )
+    for reference, parent, expected_identity in references:
+        name, manifest = artifact(reference, parent)
+        if manifest.get("model_identity") != expected_identity:
+            raise PreservationError(
+                "measurement model identity disagrees with its manifest"
+            )
+        checkpoint = manifest.get("checkpoint")
+        if not isinstance(checkpoint, str) or not checkpoint:
+            raise PreservationError("measurement checkpoint reference is missing")
+        checkpoint_name = os.path.normpath(str(Path(name).parent / checkpoint))
+        _path(root, checkpoint_name)
+        if (
+            checkpoint_name not in files
+            or files[checkpoint_name].get("kind") != "model"
+        ):
+            raise PreservationError("measurement checkpoint is absent from inventory")
 
 
 def main() -> None:
