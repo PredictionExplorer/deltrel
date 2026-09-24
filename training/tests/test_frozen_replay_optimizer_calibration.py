@@ -429,7 +429,7 @@ def test_game_loss_aggregation_preserves_masked_target_weight_mass_across_chunks
                 target_mask=sample.target_mask | TARGET_OUTCOME,
                 outcome=outcome,
                 final_scores=np.asarray([int(winner == player) for player in (0, 1)]),
-                final_capes=np.zeros(2, dtype=np.int8),
+                final_quarks=np.zeros(2, dtype=np.int8),
             )
         samples.append(sample)
 
