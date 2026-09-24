@@ -10,12 +10,14 @@ import {
   parseUnboundDeltrelAiDecision,
   type DeltrelAiDecision,
   type DeltrelAiSearchBudget,
+  type DeltrelAiSearchProgress,
 } from './decision';
 import { DeltrelAiError, asDeltrelAiError, type DeltrelAiErrorCode } from './errors';
 import type { LocalAiProgress, LocalAiReadyInfo } from './local-ai-status';
 import {
   MAX_BROWSER_AI_MAX_CONSIDERED,
   MAX_BROWSER_AI_SIMULATIONS,
+  parseDeltrelBrowserModelManifest,
 } from './manifest';
 import {
   DELTREL_ACTION_LAYOUT_VERSION,
@@ -34,23 +36,21 @@ export type DeltrelAiWorkerCommand =
       taskId: string;
       request: DeltrelAiRequest;
       search: DeltrelAiSearchBudget | null;
+      release?: unknown;
     }
-  | { type: 'prepare'; taskId: string }
+  | { type: 'prepare'; taskId: string; release?: unknown }
   | { type: 'cancel'; taskId: string };
 
-export const DELTREL_AI_WORKER_PROTOCOL_VERSION = 4 as const;
+export const DELTREL_AI_WORKER_PROTOCOL_VERSION = 5 as const;
 
 /** Completed search work, never an elapsed-time heartbeat or estimated effort. */
-export interface LocalAiSearchProgress {
-  completedSimulations: number;
-  totalSimulations: number;
-}
+export type LocalAiSearchProgress = DeltrelAiSearchProgress;
 
 export type DeltrelAiWorkerEvent =
   | { type: 'ready'; protocolVersion: typeof DELTREL_AI_WORKER_PROTOCOL_VERSION }
   | { type: 'progress'; taskId: string; progress: LocalAiProgress }
   | { type: 'search-progress'; taskId: string; progress: LocalAiSearchProgress }
-  | { type: 'prepared'; taskId: string; info: LocalAiReadyInfo }
+  | { type: 'prepared'; taskId: string; info: LocalAiReadyInfo; release?: unknown }
   | { type: 'result'; taskId: string; decision: DeltrelAiDecision }
   | {
       type: 'error';
@@ -274,11 +274,13 @@ export function parseWorkerCommand(value: unknown): DeltrelAiWorkerCommand {
     }
     return { type: 'cancel', taskId: value.taskId };
   }
-  if (value.type === 'prepare' && hasExactKeys(value, ['type', 'taskId'])) {
-    return { type: 'prepare', taskId: value.taskId };
+  const releaseFields = 'release' in value ? ['release'] : [];
+  if (releaseFields.length) parseDeltrelBrowserModelManifest(value.release);
+  if (value.type === 'prepare' && hasExactKeys(value, ['type', 'taskId', ...releaseFields])) {
+    return { type: 'prepare', taskId: value.taskId, ...('release' in value ? { release: value.release } : {}) };
   }
   if (value.type === 'choose') {
-    if (!hasExactKeys(value, ['type', 'taskId', 'request', 'search'])) {
+    if (!hasExactKeys(value, ['type', 'taskId', 'request', 'search', ...releaseFields])) {
       throw new DeltrelAiError('protocol', 'Worker choose command is invalid.');
     }
     const request = parseRequest(value.request);
@@ -290,6 +292,7 @@ export function parseWorkerCommand(value: unknown): DeltrelAiWorkerCommand {
       taskId: value.taskId,
       request,
       search: value.search === null ? null : parseBrowserSearchBudget(value.search),
+      ...('release' in value ? { release: value.release } : {}),
     };
   }
   throw new DeltrelAiError('protocol', 'Worker command type is invalid.');
@@ -332,12 +335,19 @@ export function parseWorkerEvent(value: unknown): DeltrelAiWorkerEvent {
       return { type: 'progress', taskId: value.taskId, progress: p as unknown as LocalAiProgress };
     }
   }
-  if (value.type === 'prepared' && hasExactKeys(value, ['type', 'taskId', 'info'])) {
+  if (value.type === 'prepared' && hasExactKeys(value, ['type', 'taskId', 'info', ...('release' in value ? ['release'] : [])])) {
     const info = value.info;
     if (isRecord(info) && hasExactKeys(info, ['modelVersion', 'bytes', 'backend', 'cached']) &&
         isTaskId(info.modelVersion) && typeof info.bytes === 'number' && Number.isSafeInteger(info.bytes) && info.bytes > 0 &&
         (info.backend === 'webgpu' || info.backend === 'wasm') && typeof info.cached === 'boolean') {
-      return { type: 'prepared', taskId: value.taskId, info: info as unknown as LocalAiReadyInfo };
+      if ('release' in value) {
+        const release = parseDeltrelBrowserModelManifest(value.release);
+        if (release.modelVersion !== info.modelVersion || release.model.bytes !== info.bytes) {
+          throw new DeltrelAiError('protocol', 'Prepared AI does not match its published release.');
+        }
+      }
+      return { type: 'prepared', taskId: value.taskId, info: info as unknown as LocalAiReadyInfo,
+        ...('release' in value ? { release: value.release } : {}) };
     }
   }
   if (value.type === 'result') {

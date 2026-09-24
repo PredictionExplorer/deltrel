@@ -6,14 +6,14 @@ import { PLAYER_COLORS } from '../theme';
 afterEach(cleanup);
 
 describe('GameStatus turn instructions', () => {
-  it('exposes reported search progress accessibly and hides it outside an active search', () => {
+  it.each(['AI', 'Current champion'])('exposes %s search progress accessibly and hides it outside an active search', (controllerName) => {
     const props = {
-      playerName: 'Player 1', controllerName: 'Browser AI', mode: 'classic' as const,
+      playerName: 'Player 1', controllerName, mode: 'classic' as const,
       movesLeft: 1, color: PLAYER_COLORS[0],
       searchProgress: { completedSimulations: 256, totalSimulations: 1024 },
     };
     const { rerender } = render(<GameStatus {...props} state="thinking" />);
-    const progress = screen.getByRole('progressbar', { name: 'Browser AI search progress' });
+    const progress = screen.getByRole('progressbar', { name: `${controllerName} search progress` });
     expect(progress).toHaveAttribute('max', '1024');
     expect(progress).toHaveAttribute('value', '256');
     expect(screen.getByText('25% · 256 of 1,024 simulations')).toBeVisible();

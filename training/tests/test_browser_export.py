@@ -72,20 +72,42 @@ def test_direct_champion_export_preserves_source_and_embeds_all_weights(
     assert payload["training"]["steps"] == 7
     assert payload["training"]["source_checkpoint_sha256"] == original
     assert payload["training"]["auxiliary_predictions_ready"] == auxiliary
-    assert payload["recommended_local_search"]["simulations"] == 8
-    assert payload["recommended_local_search"]["maximum_simulations"] == 64
-    assert payload["recommended_local_search"]["maximum_max_considered"] == 8
+    assert payload["precision"] == "float32"
+    assert payload["recommended_local_search"]["simulations"] == 512
+    assert payload["recommended_local_search"]["max_considered"] == 16
+    assert payload["recommended_local_search"]["maximum_simulations"] == 4096
+    assert payload["recommended_local_search"]["maximum_max_considered"] == 64
+    assert payload["recommended_local_search"]["score_utility_weight"] == 0.05
+    assert (
+        payload["recommended_local_search"]["seed_contract"] == "native-search-batch-v1"
+    )
     assert len(payload["tensors"]["outputs"]) == (11 if auxiliary else 6)
     assert result["validation"]["positions"] == 50
-    assert result["validation"]["maximum_expected_margin_error"] < 0.25
+    assert result["validation"]["maximum_expected_margin_error"] < 0.005
+    assert max(result["validation"]["maximum_probability_error"].values()) < 0.0001
     exported = onnx.load(result["onnx"])
     assert not any(tensor.external_data for tensor in exported.graph.initializer)
+    assert any(
+        tensor.data_type == onnx.TensorProto.FLOAT
+        for tensor in exported.graph.initializer
+    )
+    assert not any(
+        tensor.data_type == onnx.TensorProto.FLOAT16
+        for tensor in exported.graph.initializer
+    )
+    assert all(
+        value["dtype"] == "float32" for value in payload["tensors"]["outputs"].values()
+    )
     assert not exported.metadata_props
     assert all(
         not node.doc_string and not node.metadata_props for node in exported.graph.node
     )
     assert str(tmp_path).encode() not in Path(result["onnx"]).read_bytes()
-    validate_browser_onnx(result["onnx"], include_auxiliary=auxiliary)
+    validate_browser_onnx(
+        result["onnx"], include_auxiliary=auxiliary, precision="float32"
+    )
+    with pytest.raises(RuntimeError, match="float16"):
+        validate_browser_onnx(result["onnx"], include_auxiliary=auxiliary)
     assert not list((tmp_path / "browser").glob("*.data"))
     with pytest.raises(FileExistsError):
         export_browser_champion(source, tmp_path / "browser")
@@ -102,7 +124,10 @@ def test_export_rejects_unpublished_candidates_and_bad_search_limits(
     for fields in (
         {"maximum_simulations": 7, "simulations": 8},
         {"maximum_max_considered": 2, "max_considered": 4},
-        {"maximum_simulations": 1025},
+        {"maximum_simulations": 0x2000_0000},
+        {"score_utility_weight": float("nan")},
+        {"score_utility_weight": 1.01},
+        {"seed_contract": "unknown"},
     ):
         with pytest.raises(ValueError):
             BrowserSearchConfig(**fields)

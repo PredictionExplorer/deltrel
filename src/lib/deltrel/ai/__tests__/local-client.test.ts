@@ -6,6 +6,7 @@ import {
   makeAiResponse,
   type DeltrelAiRequest,
 } from '../protocol';
+import publishedRelease from '../../../../../public/models/deltrel/manifest.json';
 
 const config: GameConfig = {
   rings: 4,
@@ -70,6 +71,65 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('pinned browser champion', () => {
+  it('keeps the verified release when a worker is disposed and recreated', async () => {
+    vi.stubGlobal('Worker', class {});
+    const workers: FakeWorker[] = [];
+    const client = new LocalDeltrelAiClient(() => {
+      const worker = new FakeWorker();
+      workers.push(worker);
+      return worker as unknown as Worker;
+    });
+    const info = { modelVersion: publishedRelease.model_version, bytes: publishedRelease.artifacts.onnx.bytes,
+      backend: 'wasm', cached: true };
+    const preparation = client.prepare();
+    workers[0].emit({ type: 'ready', protocolVersion: 5 });
+    await Promise.resolve();
+    const preparedTask = (workers[0].messages[0] as { taskId: string }).taskId;
+    workers[0].emit({ type: 'prepared', taskId: preparedTask, info, release: publishedRelease });
+    await preparation;
+    client.dispose();
+
+    const request = buildAiRequest(config, [], 'pinned-release-search');
+    const pending = client.request(request);
+    workers[1].emit({ type: 'ready', protocolVersion: 5 });
+    await Promise.resolve();
+    expect(workers[1].messages[0]).toMatchObject({ type: 'choose', release: publishedRelease });
+    const decision = decisionFor(request);
+    decision.analysis.modelVersion = publishedRelease.model_version;
+    workers[1].emit({ type: 'result', taskId: request.requestId, decision });
+    await expect(pending).resolves.toMatchObject({ analysis: { modelVersion: publishedRelease.model_version } });
+
+    const retry = client.prepare();
+    await Promise.resolve();
+    const retryCommand = workers[1].messages.at(-1) as { taskId: string };
+    expect(retryCommand).toMatchObject({ type: 'prepare', release: publishedRelease });
+    workers[1].emit({ type: 'prepared', taskId: retryCommand.taskId, info, release: publishedRelease });
+    await retry;
+    client.dispose();
+  });
+
+  it('rejects a different champion returned during a pinned session', async () => {
+    vi.stubGlobal('Worker', class {});
+    const worker = new FakeWorker();
+    const client = new LocalDeltrelAiClient(() => worker as unknown as Worker);
+    const preparation = client.prepare();
+    worker.emit({ type: 'ready', protocolVersion: 5 });
+    await Promise.resolve();
+    worker.emit({ type: 'prepared', taskId: (worker.messages[0] as { taskId: string }).taskId,
+      info: { modelVersion: publishedRelease.model_version, bytes: publishedRelease.artifacts.onnx.bytes, backend: 'wasm', cached: true },
+      release: publishedRelease });
+    await preparation;
+    const request = buildAiRequest(config, [], 'wrong-release-search');
+    const pending = client.request(request);
+    const rejection = expect(pending).rejects.toMatchObject({ code: 'protocol' });
+    await Promise.resolve();
+    worker.emit({ type: 'result', taskId: request.requestId, decision: decisionFor(request) });
+    await rejection;
+    client.dispose();
+  });
+});
+
 describe('local search progress watchdog', () => {
   async function start(options: LocalAiRequestOptions = { search: { simulations: 64, maxConsidered: 8 } }) {
     vi.useFakeTimers();
@@ -80,7 +140,7 @@ describe('local search progress watchdog', () => {
     const onSearchProgress = vi.fn();
     const result = client.request(request, { ...options, onSearchProgress });
     const rejected = result.catch(error => error);
-    worker.emit({ type: 'ready', protocolVersion: 4 });
+    worker.emit({ type: 'ready', protocolVersion: 5 });
     await Promise.resolve();
     const progress = (completedSimulations: number, totalSimulations = 64, taskId = request.requestId) =>
       worker.emit({ type: 'search-progress', taskId, progress: { completedSimulations, totalSimulations } });
@@ -206,7 +266,7 @@ describe('local worker construction lifecycle', () => {
     const result = client.prepare();
     const resolved = vi.fn();
     void result.then(resolved);
-    worker.emit({ type: 'ready', protocolVersion: 4 });
+    worker.emit({ type: 'ready', protocolVersion: 5 });
     await Promise.resolve();
     expect(worker.messages).toEqual([{ type: 'prepare', taskId: 'prepare-1' }]);
     const progress = { phase: 'downloading', loadedBytes: 64, totalBytes: 128, modelVersion: 'champion-browser', cached: false };
@@ -229,7 +289,7 @@ describe('local worker construction lifecycle', () => {
     const controller = new AbortController();
     const first = client.prepare({ signal: controller.signal });
     const cancelled = expect(first).rejects.toMatchObject({ code: 'cancelled' });
-    workers[0].emit({ type: 'ready', protocolVersion: 4 });
+    workers[0].emit({ type: 'ready', protocolVersion: 5 });
     await Promise.resolve();
     controller.abort();
     await cancelled;
@@ -238,7 +298,7 @@ describe('local worker construction lifecycle', () => {
     workers[0].emit({ type: 'prepared', taskId: 'prepare-1', info: readyInfo });
     expect(status).toHaveBeenLastCalledWith({ phase: 'idle' });
     const retry = client.prepare();
-    workers[1].emit({ type: 'ready', protocolVersion: 4 });
+    workers[1].emit({ type: 'ready', protocolVersion: 5 });
     await Promise.resolve();
     workers[1].emit({ type: 'prepared', taskId: 'prepare-2', info: { ...readyInfo, cached: true } });
     await expect(retry).resolves.toMatchObject({ cached: true });
@@ -251,7 +311,7 @@ describe('local worker construction lifecycle', () => {
     const client = new LocalDeltrelAiClient(() => worker as unknown as Worker);
     const request = buildAiRequest(config, [], 'playing-while-loading');
     const result = client.request(request);
-    worker.emit({ type: 'ready', protocolVersion: 4 });
+    worker.emit({ type: 'ready', protocolVersion: 5 });
     await Promise.resolve();
     worker.emit({ type: 'prepared', taskId: request.requestId, info: readyInfo });
     worker.emit({ type: 'result', taskId: request.requestId, decision: decisionFor(request) });
@@ -266,7 +326,7 @@ describe('local worker construction lifecycle', () => {
     const status = vi.fn();
     const client = new LocalDeltrelAiClient(() => worker as unknown as Worker, status);
     const first = client.prepare();
-    worker.emit({ type: 'ready', protocolVersion: 4 });
+    worker.emit({ type: 'ready', protocolVersion: 5 });
     await Promise.resolve();
     worker.emit({ type: 'error', taskId: 'prepare-1', error: { code: 'network', message: 'Disconnected', retryable: true } });
     await expect(first).rejects.toMatchObject({ code: 'network' });
@@ -287,7 +347,7 @@ describe('local worker construction lifecycle', () => {
 
     const result = client.request(request);
     expect(worker.messages).toEqual([]);
-    worker.emit({ type: 'ready', protocolVersion: 4 });
+    worker.emit({ type: 'ready', protocolVersion: 5 });
     await Promise.resolve();
     expect(worker.messages).toEqual([
       { type: 'choose', taskId: request.requestId, request, search: null },
@@ -314,7 +374,7 @@ describe('local worker construction lifecycle', () => {
     const firstRequest = buildAiRequest(config, [], 'local-cancel');
     const first = client.request(firstRequest, { signal: abort.signal });
     const active = workers[0];
-    active.emit({ type: 'ready', protocolVersion: 4 });
+    active.emit({ type: 'ready', protocolVersion: 5 });
     await Promise.resolve();
     abort.abort();
     await expect(first).rejects.toMatchObject({ code: 'cancelled' });
@@ -324,7 +384,7 @@ describe('local worker construction lifecycle', () => {
     const second = client.request(secondRequest);
     const replacement = workers[1];
     expect(replacement).not.toBe(active);
-    replacement.emit({ type: 'ready', protocolVersion: 4 });
+    replacement.emit({ type: 'ready', protocolVersion: 5 });
     await Promise.resolve();
     replacement.emit({
       type: 'result',
@@ -342,7 +402,7 @@ describe('local worker construction lifecycle', () => {
     const client = new LocalDeltrelAiClient(() => worker as unknown as Worker);
     const request = buildAiRequest(config, [], 'local-timeout');
     const result = client.request(request, { timeoutMs: 100 });
-    worker.emit({ type: 'ready', protocolVersion: 4 });
+    worker.emit({ type: 'ready', protocolVersion: 5 });
     await Promise.resolve();
 
     const rejection = expect(result).rejects.toMatchObject({
@@ -359,9 +419,9 @@ describe('local worker construction lifecycle', () => {
     const worker = new FakeWorker();
     const client = new LocalDeltrelAiClient(() => worker as unknown as Worker);
     const request = buildAiRequest(config, [], 'local-budget');
-    const search = { simulations: 32, maxConsidered: 8 };
+    const search = { simulations: 4_096, maxConsidered: 256 };
     const result = client.request(request, { search });
-    worker.emit({ type: 'ready', protocolVersion: 4 });
+    worker.emit({ type: 'ready', protocolVersion: 5 });
     await Promise.resolve();
     expect(worker.messages).toEqual([
       { type: 'choose', taskId: request.requestId, request, search },
@@ -373,14 +433,14 @@ describe('local worker construction lifecycle', () => {
     });
     await expect(result).resolves.toMatchObject({
       analysis: {
-        simulations: 32,
-        maxConsidered: 8,
+        simulations: 4_096,
+        maxConsidered: 256,
         modelIdentity: 'browser-test',
       },
     });
     await expect(
       client.request(buildAiRequest(config, [], 'invalid-budget'), {
-        search: { simulations: 1_025, maxConsidered: 8 },
+        search: { simulations: 536_870_912, maxConsidered: 8 },
       }),
     ).rejects.toMatchObject({ code: 'protocol' });
     client.dispose();
@@ -392,7 +452,7 @@ describe('local worker construction lifecycle', () => {
     const client = new LocalDeltrelAiClient(() => worker as unknown as Worker);
     const request = buildAiRequest(config, [], 'local-stale');
     const result = client.request(request);
-    worker.emit({ type: 'ready', protocolVersion: 4 });
+    worker.emit({ type: 'ready', protocolVersion: 5 });
     await Promise.resolve();
     const stale = decisionFor(request);
     stale.response.stateHash = 'zobrist64:0000000000000000';

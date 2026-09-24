@@ -14,7 +14,7 @@ import {
   buildAiRequest,
   makeAiResponse,
 } from '../protocol';
-import { parseWorkerCommand, parseWorkerEvent } from '../worker-protocol';
+import { DELTREL_AI_WORKER_PROTOCOL_VERSION, parseWorkerCommand, parseWorkerEvent } from '../worker-protocol';
 
 const request = buildAiRequest(
   {
@@ -182,7 +182,7 @@ describe('local worker protocol', () => {
     for (const changes of [
       { completedSimulations: 0 }, { completedSimulations: -1 }, { completedSimulations: 65 },
       { completedSimulations: 0.5 }, { completedSimulations: NaN }, { completedSimulations: '1' },
-      { totalSimulations: 0 }, { totalSimulations: 1025 }, { totalSimulations: Infinity },
+      { totalSimulations: 0 }, { totalSimulations: 536_870_912 }, { totalSimulations: Infinity },
       { totalSimulations: 64.5 }, { totalSimulations: '64' }, { elapsedMs: 10 },
     ]) {
       expect(() => parseWorkerEvent({ ...event, progress: { ...event.progress, ...changes } })).toThrow(/invalid event/);
@@ -247,8 +247,12 @@ describe('local worker protocol', () => {
   it('rejects malformed or out-of-range per-request browser budgets', () => {
     for (const search of [
       { simulations: 0, maxConsidered: 8 },
-      { simulations: 1_025, maxConsidered: 8 },
-      { simulations: 32, maxConsidered: 129 },
+      { simulations: 536_870_912, maxConsidered: 8 },
+      { simulations: 32, maxConsidered: 4_294_967_296 },
+      { simulations: 1.5, maxConsidered: 8 },
+      { simulations: 32, maxConsidered: 1.5 },
+      { simulations: Number.POSITIVE_INFINITY, maxConsidered: 8 },
+      { simulations: 32, maxConsidered: Number.NaN },
       { simulations: 32, maxConsidered: 8, extra: true },
     ]) {
       expect(() =>
@@ -262,10 +266,23 @@ describe('local worker protocol', () => {
     }
   });
 
+  it('preserves custom budgets and progress up to the native numeric limits', () => {
+    for (const search of [
+      { simulations: 4_096, maxConsidered: 256 },
+      { simulations: 536_870_911, maxConsidered: 4_294_967_295 },
+    ]) {
+      expect(parseWorkerCommand({ type: 'choose', taskId: request.requestId, request, search }))
+        .toMatchObject({ search });
+      const progress = { completedSimulations: search.simulations, totalSimulations: search.simulations };
+      expect(parseWorkerEvent({ type: 'search-progress', taskId: request.requestId, progress }))
+        .toMatchObject({ progress });
+    }
+  });
+
   it('parses structured worker errors without trusting arbitrary codes', () => {
-    expect(parseWorkerEvent({ type: 'ready', protocolVersion: 4 })).toEqual({
+    expect(parseWorkerEvent({ type: 'ready', protocolVersion: DELTREL_AI_WORKER_PROTOCOL_VERSION })).toEqual({
       type: 'ready',
-      protocolVersion: 4,
+      protocolVersion: DELTREL_AI_WORKER_PROTOCOL_VERSION,
     });
     expect(() => parseWorkerEvent({ type: 'ready', protocolVersion: 2 })).toThrow(
       /invalid message/,
@@ -317,6 +334,38 @@ describe('local worker protocol', () => {
         error: { code: 'anything', message: 'bad', retryable: false },
       }),
     ).toThrow(/invalid event/i);
+  });
+
+  it('validates FP32 tensor contracts and the champion search policy', () => {
+    const precision = 'float32';
+    const current = { ...manifest, precision, tensors: {
+      inputs: Object.fromEntries(Object.entries(manifest.tensors.inputs).map(([name, tensor]) => [name,
+        tensor.dtype === 'float16' ? { ...tensor, dtype: precision } : tensor])),
+      outputs: Object.fromEntries(Object.entries(manifest.tensors.outputs).map(([name, tensor]) => [name, { ...tensor, dtype: precision }])),
+    }, recommended_local_search: { ...manifest.recommended_local_search,
+      score_utility_weight: 0.05, seed_contract: 'native-search-batch-v1' } };
+    expect(parseDeltrelBrowserModelManifest(current)).toMatchObject({ model: { precision: 'float32' },
+      search: { scoreUtilityWeight: 0.05, seedContract: 'native-search-batch-v1' } });
+    expect(() => parseDeltrelBrowserModelManifest({ ...current, tensors: manifest.tensors })).toThrow(/invalid/);
+    expect(() => parseDeltrelBrowserModelManifest({ ...current, precision: 'int8' })).toThrow(/match/);
+    for (const change of [{ score_utility_weight: -1 }, { score_utility_weight: 1.01 },
+      { score_utility_weight: NaN }, { score_utility_weight: '0.05' }, { seed_contract: 'unknown' }]) {
+      expect(() => parseDeltrelBrowserModelManifest({ ...current,
+        recommended_local_search: { ...current.recommended_local_search, ...change } })).toThrow(/invalid/);
+    }
+  });
+
+  it('validates a pinned release before accepting it across worker restarts', () => {
+    for (const type of ['prepare', 'choose'] as const) {
+      const command = { type, taskId: request.requestId, ...(type === 'choose' ? { request, search: null } : {}), release: manifest };
+      expect(parseWorkerCommand(command)).toEqual(command);
+      expect(() => parseWorkerCommand({ ...command, release: { ...manifest, precision: 'int8' } })).toThrow();
+    }
+    const info = { modelVersion: manifest.model_version, bytes: manifest.artifacts.onnx.bytes, backend: 'wasm', cached: true };
+    const event = { type: 'prepared', taskId: request.requestId, release: manifest, info };
+    expect(parseWorkerEvent(event)).toEqual(event);
+    expect(() => parseWorkerEvent({ ...event, info: { ...info, modelVersion: 'other-model' } })).toThrow();
+    expect(() => parseWorkerEvent({ ...event, info: { ...info, bytes: 1 } })).toThrow();
   });
 
   it('accepts only fully pinned browser model manifests', () => {

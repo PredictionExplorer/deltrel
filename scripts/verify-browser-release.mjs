@@ -28,10 +28,14 @@ export async function verifyBrowserRelease(projectRoot) {
   if (wasm.WasmState.rules_hash_tag() !== manifest.rulesHash || wasm.WasmState.rules_schema() !== manifest.rulesSchema) {
     throw new Error('Published browser rules and model contracts do not match.');
   }
-  return { modelVersion: manifest.modelVersion, bytes: model.byteLength, outputs: manifest.model.outputs.length };
+  if (manifest.search.seedContract === 'native-search-batch-v1' &&
+      (typeof wasm.derive_root_seed !== 'function' || wasm.derive_root_seed(0n, 0n, 0) !== 0xe220a8397b1dcdafn)) {
+    throw new Error('Published browser search does not implement the champion seed contract.');
+  }
+  return { modelVersion: manifest.modelVersion, precision: manifest.model.precision, bytes: model.byteLength, outputs: manifest.model.outputs.length };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const result = await verifyBrowserRelease(fileURLToPath(new URL('..', import.meta.url)));
-  console.log(`Verified browser release ${result.modelVersion}: ${result.bytes} bytes, ${result.outputs} outputs.`);
+  console.log(`Verified browser release ${result.modelVersion}: ${result.precision}, ${result.bytes} bytes, ${result.outputs} outputs.`);
 }

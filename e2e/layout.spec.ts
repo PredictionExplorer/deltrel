@@ -1,26 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { fillFourRingGame, reachFourRingClinch } from './helpers';
-
-const health = {
-  status: 'ok',
-  service_version: '2.0.0',
-  api_schema_version: 3,
-  model: { ready: true, model_version: 'layout-model', model_step: 11 },
-  rules: {
-    schema_id: 'deltrel.rules.v3',
-    version: 3,
-    hash: 'fnv1a64:46e4fbcff4e17fd3',
-  },
-  features: {
-    schema_id: 'deltrel.model-features.external.v3',
-    version: 4,
-    hash: '058eb071d77948a7',
-  },
-  actions: {
-    schema_id: 'deltrel.action-layout.nodes-only.v1',
-    types: ['place', 'swap'],
-  },
-};
+import { installAiWorkerFixture } from './ai-worker-fixture';
 
 const viewports: readonly {
   name: string;
@@ -36,15 +16,7 @@ const viewports: readonly {
   { name: 'desktop', width: 1440, height: 900 },
 ];
 
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
-}
-
-async function openFreshSetup(page: Page) {
+async function openFreshSetup(page: Page, waitForAi = true) {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
@@ -52,81 +24,8 @@ async function openFreshSetup(page: Page) {
   await expect(
     page.getByRole('heading', { level: 1, name: 'Deltrel' }),
   ).toBeVisible();
-}
-
-async function mockServerAi(page: Page) {
-  const moveGate = deferred();
-  let moveCalls = 0;
-
-  await page.route('**/v2/health', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(health),
-    }),
-  );
-  await page.route('**/v2/move', async (route) => {
-    moveCalls += 1;
-    const body = route.request().postDataJSON() as {
-      stones: number[];
-      mode: 'classic' | 'double';
-      handicap: number;
-      pie: boolean;
-      swap_available: boolean;
-      search?: { simulations?: number };
-    };
-    const action = body.stones.findIndex((stone) => stone === -1);
-    const requestId = route.request().headers()['x-request-id'];
-    if (!requestId) throw new Error('server request omitted X-Request-ID');
-    await moveGate.promise;
-
-    const score = new Array<number>(303).fill(0);
-    score[151] = 1;
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      headers: { 'X-Request-ID': requestId },
-      body: JSON.stringify({
-        schema_version: 3,
-        request_id: requestId,
-        action: { code: action, kind: 'place', node: action },
-        root_actions: [
-          { code: action, kind: 'place', node: action },
-          { code: action + 1, kind: 'place', node: action + 1 },
-        ],
-        root_policy: [0.9, 0.1],
-        root_q: [0.1, -0.1],
-        root_visits: [Math.max(1, (body.search?.simulations ?? 64) - 1), 1],
-        outcome: { loss: 0.25, win: 0.75 },
-        value: 0.5,
-        search_value: 0.25,
-        root_value: 0.2,
-        variant: { mode: body.mode, handicap: body.handicap, pie: body.pie },
-        swap_available: body.swap_available,
-        swap_recommended: false,
-        history_known: true,
-        score_belief: {
-          support_min: -151,
-          support_max: 151,
-          expected_margin: 0,
-          probabilities: score,
-        },
-        model_version: 'layout-model',
-        model_step: 11,
-        timing_ms: {
-          queue: 0,
-          model_reload: 0,
-          inference_search: 1,
-          total: 1,
-        },
-      }),
-    });
-  });
-
-  return {
-    releaseMove: moveGate.resolve,
-    moveCalls: () => moveCalls,
-  };
+  if (waitForAi) await expect(page.getByRole('region', { name: 'AI', exact: true })
+    .getByRole('status')).toHaveText('Ready on this device');
 }
 
 async function bounds(page: Page, selector: string) {
@@ -151,9 +50,9 @@ function expectStableBox(
 for (const viewport of viewports) {
   test(`keeps AI gameplay stable at ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    const ai = await mockServerAi(page);
+    const ai = await installAiWorkerFixture(page, { modelVersion: 'layout-model', holdMoves: true });
     await openFreshSetup(page);
-    await expect(page.getByRole('button', { name: 'Quick browser AI strength', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Quick AI strength', exact: true })).toBeEnabled();
 
     const setupOverflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -170,8 +69,8 @@ for (const viewport of viewports) {
     const controller = page.getByRole('combobox', {
       name: 'Player 1 controller',
     });
-    await expect(controller.locator('option[value="server"]')).toBeEnabled();
-    await controller.selectOption('server');
+    await expect(controller.locator('option[value="local"]')).toBeEnabled();
+    await controller.selectOption('local');
     await page.getByRole('button', { name: 'Begin the game' }).click();
 
     await expect(page.locator('[data-game-status="thinking"]')).toBeVisible();
@@ -183,7 +82,7 @@ for (const viewport of viewports) {
     expect(boardBefore.x).toBeGreaterThanOrEqual(0);
     expect(boardBefore.x + boardBefore.width).toBeLessThanOrEqual(viewport.width + 1);
 
-    ai.releaseMove();
+    ai.releaseMoves();
     await expect(page.locator('[data-game-status="human"]')).toBeVisible();
     await expect(page.getByText('Player 2 to play')).toBeVisible();
     await expect(
@@ -191,7 +90,7 @@ for (const viewport of viewports) {
         name: /Deltrel board with 4 rings, 1 of 50 nodes occupied/i,
       }),
     ).toBeVisible();
-    expect(ai.moveCalls()).toBe(1);
+    expect(ai.requests).toHaveLength(1);
 
     const stageAfter = await bounds(page, '[data-board-stage]');
     const boardAfter = await bounds(page, '[data-board-stage] svg');
@@ -227,40 +126,29 @@ for (const viewport of viewports) {
   });
 }
 
-test('keeps the setup preview fixed while AI capabilities resolve', async ({ page }) => {
+test('keeps the setup preview fixed while AI preparation completes', async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 1024 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const healthGate = deferred();
-  await page.route('**/v2/health', async (route) => {
-    await healthGate.promise;
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(health),
-    });
-  });
-  await openFreshSetup(page);
+  const ai = await installAiWorkerFixture(page, { holdPreparation: true });
+  await openFreshSetup(page, false);
   await page.getByRole('button', { name: /^Double Deltrel/i }).click();
+  const controller = page.getByRole('combobox', { name: 'Player 1 controller' });
+  await expect(controller.locator('option[value="local"]')).toBeEnabled();
+  await controller.selectOption('local');
+  await expect(page.getByRole('button', { name: 'Begin the game' })).toBeDisabled();
+  await expect(page.getByRole('progressbar', { name: 'AI preparation' })).toBeVisible();
 
   const before = await bounds(page, '[data-setup-preview]');
-  healthGate.resolve();
-  const controller = page.getByRole('combobox', {
-    name: 'Player 1 controller',
-  });
-  await expect(controller.locator('option[value="server"]')).toBeEnabled();
+  ai.releasePreparation();
+  await expect(page.getByRole('button', { name: 'Begin the game' })).toBeEnabled();
+  await expect(page.getByRole('progressbar', { name: 'AI preparation' })).toBeHidden();
   const after = await bounds(page, '[data-setup-preview]');
   expectStableBox(before, after, 'setup preview');
 });
 
 test('keeps dialogs in bounds and restores focus on a small phone', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
-  await page.route('**/v2/health', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(health),
-    }),
-  );
+  await installAiWorkerFixture(page);
   await openFreshSetup(page);
   await page.getByRole('button', { name: /^Mini, 4 rings$/i }).click();
   await page.getByRole('button', { name: 'Begin the game' }).click();
@@ -287,13 +175,7 @@ test('keeps dialogs in bounds and restores focus on a small phone', async ({ pag
 
 test('keeps the game-over result usable on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route('**/v2/health', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(health),
-    }),
-  );
+  await installAiWorkerFixture(page);
   await openFreshSetup(page);
   await page.getByRole('button', { name: /^Mini, 4 rings$/i }).click();
   await page.getByRole('button', { name: 'Begin the game' }).click();
@@ -315,6 +197,7 @@ test('keeps the clinch decision and proof controls usable on a small phone', asy
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 568 });
+  await installAiWorkerFixture(page);
   await openFreshSetup(page);
   await page.getByRole('button', { name: /^Mini, 4 rings$/i }).click();
   await page.getByRole('button', { name: 'Begin the game' }).click();

@@ -112,9 +112,9 @@ export const DEFAULT_CONFIG: GameConfig = {
 export const DEFAULT_CONTROLLERS: PlayerControllers = [...HUMAN_CONTROLLERS];
 export const DEFAULT_AI_SEARCH_SETTINGS: AiSearchSettings = {
   server: { simulations: 512, maxConsidered: 16 },
-  local: { simulations: 8, maxConsidered: 4 },
+  local: { simulations: 512, maxConsidered: 16 },
 };
-export const APP_STORE_VERSION = 6;
+export const APP_STORE_VERSION = 7;
 
 const AI_SEARCH_LIMITS: Record<AiRuntime, DeltrelAiSearchBudget> = {
   server: {
@@ -122,6 +122,7 @@ const AI_SEARCH_LIMITS: Record<AiRuntime, DeltrelAiSearchBudget> = {
     maxConsidered: MAX_SERVER_AI_MAX_CONSIDERED,
   },
   local: {
+    // Persist custom budgets up to the native engine's numeric limits.
     simulations: MAX_BROWSER_AI_SIMULATIONS,
     maxConsidered: MAX_BROWSER_AI_MAX_CONSIDERED,
   },
@@ -426,7 +427,20 @@ export function migratePersistedState(
   persistedVersion: number,
 ): PersistedAppState {
   if (persistedVersion >= 5) {
-    return sanitizePersistedState(value);
+    const migrated = sanitizePersistedState(value);
+    if (persistedVersion < 7 && isRecord(value)) {
+      const previousSettings = isRecord(value.aiSearchSettings) ? value.aiSearchSettings : {};
+      const local = parseAiSearchBudget('local', previousSettings.local);
+      // Existing custom work budgets remain exact. The old browser default
+      // migrates to champion effort; legacy native games retain their effort.
+      if (local === null || (local.simulations === 8 && local.maxConsidered === 4)) {
+        const usedNativeAi = Array.isArray(value.controllers) && value.controllers.includes('server');
+        migrated.aiSearchSettings.local = (usedNativeAi
+          ? parseAiSearchBudget('local', previousSettings.server)
+          : null) ?? { ...DEFAULT_AI_SEARCH_SETTINGS.local };
+      }
+    }
+    return migrated;
   }
   const record = isRecord(value) ? value : {};
   const config = normalizeGameConfig(record.config);

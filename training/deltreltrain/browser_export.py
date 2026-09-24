@@ -129,17 +129,25 @@ def export_browser_champion(
     destination: str | Path,
     *,
     fixture_path: str | Path | None = None,
-    simulations: int = 8,
-    max_considered: int = 4,
+    simulations: int = 512,
+    max_considered: int = 16,
 ) -> dict[str, Any]:
-    """Create an immutable, fully verified single-file FP16 browser release.
+    """Create an immutable, fully verified single-file FP32 browser release.
 
     Source archives are read-only. The original EMA is verified against its
-    content-addressed champion publication. Only inference precision changes;
+    content-addressed champion publication. Full inference precision is retained;
     no random replacement, optimizer step, distillation, or retraining occurs.
     """
     import onnxruntime as ort
 
+    search = BrowserSearchConfig(
+        simulations=simulations,
+        max_considered=max_considered,
+        maximum_simulations=max(4_096, simulations),
+        maximum_max_considered=max(64, max_considered),
+        score_utility_weight=0.05,
+        seed_contract="native-search-batch-v1",
+    )
     manifest = load_model_manifest(champion)
     if manifest.role != "champion":
         raise ValueError("direct browser export requires a published champion pointer")
@@ -188,19 +196,20 @@ def export_browser_champion(
                         for x in reference_model(*encode_batch([position]).model_args())
                     ]
                 )
-        model.half()
         with tempfile.TemporaryDirectory(
             prefix=f".{target.name}.", dir=target.parent
         ) as temporary:
             stage = Path(temporary)
             temporary_onnx = stage / "export.onnx"
             # Batch two prevents accidental exporter specialization to batch one.
-            example = encode_batch([cases[0][2], cases[1][2]], dtype=torch.float16)
+            example = encode_batch([cases[0][2], cases[1][2]])
             export_onnx(
                 model, example, temporary_onnx, include_auxiliary=include_auxiliary
             )
             strip_export_debug_metadata(temporary_onnx)
-            validate_browser_onnx(temporary_onnx, include_auxiliary=include_auxiliary)
+            validate_browser_onnx(
+                temporary_onnx, include_auxiliary=include_auxiliary, precision="float32"
+            )
             options = ort.SessionOptions()
             options.intra_op_num_threads = 1
             session = ort.InferenceSession(
@@ -210,7 +219,7 @@ def export_browser_champion(
             maximum_margin_error = 0.0
             timings = []
             for (game, index, position), reference in zip(cases, expected, strict=True):
-                batch = encode_batch([position], dtype=torch.float16)
+                batch = encode_batch([position])
                 feeds = {
                     name: tensor.numpy()
                     for name, tensor in zip(
@@ -231,9 +240,9 @@ def export_browser_champion(
                     current = _probabilities(after, name)
                     error = float(np.max(np.abs(prior - current)))
                     errors[name] = max(errors[name], error)
-                    if error > (0.005 if name == "outcome_logits" else 0.02):
+                    if error > 0.0001:
                         raise ValueError(
-                            f"FP16 probability parity exceeded for {name}: {error}"
+                            f"FP32 probability parity exceeded for {name}: {error}"
                         )
                     if name == "score_margin_logits":
                         support = np.arange(-151, 152)
@@ -241,10 +250,10 @@ def export_browser_champion(
                             maximum_margin_error,
                             float(abs(((prior - current) * support).sum())),
                         )
-            if maximum_margin_error > 0.25:
-                raise ValueError("FP16 expected margin drift exceeds 0.25 points")
+            if maximum_margin_error > 0.005:
+                raise ValueError("FP32 expected margin drift exceeds 0.005 points")
             # Dynamic batch equivalence is part of the browser inference contract.
-            pair = encode_batch([cases[0][2], cases[1][2]], dtype=torch.float16)
+            pair = encode_batch([cases[0][2], cases[1][2]])
             pair_inputs = {
                 name: tensor.numpy()
                 for name, tensor in zip(
@@ -268,11 +277,11 @@ def export_browser_champion(
                             "browser model batch outputs must be dense tensors"
                         )
                     np.testing.assert_allclose(
-                        combined[row : row + 1], individual, atol=0.03, rtol=0.01
+                        combined[row : row + 1], individual, atol=0.0001, rtol=0.0001
                     )
             onnx_sha = sha256_file(temporary_onnx)
             version = f"deltrel-champion-{manifest.model_step}-{onnx_sha[:12]}"
-            model_path = stage / f"{version}.fp16.onnx"
+            model_path = stage / f"{version}.fp32.onnx"
             temporary_onnx.rename(model_path)
             checkpoint = stage / manifest.checkpoint.name
             shutil.copy2(manifest.checkpoint, checkpoint)
@@ -326,7 +335,7 @@ def export_browser_champion(
                     "parameter_count": model.parameter_count(),
                     "config": asdict(verified.model),
                 },
-                "precision": "float16",
+                "precision": "float32",
                 "weights": "ema",
                 "artifacts": {
                     "onnx": {
@@ -342,14 +351,11 @@ def export_browser_champion(
                     },
                 },
                 "tensors": _browser_tensor_schema(
-                    verified.model, include_auxiliary=include_auxiliary
+                    verified.model,
+                    include_auxiliary=include_auxiliary,
+                    precision="float32",
                 ),
-                "recommended_local_search": BrowserSearchConfig(
-                    simulations=simulations,
-                    max_considered=max_considered,
-                    maximum_simulations=64,
-                    maximum_max_considered=8,
-                ).manifest_fields(),
+                "recommended_local_search": search.manifest_fields(),
                 "training": {
                     "kind": "direct-champion-export",
                     "steps": manifest.model_step,

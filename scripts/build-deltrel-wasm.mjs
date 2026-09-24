@@ -15,7 +15,7 @@ const { DELTREL_RULES_HASH, DELTREL_RULES_SCHEMA_ID } =
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const crate = resolve(root, 'training/crates/deltrel-wasm');
-const wasmDirectory = `wasm-${DELTREL_RULES_HASH.split(':')[1]}`;
+const wasmDirectory = `wasm-${DELTREL_RULES_HASH.split(':')[1]}-champion-v1`;
 const output = resolve(root, `public/models/deltrel/${wasmDirectory}`);
 const outputFromCrate = relative(crate, output);
 

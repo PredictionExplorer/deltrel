@@ -17,10 +17,21 @@ const oldTerms = new RegExp(String.fromCharCode(113, 117, 97, 114, 107), 'i');
 const oldCoordinates = /["'`]\\{0,2}\*\d{2}["'`]/;
 const oldSymbols = /[\u2605\u2606\u2733-\u273c\u2726\u2727\u274b]/u;
 
+// Historical rollout records name the actual pre-migration service and file
+// identities. Preserve that evidence verbatim; this exception never covers
+// shipped code, paths, scoring terminology, or visual symbols.
+const historicalDeploymentEvidence = new Set([
+  'training/docs/elo-efficiency-deployment-20260923.md',
+  'training/docs/elo-efficiency-release-20260923.md',
+  'training/docs/elo-efficiency-runtime-deployment-evidence-20260923.json',
+]);
+
 export function inspectBrand(path, contents = '') {
   const findings = [];
   if (names.test(path) || symbols.test(path)) findings.push('retired brand in path');
-  if (names.test(contents) || symbols.test(contents)) findings.push('retired brand in text');
+  if ((names.test(contents) || symbols.test(contents)) && !historicalDeploymentEvidence.has(path)) {
+    findings.push('retired brand in text');
+  }
   if (oldTerms.test(contents)) findings.push('retired scoring terminology');
   if (oldCoordinates.test(contents)) findings.push('retired coordinate notation');
   if (oldSymbols.test(contents)) findings.push('retired visual symbol');

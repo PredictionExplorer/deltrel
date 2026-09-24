@@ -7,14 +7,12 @@ import {
   subscribeLocalAiStatus,
 } from '@/lib/deltrel/ai/local-ai-status';
 
-/** Subscribing reads status only; model preparation always begins with a user action. */
+/** Prepare the published champion on a fresh visit; a ready session survives screen changes. */
 export function useBrowserAiPreparation() {
   const status = useSyncExternalStore(subscribeLocalAiStatus, getLocalAiStatus, getServerLocalAiStatus);
   const [authorized, setAuthorized] = useState(() => getLocalAiStatus().phase === 'ready');
   const [notice, setNotice] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
-
-  useEffect(() => () => controllerRef.current?.abort(), []);
 
   const prepare = useCallback(async (): Promise<boolean> => {
     if (controllerRef.current) return false;
@@ -31,13 +29,27 @@ export function useBrowserAiPreparation() {
       return true;
     } catch {
       if (!controller.signal.aborted && getLocalAiStatus().phase !== 'error') {
-        setNotice('Browser AI could not be prepared. Please try again.');
+        setNotice('AI could not be prepared. Please try again.');
       }
       return false;
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    // React Strict Mode replays mount effects. Start only after its discarded
+    // effect has cleaned up, so it cannot cancel the actual download.
+    queueMicrotask(() => {
+      if (mounted && getLocalAiStatus().phase === 'idle') void prepare();
+    });
+    return () => {
+      mounted = false;
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+    };
+  }, [prepare]);
 
   const cancel = useCallback(() => {
     controllerRef.current?.abort();

@@ -813,15 +813,19 @@ container notes.
 
 ## Export and publish the trained browser champion
 
-The repository includes a direct FP16 export of the trained EMA champion at step
-478,534, with all eleven supervised output heads. It is 37,577,312 bytes and runs
-in browser WebAssembly when WebGPU is unavailable. No desktop installation or
-local Python service is required for players. The browser downloads the model
-from the website, verifies its checksum, and caches it locally.
+The website's single AI controller uses a full FP32 export of confirmed champion
+step 566,428, with all eleven trained heads. Its immutable ONNX artifact is
+72,474,137 bytes. It runs through WebGPU or the browser's WebAssembly CPU fallback.
+Every fresh page prepares the latest published manifest automatically and checks
+cached/downloaded bytes against the release hash. The selected release stays
+pinned until page reload, including after worker disposal or cancellation.
 
-For a future champion, run these operator commands from the repository root.
-Use a new release directory; source checkpoints and existing releases are never
-overwritten. The source pointer can live in any verified training publication.
+Publication remains an operator action; there is no automatic training-server
+poller or scheduled champion deployment. For a future confirmed champion, first
+export a verified snapshot. If the training host still uses the preceding identity,
+apply the [documented lossless identity migration](docs/deltrel-rebrand.md) to a
+copy and regenerate its content-addressed champion publication. Then run from the
+repository root, using a new private release directory:
 
 ```bash
 source_champion="/absolute/path/to/champion.json"
@@ -831,22 +835,30 @@ training/.venv/bin/python -m deltreltrain.browser_export \
 training/.venv/bin/deltreltrain-publish-browser \
   --manifest "$release_dir/browser.json" \
   --target public/models/deltrel \
-  --wasm-source public/models/deltrel/wasm-46e4fbcff4e17fd3
-node training/scripts/verify_browser_artifact.mjs
+  --wasm-source public/models/deltrel/wasm-46e4fbcff4e17fd3-champion-v1
+npm run verify:browser-release
 ```
 
-The exporter loads the original EMA weights, emits a single-file FP16 graph,
-removes debug paths, and checks fifty real legal positions against the FP32
-champion across every board size and rule variant. The browser verifier runs
-forty positions in real Chromium with GPU disabled. Direct export performs no
-training or distillation. The public manifest records source checkpoint identity,
-all tensor shapes, observed precision errors, and bounded search defaults (8/4,
-maximum 64/8 for this full-size model). Publication verifies ONNX and checkpoint
-hashes and atomically replaces the canonical manifest last. Only the ONNX and
-manifest are published; the source checkpoint remains in the private release.
+The exporter starts with original FP32 EMA weights, emits a single-file graph,
+removes debug paths, and numerically checks fifty legal positions against the
+source across every board size and rule variant. It performs no training or
+model-size reduction. The manifest records source identity, precision, all tensor
+shapes, measured errors, the native seed contract, and the champion search policy:
+512/16 defaults, 4,096/64 Deep preset, 0.05 normalized score-margin weight.
+Custom browser budgets remain available beyond the presets.
 
-The checked-in game WASM is sufficient for ordinary Vercel builds. Developers who
-change native game/search code can rebuild it with `npm run build:deltrel-wasm`.
+Publication checks ONNX/checkpoint/WASM contracts and atomically replaces the
+canonical manifest last. Commit the new public ONNX, versioned WASM, and manifest;
+keep checkpoints/private releases outside Git. Retain the prior public artifact
+for clients with an already prepared session. The build checks the published
+model checksum and rules/search contract before deployment. After deployment,
+verify the live manifest and the named model's checksum. Browser gameplay and
+speed testing can then be performed manually; the optional
+`node training/scripts/verify_browser_artifact.mjs` performs browser inference QA.
+
+The checked-in WASM package is sufficient for Vercel builds. If native game/search
+code changes, rebuild with `npm run build:deltrel-wasm` and publish under a new
+versioned directory together with its compatible model manifest.
 
 ## Optional smaller-model distillation
 

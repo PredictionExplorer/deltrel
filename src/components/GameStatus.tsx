@@ -9,7 +9,7 @@ import {
   Trophy,
 } from 'lucide-react';
 import type { Mode } from '@/lib/deltrel/game';
-import type { LocalAiSearchProgress } from '@/lib/deltrel/ai/local-client';
+import type { DeltrelAiSearchProgress } from '@/lib/deltrel/ai/decision';
 
 export type GameStatusState =
   | 'human'
@@ -29,8 +29,8 @@ interface GameStatusProps {
   controllerName: string;
   matchLabel?: string;
   waitingReason?: string;
-  /** Actual completed simulations reported by the current browser search. */
-  searchProgress?: LocalAiSearchProgress;
+  /** Actual completed simulations reported by the current engine search. */
+  searchProgress?: DeltrelAiSearchProgress;
   mode: Mode;
   movesLeft: number;
   /** Placement progress of the turn on display (for the pips). */
@@ -201,7 +201,7 @@ export function GameStatus({
         {state === 'thinking' && searchProgress && (
           <div className="mt-1.5 text-xs text-muted">
             <progress
-              aria-label="Browser AI search progress"
+              aria-label={`${controllerName} search progress`}
               max={searchProgress.totalSimulations}
               value={searchProgress.completedSimulations}
               className="block h-1.5 w-full accent-[#e4c9a1]"

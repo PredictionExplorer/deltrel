@@ -23,7 +23,7 @@ const nextConfig: NextConfig = {
       {
         // The pointer is mutable; the model files it names are immutable.
         source: '/models/deltrel/manifest.json',
-        headers: [{ key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' }],
+        headers: [{ key: 'Cache-Control', value: 'no-store' }],
       },
       {
         // The directory keys the rules, while search implementation can evolve.

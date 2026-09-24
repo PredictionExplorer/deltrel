@@ -1,3 +1,11 @@
+import {
+  acceptsServerSearchStream,
+  isServerSearchStream,
+  readServerSearchEvents,
+  SERVER_SEARCH_STREAM_CONTENT_TYPE,
+  type ServerSearchEvent,
+} from './server-stream';
+
 export const DELTREL_AI_PROXY_MOVE_PATH = '/v2/move' as const;
 export const DELTREL_AI_PROXY_ANALYZE_PATH = '/v2/analyze' as const;
 export const DELTREL_AI_PROXY_HEALTH_PATH = '/v2/health' as const;
@@ -17,14 +25,95 @@ export interface DeltrelAiProxyConfig {
 
 class BodyLimitError extends Error {}
 
-function noStoreHeaders(requestId: string): HeadersInit {
+function noStoreHeaders(requestId: string, contentType = 'application/json'): HeadersInit {
   return {
     'Cache-Control': 'no-store, max-age=0',
-    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Type': `${contentType}; charset=utf-8`,
     Pragma: 'no-cache',
     'X-Content-Type-Options': 'nosniff',
     'X-Request-ID': requestId,
   };
+}
+
+function publicStreamError(requestId: string, code: string): ServerSearchEvent {
+  const timedOut = code === 'deltrel_ai_timeout' || code === 'analysis_timeout' || code === 'timeout';
+  const cancelled = code === 'deltrel_ai_cancelled' || code === 'client_disconnected';
+  const invalid = code === 'invalid_upstream_response';
+  return {
+    type: 'error',
+    error: {
+      code: timedOut ? 'deltrel_ai_timeout' : cancelled ? 'deltrel_ai_cancelled'
+        : invalid ? 'invalid_upstream_response' : 'deltrel_ai_unavailable',
+      message: timedOut ? 'Server AI timed out.' : cancelled ? 'AI request cancelled.'
+        : invalid ? 'Server AI returned an invalid response.' : 'Server AI is unavailable.',
+      retryable: !cancelled,
+      request_id: requestId,
+    },
+  };
+}
+
+function streamUpstreamResponse(
+  upstream: Response,
+  requestId: string,
+  simulations: number | undefined,
+  controller: AbortController,
+  abortCode: () => string,
+  cleanup: () => void,
+): Response {
+  const events = readServerSearchEvents(upstream, simulations, controller.signal);
+  const encoder = new TextEncoder();
+  let ended = false;
+  let abort: () => void;
+  const finish = () => {
+    controller.signal.removeEventListener('abort', abort);
+    cleanup();
+  };
+  const fail = (output: ReadableStreamDefaultController<Uint8Array>, code: string) => {
+    if (ended) return;
+    ended = true;
+    // Never expose upstream exceptions, auth failures, or private service details.
+    output.enqueue(encoder.encode(`${JSON.stringify(publicStreamError(requestId, code))}\n`));
+    output.close();
+    controller.abort();
+    void events.return(undefined).catch(() => {});
+    if (upstream.body && !upstream.body.locked) void upstream.body.cancel().catch(() => {});
+    finish();
+  };
+  const body = new ReadableStream<Uint8Array>({
+    start(output) {
+      abort = () => fail(output, abortCode());
+      controller.signal.addEventListener('abort', abort, { once: true });
+      if (controller.signal.aborted) abort();
+    },
+    async pull(output) {
+      try {
+        const next = await events.next();
+        if (ended) return;
+        if (next.done) {
+          ended = true;
+          output.close();
+          finish();
+          return;
+        }
+        const event = next.value.type === 'error'
+          ? publicStreamError(requestId, next.value.error.code) : next.value;
+        output.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      } catch {
+        fail(output, controller.signal.aborted ? abortCode() : 'invalid_upstream_response');
+      }
+    },
+    cancel(reason) {
+      if (ended) return;
+      ended = true;
+      controller.abort(reason);
+      void events.return(undefined).catch(() => {});
+      if (upstream.body && !upstream.body.locked) void upstream.body.cancel(reason).catch(() => {});
+      finish();
+    },
+  });
+  return new Response(body, {
+    headers: { ...noStoreHeaders(requestId, SERVER_SEARCH_STREAM_CONTENT_TYPE), 'X-Accel-Buffering': 'no' },
+  });
 }
 
 function proxyError(
@@ -177,6 +266,7 @@ export async function proxyDeltrelAiRequest(
   }
 
   let body: Uint8Array | undefined;
+  let simulations: number | undefined;
   if (endpoint !== DELTREL_AI_PROXY_HEALTH_PATH) {
     if (!isJsonContentType(request.headers.get('Content-Type'))) {
       return proxyError(
@@ -193,7 +283,8 @@ export async function proxyDeltrelAiRequest(
         request.headers.get('Content-Length'),
         DELTREL_AI_PROXY_REQUEST_BYTES,
       );
-      JSON.parse(new TextDecoder().decode(body));
+      const parsed = JSON.parse(new TextDecoder().decode(body));
+      if (typeof parsed?.search?.simulations === 'number') simulations = parsed.search.simulations;
     } catch (error) {
       if (request.signal.aborted) {
         return proxyError(requestId, 499, 'deltrel_ai_cancelled', 'AI request cancelled.', false);
@@ -214,6 +305,9 @@ export async function proxyDeltrelAiRequest(
       : (config.moveTimeoutMs ?? DELTREL_AI_PROXY_MOVE_TIMEOUT_MS);
   const controller = new AbortController();
   let timedOut = false;
+  let streaming = false;
+  const wantsProgress = endpoint !== DELTREL_AI_PROXY_HEALTH_PATH &&
+    acceptsServerSearchStream(request.headers.get('Accept'));
   const abortFromClient = () => controller.abort(request.signal.reason);
   request.signal.addEventListener('abort', abortFromClient, { once: true });
   if (request.signal.aborted) abortFromClient();
@@ -221,11 +315,15 @@ export async function proxyDeltrelAiRequest(
     timedOut = true;
     controller.abort();
   }, timeoutMs);
+  const cleanup = () => {
+    clearTimeout(timeout);
+    request.signal.removeEventListener('abort', abortFromClient);
+  };
 
   try {
     controller.signal.throwIfAborted();
     const headers = new Headers({
-      Accept: 'application/json',
+      Accept: wantsProgress ? `${SERVER_SEARCH_STREAM_CONTENT_TYPE}, application/json` : 'application/json',
       'X-Request-ID': requestId,
     });
     if (body) headers.set('Content-Type', 'application/json');
@@ -240,6 +338,20 @@ export async function proxyDeltrelAiRequest(
       redirect: 'error',
       signal: controller.signal,
     });
+    const upstreamRequestId = upstream.headers.get('X-Request-ID');
+    const responseRequestId =
+      upstreamRequestId && REQUEST_ID.test(upstreamRequestId) ? upstreamRequestId : requestId;
+    if (wantsProgress && upstream.ok && isServerSearchStream(upstream.headers.get('Content-Type'))) {
+      // Ownership of the deadline and cancellation listener lasts through EOF,
+      // including time after the route handler has returned the first bytes.
+      streaming = true;
+      return streamUpstreamResponse(
+        upstream, responseRequestId, simulations, controller,
+        () => request.signal.aborted ? 'deltrel_ai_cancelled'
+          : timedOut ? 'deltrel_ai_timeout' : 'deltrel_ai_unavailable',
+        cleanup,
+      );
+    }
     if (!isJsonContentType(upstream.headers.get('Content-Type'))) {
       await upstream.body?.cancel();
       return proxyError(
@@ -279,9 +391,6 @@ export async function proxyDeltrelAiRequest(
         true,
       );
     }
-    const upstreamRequestId = upstream.headers.get('X-Request-ID');
-    const responseRequestId =
-      upstreamRequestId && REQUEST_ID.test(upstreamRequestId) ? upstreamRequestId : requestId;
     return Response.json(payload, {
       status: upstream.status,
       headers: noStoreHeaders(responseRequestId),
@@ -298,7 +407,6 @@ export async function proxyDeltrelAiRequest(
       true,
     );
   } finally {
-    clearTimeout(timeout);
-    request.signal.removeEventListener('abort', abortFromClient);
+    if (!streaming) cleanup();
   }
 }

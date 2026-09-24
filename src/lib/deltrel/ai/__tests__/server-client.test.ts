@@ -78,6 +78,140 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+describe('server search progress', () => {
+  const search = { simulations: 4, maxConsidered: 2 };
+  const progress = (completed: number, total = 4) => ({
+    type: 'progress', completed_simulations: completed, total_simulations: total,
+  });
+  const result = () => ({ type: 'result', result: representativeAnalyzeResponse() });
+  const encode = (value: unknown) => new TextEncoder().encode(`${JSON.stringify(value)}\n`);
+  const streamResponse = (body: ReadableStream<Uint8Array> | string) => new Response(body, {
+    headers: { 'Content-Type': 'application/x-ndjson', 'X-Request-ID': request.requestId },
+  });
+
+  it('delivers real progress before the search result is available', async () => {
+    let output!: ReadableStreamDefaultController<Uint8Array>;
+    const response = streamResponse(new ReadableStream({ start(controller) { output = controller; } }));
+    const fetchMock = vi.fn(async (_url: unknown, init: RequestInit) => {
+      expect(new Headers(init.headers).get('Accept')).toContain('application/x-ndjson');
+      expect(new Headers(init.headers).has('Authorization')).toBe(false);
+      return response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    let receiveProgress!: () => void;
+    const received = new Promise<void>((resolve) => { receiveProgress = resolve; });
+    const onSearchProgress = vi.fn(() => receiveProgress());
+    let finished = false;
+    const decision = requestServerAiDecision(request, { search, onSearchProgress }).then((value) => {
+      finished = true;
+      return value;
+    });
+    output.enqueue(encode(progress(2)));
+    await received;
+    expect(onSearchProgress).toHaveBeenCalledWith({ completedSimulations: 2, totalSimulations: 4 });
+    expect(finished).toBe(false);
+    output.enqueue(encode(result()));
+    output.close();
+    await expect(decision).resolves.toMatchObject({ analysis: { simulations: 4 } });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('uses an older JSON response without reissuing the search or inventing progress', async () => {
+    const fetchMock = vi.fn(async () => Response.json(representativeAnalyzeResponse()));
+    vi.stubGlobal('fetch', fetchMock);
+    const onSearchProgress = vi.fn();
+    await expect(requestServerAiDecision(request, { search, onSearchProgress })).resolves.toBeDefined();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(onSearchProgress).not.toHaveBeenCalled();
+  });
+
+  it('decodes UTF-8 characters split across network chunks', async () => {
+    const payload = result();
+    payload.result.model_version = 'champion-é';
+    const bytes = encode(payload);
+    const split = bytes.indexOf(0xc3) + 1;
+    vi.stubGlobal('fetch', vi.fn(async () => streamResponse(new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes.slice(0, split));
+        controller.enqueue(bytes.slice(split));
+        controller.close();
+      },
+    }))));
+    await expect(requestServerAiDecision(request, { search, onSearchProgress: vi.fn() }))
+      .resolves.toMatchObject({ analysis: { modelVersion: 'champion-é' } });
+  });
+
+  it.each([
+    ['invalid JSON', '{bad}\n'],
+    ['unknown event', '{"type":"mystery"}\n'],
+    ['truncated search', `${JSON.stringify(progress(1))}\n`],
+    ['unterminated result', JSON.stringify(result())],
+    ['regressing progress', [progress(3), progress(2), result()].map((event) => JSON.stringify(event)).join('\n') + '\n'],
+    ['wrong budget', [progress(2, 8), result()].map((event) => JSON.stringify(event)).join('\n') + '\n'],
+    ['out of bounds', [progress(5), result()].map((event) => JSON.stringify(event)).join('\n') + '\n'],
+    ['duplicate result', [result(), result()].map((event) => JSON.stringify(event)).join('\n') + '\n'],
+    ['progress after result', [result(), progress(4)].map((event) => JSON.stringify(event)).join('\n') + '\n'],
+  ])('rejects %s without returning a move', async (_name, body) => {
+    vi.stubGlobal('fetch', vi.fn(async () => streamResponse(body)));
+    await expect(requestServerAiDecision(request, { search, onSearchProgress: vi.fn() }))
+      .rejects.toMatchObject({ code: 'protocol' });
+  });
+
+  it('rejects oversized and invalid UTF-8 streams', async () => {
+    for (const bytes of [new Uint8Array([0xff, 10]), new TextEncoder().encode('x'.repeat(1024 * 1024 + 1))]) {
+      vi.stubGlobal('fetch', vi.fn(async () => streamResponse(new ReadableStream({
+        start(controller) { controller.enqueue(bytes); controller.close(); },
+      }))));
+      await expect(requestServerAiDecision(request, { search, onSearchProgress: vi.fn() }))
+        .rejects.toMatchObject({ code: 'protocol' });
+    }
+  });
+
+  it.each(['cancelled', 'timeout'] as const)('preserves %s after progress and cancels the reader', async (code) => {
+    vi.useFakeTimers();
+    const caller = new AbortController();
+    const cancel = vi.fn();
+    let receiveProgress!: () => void;
+    const received = new Promise<void>((resolve) => { receiveProgress = resolve; });
+    vi.stubGlobal('fetch', vi.fn(async () => streamResponse(new ReadableStream({
+      start(controller) { controller.enqueue(encode(progress(1))); }, cancel,
+    }))));
+    const expected = expect(requestServerAiDecision(request, {
+      search, onSearchProgress: receiveProgress, signal: caller.signal, timeoutMs: 10,
+    })).rejects.toMatchObject({ code });
+    await received;
+    if (code === 'cancelled') caller.abort();
+    else await vi.advanceTimersByTimeAsync(10);
+    await expected;
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['deltrel_ai_timeout', 'timeout', true],
+    ['analysis_timeout', 'timeout', true],
+    ['client_disconnected', 'cancelled', false],
+    ['service_busy', 'unavailable', true],
+  ])('maps terminal %s without retrying a search', async (upstreamCode, code, retryable) => {
+    const fetchMock = vi.fn(async () => streamResponse(`${JSON.stringify({
+      type: 'error', error: { code: upstreamCode, message: 'Search failed.' },
+    })}\n`));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(requestServerAiDecision(request, { search, onSearchProgress: vi.fn(), includeNetworkOutput: true }))
+      .rejects.toMatchObject({ code, retryable });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('rejects an oversized declared stream and cancels it before reading', async () => {
+    const cancel = vi.fn();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({ cancel }), {
+      headers: { 'Content-Type': 'application/x-ndjson', 'Content-Length': String(4 * 1024 * 1024 + 1) },
+    })));
+    await expect(requestServerAiDecision(request, { search, onSearchProgress: vi.fn() }))
+      .rejects.toMatchObject({ code: 'protocol' });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+});
+
 describe('deltrelserve v3 adapter', () => {
   it('accepts optional final predictions and rejects inconsistent player identity or ranges', () => {
     const predictions = {
@@ -392,6 +526,7 @@ describe('deltrelserve v3 adapter', () => {
       async (url: string | URL | Request, init?: RequestInit) => {
         expect(String(url)).toBe('https://ai.example/v2/move');
         const headers = new Headers(init?.headers);
+        expect(headers.get('Accept')).toBe('application/json');
         expect(headers.get('X-Request-ID')).toBe(request.requestId);
         expect(headers.has('Authorization')).toBe(false);
         const body = JSON.parse(String(init?.body));

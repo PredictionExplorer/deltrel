@@ -217,15 +217,22 @@ class BrowserSearchConfig:
     subtree_reuse_max_nodes: int = 4_096
     maximum_simulations: int | None = None
     maximum_max_considered: int | None = None
+    score_utility_weight: float = 0.0
+    seed_contract: str | None = None
 
     def __post_init__(self) -> None:
         for name, value, minimum, ceiling in (
-            ("maximum_simulations", self.maximum_simulations, self.simulations, 1024),
+            (
+                "maximum_simulations",
+                self.maximum_simulations,
+                self.simulations,
+                0x1FFF_FFFF,
+            ),
             (
                 "maximum_max_considered",
                 self.maximum_max_considered,
                 self.max_considered,
-                128,
+                0xFFFF_FFFF,
             ),
         ):
             if value is not None and (
@@ -248,6 +255,13 @@ class BrowserSearchConfig:
         ):
             raise DistillationConfigError("browser swap_dead_zone must be in [0, 1)")
         if (
+            isinstance(self.score_utility_weight, bool)
+            or not isinstance(self.score_utility_weight, int | float)
+            or not 0 <= self.score_utility_weight <= 1
+            or self.seed_contract not in (None, "native-search-batch-v1")
+        ):
+            raise DistillationConfigError("browser search policy is invalid")
+        if (
             type(self.first_visit_batch_size) is not int
             or not 1 <= self.first_visit_batch_size <= 64
             or type(self.subtree_reuse) is not bool
@@ -265,6 +279,10 @@ class BrowserSearchConfig:
         for name in ("maximum_simulations", "maximum_max_considered"):
             if fields[name] is None:
                 fields.pop(name)
+        if self.score_utility_weight == 0:
+            fields.pop("score_utility_weight")
+        if self.seed_contract is None:
+            fields.pop("seed_contract")
         if self.first_visit_batch_size == 1:
             fields.pop("first_visit_batch_size")
         if not self.subtree_reuse:
@@ -885,15 +903,17 @@ def _artifact_entry(path: Path, checksum: str) -> dict[str, object]:
 
 
 def _browser_tensor_schema(
-    model: ModelConfig, *, include_auxiliary: bool = False
+    model: ModelConfig, *, include_auxiliary: bool = False, precision: str = "float16"
 ) -> dict[str, object]:
+    if precision not in ("float16", "float32"):
+        raise ValueError("browser precision must be float16 or float32")
     inputs = {
         ONNX_INPUT_NAMES[0]: {
-            "dtype": "float16",
+            "dtype": precision,
             "shape": ["batch", "nodes", model.node_feature_dim],
         },
         ONNX_INPUT_NAMES[1]: {
-            "dtype": "float16",
+            "dtype": precision,
             "shape": ["batch", model.global_feature_dim],
         },
         ONNX_INPUT_NAMES[2]: {"dtype": "int64", "shape": ["batch", "nodes", "degree"]},
@@ -904,18 +924,18 @@ def _browser_tensor_schema(
         ONNX_INPUT_NAMES[7]: {"dtype": "int64", "shape": ["batch"]},
     }
     outputs = {
-        ONNX_OUTPUT_NAMES[0]: {"dtype": "float16", "shape": ["batch", "nodes"]},
-        ONNX_OUTPUT_NAMES[1]: {"dtype": "float16", "shape": ["batch", 2]},
+        ONNX_OUTPUT_NAMES[0]: {"dtype": precision, "shape": ["batch", "nodes"]},
+        ONNX_OUTPUT_NAMES[1]: {"dtype": precision, "shape": ["batch", 2]},
         ONNX_OUTPUT_NAMES[2]: {
-            "dtype": "float16",
+            "dtype": precision,
             "shape": ["batch", model.score_margin_bins],
         },
         ONNX_OUTPUT_NAMES[3]: {
-            "dtype": "float16",
+            "dtype": precision,
             "shape": ["batch", "nodes", 3],
         },
-        ONNX_OUTPUT_NAMES[4]: {"dtype": "float16", "shape": ["batch", "nodes"]},
-        ONNX_OUTPUT_NAMES[5]: {"dtype": "float16", "shape": ["batch", "nodes"]},
+        ONNX_OUTPUT_NAMES[4]: {"dtype": precision, "shape": ["batch", "nodes"]},
+        ONNX_OUTPUT_NAMES[5]: {"dtype": precision, "shape": ["batch", "nodes"]},
     }
     if include_auxiliary:
         for name, shape in zip(
@@ -929,7 +949,7 @@ def _browser_tensor_schema(
             ),
             strict=True,
         ):
-            outputs[name] = {"dtype": "float16", "shape": shape}
+            outputs[name] = {"dtype": precision, "shape": shape}
     return {"inputs": inputs, "outputs": outputs}
 
 
@@ -941,7 +961,11 @@ def sha256_file(path: str | Path) -> str:
     return digest.hexdigest()
 
 
-def validate_browser_onnx(path: str | Path, *, include_auxiliary: bool = False) -> None:
+def validate_browser_onnx(
+    path: str | Path, *, include_auxiliary: bool = False, precision: str = "float16"
+) -> None:
+    if precision not in ("float16", "float32"):
+        raise ValueError("browser precision must be float16 or float32")
     try:
         import onnx
     except (ImportError, ModuleNotFoundError) as exc:
@@ -959,10 +983,19 @@ def validate_browser_onnx(path: str | Path, *, include_auxiliary: bool = False) 
         raise RuntimeError(
             "exported ONNX tensor names do not match the browser contract"
         )
-    float16 = onnx.TensorProto.FLOAT16
+    tensor_type = (
+        onnx.TensorProto.FLOAT if precision == "float32" else onnx.TensorProto.FLOAT16
+    )
     for value in (model.graph.input[0], model.graph.input[1], *model.graph.output):
-        if value.type.tensor_type.elem_type != float16:
-            raise RuntimeError("browser ONNX feature and output tensors must be FP16")
+        if value.type.tensor_type.elem_type != tensor_type:
+            raise RuntimeError(
+                f"browser ONNX feature and output tensors must be {precision}"
+            )
+    if precision == "float32" and any(
+        tensor.data_type in (onnx.TensorProto.FLOAT16, onnx.TensorProto.BFLOAT16)
+        for tensor in model.graph.initializer
+    ):
+        raise RuntimeError("FP32 browser ONNX must preserve full-precision weights")
 
 
 def distill_main(argv: list[str] | None = None) -> None:

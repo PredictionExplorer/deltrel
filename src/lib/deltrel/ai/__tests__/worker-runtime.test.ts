@@ -11,6 +11,7 @@ import {
 import { buildAiRequest } from '../protocol';
 import publishedManifest from '../../../../../public/models/deltrel/manifest.json';
 import { parseDeltrelBrowserModelManifest } from '../manifest';
+import { DELTREL_AI_WORKER_PROTOCOL_VERSION } from '../worker-protocol';
 
 let registeredHandler: ((event: MessageEvent<unknown>) => void) | undefined;
 let readyEvent: unknown;
@@ -31,6 +32,16 @@ beforeAll(async () => {
 });
 
 describe('local worker runtime contract', () => {
+  it('uses published defaults while accepting explicit custom search beyond preset limits', () => {
+    const manifest = parseDeltrelBrowserModelManifest(publishedManifest);
+    expect(runtime.resolveBrowserSearchBudget(manifest, null)).toEqual({ simulations: 512, maxConsidered: 16 });
+    expect(manifest.search).toMatchObject({ maximumSimulations: 4_096, maximumMaxConsidered: 64 });
+    expect(runtime.resolveBrowserSearchBudget(manifest, { simulations: 4_096, maxConsidered: 256 }))
+      .toEqual({ simulations: 4_096, maxConsidered: 256 });
+    expect(() => runtime.resolveBrowserSearchBudget(manifest, { simulations: 536_870_912, maxConsidered: 8 }))
+      .toThrow(/search budget/);
+  });
+
   it('invalidates a prepared runtime when release settings change without new weights', () => {
     const manifest = parseDeltrelBrowserModelManifest(publishedManifest);
     expect(runtime.sameRuntimeManifest(manifest, structuredClone(manifest))).toBe(true);
@@ -49,7 +60,7 @@ describe('local worker runtime contract', () => {
 
   it('registers exactly one message handler and announces readiness', () => {
     expect(registeredHandler).toEqual(expect.any(Function));
-    expect(readyEvent).toEqual({ type: 'ready', protocolVersion: 4 });
+    expect(readyEvent).toEqual({ type: 'ready', protocolVersion: DELTREL_AI_WORKER_PROTOCOL_VERSION });
   });
 
   it('rejects older WASM search behavior and versions both cached assets', () => {
@@ -126,6 +137,13 @@ describe('local worker runtime contract', () => {
       ],
     } as unknown as Ort.InferenceSession;
     expect(runtime.hasExpectedOnnxSchema(session)).toBe(true);
+    const fp32 = { ...session,
+      inputMetadata: session.inputMetadata.map((entry) => entry.isTensor && entry.type === 'float16' ? { ...entry, type: 'float32' } : entry),
+      outputMetadata: session.outputMetadata.map((entry) => ({ ...entry, type: 'float32' })),
+    } as Ort.InferenceSession;
+    expect(runtime.hasExpectedOnnxSchema(fp32, 'float32')).toBe(true);
+    expect(runtime.hasExpectedOnnxSchema(session, 'float32')).toBe(false);
+    expect(runtime.hasExpectedOnnxSchema(fp32, 'float16')).toBe(false);
     const invalid = {
       ...session,
       outputNames: ['wrong', ...session.outputNames.slice(1)],
@@ -162,6 +180,27 @@ describe('local worker runtime contract', () => {
         'policy',
       ),
     ).toThrow(/non-finite/i);
+  });
+
+  it('preserves full precision outputs and rejects non-finite FP32 data', () => {
+    const values = new Float32Array([0.123456789, -0.987654321]);
+    expect(runtime.finiteFloatData({ data: values } as unknown as Ort.OnnxValue, 'policy')).toEqual(values);
+    expect(() => runtime.finiteFloatData({ data: new Float32Array([Infinity]) } as unknown as Ort.OnnxValue, 'policy')).toThrow(/non-finite/);
+    expect(runtime.scoreUtility(0.5, 151, 0.05)).toBeCloseTo(0.55);
+    expect(runtime.scoreUtility(0.5, -151, 0.05)).toBeCloseTo(0.45);
+    expect(runtime.scoreUtility(1, 151, 0.05)).toBe(1);
+    expect(runtime.scoreUtility(-1, -151, 0.05)).toBe(-1);
+  });
+
+  it('derives the browser seed from the exact native request contract', () => {
+    const hash = BigInt('0xfedcba9876543210');
+    const derive = vi.fn(() => BigInt(123));
+    const root = { hash64: () => hash } as WasmState;
+    const current = { manifest: { search: { seedContract: 'native-search-batch-v1' } }, wasm: { derive_root_seed: derive } };
+    expect(runtime.rootSearchSeed(current as never, root)).toBe(BigInt(123));
+    expect(derive).toHaveBeenCalledWith(hash & BigInt(Number.MAX_SAFE_INTEGER), hash, 0);
+    expect(runtime.rootSearchSeed({ manifest: { search: {} } } as never, root)).toBe(hash);
+    expect(() => runtime.rootSearchSeed({ ...current, wasm: {} } as never, root)).toThrow(/seed contract/);
   });
 
   it('replays and verifies semantic identity before local search', () => {
@@ -249,7 +288,7 @@ describe('local prediction reuse', () => {
       score_margin_logits: output(new Float32Array(303)),
     }));
     const localRuntime = {
-      manifest: { model: { sha256: 'model-one' }, featureSchemaHash: 'features-one' },
+      manifest: { model: { sha256: 'model-one', precision: 'float16' }, featureSchemaHash: 'features-one', search: {} },
       ort: { Tensor },
       session: { run },
       predictions: new runtime.PredictionCache(capacity),

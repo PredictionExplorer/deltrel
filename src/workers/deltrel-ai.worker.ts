@@ -39,6 +39,7 @@ import {
   DELTREL_AUXILIARY_MODEL_OUTPUT_NAMES,
   parseDeltrelBrowserModelManifest,
   type DeltrelBrowserModelManifest,
+  type DeltrelModelPrecision,
 } from '@/lib/deltrel/ai/manifest';
 import {
   codeToAction,
@@ -48,6 +49,7 @@ import {
 } from '@/lib/deltrel/ai/protocol';
 import {
   DELTREL_AI_WORKER_PROTOCOL_VERSION,
+  parseBrowserSearchBudget,
   parseWorkerCommand,
   workerErrorEvent,
   type DeltrelAiWorkerCommand,
@@ -135,6 +137,7 @@ interface WasmGumbelConstructor {
 interface DeltrelWasmModule {
   default(input?: { module_or_path: BufferSource }): Promise<unknown>;
   search_algorithm_id(): string;
+  derive_root_seed?(nonce: bigint, stateHash: bigint, index: number): bigint;
   WasmState: WasmStateConstructor;
   WasmSearchTree: WasmSearchTreeConstructor;
   WasmGumbel: WasmGumbelConstructor;
@@ -203,6 +206,8 @@ export function usesExperimentalSearch(manifest: DeltrelBrowserModelManifest): b
 }
 
 interface LocalRuntime {
+  /** Raw, validated release retained across worker restarts for the page session. */
+  release?: unknown;
   manifest: DeltrelBrowserModelManifest;
   ort: typeof Ort;
   session: Ort.InferenceSession;
@@ -215,7 +220,10 @@ interface LocalRuntime {
 }
 
 interface Evaluation {
+  /** Raw outcome expectation, for reporting. */
   value: number;
+  /** Outcome plus the declared score utility, for every search backup. */
+  searchValue: number;
   outcome: DeltrelAiOutcomeBelief;
   expectedMargin: number;
   logits: Float32Array;
@@ -376,7 +384,8 @@ async function importWasm(
   ) {
     throw new DeltrelAiError('unavailable', 'Local AI WASM rules are incompatible.');
   }
-  if (!hasExpectedWasmSearch(wasmModule)) {
+  if (!hasExpectedWasmSearch(wasmModule) ||
+      (manifest.search.seedContract && typeof wasmModule.derive_root_seed !== 'function')) {
     throw new DeltrelAiError(
       'unavailable',
       'The browser engine needs an update. Reload the page and try again.',
@@ -409,11 +418,14 @@ export function tensorMetadataMatches(
   );
 }
 
-export function hasExpectedOnnxSchema(session: Ort.InferenceSession): boolean {
+export function hasExpectedOnnxSchema(
+  session: Ort.InferenceSession,
+  precision: DeltrelModelPrecision = 'float16',
+): boolean {
   const hasAuxiliary = session.outputNames.length === 11;
   const inputSchema = [
-    ['float16', 3, DELTREL_NODE_FEATURE_DIM],
-    ['float16', 2, DELTREL_GLOBAL_FEATURE_DIM],
+    [precision, 3, DELTREL_NODE_FEATURE_DIM],
+    [precision, 2, DELTREL_GLOBAL_FEATURE_DIM],
     ['int64', 3],
     ['bool', 3],
     ['int64', 3],
@@ -422,15 +434,15 @@ export function hasExpectedOnnxSchema(session: Ort.InferenceSession): boolean {
     ['int64', 1],
   ] as const;
   const outputSchema = [
-    ['float16', 2],
-    ['float16', 2, 2],
-    ['float16', 2, 303],
-    ['float16', 3, 3],
-    ['float16', 2],
-    ['float16', 2],
+    [precision, 2],
+    [precision, 2, 2],
+    [precision, 2, 303],
+    [precision, 3, 3],
+    [precision, 2],
+    [precision, 2],
     ...(hasAuxiliary ? [
-      ['float16', 2], ['float16', 2], ['float16', 3, 51],
-      ['float16', 3, 26], ['float16', 3, 6],
+      [precision, 2], [precision, 2], [precision, 3, 51],
+      [precision, 3, 26], [precision, 3, 6],
     ] as const : []),
   ] as const;
   return (
@@ -483,11 +495,12 @@ async function createSession(
   }
 }
 
-async function loadRuntime(signal: AbortSignal, onProgress: (progress: LocalAiProgress) => void): Promise<LocalRuntime> {
+async function loadRuntime(
+  signal: AbortSignal, onProgress: (progress: LocalAiProgress) => void, suppliedRelease?: unknown,
+): Promise<LocalRuntime> {
   onProgress({ phase: 'checking', loadedBytes: 0, totalBytes: null, modelVersion: null, cached: false });
-  const manifest = parseDeltrelBrowserModelManifest(
-    await fetchJson(DELTREL_BROWSER_MODEL_MANIFEST_PATH, signal),
-  );
+  const release = suppliedRelease ?? await fetchJson(DELTREL_BROWSER_MODEL_MANIFEST_PATH, signal);
+  const manifest = parseDeltrelBrowserModelManifest(release);
   const [wasm, downloaded] = await Promise.all([
     importWasm(manifest, signal),
     downloadBrowserModel(manifest, signal, onProgress),
@@ -497,12 +510,12 @@ async function loadRuntime(signal: AbortSignal, onProgress: (progress: LocalAiPr
     modelVersion: manifest.modelVersion, cached: downloaded.cached });
   const ort = await import('onnxruntime-web/webgpu');
   const { session, backend } = await createSession(ort, downloaded.bytes);
-  if (!hasExpectedOnnxSchema(session) || !sameNames(session.outputNames, manifest.model.outputs)) {
+  if (!hasExpectedOnnxSchema(session, manifest.model.precision) || !sameNames(session.outputNames, manifest.model.outputs)) {
     await session.release();
     throw new DeltrelAiError('unavailable', 'Local AI ONNX schema is incompatible.');
   }
   if (signal.aborted) { await session.release(); signal.throwIfAborted(); }
-  return { manifest, ort, session, wasm, predictions: new PredictionCache(),
+  return { release, manifest, ort, session, wasm, predictions: new PredictionCache(),
     readyInfo: { modelVersion: manifest.modelVersion, bytes: manifest.model.bytes, backend, cached: downloaded.cached } };
 }
 
@@ -514,10 +527,12 @@ export function sameRuntimeManifest(
   return JSON.stringify(current) === JSON.stringify(latest);
 }
 
-async function getRuntime(signal: AbortSignal, taskId: string, revalidate = false): Promise<LocalRuntime> {
+async function getRuntime(
+  signal: AbortSignal, taskId: string, revalidate = false, suppliedRelease?: unknown,
+): Promise<LocalRuntime> {
   if (runtimePromise && revalidate) {
     const current = await runtimePromise;
-    const latest = parseDeltrelBrowserModelManifest(await fetchJson(DELTREL_BROWSER_MODEL_MANIFEST_PATH, signal));
+    const latest = parseDeltrelBrowserModelManifest(suppliedRelease ?? await fetchJson(DELTREL_BROWSER_MODEL_MANIFEST_PATH, signal));
     signal.throwIfAborted();
     if (!sameRuntimeManifest(current.manifest, latest)) {
       runtimePromise = null;
@@ -535,7 +550,7 @@ async function getRuntime(signal: AbortSignal, taskId: string, revalidate = fals
         lastPhase = progress.phase;
         lastPosted = now;
       }
-    }).catch((error) => {
+    }, suppliedRelease).catch((error) => {
       runtimePromise = null;
       throw error;
     });
@@ -656,7 +671,9 @@ export function finiteFloatData(
   }
   const data = value.data as unknown;
   let decoded: Float32Array;
-  if (data instanceof Uint16Array) {
+  if (data instanceof Float32Array) {
+    decoded = data;
+  } else if (data instanceof Uint16Array) {
     decoded = float16ToFloat32Array(data);
   } else {
     const Float16ArrayConstructor = (
@@ -669,7 +686,7 @@ export function finiteFloatData(
       }
     ).Float16Array;
     if (!Float16ArrayConstructor || !(data instanceof Float16ArrayConstructor)) {
-      throw new DeltrelAiError('protocol', `ONNX output ${name} is not FP16.`);
+      throw new DeltrelAiError('protocol', `ONNX output ${name} is not FP16 or FP32.`);
     }
     decoded = Float32Array.from(data as ArrayLike<number>);
   }
@@ -721,9 +738,25 @@ export function expectedScoreMargin(logits: Float32Array): number {
   );
 }
 
+/** Match the native evaluator without changing the reported win/loss belief. */
+export function scoreUtility(value: number, expectedMargin: number, weight: number): number {
+  return Math.max(-1, Math.min(1, value + weight * expectedMargin / 151));
+}
+
+/** Native serving masks the request seed to 53 bits, then derives each root in Rust. */
+export function rootSearchSeed(runtime: LocalRuntime, root: WasmState): bigint {
+  const hash = root.hash64();
+  if (!runtime.manifest.search.seedContract) return hash;
+  if (!runtime.wasm.derive_root_seed) {
+    throw new DeltrelAiError('unavailable', 'The browser engine lacks the champion search seed contract.');
+  }
+  return runtime.wasm.derive_root_seed(hash & BigInt(Number.MAX_SAFE_INTEGER), hash, 0);
+}
+
 function predictionKey(runtime: LocalRuntime, semantic: DeltrelAiSemanticState, legalActions: Int32Array): string {
   return JSON.stringify([
     runtime.manifest.model.sha256, runtime.manifest.featureSchemaHash,
+    runtime.manifest.model.precision, runtime.manifest.search.scoreUtilityWeight ?? 0,
     semantic, Array.from(legalActions), 0,
   ]);
 }
@@ -743,7 +776,7 @@ export async function evaluate(
   let outputs: Ort.InferenceSession.OnnxValueMapType | undefined;
   try {
     outputs = await runtime.session.run(feeds, [...DELTREL_MODEL_OUTPUT_NAMES]);
-    const evaluation = decodeEvaluation(outputs, semantic.stones.length, legalActions);
+    const evaluation = decodeEvaluation(outputs, semantic.stones.length, legalActions, runtime.manifest.search.scoreUtilityWeight ?? 0);
     runtime.predictions.set(key, evaluation);
     return evaluation;
   } finally {
@@ -793,8 +826,13 @@ export function batchTensorFeeds(runtime: LocalRuntime, states: readonly Deltrel
   const { Tensor } = runtime.ort;
   const feeds: Record<string, Ort.Tensor> = {};
   try {
-    feeds.node_features = new Tensor('float16', float32ToFloat16Array(nodeFeatures), [rows, nodes, DELTREL_NODE_FEATURE_DIM]);
-    feeds.global_features = new Tensor('float16', float32ToFloat16Array(globalFeatures), [rows, DELTREL_GLOBAL_FEATURE_DIM]);
+    if (runtime.manifest.model.precision === 'float32') {
+      feeds.node_features = new Tensor('float32', nodeFeatures, [rows, nodes, DELTREL_NODE_FEATURE_DIM]);
+      feeds.global_features = new Tensor('float32', globalFeatures, [rows, DELTREL_GLOBAL_FEATURE_DIM]);
+    } else {
+      feeds.node_features = new Tensor('float16', float32ToFloat16Array(nodeFeatures), [rows, nodes, DELTREL_NODE_FEATURE_DIM]);
+      feeds.global_features = new Tensor('float16', float32ToFloat16Array(globalFeatures), [rows, DELTREL_GLOBAL_FEATURE_DIM]);
+    }
     feeds.neighbor_index = new Tensor('int64', neighborIndex, [rows, nodes, degree]);
     feeds.neighbor_mask = new Tensor('bool', neighborMask, [rows, nodes, degree]);
     feeds.neighbor_edge_type = new Tensor('int64', edgeType, [rows, nodes, degree]);
@@ -808,7 +846,7 @@ export function batchTensorFeeds(runtime: LocalRuntime, states: readonly Deltrel
   }
 }
 
-function decodeBatch(outputs: Ort.InferenceSession.OnnxValueMapType, rows: readonly EvaluationRow[]): Evaluation[] {
+function decodeBatch(outputs: Ort.InferenceSession.OnnxValueMapType, rows: readonly EvaluationRow[], scoreUtilityWeight: number): Evaluation[] {
   const batch = rows.length;
   const nodes = rows[0].semantic.stones.length;
   const shapes = {
@@ -833,8 +871,10 @@ function decodeBatch(outputs: Ort.InferenceSession.OnnxValueMapType, rows: reado
       logits[column] = decoded.policy_logits[index * nodes + actionCodeToModelIndex(action, nodes)];
     });
     const outcome = outcomeBelief(decoded.outcome_logits.subarray(index * 2, (index + 1) * 2));
-    return { logits, outcome, value: outcome.win - outcome.loss,
-      expectedMargin: expectedScoreMargin(decoded.score_margin_logits.subarray(index * 303, (index + 1) * 303)) };
+    const value = outcome.win - outcome.loss;
+    const expectedMargin = expectedScoreMargin(decoded.score_margin_logits.subarray(index * 303, (index + 1) * 303));
+    return { logits, outcome, value, expectedMargin,
+      searchValue: scoreUtility(value, expectedMargin, scoreUtilityWeight) };
   });
 }
 
@@ -860,7 +900,7 @@ export async function evaluateBatch(runtime: LocalRuntime, rows: readonly Evalua
     let outputs: Ort.InferenceSession.OnnxValueMapType | undefined;
     try {
       outputs = await runtime.session.run(feeds, [...DELTREL_MODEL_OUTPUT_NAMES]);
-      const predictions = decodeBatch(outputs, uniqueRows);
+      const predictions = decodeBatch(outputs, uniqueRows, runtime.manifest.search.scoreUtilityWeight ?? 0);
       [...missing.keys()].forEach((key, index) => {
         runtime.predictions.set(key, predictions[index]);
         resolved.set(key, predictions[index]);
@@ -877,6 +917,7 @@ function decodeEvaluation(
   outputs: Ort.InferenceSession.OnnxValueMapType,
   nodeCount: number,
   legalActions: Int32Array,
+  scoreUtilityWeight: number,
 ): Evaluation {
   const densePolicy = finiteFloatData(outputs.policy_logits, 'policy_logits');
   const outcomeLogits = finiteFloatData(outputs.outcome_logits, 'outcome_logits');
@@ -898,10 +939,13 @@ function decodeEvaluation(
     logits[index] = logit;
   }
   const outcome = outcomeBelief(outcomeLogits);
+  const value = outcome.win - outcome.loss;
+  const expectedMargin = expectedScoreMargin(scoreMarginLogits);
   return {
-    value: outcome.win - outcome.loss,
+    value,
+    searchValue: scoreUtility(value, expectedMargin, scoreUtilityWeight),
     outcome,
-    expectedMargin: expectedScoreMargin(scoreMarginLogits),
+    expectedMargin,
     logits,
   };
 }
@@ -1030,7 +1074,7 @@ export async function evaluateRoot(
     checkCancelled();
     outputs = await runtime.session.run(feeds);
     checkCancelled();
-    const evaluation = cachedEvaluation ?? decodeEvaluation(outputs, semantic.stones.length, legalActions);
+    const evaluation = cachedEvaluation ?? decodeEvaluation(outputs, semantic.stones.length, legalActions, runtime.manifest.search.scoreUtilityWeight ?? 0);
     const networkOutput = decodeRootNetworkOutput(runtime, semantic, outputs);
     checkCancelled();
     if (!cachedEvaluation) runtime.predictions.set(key, evaluation);
@@ -1119,16 +1163,20 @@ export async function runSessionSearch(
     const maxNodes = options.subtreeReuseMaxNodes ?? DEFAULT_BROWSER_AI_SUBTREE_REUSE_MAX_NODES;
     const context = JSON.stringify([
       runtime.manifest.model.sha256, runtime.manifest.featureSchemaHash,
-      DELTREL_LOCAL_SEARCH_ALGORITHM_ID, 'float16', 0, 0, options.cVisit, options.cScale,
+      DELTREL_LOCAL_SEARCH_ALGORITHM_ID, runtime.manifest.model.precision,
+      options.scoreUtilityWeight ?? 0, options.seedContract ?? 'legacy-hash', 0, options.cVisit, options.cScale,
     ]);
-    if (owned && options.subtreeReuse && previous?.context === context && owned.done()) {
+    // Retained visits share the native counter with new work. Start fresh if reusing
+    // this tree could overflow, while preserving the exact requested new budget.
+    if (owned && options.subtreeReuse && previous?.context === context && owned.done() &&
+        owned.total_visits().reduce((sum, visits) => sum + visits, 0) + search.simulations <= 0xffff_fffe) {
       owned.restart(root, search.simulations, search.maxConsidered, options.cVisit,
-        options.cScale, root.hash64(), batchSize, true, maxNodes);
+        options.cScale, rootSearchSeed(runtime, root), batchSize, true, maxNodes);
     } else {
       owned?.free?.();
       owned = null;
       owned = new runtime.wasm.WasmSearchSession(root, search.simulations, search.maxConsidered,
-        options.cVisit, options.cScale, root.hash64(), batchSize);
+        options.cVisit, options.cScale, rootSearchSeed(runtime, root), batchSize);
     }
     const rootActions = owned.root_actions();
     if (!arraysEqual(rootActions, root.legal_actions())) {
@@ -1139,7 +1187,7 @@ export async function runSessionSearch(
     const rootEvaluation = rootPrediction.evaluation;
     checkCancelled();
     if (owned.root_token() !== token) throw new DeltrelAiError('stale', 'WASM session root token changed.');
-    owned.initialize_root(token, rootEvaluation.value, rootEvaluation.logits);
+    owned.initialize_root(token, rootEvaluation.searchValue, rootEvaluation.logits);
     let iterations = 0;
     let lastYield = 0;
     let lastProgress = 0;
@@ -1171,7 +1219,7 @@ export async function runSessionSearch(
         evaluations.forEach((evaluation, index) => { offsets[index + 1] = offsets[index] + evaluation.logits.length; });
         const logits = new Float32Array(offsets[count]);
         evaluations.forEach((evaluation, index) => logits.set(evaluation.logits, offsets[index]));
-        owned.submit(tokens, Float32Array.from(evaluations, (evaluation) => evaluation.value), offsets, logits);
+        owned.submit(tokens, Float32Array.from(evaluations, (evaluation) => evaluation.searchValue), offsets, logits);
       }
       const completed = owned.simulations();
       if (!Number.isSafeInteger(completed) || completed < lastProgress || completed > search.simulations) {
@@ -1199,7 +1247,7 @@ export async function runSessionSearch(
     const totalVisits = Array.from(owned.total_visits());
     const actionCode = owned.selected_action();
     const selectedValue = owned.selected_action_value();
-    const rootValue = owned.root_value() ?? rootEvaluation.value;
+    const rootValue = owned.root_value() ?? rootEvaluation.searchValue;
     const length = rootActions.length;
     const nonnegativeInteger = (value: number) => Number.isInteger(value) && value >= 0;
     if (!arraysEqual(rootActionsResult, rootActions) ||
@@ -1257,7 +1305,7 @@ export async function runTreeSearch(
     if (tree.root_token() !== rootToken) {
       throw new DeltrelAiError('stale', 'WASM root evaluation token changed.');
     }
-    tree.initialize_root(rootToken, rootEvaluation.value, rootEvaluation.logits);
+    tree.initialize_root(rootToken, rootEvaluation.searchValue, rootEvaluation.logits);
 
     scheduler = new runtime.wasm.WasmGumbel(
       rootEvaluation.logits,
@@ -1265,7 +1313,7 @@ export async function runTreeSearch(
       search.maxConsidered,
       runtime.manifest.search.cVisit,
       runtime.manifest.search.cScale,
-      root.hash64(),
+      rootSearchSeed(runtime, root),
     );
     let simulations = 0;
     const actions = tree.actions();
@@ -1288,7 +1336,7 @@ export async function runTreeSearch(
           if (tree.pending_token() !== token) {
             throw new DeltrelAiError('stale', 'WASM leaf evaluation token changed.');
           }
-          tree.finish(token, leafEvaluation.value, leafEvaluation.logits);
+          tree.finish(token, leafEvaluation.searchValue, leafEvaluation.logits);
         } finally {
           leaf.free?.();
         }
@@ -1307,7 +1355,7 @@ export async function runTreeSearch(
     const summary = summarizeSearch(
         tree,
         scheduler,
-        rootEvaluation.value,
+        rootEvaluation.searchValue,
         semantic.swapAvailable,
         runtime.manifest.search.swapDeadZone,
       );
@@ -1320,11 +1368,23 @@ export async function runTreeSearch(
   }
 }
 
+/** Model metadata supplies defaults and presets; custom budgets use native search limits. */
+export function resolveBrowserSearchBudget(
+  manifest: DeltrelBrowserModelManifest,
+  requestedSearch: DeltrelAiSearchBudget | null,
+): DeltrelAiSearchBudget {
+  return parseBrowserSearchBudget(requestedSearch ?? {
+    simulations: manifest.search.simulations,
+    maxConsidered: manifest.search.maxConsidered,
+  });
+}
+
 async function chooseAction(
   taskId: string,
   request: DeltrelAiRequest,
   requestedSearch: DeltrelAiSearchBudget | null,
   signal: AbortSignal,
+  release?: unknown,
 ): Promise<LocalSearchResult> {
   const checkCancelled = () => {
     ensureNotCancelled(taskId);
@@ -1332,23 +1392,11 @@ async function chooseAction(
   };
   checkCancelled();
   const runtimeStarted = nowMs();
-  const runtime = await getRuntime(signal, taskId);
-  scope.postMessage({ type: 'prepared', taskId, info: runtime.readyInfo });
+  const runtime = await getRuntime(signal, taskId, false, release);
+  scope.postMessage({ type: 'prepared', taskId, info: runtime.readyInfo, release: runtime.release });
   const modelLoad = nowMs() - runtimeStarted;
   ensureNotCancelled(taskId);
-  const search = requestedSearch ?? {
-    simulations: runtime.manifest.search.simulations,
-    maxConsidered: runtime.manifest.search.maxConsidered,
-  };
-  if (
-    search.simulations > runtime.manifest.search.maximumSimulations ||
-    search.maxConsidered > runtime.manifest.search.maximumMaxConsidered
-  ) {
-    throw new DeltrelAiError(
-      'protocol',
-      'Browser AI search budget exceeds the loaded runtime limits.',
-    );
-  }
+  const search = resolveBrowserSearchBudget(runtime.manifest, requestedSearch);
   const searchStarted = nowMs();
   const root = replayAndVerify(request, runtime.wasm);
   const onProgress = (progress: LocalAiSearchProgress) => {
@@ -1360,7 +1408,7 @@ async function chooseAction(
       const result = await runSessionSearch(runtime, root, request.state, search,
         checkCancelled, () => yieldToCancellation(taskId), onProgress);
       return { ...result, outcome: result.rootEvaluation.outcome,
-        modelValue: result.rootEvaluation.value, searchValue: result.rootEvaluation.value,
+        modelValue: result.rootEvaluation.value, searchValue: result.rootEvaluation.searchValue,
         expectedMargin: result.rootEvaluation.expectedMargin, modelVersion: runtime.manifest.modelVersion,
         modelStep: runtime.manifest.modelStep,
         modelIdentity: runtime.manifest.modelVersion, search,
@@ -1373,7 +1421,7 @@ async function chooseAction(
       ...result,
       outcome: rootEvaluation.outcome,
       modelValue: rootEvaluation.value,
-      searchValue: rootEvaluation.value,
+      searchValue: rootEvaluation.searchValue,
       expectedMargin: rootEvaluation.expectedMargin,
       modelVersion: runtime.manifest.modelVersion,
       modelStep: runtime.manifest.modelStep,
@@ -1402,6 +1450,7 @@ async function runChoose(
       command.request,
       command.search,
       taskController.signal,
+      command.release,
     );
     ensureNotCancelled(command.taskId);
     const nodeCount = command.request.state.stones.length;
@@ -1458,13 +1507,13 @@ async function runChoose(
   }
 }
 
-async function runPrepare(taskId: string) {
+async function runPrepare(taskId: string, release?: unknown) {
   try {
     const controller = taskControllers.get(taskId);
     if (!controller) throw new DeltrelAiError('cancelled', 'AI preparation cancelled.');
-    const runtime = await getRuntime(controller.signal, taskId, true);
+    const runtime = await getRuntime(controller.signal, taskId, true, release);
     ensureNotCancelled(taskId);
-    scope.postMessage({ type: 'prepared', taskId, info: runtime.readyInfo });
+    scope.postMessage({ type: 'prepared', taskId, info: runtime.readyInfo, release: runtime.release });
   } catch (error) {
     if (asDeltrelAiError(error).code !== 'cancelled') scope.postMessage(workerErrorEvent(taskId, error));
   } finally {
@@ -1510,7 +1559,7 @@ scope.addEventListener('message', (event) => {
   knownTasks.add(command.taskId);
   taskControllers.set(command.taskId, new AbortController());
   const queuedAt = nowMs();
-  queue = queue.then(() => command.type === 'prepare' ? runPrepare(command.taskId) : runChoose(command, queuedAt)).catch(() => {
+  queue = queue.then(() => command.type === 'prepare' ? runPrepare(command.taskId, command.release) : runChoose(command, queuedAt)).catch(() => {
     // runChoose contains its own typed error boundary; keep the queue usable.
   });
 });

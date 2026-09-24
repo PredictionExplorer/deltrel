@@ -20,6 +20,12 @@ export interface DeltrelAiSearchBudget {
   maxConsidered: number;
 }
 
+/** Completed search work reported by either engine, independent of elapsed time. */
+export interface DeltrelAiSearchProgress {
+  completedSimulations: number;
+  totalSimulations: number;
+}
+
 export interface DeltrelAiOutcomeBelief {
   loss: number;
   win: number;

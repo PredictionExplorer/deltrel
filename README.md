@@ -60,7 +60,7 @@ to the 10-ring board in both modes. Existing game histories retain their origina
 - replay, learner, candidate/champion arenas and single-host 4/8-H100 orchestration;
 - a private GPU `deltrelserve` backend and an ONNX + Rust/WASM browser runtime.
 
-The site ships a verified browser export of champion step **478,534**, with its
+The site ships a verified browser export of champion step **566,428**, with its
 trained EMA weights and all eleven network outputs. Browser play needs no private
 AI service. This is not a claim of superhuman playing strength. See the
 [training operator guide](training/README.md) and
@@ -70,62 +70,57 @@ AI service. This is not a claim of superhuman playing strength. See the
 
 ### Playing in the browser
 
-Choose **Download browser AI** to prepare the current published champion, then
-begin a game. The first preparation downloads the **37.6 MB model**, plus the
-browser runtime. A progress bar shows model bytes received, followed by integrity
-checking and engine initialization. Preparation can be cancelled and retried.
-No application, extension, account, or other installation is needed.
+Each player has two choices: **Human** or **AI**. AI always runs in a background
+browser worker using the full published champion. Choose AI for one player to
+play against it, or for both players to watch self-play.
 
-Moves run in a background worker on the player's device. WebGPU is used when
-supported, with a single-threaded WebAssembly CPU fallback. The browser checks
-the latest published manifest when preparing and reuses a complete, SHA-256
-verified cached model when available. Private browsing, storage limits, or browser
-cache eviction can require another download; storage failure does not block play.
-Refreshing a saved game asks the player to prepare the browser AI again, reusing
-the cached model rather than silently downloading it on page load.
+A fresh page automatically checks the current published manifest and prepares
+the **72.5 MB FP32 model**, plus its browser runtime. Verified cached model bytes
+are reused; a changed release downloads under a new content-addressed identity.
+Download, integrity checking, and initialization show their progress and can be
+cancelled or retried. Preparation never changes player selections or a saved game.
+The prepared release remains pinned for the page session, including worker
+restarts after pauses or idle disposal. Reload to pick up a newly published model.
 
-Browser AI strength is available in setup and during play: **Quick** uses eight
-search simulations, **Balanced** uses 32, and **Deep** uses 64. Each level uses
-the same trained model, within the published release's limits. Choices are saved
-for future games. Changing strength keeps the current search running with its
-original budget and applies the new setting to the next search.
+WebGPU is used when supported, with a WebAssembly CPU fallback. Both execute the
+same full FP32 model and requested search budget. No separate Python service,
+application, account, or extension is required. Private browsing or cache eviction
+can require another download; storage failure does not block play.
 
-The default is Quick to keep the full champion responsive. More search costs
-more time, especially on phones. All board sizes,
-both variants, pie swaps, handicap games, and AI-versus-AI play are supported.
-During browser search, progress reports actual completed simulations. Slow CPU
-searches can continue beyond 90 seconds while progressing; 90 seconds without
-progress still stops a stalled engine. Pause AI remains available throughout.
-Rules and learned weights match the published champion; the browser export uses
-FP16 numerical precision. New trained champions must be exported, validated, and
-published using the [model release instructions](training/docs/serving-and-distillation.md).
+**AI strength** is available in setup and during play:
 
-Downloading or preparing the engine preserves an existing AI-versus-AI setup.
-Players start with neutral **Player 1** and **Player 2** names, and custom names
-survive changes of controller. Game status and scoring identify each controller
-explicitly. Browser AI shows when it is waiting for preparation, and handicap
-instructions show the actual number of opening stones still to place.
+| Level | Simulations | Candidate moves |
+| --- | ---: | ---: |
+| Quick | 128 | 8 |
+| Standard (default) | 512 | 16 |
+| Deep | 4,096 | 64 |
 
-The browser reuses one root evaluation for search and inspection, avoiding a
-duplicate model pass. See the [measured performance comparison](training/docs/browser-search-performance-20260921.md)
-for timing results, exact-output checks, and a reproducible benchmark.
+Open **Custom search budget** to enter positive whole-number simulation and
+candidate limits, then choose **Apply custom budget**. Custom values can exceed
+Deep within native representation limits. Available legal moves bound the actual
+candidate set. Settings are saved; changes apply to the next search while a search
+already running keeps its original budget.
 
-### Playing the full champion locally
+The browser uses the champion's score-margin utility, native seed contract,
+Gumbel search constants, and pie-swap decision. The search value is the win/loss
+value plus 0.05 times normalized expected score margin, clamped to [-1, 1].
+The displayed win probability remains the model's unmodified outcome prediction.
+FP32 export avoids half-precision conversion; numerical rounding across inference
+backends can still change close decisions. See the
+[release evidence](docs/browser-champion-566428-release.md).
 
-The full champion can run on your Mac's GPU through `deltrelserve`. Use a verified
-champion snapshot exported with the [local serving instructions](training/docs/serving-and-distillation.md#mac-local-champion-service),
-then start its service:
+All board sizes, both variants, pie swaps, handicap games, and AI-versus-AI play
+are supported. Progress reports actual completed simulations. Slow searches can
+continue beyond 90 seconds while progressing; 90 seconds without progress stops
+a stalled engine. **Pause AI** remains available throughout. Larger budgets take
+more time and memory, especially on phones.
 
-```bash
-training/.venv/bin/deltrelserve --config /absolute/path/to/snapshot/deltrelserve-mac.yaml
-```
-
-Set `DELTREL_AI_SERVER_URL=http://127.0.0.1:8080` in `.env.local` and run
-`npm run dev -- --hostname 127.0.0.1 --port 3001`. Open
-`http://127.0.0.1:3001`, choose the champion opponent, and select one of the two
-variants and three openings. Thinking-time choices use the same full model;
-larger search budgets take longer. The separate browser AI option requires a
-published browser model; the current release includes one.
+Champion publication is **manual**: export and validate a confirmed checkpoint,
+then publish its immutable ONNX/WASM assets and replace the manifest last. The
+website automatically loads that published release; it does not poll the training
+server or run a promotion schedule. Follow the
+[model release instructions](training/README.md#export-and-publish-the-trained-browser-champion).
+The native service remains a development/reference tool, outside public gameplay.
 
 ### Inspecting the engine
 
@@ -139,12 +134,13 @@ forecasts, and all network outputs: move and soft-move policies, win/loss and
 score-margin distributions, ownership and living-network probabilities at every
 point, future moves, and final shore, network, and cape counts. Tables include
 every entry, with filtering, pagination, masks, and optional raw logits. The full
-analysis is also available as downloadable JSON. Both the server champion and
-the shipped browser champion expose all eleven outputs. Older six-head browser
+analysis is also available as downloadable JSON. The published AI exposes all eleven outputs. Older six-head browser
 exports remain supported and clearly mark unavailable auxiliary outputs.
 
 Use **Pause AI** to stop automatic play and **Analyze position** to inspect a
 position without making a move, including positions selected from move history.
+During automatic play, AI shows a progress bar with the actual completed
+simulation count.
 Use **Resume AI** to continue. The latest 64 analyzed positions are kept in memory
 for the current game and matched to their exact history; an uncached position can
 be analyzed again. Reloading the page restores the game, but not this analysis cache.

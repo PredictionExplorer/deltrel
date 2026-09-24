@@ -1,5 +1,19 @@
 # Server inference resources
 
+Clients can request live search progress from `POST /v2/move` or `POST /v2/analyze`
+with `Accept: application/x-ndjson`. Each newline-delimited JSON event is either
+`{"type":"progress","completed_simulations":12,"total_simulations":128}`,
+`{"type":"result","result":...}` containing the usual validated analysis, or
+`{"type":"error","error":...}`. Progress counts completed native simulations,
+including exact terminal continuations and cached inference; it is not inferred
+from elapsed time. A single search produces progress and its final result.
+
+The stream retains authentication, request-size, concurrency, cancellation, and
+deadline limits. Slow readers receive coalesced progress rather than an unbounded
+event backlog. The existing JSON response remains the default for clients that
+do not request streaming. The web proxy forwards the stream as it arrives, and
+the game discards progress from cancelled or superseded searches.
+
 The optional `inference` section in the server YAML controls prediction reuse and
 cross-request batching. Defaults retain at most 4,096 exact-input predictions,
 charged against a 64 MiB per-model budget, and allow at most sixteen pending

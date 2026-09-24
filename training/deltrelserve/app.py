@@ -4,20 +4,21 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import logging
 import re
 import threading
 import time
 import uuid
-from collections.abc import Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, Protocol
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from deltreltrain.contracts import (
     MAX_HANDICAP,
@@ -48,7 +49,10 @@ class AnalysisServiceProtocol(Protocol):
     def health(self) -> dict[str, object]: ...
 
     def analyze(
-        self, request: AnalyzeRequest, cancellation: threading.Event
+        self,
+        request: AnalyzeRequest,
+        cancellation: threading.Event,
+        progress: Callable[[int, int], None] | None = None,
     ) -> dict[str, object]: ...
 
 
@@ -373,7 +377,7 @@ def create_app(
     async def analyze(
         payload: AnalyzeRequest,
         request: Request,
-    ) -> AnalyzeResponse:
+    ) -> AnalyzeResponse | StreamingResponse:
         if payload.search.simulations > settings.search.maximum_simulations:
             raise AnalysisError(
                 "search_budget_exceeded",
@@ -390,37 +394,22 @@ def create_app(
                     "maximum_max_considered": (settings.search.maximum_max_considered)
                 },
             )
+        if any(
+            value.split(";", 1)[0].strip().lower() == "application/x-ndjson"
+            for value in request.headers.get("accept", "").split(",")
+        ):
+            return StreamingResponse(
+                _stream_bounded(app, analysis_service, payload, request),
+                media_type="application/x-ndjson",
+                headers={"X-Accel-Buffering": "no"},
+            )
         result, queue_ms = await _run_bounded(
             app,
             analysis_service,
             payload,
             request,
         )
-        result = dict(result)
-        result["request_id"] = request.state.request_id
-        raw_timing = result.get("timing_ms")
-        if not isinstance(raw_timing, dict):
-            raise AnalysisError(
-                "native_search_error",
-                "analysis service returned malformed timing metrics",
-            )
-        timing: dict[str, float] = {}
-        for name, value in raw_timing.items():
-            if not isinstance(name, str) or not isinstance(value, (int, float)):
-                raise AnalysisError(
-                    "native_search_error",
-                    "analysis service returned malformed timing metrics",
-                )
-            timing[name] = float(value)
-        if "total" not in timing:
-            raise AnalysisError(
-                "native_search_error",
-                "analysis service omitted total timing",
-            )
-        timing["queue"] = queue_ms
-        timing["total"] += queue_ms
-        result["timing_ms"] = timing
-        return AnalyzeResponse.model_validate(result)
+        return _analysis_response(result, queue_ms, request.state.request_id)
 
     app.post(
         "/v2/analyze",
@@ -438,11 +427,139 @@ def create_app(
     return app
 
 
+def _analysis_response(
+    result: dict[str, object], queue_ms: float, request_id: str
+) -> AnalyzeResponse:
+    result = dict(result)
+    result["request_id"] = request_id
+    raw_timing = result.get("timing_ms")
+    if not isinstance(raw_timing, dict):
+        raise AnalysisError(
+            "native_search_error",
+            "analysis service returned malformed timing metrics",
+        )
+    timing: dict[str, float] = {}
+    for name, value in raw_timing.items():
+        if not isinstance(name, str) or not isinstance(value, (int, float)):
+            raise AnalysisError(
+                "native_search_error",
+                "analysis service returned malformed timing metrics",
+            )
+        timing[name] = float(value)
+    if "total" not in timing:
+        raise AnalysisError(
+            "native_search_error", "analysis service omitted total timing"
+        )
+    timing["queue"] = queue_ms
+    timing["total"] += queue_ms
+    result["timing_ms"] = timing
+    return AnalyzeResponse.model_validate(result)
+
+
+class _LatestProgress:
+    """One overwriteable update; slow readers never queue simulation events."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._latest: tuple[int, int] | None = None
+
+    def publish(self, completed: int, total: int) -> None:
+        with self._lock:
+            self._latest = (completed, total)
+
+    def take(self) -> tuple[int, int] | None:
+        with self._lock:
+            latest, self._latest = self._latest, None
+            return latest
+
+
+def _stream_event(payload: dict[str, object]) -> bytes:
+    return (json.dumps(payload, separators=(",", ":"), allow_nan=False) + "\n").encode()
+
+
+async def _stream_bounded(
+    app: FastAPI,
+    service: AnalysisServiceProtocol,
+    payload: AnalyzeRequest,
+    request: Request,
+) -> AsyncIterator[bytes]:
+    progress = _LatestProgress()
+    task = asyncio.create_task(
+        _run_bounded(app, service, payload, request, progress.publish)
+    )
+    try:
+        while not task.done():
+            # At most 20 updates/second, independent of simulation count. The
+            # worker and its absolute timeout keep running under backpressure.
+            await asyncio.wait({task}, timeout=0.05)
+            update = progress.take()
+            if update is not None:
+                completed, total = update
+                yield _stream_event(
+                    {
+                        "type": "progress",
+                        "completed_simulations": completed,
+                        "total_simulations": total,
+                    }
+                )
+        update = progress.take()
+        if update is not None:
+            completed, total = update
+            yield _stream_event(
+                {
+                    "type": "progress",
+                    "completed_simulations": completed,
+                    "total_simulations": total,
+                }
+            )
+        result, queue_ms = task.result()
+        validated = _analysis_response(result, queue_ms, request.state.request_id)
+        yield _stream_event(
+            {
+                "type": "result",
+                "result": validated.model_dump(mode="json", exclude_unset=True),
+            }
+        )
+    except AnalysisError as error:
+        yield _stream_event(
+            {
+                "type": "error",
+                "error": {
+                    "code": error.code,
+                    "message": error.message,
+                    "details": error.details,
+                    "request_id": request.state.request_id,
+                },
+            }
+        )
+    except Exception:
+        _LOGGER.exception("unhandled streaming analysis service error")
+        yield _stream_event(
+            {
+                "type": "error",
+                "error": {
+                    "code": "internal_error",
+                    "message": "the analysis service encountered an internal error",
+                    "details": None,
+                    "request_id": request.state.request_id,
+                },
+            }
+        )
+    finally:
+        if not task.done():
+            task.cancel()
+        # Always observe the task and let it register deferred slot release
+        # before returning, including client disconnects during a yielded chunk.
+        with suppress(asyncio.CancelledError, Exception):
+            await task
+
+
 async def _run_bounded(
     app: FastAPI,
     service: AnalysisServiceProtocol,
     payload: AnalyzeRequest,
     request: Request,
+    progress: Callable[[int, int], None] | None = None,
 ) -> tuple[dict[str, object], float]:
     semaphore: asyncio.Semaphore = app.state.analysis_slots
     settings: ServerConfig = app.state.config
@@ -461,7 +578,11 @@ async def _run_bounded(
     queue_ms = (time.perf_counter() - queued) * 1_000.0
     cancellation = threading.Event()
     loop = asyncio.get_running_loop()
-    future = loop.run_in_executor(None, service.analyze, payload, cancellation)
+    future = (
+        loop.run_in_executor(None, service.analyze, payload, cancellation)
+        if progress is None
+        else loop.run_in_executor(None, service.analyze, payload, cancellation, progress)
+    )
     disconnect = asyncio.create_task(_wait_for_disconnect(request))
     deferred_release = False
     try:

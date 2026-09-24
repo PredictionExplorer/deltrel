@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { DeltrelAiAnalysis } from '../src/lib/deltrel/ai/decision';
+import { setAiSearchBudget } from './browser-ai-helpers';
 import publishedModel from '../public/models/deltrel/manifest.json';
 
 // Model inference is CPU-bound in headless Firefox. Keep these real-model
@@ -7,7 +8,7 @@ import publishedModel from '../public/models/deltrel/manifest.json';
 test.describe.configure({ mode: 'default' });
 
 for (const mode of ['classic', 'double'] as const) {
-  test(`${mode}: two real browser AIs complete a nine-stone handicap and pass play to the opponent`, async ({ page, context, browserName }) => {
+  test(`${mode}: two real AIs complete a nine-stone handicap and pass play to the opponent`, async ({ page, context, browserName }) => {
     // Ten Full-board searches take several minutes in Firefox's CPU fallback.
     // This bounds the whole opening; each stalled engine request still times out.
     const openingTimeout = browserName === 'firefox' ? 720_000 : 120_000;
@@ -28,9 +29,8 @@ for (const mode of ['classic', 'double'] as const) {
     await page.getByRole('combobox', { name: 'Player 2 controller' }).selectOption('local');
     await page.getByRole('textbox', { name: 'Player 1 name' }).fill('Drift');
     await page.getByRole('textbox', { name: 'Player 2 name' }).fill('Tide');
-    await page.getByRole('button', { name: 'Quick browser AI strength', exact: true }).click();
-    await page.getByRole('button', { name: 'Download browser AI', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Browser AI selected', exact: true })).toBeVisible({ timeout: 45_000 });
+    await setAiSearchBudget(page, 8, 4);
+    await expect(page.getByRole('button', { name: 'AI selected', exact: true })).toBeVisible({ timeout: 120_000 });
     await page.getByRole('button', { name: 'Begin the game', exact: true }).click();
     // Every one of the nine opening placements must complete before side two
     // places a stone. This uses the shipped ONNX model and WASM search.
@@ -67,10 +67,11 @@ async function inspectModelCache() {
 }
 
 // This exercises the published model, real worker, WASM search and ONNX runtime.
-// Only the optional private server is disabled; inference is never mocked.
-test('preserves browser AI-versus-AI strength through preparation, plays locally, and reuses its verified cache', async ({ page, context, browserName }, testInfo) => {
-  test.setTimeout(180_000);
-  let downloadAllowed = false;
+// No remote inference is permitted; the browser uses the shipped model.
+test('preserves AI-versus-AI strength through preparation, plays locally, and reuses its verified cache', async ({ page, context, browserName }, testInfo) => {
+  test.setTimeout(300_000);
+  let releaseDownload!: () => void;
+  const downloadGate = new Promise<void>(resolve => { releaseDownload = resolve; });
   let blockModelDownload = false;
   let modelGets = 0;
   const remoteInference: string[] = [];
@@ -92,11 +93,12 @@ test('preserves browser AI-versus-AI strength through preparation, plays locally
   await context.route(/\/models\/deltrel\/[^/?]+\.onnx(?:\?.*)?$/, async route => {
     if (route.request().method() === 'GET') {
       modelGets++;
-      if (!downloadAllowed || blockModelDownload) {
+      if (blockModelDownload) {
         await route.abort('blockedbyclient');
         return;
       }
     }
+    await downloadGate;
     await route.continue();
   });
 
@@ -111,24 +113,18 @@ test('preserves browser AI-versus-AI strength through preparation, plays locally
   await playerTwoController.selectOption('local');
   await page.getByRole('textbox', { name: 'Player 1 name' }).fill('Drift');
   await page.getByRole('textbox', { name: 'Player 2 name' }).fill('Tide');
-  const deep = page.getByRole('button', { name: 'Deep browser AI strength', exact: true });
-  await deep.click();
-  await expect(deep).toHaveAttribute('aria-pressed', 'true');
-  const download = page.getByRole('button', { name: 'Download browser AI', exact: true });
-  await expect(download).toBeEnabled();
-  expect(modelGets).toBe(0);
-
-  downloadAllowed = true;
-  await download.click();
-  await expect(page.getByRole('progressbar', { name: 'Browser AI preparation' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Browser AI selected', exact: true })).toBeVisible({ timeout: 45_000 });
+  await setAiSearchBudget(page, 64, 8);
+  await expect.poll(() => modelGets).toBe(1);
+  await expect(page.getByRole('progressbar', { name: 'AI preparation' })).toBeVisible();
+  releaseDownload();
+  await expect(page.getByRole('button', { name: 'AI selected', exact: true })).toBeVisible({ timeout: 120_000 });
   expect(modelGets).toBe(1);
   expect(runtimeAssets.some(path => path.endsWith('.wasm'))).toBe(true);
   await expect(playerOneController).toHaveValue('local');
   await expect(playerTwoController).toHaveValue('local');
   await expect(page.getByRole('textbox', { name: 'Player 1 name' })).toHaveValue('Drift');
   await expect(page.getByRole('textbox', { name: 'Player 2 name' })).toHaveValue('Tide');
-  await expect(deep).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('Custom setting: 64 simulations, up to 8 candidate moves.')).toBeVisible();
   const cacheAfterDownload = await page.evaluate(inspectModelCache);
   const expectedModel = publishedModel.artifacts.onnx;
   const cachedEntry = cacheAfterDownload.entries.find(entry => entry.sha256 === expectedModel.sha256);
@@ -153,7 +149,7 @@ test('preserves browser AI-versus-AI strength through preparation, plays locally
   const scores = page.getByRole('region', { name: 'Current player scores' });
   await expect(scores.getByRole('heading', { name: 'Drift', exact: true })).toBeVisible();
   await expect(scores.getByRole('heading', { name: 'Tide', exact: true })).toBeVisible();
-  await expect(scores.getByText('Browser AI', { exact: true })).toHaveCount(2);
+  await expect(scores.getByText('AI', { exact: true })).toHaveCount(2);
   await expect(scores.getByText('Human', { exact: true })).toHaveCount(0);
   await expect(estimate.getByRole('article', { name: 'Drift forecast' })).toContainText(/\d+(?:\.\d+)?%/);
   await expect(estimate.getByRole('article', { name: 'Tide forecast' })).toContainText(/\d+(?:\.\d+)?%/);
@@ -187,9 +183,8 @@ test('preserves browser AI-versus-AI strength through preparation, plays locally
   expect(remoteInference).toEqual([]);
 
   // The 64-simulation search above proves the chosen strength reached the real
-  // engine. Use Quick for the cache-reload search to keep this cross-browser test bounded.
-  await page.getByRole('button', { name: 'Quick browser AI strength', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Quick browser AI strength', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  // engine. Use a smaller custom budget for the cache-reload search.
+  await setAiSearchBudget(page, 8, 4);
   await expect(page.locator('[data-move-chip]')).toHaveCount(pausedPly);
   blockModelDownload = true;
   await page.reload();
@@ -200,15 +195,9 @@ test('preserves browser AI-versus-AI strength through preparation, plays locally
   const cachePersisted = cacheAfterReload.entries.some(entry =>
     entry.bytes === expectedModel.bytes && entry.sha256 === expectedModel.sha256);
   if (browserName !== 'webkit') expect(cachePersisted).toBe(true);
-  const prepare = page.getByRole('button', { name: 'Prepare browser AI', exact: true });
-  await expect(prepare).toBeEnabled();
-  expect(modelGets).toBe(1);
   await expect(page.locator('[data-move-chip]')).toHaveCount(pausedPly);
-  await prepare.click();
-  const preparationProgress = page.getByRole('progressbar', { name: 'Browser AI preparation' });
-  await expect(preparationProgress).toBeVisible();
-  await expect(preparationProgress).toBeHidden({ timeout: 30_000 });
-  const browserPreparation = page.getByRole('region', { name: 'Browser AI', exact: true });
+  const preparationProgress = page.getByRole('progressbar', { name: 'AI preparation' });
+  const browserPreparation = page.getByRole('region', { name: 'AI', exact: true });
   let expectedModelGets = 1;
   if (cachePersisted) {
     await expect(browserPreparation).toBeHidden({ timeout: 30_000 });
@@ -223,14 +212,14 @@ test('preserves browser AI-versus-AI strength through preparation, plays locally
     await expect(page.locator('[data-move-chip]')).toHaveCount(pausedPly);
     expect(modelGets).toBe(2); // The deliberately blocked cache-miss request.
     blockModelDownload = false;
-    await browserPreparation.getByRole('button', { name: 'Retry browser AI', exact: true }).click();
+    await browserPreparation.getByRole('button', { name: 'Retry AI', exact: true }).click();
     await expect(preparationProgress).toBeVisible();
     await expect(browserPreparation).toBeHidden({ timeout: 30_000 });
     expectedModelGets = 3;
     expect(modelGets).toBe(expectedModelGets);
   }
   await expect(page.getByText('AI versus AI', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Quick browser AI strength', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('Custom setting: 8 simulations, up to 4 candidate moves.')).toBeVisible();
   await page.getByRole('button', { name: 'Resume AI', exact: true }).click();
   await expect(page.locator(`[data-move-chip="${pausedPly}"]`)).toBeVisible({ timeout: 30_000 });
   const resumedEstimate = page.getByRole('region', { name: 'Engine estimate', exact: true });

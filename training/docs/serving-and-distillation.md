@@ -332,24 +332,31 @@ Adjust manifest paths in the mounted server YAML for the container layout.
 
 ## Browser model
 
-The public release is a direct export of the trained EMA champion at step
-478,534: `deltrel-champion-478534-1aa623983d22.fp16.onnx` (37,577,312 bytes). It
-retains all eleven trained output heads. Fifty legal positions covering all sizes,
-Classic, Double, handicap, pie pending, swapped positions, and near-full boards
-were compared with the original FP32 EMA. Maximum win-probability drift was
-0.002048 and maximum expected-margin drift was 0.00786 points. Forty additional
-positions passed real Chromium CPU/WASM inference with GPU disabled.
+The public game offers **Human** and **AI**. Its AI runs only in the browser, using
+the full FP32 EMA champion at step 566,428:
+`deltrel-champion-566428-20f52f268869.fp32.onnx` (72,474,137 bytes).
+All eleven trained heads are retained. Fifty legal positions across board sizes
+and variants were compared with the original EMA, with maximum probability error
+1.41e-6 and expected-margin error 2.55e-6 points. These numerical checks do not
+claim a gameplay benchmark or cross-device bitwise identity.
 
-Players download this model automatically from the website and need no installed
-runtime or local server. The worker can use WebGPU or the bundled WASM fallback.
-The published manifest recommends 8 simulations / 4 candidates and caps this
-large network at 64 / 8 for interactive browser play.
+The browser matches the native champion's normalized score-margin weight (0.05),
+seed derivation, search constants, and pie-swap policy. Standard search uses
+512 simulations / 16 candidates; Quick uses 128/8, Deep 4,096/64, and custom
+budgets can exceed these presets. FP32 runs through WebGPU when available, with
+a CPU/WASM fallback using the same model and requested effort.
 
-See [the exact export/publish commands](../README.md#export-and-publish-the-trained-browser-champion)
-for publishing a future champion without retraining. The exported graph embeds all
-weights, contains no external data files, and strips local exporter debug paths.
-The source checkpoint remains private; public provenance contains only identities,
-hashes, training step, architecture, and validation results.
+Fresh visits check the non-cached manifest and prepare the latest published model
+automatically. Verified model bytes are cached by content hash. The selected
+release is pinned for the page session, including cancelled or idle worker
+restarts. Publication of a newer confirmed champion is a manual operator action;
+there is no training-server poller or automatic promotion deployment.
+
+See [the exact export/publish commands](../README.md#export-and-publish-the-trained-browser-champion).
+The export embeds all weights without external data and strips local debug paths.
+Only the model, versioned WASM, and public provenance are published; source
+checkpoints stay private. Native serving documented above remains available for
+internal development and reference validation, outside the public player choices.
 
 ### Optional smaller-model distillation
 

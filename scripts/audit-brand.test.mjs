@@ -18,6 +18,14 @@ test('allows unrelated programming terms and ordinary English', () => {
     'start restart startsWith padStart starvation starmap startGame Deltrel shoreline cape network'), []);
 });
 
+test('preserves exact historical deployment identities without exempting other files or symbols', () => {
+  const evidence = 'training/docs/elo-efficiency-runtime-deployment-evidence-20260923.json';
+  assert.deepEqual(inspectBrand(evidence, `${prior}train.model-pointer`), []);
+  assert.ok(inspectBrand('training/docs/new-release.md', `${prior}train.model-pointer`).length);
+  assert.ok(inspectBrand('src/app/page.tsx', `${prior}train.model-pointer`).length);
+  assert.ok(inspectBrand(evidence, String.fromCharCode(0x2605)).length);
+});
+
 test('detects retired coordinates and symbols without rejecting new coordinates', () => {
   assert.ok(inspectBrand('board.ts', "'" + '*' + "10'").length);
   assert.ok(inspectBrand('board.ts', String.fromCharCode(0x2605)).length);

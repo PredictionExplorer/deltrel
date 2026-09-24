@@ -6,7 +6,13 @@ import {
   responseFromDeltrelAiDecision,
   type DeltrelAiDecision,
   type DeltrelAiSearchBudget,
+  type DeltrelAiSearchProgress,
 } from './decision';
+import {
+  isServerSearchStream,
+  readServerSearchEvents,
+  SERVER_SEARCH_STREAM_CONTENT_TYPE,
+} from './server-stream';
 import {
   codeToAction,
   makeAiResponse,
@@ -69,6 +75,8 @@ export interface ServerAiRequestOptions {
   search?: Partial<ServerSearchBudget>;
   /** Explicitly request complete root diagnostics; older callers remain unchanged. */
   includeNetworkOutput?: boolean;
+  /** Real simulation counts, reported while a supporting server searches. */
+  onSearchProgress?: (progress: DeltrelAiSearchProgress) => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -628,19 +636,54 @@ export async function requestServerAiDecision(
   }, timeoutMs);
 
   try {
-    const send = (body: AnalyzeRequestV3) => fetch(url, {
-      method: 'POST',
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        'X-Request-ID': request.requestId,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+    const send = (body: AnalyzeRequestV3) => {
+      controller.signal.throwIfAborted();
+      return fetch(url, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          Accept: options.onSearchProgress ? `${SERVER_SEARCH_STREAM_CONTENT_TYPE}, application/json` : 'application/json',
+          'Content-Type': 'application/json',
+          'X-Request-ID': request.requestId,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    };
+    const readPayload = async (response: Response): Promise<unknown> => {
+      // Older services may answer the same request with JSON. Consume it once;
+      // negotiation must never cause a completed search to run again.
+      if (!response.ok || !isServerSearchStream(response.headers.get('Content-Type'))) {
+        return readBoundedServerJson(response);
+      }
+      let result: unknown;
+      let streamError: DeltrelAiError | undefined;
+      for await (const event of readServerSearchEvents(response, search.simulations, controller.signal)) {
+        if (event.type === 'progress') {
+          options.onSearchProgress?.({
+            completedSimulations: event.completed_simulations,
+            totalSimulations: event.total_simulations,
+          });
+        } else if (event.type === 'result') {
+          result = event.result;
+        } else {
+          const code = event.error.code;
+          streamError = new DeltrelAiError(
+            code === 'deltrel_ai_timeout' || code === 'analysis_timeout' || code === 'timeout' ? 'timeout'
+              : code === 'deltrel_ai_cancelled' || code === 'client_disconnected' ? 'cancelled'
+                : code === 'invalid_request' || code === 'invalid_upstream_response' ? 'protocol'
+                  : 'unavailable',
+            event.error.message,
+            typeof event.error.retryable === 'boolean' ? event.error.retryable
+              : !['invalid_request', 'invalid_upstream_response', 'deltrel_ai_cancelled', 'client_disconnected'].includes(code),
+          );
+        }
+      }
+      if (streamError) throw streamError;
+      return result;
+    };
     let response = await send(analyzeRequest);
-    let payload = await readBoundedServerJson(response);
+    let payload = await readPayload(response);
     // Request validation happens before search. Retry once only when an older
     // service explicitly rejects this one new opt-in field; share the original
     // abort signal and deadline, never retry an inference/search failure.
@@ -648,7 +691,7 @@ export async function requestServerAiDecision(
       const compatible = { ...analyzeRequest };
       delete compatible.include_network_output;
       response = await send(compatible);
-      payload = await readBoundedServerJson(response);
+      payload = await readPayload(response);
     }
     if (!response.ok) {
       if (isRecord(payload) && isRecord(payload.error)) {
@@ -684,13 +727,13 @@ export async function requestServerAiDecision(
       search,
     );
   } catch (error) {
-    if (error instanceof DeltrelAiError) throw error;
     if (options.signal?.aborted) {
       throw new DeltrelAiError('cancelled', 'AI request cancelled.', false, error);
     }
     if (timedOut) {
       throw new DeltrelAiError('timeout', 'Server AI timed out.', true, error);
     }
+    if (error instanceof DeltrelAiError) throw error;
     throw new DeltrelAiError('network', 'Could not reach Server AI.', true, error);
   } finally {
     clearTimeout(timeout);

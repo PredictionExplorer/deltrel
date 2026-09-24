@@ -41,7 +41,7 @@ export function BrowserAiPreparation({ status, authorized, capability, selected 
   const progress = status.phase === 'downloading' && status.totalBytes !== null && status.totalBytes > 0
     ? Math.min(100, Math.max(0, status.loadedBytes / status.totalBytes * 100)) : null;
   const stage = status.phase === 'checking' ? 'Checking the latest model…'
-    : status.phase === 'downloading' ? status.cached ? 'Loading the saved model…' : 'Downloading browser AI…'
+    : status.phase === 'downloading' ? status.cached ? 'Loading the saved model…' : 'Downloading AI…'
       : status.phase === 'verifying' ? 'Checking the download…'
         : status.phase === 'initializing' ? 'Preparing the engine…'
           : ready ? 'Ready on this device'
@@ -52,10 +52,10 @@ export function BrowserAiPreparation({ status, authorized, capability, selected 
   return (
     <section className={styles.panel} aria-labelledby={titleId} aria-busy={preparing}>
       <header className={styles.header}>
-        <h2 id={titleId}>{ready ? <Check size={17} aria-hidden /> : <Download size={17} aria-hidden />} Browser AI</h2>
+        <h2 id={titleId}>{ready ? <Check size={17} aria-hidden /> : <Download size={17} aria-hidden />} AI</h2>
         <span className={styles.badge}>{ready ? 'On-device' : 'No installation'}</span>
       </header>
-      <p className={styles.description}>Play the trained champion right in your browser. Once prepared, moves are calculated on this device.</p>
+      <p className={styles.description}>Play the latest published champion. The model downloads automatically, and every move is calculated in your browser.</p>
       <p id={detailId} className={styles.size}>
         {ready ? status.info.cached ? 'Loaded from this browser’s saved model.' : 'The engine is ready to play.'
           : modelBytes ? `${formatModelBytes(modelBytes)} for the model. Saved copies are reused when available.` : 'A model download may be needed. Saved copies are reused when available.'}
@@ -63,7 +63,7 @@ export function BrowserAiPreparation({ status, authorized, capability, selected 
       <div role="status" aria-live="polite" className={styles.stage}>{stage}</div>
       {preparing && (
         <div className={styles.progressArea}>
-          <progress aria-label="Browser AI preparation" aria-describedby={detailId} max={100} value={progress ?? undefined} />
+          <progress aria-label="AI preparation" aria-describedby={detailId} max={100} value={progress ?? undefined} />
           {status.phase === 'downloading' && <div className={styles.progressText}>
             <span>{formatModelBytes(status.loadedBytes)}{status.totalBytes !== null ? ` of ${formatModelBytes(status.totalBytes)}` : ' received'}</span>
             {progress !== null && <strong>{Math.floor(progress)}%</strong>}
@@ -75,14 +75,14 @@ export function BrowserAiPreparation({ status, authorized, capability, selected 
       {capability?.status === 'unavailable' && !preparing && !ready && <p className={styles.hint}>{capability.reason}</p>}
       {notice && <p className={styles.hint}>{notice}</p>}
       <div className={styles.actions}>
-        {preparing ? <button type="button" onClick={onCancel} aria-label="Cancel browser AI preparation">Cancel</button>
-          : ready ? onSelect ? <button type="button" onClick={onSelect} aria-pressed={selected}>{selected ? 'Browser AI selected' : 'Play against browser AI'}</button> : null
+        {preparing ? <button type="button" onClick={onCancel} aria-label="Cancel AI preparation">Cancel</button>
+          : ready ? onSelect ? <button type="button" onClick={onSelect} aria-pressed={selected}>{selected ? 'AI selected' : 'Play against AI'}</button> : null
             : available ? <button type="button" onClick={onPrepare}>
-              {status.phase === 'error' || notice ? 'Retry browser AI' : inGame ? 'Prepare browser AI' : 'Download browser AI'}
-            </button> : onCheck ? <button type="button" onClick={onCheck} disabled={capability?.status === 'checking'}>Check browser AI availability</button> : null}
+              {status.phase === 'error' || notice ? 'Retry AI' : inGame ? 'Prepare AI' : 'Download AI'}
+            </button> : onCheck ? <button type="button" onClick={onCheck} disabled={capability?.status === 'checking'}>Check AI availability</button> : null}
       </div>
       {inGame && preparing && <p className={styles.hint}>Canceling preparation pauses AI play.</p>}
-      {modelVersion && <details className={styles.details}><summary>Browser AI details</summary><dl><div><dt>Published model</dt><dd>{modelVersion}</dd></div>{modelBytes && <div><dt>Model size</dt><dd>{formatModelBytes(modelBytes)}</dd></div>}</dl></details>}
+      {modelVersion && <details className={styles.details}><summary>AI details</summary><dl><div><dt>Published model</dt><dd>{modelVersion}</dd></div>{modelBytes && <div><dt>Model size</dt><dd>{formatModelBytes(modelBytes)}</dd></div>}</dl></details>}
     </section>
   );
 }

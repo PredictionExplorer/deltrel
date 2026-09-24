@@ -13,9 +13,13 @@ from pathlib import Path
 
 from .checkpoint import sha256_file, verify_file
 from .contracts import RULES_HASH_HEX
-from .distill import BROWSER_MANIFEST_FORMAT, BROWSER_MANIFEST_SCHEMA_VERSION, validate_browser_onnx
+from .distill import (
+    BROWSER_MANIFEST_FORMAT,
+    BROWSER_MANIFEST_SCHEMA_VERSION,
+    validate_browser_onnx,
+)
 
-WASM_ASSET_DIRECTORY = f"wasm-{RULES_HASH_HEX}"
+WASM_ASSET_DIRECTORY = f"wasm-{RULES_HASH_HEX}-champion-v1"
 
 
 def publish_browser_artifacts(
@@ -59,9 +63,18 @@ def publish_browser_artifacts(
         resolved[name] = source
 
     tensors = payload.get("tensors")
-    if not isinstance(tensors, Mapping) or not isinstance(tensors.get("outputs"), Mapping):
+    if not isinstance(tensors, Mapping) or not isinstance(
+        tensors.get("outputs"), Mapping
+    ):
         raise ValueError("browser model output contract is missing")
-    validate_browser_onnx(resolved["onnx"], include_auxiliary=len(tensors["outputs"]) == 11)
+    precision = payload.get("precision")
+    if precision not in ("float16", "float32"):
+        raise ValueError("browser precision must be float16 or float32")
+    validate_browser_onnx(
+        resolved["onnx"],
+        include_auxiliary=len(tensors["outputs"]) == 11,
+        precision=precision,
+    )
 
     if wasm_build_command:
         subprocess.run(

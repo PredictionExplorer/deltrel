@@ -12,7 +12,11 @@ from deltrelserve.config import (
     ServingInferenceConfig,
     load_server_config,
 )
-from deltrelserve.runtime import AtomicModelManager, NativeAnalysisService, SearchCancelled
+from deltrelserve.runtime import (
+    AtomicModelManager,
+    NativeAnalysisService,
+    SearchCancelled,
+)
 from deltrelserve.schemas import AnalyzeRequest, AnalyzeResponse
 from deltreltrain.checkpoint import ModelManifest
 from deltreltrain.config import load_config
@@ -90,10 +94,12 @@ def execution_server(tmp_path, monkeypatch):
         manager.close()
 
 
-def analyze(service, payload=None, cancellation=None):
+def analyze(service, payload=None, cancellation=None, progress=None):
     payload = payload or request_payload()
     return service.analyze(
-        AnalyzeRequest.model_validate(payload), cancellation or threading.Event()
+        AnalyzeRequest.model_validate(payload),
+        cancellation or threading.Event(),
+        progress,
     )
 
 
@@ -165,8 +171,15 @@ def test_server_reuses_only_compatible_completed_descendants(
         next_payload["history"] = None
     elif invalidate == "model":
         selected[0] = 2
-    second = analyze(service, next_payload)
+    updates = []
+    second = analyze(
+        service,
+        next_payload,
+        progress=lambda done, total: updates.append((done, total)),
+    )
     assert sum(second["root_visits"]) == 7
+    assert updates[0] == (0, 7) and updates[-1] == (7, 7)
+    assert updates == sorted(set(updates))
     with manager.lease() as lease:
         stats = lease.model.search_cache.metrics_snapshot()
         assert stats["hits"] == (1 if invalidate is None else 0)
@@ -174,6 +187,59 @@ def test_server_reuses_only_compatible_completed_descendants(
         if invalidate == "model":
             assert lease.model.search_cache is not old_pool
             assert old_pool.metrics_snapshot()["entries"] == 0
+
+
+@pytest.mark.native
+@pytest.mark.parametrize("width", [1, 8])
+def test_live_progress_preserves_the_exact_search(execution_server, width):
+    create, _ = execution_server
+    service, _, _ = create(width=width)
+    payload = request_payload()
+    payload["search"] = {"simulations": 16, "max_considered": 8, "seed": 17}
+    baseline = analyze(service, payload)
+    updates = []
+    observed = analyze(
+        service, payload, progress=lambda done, total: updates.append((done, total))
+    )
+    assert {k: v for k, v in observed.items() if k != "timing_ms"} == {
+        k: v for k, v in baseline.items() if k != "timing_ms"
+    }
+    assert updates[0] == (0, 16) and updates[-1] == (16, 16)
+    assert len(updates) > 2
+    assert updates == sorted(set(updates))
+    assert all(total == 16 and 0 <= done <= total for done, total in updates)
+
+
+@pytest.mark.native
+@pytest.mark.parametrize("width", [1, 8])
+def test_live_progress_counts_terminal_leaves_without_inference(
+    execution_server, width
+):
+    create, _ = execution_server
+    service, _, _ = create(width=width)
+    states = service.native.StateBatch(4, 1, mode="classic")
+    for node in range(49):
+        states.apply_many([0], [node])
+    position = runtime_module.positions_from_native(states.data(), history_known=False)[
+        0
+    ]
+    payload = {
+        **request_payload(),
+        "stones": position.stones.tolist(),
+        "to_move": position.to_move,
+        "moves_left": position.moves_left,
+        "opening": position.opening,
+        "mode": "classic",
+        "history": None,
+        "search": {"simulations": 16, "max_considered": 8, "seed": 17},
+    }
+    updates = []
+    result = analyze(
+        service, payload, progress=lambda done, total: updates.append((done, total))
+    )
+    assert result["action"]["code"] == 49
+    assert sum(result["root_visits"]) == 16
+    assert updates == [(0, 16), (16, 16)]
 
 
 @pytest.mark.native

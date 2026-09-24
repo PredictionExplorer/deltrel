@@ -9,7 +9,140 @@ import {
 } from '../server-proxy';
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+describe('streaming same-origin AI proxy', () => {
+  const progress = { type: 'progress', completed_simulations: 2, total_simulations: 4 };
+  const result = { type: 'result', result: { request_id: 'stream-request', action: 0 } };
+  const encode = (event: unknown) => new TextEncoder().encode(`${JSON.stringify(event)}\n`);
+  const decode = (bytes: Uint8Array | undefined) => JSON.parse(new TextDecoder().decode(bytes));
+  const request = (signal?: AbortSignal) => new Request('https://public.example/v2/move', {
+    method: 'POST', signal,
+    headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson, application/json', 'X-Request-ID': 'stream-request' },
+    body: JSON.stringify({ search: { simulations: 4 } }),
+  });
+  const streaming = (body: ReadableStream<Uint8Array> | string) => new Response(body, {
+    headers: { 'Content-Type': 'application/x-ndjson', Authorization: 'Bearer private-token' },
+  });
+
+  it('forwards progress before the upstream result exists and keeps auth private', async () => {
+    vi.useFakeTimers();
+    let output!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({ start(controller) { output = controller; } });
+    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: RequestInit) => {
+      expect(new Headers(init.headers).get('Accept')).toContain('application/x-ndjson');
+      expect(new Headers(init.headers).get('Authorization')).toBe('Bearer private-token');
+      return streaming(body);
+    }));
+    const response = await proxyDeltrelAiRequest(request(), DELTREL_AI_PROXY_MOVE_PATH, {
+      serverUrl: 'https://private.example', bearerToken: 'private-token',
+    });
+    expect(response.headers.get('Content-Type')).toContain('application/x-ndjson');
+    expect(response.headers.get('Cache-Control')).toContain('no-store');
+    expect(response.headers.has('Authorization')).toBe(false);
+    const reader = response.body!.getReader();
+    output.enqueue(encode(progress));
+    expect(decode((await reader.read()).value)).toEqual(progress);
+    output.enqueue(encode(result));
+    output.close();
+    expect(decode((await reader.read()).value)).toEqual(result);
+    expect((await reader.read()).done).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('allows JSON fallback without a second upstream request', async () => {
+    const fetchMock = vi.fn(async () => Response.json(result.result));
+    vi.stubGlobal('fetch', fetchMock);
+    const response = await proxyDeltrelAiRequest(request(), DELTREL_AI_PROXY_MOVE_PATH, { serverUrl: 'https://private.example' });
+    expect(response.headers.get('Content-Type')).toContain('application/json');
+    await expect(response.json()).resolves.toEqual(result.result);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it.each(['timeout', 'cancel'] as const)('preserves %s after returning the stream headers', async (reason) => {
+    vi.useFakeTimers();
+    const caller = new AbortController();
+    const cancel = vi.fn();
+    let upstreamSignal!: AbortSignal;
+    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: RequestInit) => {
+      upstreamSignal = init.signal!;
+      return streaming(new ReadableStream({
+        start(controller) { controller.enqueue(encode(progress)); }, cancel,
+      }));
+    }));
+    const response = await proxyDeltrelAiRequest(request(caller.signal), DELTREL_AI_PROXY_MOVE_PATH, {
+      serverUrl: 'https://private.example', moveTimeoutMs: 10,
+    });
+    const reader = response.body!.getReader();
+    expect(decode((await reader.read()).value)).toEqual(progress);
+    if (reason === 'cancel') caller.abort();
+    else await vi.advanceTimersByTimeAsync(10);
+    expect(decode((await reader.read()).value)).toMatchObject({
+      type: 'error', error: { code: reason === 'timeout' ? 'deltrel_ai_timeout' : 'deltrel_ai_cancelled' },
+    });
+    expect((await reader.read()).done).toBe(true);
+    expect(upstreamSignal.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it('propagates downstream reader cancellation and clears the deadline', async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn();
+    let upstreamSignal!: AbortSignal;
+    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: RequestInit) => {
+      upstreamSignal = init.signal!;
+      return streaming(new ReadableStream({
+        start(controller) { controller.enqueue(encode(progress)); }, cancel,
+      }));
+    }));
+    const response = await proxyDeltrelAiRequest(request(), DELTREL_AI_PROXY_MOVE_PATH, {
+      serverUrl: 'https://private.example', moveTimeoutMs: 10,
+    });
+    const reader = response.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    expect(upstreamSignal.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each([
+    ['invalid JSON', '{broken}\n'],
+    ['truncated response', JSON.stringify(progress) + '\n'],
+    ['wrong budget', JSON.stringify({ ...progress, total_simulations: 8 }) + '\n'],
+    ['oversized event', 'x'.repeat(1024 * 1024 + 1)],
+    ['private upstream error', JSON.stringify({ type: 'error', error: {
+      code: 'internal_error', message: 'private-token at https://private.example', details: ['private-token'],
+    } }) + '\n'],
+  ])('ends %s safely without exposing private details', async (_name, body) => {
+    vi.stubGlobal('fetch', vi.fn(async () => streaming(body)));
+    const response = await proxyDeltrelAiRequest(request(), DELTREL_AI_PROXY_MOVE_PATH, {
+      serverUrl: 'https://private.example', bearerToken: 'private-token',
+    });
+    const text = await response.text();
+    expect(text).not.toContain('private-token');
+    expect(text).not.toContain('https://private.example');
+    const events = text.trim().split('\n').map((line) => JSON.parse(line));
+    expect(events.at(-1)).toMatchObject({ type: 'error', error: { request_id: 'stream-request' } });
+  });
+
+  it.each([
+    ['analysis_timeout', 'deltrel_ai_timeout', true],
+    ['client_disconnected', 'deltrel_ai_cancelled', false],
+    ['service_busy', 'deltrel_ai_unavailable', true],
+  ])('maps backend %s to a safe public stream error', async (upstreamCode, code, retryable) => {
+    vi.stubGlobal('fetch', vi.fn(async () => streaming(JSON.stringify({
+      type: 'error', error: { code: upstreamCode, message: 'Private error details.' },
+    }) + '\n')));
+    const response = await proxyDeltrelAiRequest(request(), DELTREL_AI_PROXY_MOVE_PATH, {
+      serverUrl: 'https://private.example',
+    });
+    const event = JSON.parse((await response.text()).trim());
+    expect(event).toMatchObject({ type: 'error', error: { code, retryable, request_id: 'stream-request' } });
+    expect(event.error.message).not.toContain('Private');
+  });
 });
 
 describe('same-origin deltrelserve proxy', () => {

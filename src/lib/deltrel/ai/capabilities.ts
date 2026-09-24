@@ -362,45 +362,49 @@ export async function checkLocalAiCapability(
   const timeout = linkedTimeout(signal);
   try {
     timeout.signal.throwIfAborted();
-    const response = await fetch(LOCAL_MANIFEST_PATH, {
-      cache: 'no-store',
-      signal: timeout.signal,
-    });
-    if (!response.ok) {
-      return unavailable(
-        'Local AI',
-        'local_assets_missing',
-        'The browser AI model is not available yet.',
-        false,
-      );
+    const { parseDeltrelBrowserModelManifest, MAX_BROWSER_AI_SIMULATIONS, MAX_BROWSER_AI_MAX_CONSIDERED } = await import('./manifest');
+    const { getPinnedLocalAiRelease } = await import('./local-client');
+    timeout.signal.throwIfAborted();
+    let pinned = getPinnedLocalAiRelease();
+    let payload: unknown = pinned;
+    if (pinned === undefined) {
+      const response = await fetch(LOCAL_MANIFEST_PATH, { cache: 'no-store', signal: timeout.signal });
+      // Preparation may have finished while this preflight request was in flight.
+      pinned = getPinnedLocalAiRelease();
+      if (pinned !== undefined) {
+        void response.body?.cancel().catch(() => {});
+        payload = pinned;
+      } else {
+        if (!response.ok) return unavailable('AI', 'local_assets_missing', 'The AI model is not available yet.', false);
+        payload = await readJsonResponse(response);
+      }
     }
-    const payload = await readJsonResponse(response);
-    const { parseDeltrelBrowserModelManifest } = await import('./manifest');
     const manifest = parseDeltrelBrowserModelManifest(payload);
-    const assets = await Promise.all([
-      assetExists(manifest.wasm.moduleUrl, timeout.signal),
-      assetExists(manifest.wasm.binaryUrl, timeout.signal),
-      assetExists(manifest.model.url, timeout.signal),
-    ]);
-    if (assets.some((exists) => !exists)) {
-      return unavailable(
-        'Local AI',
-        'local_assets_missing',
-        'The browser AI download is temporarily unavailable.',
-        false,
-      );
+    if (pinned === undefined) {
+      const assets = await Promise.all([
+        assetExists(manifest.wasm.moduleUrl, timeout.signal),
+        assetExists(manifest.wasm.binaryUrl, timeout.signal),
+        assetExists(manifest.model.url, timeout.signal),
+      ]);
+      if (assets.some((exists) => !exists)) {
+        return unavailable('AI', 'local_assets_missing', 'The AI download is temporarily unavailable.', false);
+      }
     }
     const defaultBudget = {
       simulations: manifest.search.simulations,
       maxConsidered: manifest.search.maxConsidered,
     };
     const maximum = {
+      simulations: MAX_BROWSER_AI_SIMULATIONS,
+      maxConsidered: MAX_BROWSER_AI_MAX_CONSIDERED,
+    };
+    const recommendedMaximum = {
       simulations: manifest.search.maximumSimulations,
       maxConsidered: manifest.search.maximumMaxConsidered,
     };
     return {
       status: 'available',
-      label: 'Local AI',
+      label: 'AI',
       browserModel: {
         modelVersion: manifest.modelVersion,
         bytes: manifest.model.bytes,
@@ -415,7 +419,7 @@ export async function checkLocalAiCapability(
             maxConsidered: Math.min(8, defaultBudget.maxConsidered),
           },
           strong: defaultBudget,
-          maximum,
+          maximum: recommendedMaximum,
         },
       },
     };
@@ -432,11 +436,10 @@ export async function checkLocalAiCapability(
 }
 
 export async function checkAiCapabilities(signal?: AbortSignal): Promise<AiCapabilities> {
-  const [server, local] = await Promise.all([
-    checkServerAiCapability(signal),
-    checkLocalAiCapability(signal),
-  ]);
-  return { server, local };
+  const local = await checkLocalAiCapability(signal);
+  // The public game has one on-device AI. Keep the legacy field for persisted
+  // diagnostics and reference clients without probing a private service.
+  return { local, server: unavailable('AI', 'browser_only', 'AI runs in your browser.', false) };
 }
 
 export function capabilityForController(

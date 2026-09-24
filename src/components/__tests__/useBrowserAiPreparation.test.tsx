@@ -1,4 +1,5 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prepareLocalAi } from '@/lib/deltrel/ai/local-client';
 import { publishLocalAiStatus } from '@/lib/deltrel/ai/local-ai-status';
@@ -17,15 +18,14 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('useBrowserAiPreparation', () => {
-  it('does not prepare on mount and retains authorization during later worker initialization', async () => {
-    const { result } = renderHook(useBrowserAiPreparation);
-    expect(prepareLocalAi).not.toHaveBeenCalled();
-    expect(result.current.authorized).toBe(false);
+  it('automatically prepares once in Strict Mode and retains authorization during later worker initialization', async () => {
     vi.mocked(prepareLocalAi).mockImplementation(async () => {
       publishLocalAiStatus({ phase: 'ready', info: ready });
       return ready;
     });
-    await act(async () => { expect(await result.current.prepare()).toBe(true); });
+    const { result } = renderHook(useBrowserAiPreparation, { wrapper: StrictMode });
+    await waitFor(() => expect(result.current.authorized).toBe(true));
+    expect(prepareLocalAi).toHaveBeenCalledOnce();
     expect(result.current.authorized).toBe(true);
     act(() => publishLocalAiStatus({ phase: 'initializing', loadedBytes: ready.bytes, totalBytes: ready.bytes, modelVersion: ready.modelVersion, cached: true }));
     expect(result.current.authorized).toBe(true);
@@ -36,13 +36,11 @@ describe('useBrowserAiPreparation', () => {
     let finish!: (value: typeof ready) => void;
     vi.mocked(prepareLocalAi).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     const { result } = renderHook(useBrowserAiPreparation);
-    let pending!: Promise<boolean>;
-    act(() => { pending = result.current.prepare(); });
     await waitFor(() => expect(prepareLocalAi).toHaveBeenCalledOnce());
     const signal = vi.mocked(prepareLocalAi).mock.calls[0][0]!.signal!;
     act(() => result.current.cancel());
     expect(signal.aborted).toBe(true);
-    await act(async () => { finish(ready); expect(await pending).toBe(false); });
+    await act(async () => { finish(ready); });
     expect(result.current.authorized).toBe(false);
     expect(result.current.notice).toMatch(/cancelled/i);
   });
@@ -51,15 +49,14 @@ describe('useBrowserAiPreparation', () => {
     let finish!: (value: typeof ready) => void;
     vi.mocked(prepareLocalAi).mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     const { result, unmount } = renderHook(useBrowserAiPreparation);
-    let pending!: Promise<boolean>;
-    act(() => { pending = result.current.prepare(); });
+    await waitFor(() => expect(prepareLocalAi).toHaveBeenCalledOnce());
     await act(async () => { expect(await result.current.prepare()).toBe(false); });
     await waitFor(() => expect(prepareLocalAi).toHaveBeenCalledOnce());
     const signal = vi.mocked(prepareLocalAi).mock.calls[0][0]!.signal!;
     unmount();
     expect(signal.aborted).toBe(true);
     finish(ready);
-    expect(await pending).toBe(false);
+    await act(async () => { await Promise.resolve(); });
   });
 
   it('accepts already prepared state without a network operation and gives a retryable UI notice for import/runtime failure', async () => {

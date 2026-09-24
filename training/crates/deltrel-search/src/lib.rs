@@ -20,7 +20,7 @@ mod tree;
 pub const SEARCH_ALGORITHM_ID: &str = "gumbel-completed-q-v2-finite-noise-selected-keep";
 
 pub use batch::{
-    RootSearchConfig, SearchNonce, SearchResult, SearchRunError, gumbel_search_batch,
+    RootSearchConfig, SearchNonce, SearchResult, SearchRunError, derive_root_seed, gumbel_search_batch,
     gumbel_search_batch_with_budgets, resolve_root_budget,
 };
 pub use evaluation::{BatchEvaluator, Evaluation, EvaluationRequest};

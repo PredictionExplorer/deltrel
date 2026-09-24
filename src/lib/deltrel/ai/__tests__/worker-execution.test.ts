@@ -40,7 +40,7 @@ function state(root: DeltrelAiRequest) {
   };
 }
 
-function fixture(auxiliary = false) {
+function fixture(auxiliary = false, precision: 'float16' | 'float32' = 'float16', scoreUtilityWeight = 0) {
   const tensors: Array<ReturnType<typeof vi.spyOn>> = [];
   const outputDisposals = vi.fn();
   const forwards: Array<Record<string, { dims: readonly number[]; data: ArrayLike<number | bigint> }>> = [];
@@ -63,12 +63,17 @@ function fixture(auxiliary = false) {
       outcome[row * 2 + 1] = marker;
     }
     const output = (values: Float32Array, dims: number[]) => {
-      const data = float32ToFloat16Array(values);
+      const data = precision === 'float32' ? values : float32ToFloat16Array(values);
       return { data, dims, dispose: () => { data.fill(0); outputDisposals(); } };
     };
+    const score = new Float32Array(batch * 303);
+    if (scoreUtilityWeight) {
+      score.fill(-100);
+      for (let row = 0; row < batch; row++) score[row * 303 + 211] = 0;
+    }
     const base = {
       policy_logits: output(policy, [batch, nodes]), outcome_logits: output(outcome, [batch, 2]),
-      score_margin_logits: output(new Float32Array(batch * 303), [batch, 303]),
+      score_margin_logits: output(score, [batch, 303]),
       ownership_logits: output(new Float32Array(batch * nodes * 3), [batch, nodes, 3]),
       alive_logits: output(new Float32Array(batch * nodes), [batch, nodes]),
       soft_policy_logits: output(policy.slice(), [batch, nodes]),
@@ -135,10 +140,10 @@ function fixture(auxiliary = false) {
     reused_nodes = () => this.inherited ? 2 : 0;
   }
   const runtime = {
-    manifest: { model: { sha256: 'model-a' }, featureSchemaHash: 'features-a',
+    manifest: { model: { sha256: 'model-a', precision }, featureSchemaHash: 'features-a',
       auxiliaryStatus: (auxiliary ? 'ready' : 'absent') as 'ready' | 'untrained' | 'absent',
       search: { firstVisitBatchSize: 2, subtreeReuse: true, subtreeReuseMaxNodes: 4096,
-        cVisit: 50, cScale: 1, swapDeadZone: 0.02 } },
+        cVisit: 50, cScale: 1, swapDeadZone: 0.02, scoreUtilityWeight } },
     ort, session: { run }, predictions: new worker.PredictionCache(),
     wasm: { search_execution_version: () => 1, WasmSearchSession: FakeSession },
     completedSearch: undefined as { session: FakeSession; context: string } | undefined,
@@ -150,6 +155,30 @@ function fixture(auxiliary = false) {
 }
 
 describe('batched browser prediction execution', () => {
+  it('keeps FP32 features and native score utility through root, batched leaves and cached evaluations', async () => {
+    const f = fixture(true, 'float32', 0.05);
+    const root = request();
+    const result = await f.search(root);
+    const encoded = encodeDeltrelFeatures(root.state);
+    expect(f.forwards[0].node_features.data).toBeInstanceOf(Float32Array);
+    expect(Array.from(f.forwards[0].node_features.data)).toEqual(Array.from(encoded.nodeFeatures));
+    expect(Array.from(f.forwards[0].global_features.data)).toEqual(Array.from(encoded.globalFeatures));
+    expect(result.rootEvaluation.expectedMargin).toBeCloseTo(60);
+    expect(result.rootEvaluation.searchValue).toBeCloseTo(result.rootEvaluation.value + 0.05 * 60 / 151);
+    expect(f.sessions[0].initialize_root).toHaveBeenCalledWith(expect.any(BigInt), result.rootEvaluation.searchValue, expect.any(Float32Array));
+    const leaf = nextRequest(root, 0);
+    const cached = await worker.evaluate(f.runtime as never, leaf.state, Int32Array.from(leaf.legalActions));
+    const [submitted] = f.sessions[0].submissions.mock.calls;
+    expect(submitted[1][0]).toBe(Math.fround(cached.searchValue));
+    expect(cached.searchValue).toBeCloseTo(cached.value + 0.05 * 60 / 151);
+    expect(cached.value).toBeCloseTo(cached.outcome.win - cached.outcome.loss);
+    expect(f.run).toHaveBeenCalledTimes(2);
+    f.runtime.manifest.search.scoreUtilityWeight = 0;
+    const changed = await worker.evaluate(f.runtime as never, leaf.state, Int32Array.from(leaf.legalActions));
+    expect(changed.searchValue).toBe(changed.value);
+    expect(f.run).toHaveBeenCalledTimes(3);
+  });
+
   it('stacks real ONNX Tensor inputs and routes deduplicated rows into owned cache entries', async () => {
     const f = fixture();
     const roots = [nextRequest(request(), 0), nextRequest(request(), 1)];
@@ -213,6 +242,19 @@ describe('batched browser prediction execution', () => {
 });
 
 describe('completed browser session ownership', () => {
+  it('starts fresh when retained visits plus the new budget would overflow native counters', async () => {
+    const f = fixture();
+    await f.search(request());
+    const previous = f.sessions[0];
+    previous.total_visits = () => Uint32Array.from([4_294_967_294]);
+    const result = await f.search(nextRequest(request(), 0));
+    expect(previous.free).toHaveBeenCalledOnce();
+    expect(previous.restarts).not.toHaveBeenCalled();
+    expect(f.sessions).toHaveLength(2);
+    expect(result.rootVisits.reduce((sum, visits) => sum + visits, 0)).toBe(2);
+    expect(result.reusedVisits).toBe(0);
+  });
+
   it('gates optional execution while leaving default manifests on the original path', () => {
     expect(worker.usesExperimentalSearch({ search: {} } as never)).toBe(false);
     expect(worker.usesExperimentalSearch({ search: { firstVisitBatchSize: 1, subtreeReuse: false } } as never)).toBe(false);
@@ -387,7 +429,7 @@ describe('root-only browser network reporting', () => {
     expect(report.heads.policy?.logits).toHaveLength(50);
     const cached = await worker.evaluate(f.runtime as never, root.state, legal);
     expect(f.run).toHaveBeenCalledTimes(2);
-    expect(Object.keys(cached).sort()).toEqual(['expectedMargin', 'logits', 'outcome', 'value']);
+    expect(Object.keys(cached).sort()).toEqual(['expectedMargin', 'logits', 'outcome', 'searchValue', 'value']);
     expect(cached).toEqual(prediction);
   });
 
@@ -498,7 +540,7 @@ describe('single-pass root evaluation and bounded report reuse', () => {
     expect(repeated).toEqual(expected);
     expect(f.run).toHaveBeenCalledOnce();
     const compact = await worker.evaluate(f.runtime as never, root.state, legal);
-    expect(Object.keys(compact).sort()).toEqual(['expectedMargin', 'logits', 'outcome', 'value']);
+    expect(Object.keys(compact).sort()).toEqual(['expectedMargin', 'logits', 'outcome', 'searchValue', 'value']);
     expect(compact).toEqual(expected.evaluation);
 
     const other = nextRequest(request(), 1);

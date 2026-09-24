@@ -49,6 +49,35 @@ afterEach(() => {
 });
 
 describe('persisted app-state validation', () => {
+  it.each([
+    { controllers: ['human', 'local'], local: { simulations: 8, maxConsidered: 4 }, expected: { simulations: 512, maxConsidered: 16 } },
+    { controllers: ['server', 'human'], local: { simulations: 8, maxConsidered: 4 }, expected: { simulations: 777, maxConsidered: 21 } },
+    { controllers: ['server', 'local'], local: { simulations: 9999, maxConsidered: 127 }, expected: { simulations: 9999, maxConsidered: 127 } },
+  ])('migrates version 6 controllers and effort without losing a paused game: $controllers', ({ controllers, local, expected }) => {
+    const saved = {
+      phase: 'playing', config: mini, controllers,
+      aiSearchSettings: { server: { simulations: 777, maxConsidered: 21 }, local },
+      aiPaused: true,
+      log: [{ type: 'place', node: 0 }], redoStack: [{ type: 'place', node: 1 }],
+    };
+    const result = migratePersistedState(saved, 6);
+    expect(result).toMatchObject({
+      phase: 'playing', config: mini, aiPaused: true,
+      log: saved.log, redoStack: saved.redoStack,
+      controllers: controllers.map(controller => controller === 'human' ? 'human' : 'local'),
+      aiSearchSettings: { local: expected },
+    });
+    expect(saved.aiSearchSettings.local).toEqual(local);
+  });
+
+  it('keeps an intentionally selected 8-simulation budget after the version 7 migration', () => {
+    const local = { simulations: 8, maxConsidered: 4 };
+    expect(migratePersistedState({
+      phase: 'playing', config: mini, controllers: ['human', 'local'],
+      aiSearchSettings: { local }, aiPaused: true, log: [], redoStack: [],
+    }, APP_STORE_VERSION).aiSearchSettings.local).toEqual(local);
+  });
+
   it('rejects saved histories longer than any legal game', () => {
     expect(sanitizePersistedState({
       phase: 'playing', config: mini, controllers: ['local', 'local'],
@@ -70,7 +99,7 @@ describe('persisted app-state validation', () => {
       sanitizePersistedState({
         phase: 'playing',
         config: double,
-        controllers: ['server', 'local'],
+        controllers: ['local', 'local'],
         aiSearchSettings: {
           server: { simulations: 128, maxConsidered: 8 },
           local: { simulations: 32, maxConsidered: 4 },
@@ -81,7 +110,7 @@ describe('persisted app-state validation', () => {
       }),
     ).toMatchObject({
       phase: 'playing',
-      controllers: ['server', 'local'],
+      controllers: ['local', 'local'],
       aiSearchSettings: {
         server: { simulations: 128, maxConsidered: 8 },
         local: { simulations: 32, maxConsidered: 4 },
@@ -96,7 +125,7 @@ describe('persisted app-state validation', () => {
     const malformed = sanitizePersistedState({
       phase: 'playing',
       config: double,
-      controllers: ['server', 'local'],
+      controllers: ['local', 'local'],
       log: [{ type: 'pass', unexpected: true }],
       redoStack: [],
     });
@@ -110,7 +139,7 @@ describe('persisted app-state validation', () => {
     const illegal = sanitizePersistedState({
       phase: 'playing',
       config: double,
-      controllers: ['server', 'local'],
+      controllers: ['local', 'local'],
       log: [
         { type: 'place', node: 0 },
         { type: 'place', node: 0 },
@@ -200,7 +229,7 @@ describe('persisted app-state validation', () => {
     const result = sanitizePersistedState({
       phase: 'playing',
       config: { ...double, rings: '3' },
-      controllers: ['server', 'local'],
+      controllers: ['local', 'local'],
       log: [],
       redoStack: [],
     });
@@ -219,7 +248,7 @@ describe('persisted app-state validation', () => {
           pieRule: false,
           playerNames: ['Ada', 'Grace'],
         },
-        controllers: ['server', 'local'],
+        controllers: ['local', 'local'],
         aiPaused: true,
         log: [{ type: 'place', node: 0 }],
         redoStack: [{ type: 'place', node: 1 }],
@@ -228,7 +257,7 @@ describe('persisted app-state validation', () => {
     );
     expect(migrated).toMatchObject({
       phase: 'playing',
-      controllers: ['server', 'local'],
+      controllers: ['local', 'local'],
       aiPaused: true,
       log: [{ type: 'place', node: 0 }],
       redoStack: [{ type: 'place', node: 1 }],
@@ -246,7 +275,7 @@ describe('persisted app-state validation', () => {
           pieRule: false,
           playerNames: ['Ada', 'Grace'],
         },
-        controllers: ['server', 'local'],
+        controllers: ['local', 'local'],
       },
       APP_STORE_VERSION - 2,
     );
@@ -259,7 +288,7 @@ describe('persisted app-state validation', () => {
         handicap: 1,
         playerNames: ['Ada', 'Grace'],
       },
-      controllers: ['server', 'local'],
+      controllers: ['local', 'local'],
       aiSearchSettings: DEFAULT_AI_SEARCH_SETTINGS,
       aiPaused: false,
       log: [],
@@ -324,9 +353,13 @@ describe('persisted app-state validation', () => {
       maxConsidered: 64,
     })).toBeNull();
     expect(parseAiSearchBudget('local', {
-      simulations: 1_025,
-      maxConsidered: 8,
-    })).toBeNull();
+      simulations: 4_096,
+      maxConsidered: 256,
+    })).toEqual({ simulations: 4_096, maxConsidered: 256 });
+    expect(parseAiSearchBudget('local', {
+      simulations: 536_870_911,
+      maxConsidered: 4_294_967_295,
+    })).toEqual({ simulations: 536_870_911, maxConsidered: 4_294_967_295 });
 
     expect(
       normalizeAiSearchSettings({
@@ -339,23 +372,61 @@ describe('persisted app-state validation', () => {
     });
   });
 
+  it.each(['simulations', 'maxConsidered'] as const)(
+    'rejects invalid custom browser %s instead of coercing or clamping',
+    (field) => {
+      const overflow = field === 'simulations' ? 536_870_912 : 4_294_967_296;
+      for (const value of [0, -1, 1.5, NaN, Infinity, overflow, Number.MAX_SAFE_INTEGER, '4096', null]) {
+        expect(parseAiSearchBudget('local', {
+          simulations: 4_096,
+          maxConsidered: 256,
+          [field]: value,
+        })).toBeNull();
+      }
+    },
+  );
+
+  it.each(['setup', 'playing'] as const)(
+    'preserves a deeper custom browser search after saving and restoring %s',
+    (phase) => {
+      const budget = { simulations: 4_096, maxConsidered: 256 };
+      const saved = JSON.parse(JSON.stringify({
+        phase,
+        config: DEFAULT_CONFIG,
+        controllers: ['human', 'local'],
+        aiSearchSettings: { ...DEFAULT_AI_SEARCH_SETTINGS, local: budget },
+        log: phase === 'playing' ? [{ type: 'place', node: 0 }] : [],
+        redoStack: [],
+      }));
+
+      expect(sanitizePersistedState(saved)).toMatchObject({
+        phase,
+        aiSearchSettings: { local: budget },
+      });
+      expect(migratePersistedState(saved, APP_STORE_VERSION)).toMatchObject({
+        phase,
+        aiSearchSettings: { local: budget },
+      });
+    },
+  );
+
   it('updates valid runtime settings and ignores invalid setter values', () => {
     useAppStore.getState().setAiSearchBudget('local', {
-      simulations: 128,
-      maxConsidered: 8,
+      simulations: 4_096,
+      maxConsidered: 256,
     });
     expect(useAppStore.getState().aiSearchSettings.local).toEqual({
-      simulations: 128,
-      maxConsidered: 8,
+      simulations: 4_096,
+      maxConsidered: 256,
     });
 
     useAppStore.getState().setAiSearchBudget('local', {
-      simulations: 2_048,
+      simulations: 536_870_912,
       maxConsidered: 8,
     });
     expect(useAppStore.getState().aiSearchSettings.local).toEqual({
-      simulations: 128,
-      maxConsidered: 8,
+      simulations: 4_096,
+      maxConsidered: 256,
     });
   });
 });
@@ -476,7 +547,7 @@ describe('history navigation AI pause', () => {
     useAppStore.setState({
       phase: 'playing',
       config: double,
-      controllers: ['server', 'local'],
+      controllers: ['local', 'local'],
       aiPaused: false,
       log: [
         { type: 'place', node: 0 },
@@ -494,7 +565,7 @@ describe('history navigation AI pause', () => {
 
     useAppStore.getState().setPlayerController(1, 'human');
     expect(useAppStore.getState()).toMatchObject({
-      controllers: ['server', 'human'],
+      controllers: ['local', 'human'],
       aiPaused: false,
       redoStack: [{ type: 'place', node: 1 }],
     });
@@ -560,7 +631,7 @@ describe('gameplay store actions', () => {
           const legacy = sanitizePersistedState({
             phase: 'playing',
             config,
-            controllers: ['server', 'local'],
+            controllers: ['local', 'local'],
             log: [{ type: 'place', node: 0 }],
             redoStack: [],
           });
@@ -577,7 +648,7 @@ describe('gameplay store actions', () => {
           useAppStore.getState().rematch();
           expect(useAppStore.getState().config).toEqual(expected);
           expect(useAppStore.getState().log).toEqual([]);
-          useAppStore.getState().startGame(config, ['server', 'local']);
+          useAppStore.getState().startGame(config, ['local', 'local']);
           expect(useAppStore.getState().config).toEqual(expected);
           expect(config.pieRule).toBe(false);
           expect(legacy.config).toEqual(config);
@@ -588,11 +659,11 @@ describe('gameplay store actions', () => {
 
   it('starts, acts, redoes, reviews, rematches, and leaves without stale state', () => {
     const store = useAppStore.getState();
-    store.startGame(double, ['server', 'local']);
+    store.startGame(double, ['local', 'local']);
     expect(useAppStore.getState()).toMatchObject({
       phase: 'playing',
       config: { ...double, pieRule: true, handicap: 1 },
-      controllers: ['server', 'local'],
+      controllers: ['local', 'local'],
       log: [],
       reviewing: false,
     });
@@ -641,11 +712,11 @@ describe('gameplay store actions', () => {
 
   it('keeps AI controllers for classic games and ignores invalid controller slots', () => {
     const classic: GameConfig = { ...double, mode: 'classic' };
-    useAppStore.getState().startGame(classic, ['server', 'local']);
-    expect(useAppStore.getState().controllers).toEqual(['server', 'local']);
+    useAppStore.getState().startGame(classic, ['local', 'local']);
+    expect(useAppStore.getState().controllers).toEqual(['local', 'local']);
     const before = useAppStore.getState();
     before.setPlayerController(2 as 0, 'server');
-    expect(useAppStore.getState().controllers).toEqual(['server', 'local']);
+    expect(useAppStore.getState().controllers).toEqual(['local', 'local']);
     useAppStore.getState().resumeAi();
     expect(useAppStore.getState().aiPaused).toBe(false);
   });
@@ -653,7 +724,7 @@ describe('gameplay store actions', () => {
   it('refuses configurations outside the rules family', () => {
     const oversized: GameConfig = { ...double, handicap: 12 };
     expect(() =>
-      useAppStore.getState().startGame(oversized, ['server', 'local']),
+      useAppStore.getState().startGame(oversized, ['local', 'local']),
     ).toThrow(/unsupported configuration/);
   });
 

@@ -32,6 +32,12 @@ mod bindings {
         1
     }
 
+    /// Exact seed derivation used by the native SearchBatch scheduler.
+    #[wasm_bindgen]
+    pub fn derive_root_seed(nonce: u64, state_hash: u64, index: usize) -> u64 {
+        deltrel_search::derive_root_seed(nonce, state_hash, index)
+    }
+
     /// Browser-owned Deltrel state for any rule variant.
     #[wasm_bindgen]
     pub struct WasmState {
@@ -751,6 +757,6 @@ mod bindings {
 
 #[cfg(target_arch = "wasm32")]
 pub use bindings::{
-    WasmGumbel, WasmSearchSession, WasmSearchTree, WasmState, search_algorithm_id,
+    WasmGumbel, WasmSearchSession, WasmSearchTree, WasmState, derive_root_seed, search_algorithm_id,
     search_execution_version,
 };

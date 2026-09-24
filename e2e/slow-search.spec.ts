@@ -1,13 +1,14 @@
 import { expect, test } from '@playwright/test';
+import { setAiSearchBudget } from './browser-ai-helpers';
 import type { DeltrelAiAnalysis } from '../src/lib/deltrel/ai/decision';
 
 // Real Full-board CPU inference can take several minutes. The default suite
-// covers deadline behavior with fake clocks and real-model Quick/Deep searches;
+// covers deadline behavior with fake clocks and real-model searches with small custom budgets;
 // opt into this expensive regression when validating runtime or timeout changes.
 test.skip(({ browserName }) => browserName !== 'firefox' || process.env.DELTREL_SLOW_AI_TESTS !== '1',
   'Run explicitly with DELTREL_SLOW_AI_TESTS=1 on Firefox.');
 
-test('Full-board Deep search on the Firefox CPU fallback', async ({ page, context }, testInfo) => {
+test('Full-board 64-simulation search on the Firefox CPU fallback', async ({ page, context }, testInfo) => {
   test.setTimeout(900_000);
   await context.route('**/v2/health', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{}' }));
   await page.goto('/');
@@ -16,12 +17,11 @@ test('Full-board Deep search on the Firefox CPU fallback', async ({ page, contex
   await expect(controller.locator('option[value="local"]')).toBeEnabled();
   await controller.selectOption('local');
   await page.getByRole('combobox', { name: 'Player 2 controller' }).selectOption('human');
-  await page.getByRole('button', { name: 'Deep browser AI strength', exact: true }).click();
-  await page.getByRole('button', { name: 'Download browser AI', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Browser AI selected', exact: true })).toBeVisible({ timeout: 45_000 });
+  await setAiSearchBudget(page, 64, 8);
+  await expect(page.getByRole('button', { name: 'AI selected', exact: true })).toBeVisible({ timeout: 120_000 });
   const started = Date.now();
   await page.getByRole('button', { name: 'Begin the game', exact: true }).click();
-  const progress = page.getByRole('progressbar', { name: 'Browser AI search progress' });
+  const progress = page.getByRole('progressbar', { name: /^AI.* search progress$/ });
   await expect(progress).toBeVisible({ timeout: 95_000 });
   await expect(progress).toHaveAttribute('max', '64');
   const firstProgress = Number(await progress.getAttribute('value'));

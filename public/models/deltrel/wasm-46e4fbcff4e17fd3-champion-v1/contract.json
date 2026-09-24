@@ -1,0 +1,8 @@
+{
+  "schema": "deltrel.browser-wasm-build.v3",
+  "rulesSchema": "deltrel.rules.v3",
+  "rulesHash": "fnv1a64:46e4fbcff4e17fd3",
+  "moduleUrl": "/models/deltrel/wasm-46e4fbcff4e17fd3-champion-v1/deltrel_wasm.js",
+  "binaryUrl": "/models/deltrel/wasm-46e4fbcff4e17fd3-champion-v1/deltrel_wasm_bg.wasm",
+  "modelManifestUrl": "/models/deltrel/manifest.json"
+}

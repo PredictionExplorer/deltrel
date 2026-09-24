@@ -24,7 +24,7 @@ import {
 import { prepareLocalAi, requestLocalAiDecision } from '@/lib/deltrel/ai/local-client';
 import { checkAiCapabilities, type AiCapabilities } from '@/lib/deltrel/ai/capabilities';
 import { publishLocalAiStatus } from '@/lib/deltrel/ai/local-ai-status';
-import { requestServerAiDecision } from '@/lib/deltrel/ai/server-client';
+import { MAX_BROWSER_AI_SIMULATIONS, MAX_BROWSER_AI_MAX_CONSIDERED } from '@/lib/deltrel/ai/manifest';
 import { getBoard, parseLabel } from '@/lib/deltrel/board';
 import {
   DEFAULT_AI_SEARCH_SETTINGS,
@@ -38,13 +38,6 @@ vi.mock('@/lib/deltrel/ai/protocol', async () => {
     '@/lib/deltrel/ai/protocol',
   );
   return { ...actual, acceptAiResponse: vi.fn(actual.acceptAiResponse) };
-});
-
-vi.mock('@/lib/deltrel/ai/server-client', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/deltrel/ai/server-client')>(
-    '@/lib/deltrel/ai/server-client',
-  );
-  return { ...actual, requestServerAiDecision: vi.fn() };
 });
 
 vi.mock('@/lib/deltrel/ai/local-client', async () => {
@@ -61,11 +54,11 @@ vi.mock('@/lib/deltrel/ai/capabilities', async () => ({
 
 const browserReady = { modelVersion: 'browser-champion', bytes: 37_577_312, backend: 'wasm' as const, cached: true };
 const browserCapabilities: AiCapabilities = {
-  server: { status: 'available', label: 'Server AI' },
+  server: { status: 'available', label: 'AI' },
   local: {
-    status: 'available', label: 'Browser AI',
+    status: 'available', label: 'AI',
     browserModel: { modelVersion: browserReady.modelVersion, bytes: browserReady.bytes, sha256: 'a'.repeat(64) },
-    search: { default: { simulations: 8, maxConsidered: 4 }, maximum: { simulations: 64, maxConsidered: 8 }, presets: {} },
+    search: { default: { simulations: 8, maxConsidered: 4 }, maximum: { simulations: MAX_BROWSER_AI_SIMULATIONS, maxConsidered: MAX_BROWSER_AI_MAX_CONSIDERED }, presets: {} },
   },
 };
 
@@ -142,7 +135,7 @@ function resetPlayingStore(overrides: Partial<AppState> = {}) {
   useAppStore.setState({
     phase: 'playing',
     config: { ...config, playerNames: [...config.playerNames] },
-    controllers: ['server', 'human'],
+    controllers: ['local', 'human'],
     aiSearchSettings: {
       server: { ...DEFAULT_AI_SEARCH_SETTINGS.server },
       local: { ...DEFAULT_AI_SEARCH_SETTINGS.local },
@@ -172,7 +165,6 @@ beforeEach(() => {
   localStorage.clear();
   vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '0');
   resetPlayingStore();
-  vi.mocked(requestServerAiDecision).mockReset();
   vi.mocked(requestLocalAiDecision).mockReset();
   publishLocalAiStatus({ phase: 'ready', info: browserReady });
   vi.mocked(checkAiCapabilities).mockReset();
@@ -191,40 +183,46 @@ afterEach(() => {
 });
 
 describe('GameScreen AI lifecycle', () => {
-  it('shows real browser search progress, retains the active budget, and discards progress from earlier turns', async () => {
-    resetPlayingStore({ controllers: ['local', 'local'] });
+  it.each(['local'] as const)('shows real %s search progress, retains the active budget, and discards progress from earlier turns', async (runtime) => {
+    resetPlayingStore({ controllers: [runtime, runtime], aiSearchSettings: {
+      local: { simulations: 8, maxConsidered: 4 }, server: { simulations: 8, maxConsidered: 4 },
+    } });
     const first = deferred<DeltrelAiDecision>();
     const second = deferred<DeltrelAiDecision>();
     const engine = vi.mocked(requestLocalAiDecision);
+    const progressName = 'AI search progress';
     engine.mockReturnValue(second.promise).mockReturnValueOnce(first.promise);
     const user = userEvent.setup();
     render(<StrictMode><GameScreen /></StrictMode>);
     await waitFor(() => expect(engine).toHaveBeenCalledOnce());
     const [request, firstOptions] = engine.mock.calls[0];
-    expect(screen.queryByRole('progressbar', { name: 'Browser AI search progress' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar', { name: progressName })).not.toBeInTheDocument();
     act(() => firstOptions!.onSearchProgress!({ completedSimulations: 2, totalSimulations: 8 }));
-    expect(screen.getByRole('progressbar', { name: 'Browser AI search progress' })).toHaveAttribute('value', '2');
+    expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('value', '2');
     expect(screen.getByText('25% · 2 of 8 simulations')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Deep browser AI strength' }));
+    await user.click(screen.getByRole('button', { name: 'Deep AI strength' }));
     expect(engine).toHaveBeenCalledOnce();
     act(() => firstOptions!.onSearchProgress!({ completedSimulations: 6, totalSimulations: 8 }));
-    expect(screen.getByRole('progressbar', { name: 'Browser AI search progress' })).toHaveAttribute('max', '8');
+    expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('max', '8');
     expect(screen.getByText('75% · 6 of 8 simulations')).toBeVisible();
     await act(async () => first.resolve(makeDecision(request)));
     await waitFor(() => expect(engine).toHaveBeenCalledTimes(2));
-    expect(screen.queryByRole('progressbar', { name: 'Browser AI search progress' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar', { name: progressName })).not.toBeInTheDocument();
     act(() => firstOptions!.onSearchProgress!({ completedSimulations: 8, totalSimulations: 8 }));
-    expect(screen.queryByRole('progressbar', { name: 'Browser AI search progress' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar', { name: progressName })).not.toBeInTheDocument();
     const [, secondOptions] = engine.mock.calls[1];
-    expect(secondOptions!.search!.simulations).toBe(64);
-    act(() => secondOptions!.onSearchProgress!({ completedSimulations: 16, totalSimulations: 64 }));
-    expect(screen.getByRole('progressbar', { name: 'Browser AI search progress' })).toHaveAttribute('max', '64');
-    expect(screen.getByText('25% · 16 of 64 simulations')).toBeVisible();
+    expect(secondOptions!.search!.simulations).toBe(4096);
+    act(() => secondOptions!.onSearchProgress!({ completedSimulations: 1024, totalSimulations: 4096 }));
+    expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('max', '4096');
+    expect(screen.getByText('25% · 1,024 of 4,096 simulations')).toBeVisible();
   });
 
-  it('clears browser progress when paused and ignores old callbacks after resuming the same position', async () => {
-    resetPlayingStore({ controllers: ['local', 'local'] });
+  it.each(['local'] as const)('clears %s progress when paused and ignores old callbacks after resuming the same position', async (runtime) => {
+    resetPlayingStore({ controllers: [runtime, runtime], aiSearchSettings: {
+      local: { simulations: 8, maxConsidered: 4 }, server: { simulations: 8, maxConsidered: 4 },
+    } });
     const engine = vi.mocked(requestLocalAiDecision);
+    const progressName = 'AI search progress';
     engine.mockImplementation(() => deferred<DeltrelAiDecision>().promise);
     const user = userEvent.setup();
     render(<GameScreen />);
@@ -236,18 +234,18 @@ describe('GameScreen AI lifecycle', () => {
       useAppStore.getState().pauseAi();
       options!.onSearchProgress!({ completedSimulations: 5, totalSimulations: 8 });
     });
-    expect(screen.queryByRole('progressbar', { name: 'Browser AI search progress' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar', { name: progressName })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Resume AI' }));
     await waitFor(() => expect(engine).toHaveBeenCalledTimes(2));
     act(() => options!.onSearchProgress!({ completedSimulations: 8, totalSimulations: 8 }));
-    expect(screen.queryByRole('progressbar', { name: 'Browser AI search progress' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar', { name: progressName })).not.toBeInTheDocument();
     const [, resumedOptions] = engine.mock.calls[1];
     act(() => resumedOptions!.onSearchProgress!({ completedSimulations: 1, totalSimulations: 8 }));
     expect(screen.getByText('12% · 1 of 8 simulations')).toBeVisible();
     expect(useAppStore.getState().log).toEqual([]);
   });
 
-  it.each(['classic', 'double'] as const)('finishes all nine opening stones before alternating browser AI turns in %s', async (mode) => {
+  it.each(['classic', 'double'] as const)('finishes all nine opening stones before alternating AI turns in %s', async (mode) => {
     resetPlayingStore({ config: { ...config, playerNames: [...config.playerNames], rings: 10, mode, handicap: 9 }, controllers: ['local', 'local'] });
     const pending = Array.from({ length: 12 }, () => deferred<DeltrelAiDecision>());
     const engine = vi.mocked(requestLocalAiDecision);
@@ -272,10 +270,10 @@ describe('GameScreen AI lifecycle', () => {
 
   it('does not apply a completed decision after the game is paused externally', async () => {
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     render(<GameScreen />);
-    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledOnce());
-    const [request] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
+    const [request] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     await act(async () => {
       flight.resolve(makeDecision(request));
       useAppStore.getState().pauseAi();
@@ -286,38 +284,39 @@ describe('GameScreen AI lifecycle', () => {
   });
 
   it.each(['classic', 'double'] as const)('does not let rapid human clicks play the next AI turn in %s', async (mode) => {
-    resetPlayingStore({ config: { ...config, playerNames: [...config.playerNames], mode }, controllers: ['human', 'server'] });
-    vi.mocked(requestServerAiDecision).mockReturnValue(deferred<DeltrelAiDecision>().promise);
+    resetPlayingStore({ config: { ...config, playerNames: [...config.playerNames], mode }, controllers: ['human', 'local'] });
+    vi.mocked(requestLocalAiDecision).mockReturnValue(deferred<DeltrelAiDecision>().promise);
     render(<GameScreen />);
     const nodes = screen.getAllByRole('button', { name: /^Node .*, empty/ });
     act(() => {
       nodes[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
       nodes[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledOnce());
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
     expect(useAppStore.getState().log).toHaveLength(1);
-    expect(vi.mocked(requestServerAiDecision).mock.calls[0][0].state.toMove).toBe(1);
+    expect(vi.mocked(requestLocalAiDecision).mock.calls[0][0].state.toMove).toBe(1);
   });
 
-  it.each(['server', 'local'] as const)('keeps an active %s search when strength changes and uses the new budget next turn', async runtime => {
+  it.each(['local'] as const)('keeps an active %s search when strength changes and uses the new budget next turn', async runtime => {
     resetPlayingStore({ controllers: [runtime, runtime] });
     const first = deferred<DeltrelAiDecision>();
     const later = deferred<DeltrelAiDecision>();
-    const engine = vi.mocked(runtime === 'server' ? requestServerAiDecision : requestLocalAiDecision);
+    const engine = vi.mocked(requestLocalAiDecision);
     engine.mockReturnValue(later.promise).mockReturnValueOnce(first.promise);
     render(<StrictMode><GameScreen /></StrictMode>);
     await waitFor(() => expect(engine).toHaveBeenCalledOnce());
     const [request, initialOptions] = engine.mock.calls[0];
     const originalBudget = { ...initialOptions!.search! };
-    if (runtime === 'local') {
-      const user = userEvent.setup();
-      await user.click(screen.getByRole('button', { name: 'Deep browser AI strength' }));
-      await user.click(screen.getByRole('button', { name: 'Balanced browser AI strength' }));
-      expect(screen.getByRole('button', { name: 'Balanced browser AI strength' })).toHaveAttribute('aria-pressed', 'true');
-    } else {
-      act(() => useAppStore.getState().setAiSearchBudget(runtime, { simulations: 64, maxConsidered: 8 }));
-      act(() => useAppStore.getState().setAiSearchBudget(runtime, { simulations: 32, maxConsidered: 8 }));
-    }
+    const user = userEvent.setup();
+    await user.click(screen.getByText('Custom search budget'));
+    const simulations = screen.getByRole('spinbutton', { name: 'Simulations' });
+    const candidates = screen.getByRole('spinbutton', { name: 'Candidate moves' });
+    await user.clear(simulations);
+    await user.type(simulations, '4096');
+    await user.clear(candidates);
+    await user.type(candidates, '32');
+    await user.click(screen.getByRole('button', { name: 'Apply custom budget' }));
+    expect(useAppStore.getState().aiSearchSettings.local).toEqual({ simulations: 4096, maxConsidered: 32 });
     await act(async () => { await Promise.resolve(); });
     expect(engine).toHaveBeenCalledOnce();
     expect(initialOptions?.signal?.aborted).toBe(false);
@@ -327,12 +326,12 @@ describe('GameScreen AI lifecycle', () => {
       await first.promise;
     });
     await waitFor(() => expect(engine).toHaveBeenCalledTimes(2));
-    expect(engine.mock.calls[1][1]?.search).toEqual({ simulations: 32, maxConsidered: 8 });
+    expect(engine.mock.calls[1][1]?.search).toEqual({ simulations: 4096, maxConsidered: 32 });
     expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]);
   });
 
   it('presents both computer controllers accurately in saved AI matches without changing custom names or saved configuration', async () => {
-    resetPlayingStore({ config: { ...config, playerNames: ['You', 'Marina'] }, controllers: ['local', 'server'] });
+    resetPlayingStore({ config: { ...config, playerNames: ['You', 'Marina'] }, controllers: ['local', 'local'] });
     vi.mocked(requestLocalAiDecision).mockReturnValue(deferred<DeltrelAiDecision>().promise);
     render(<GameScreen />);
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
@@ -341,27 +340,26 @@ describe('GameScreen AI lifecycle', () => {
     const scores = screen.getByRole('region', { name: 'Current player scores' });
     expect(within(scores).getByRole('heading', { name: 'AI 1' })).toBeVisible();
     expect(within(scores).getByRole('heading', { name: 'Marina' })).toBeVisible();
-    expect(within(scores).getByText('Browser AI')).toBeVisible();
-    expect(within(scores).getByText('Server AI')).toBeVisible();
+    expect(within(scores).getAllByText('AI')).toHaveLength(2);
     expect(screen.queryByText('Human versus AI')).not.toBeInTheDocument();
     expect(useAppStore.getState().config.playerNames).toEqual(['You', 'Marina']);
-    expect(useAppStore.getState().controllers).toEqual(['local', 'server']);
+    expect(useAppStore.getState().controllers).toEqual(['local', 'local']);
   });
-  it('does not download or request a restored browser turn until preparation is explicitly requested', async () => {
+  it('prepares a restored AI turn automatically before requesting its move', async () => {
     publishLocalAiStatus({ phase: 'idle' });
-    resetPlayingStore({ controllers: ['local', 'human'] });
-    const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
-    const user = userEvent.setup();
+    resetPlayingStore({ controllers: ['server', 'human'] });
+    const preparation = deferred<typeof browserReady>();
+    vi.mocked(prepareLocalAi).mockReturnValue(preparation.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(deferred<DeltrelAiDecision>().promise);
     render(<GameScreen />);
-    const prepare = await screen.findByRole('button', { name: 'Prepare browser AI' });
-    expect(prepareLocalAi).not.toHaveBeenCalled();
+    await waitFor(() => expect(prepareLocalAi).toHaveBeenCalledOnce());
     expect(requestLocalAiDecision).not.toHaveBeenCalled();
-    expect(screen.getByText('Browser AI is waiting')).toBeVisible();
-    expect(screen.queryByText('Browser AI is thinking…')).not.toBeInTheDocument();
-    await user.click(prepare);
+    expect(screen.getByText('AI is waiting')).toBeVisible();
+    await act(async () => {
+      publishLocalAiStatus({ phase: 'ready', info: browserReady });
+      preparation.resolve(browserReady);
+    });
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
-    expect(prepareLocalAi).toHaveBeenCalledOnce();
     expect(useAppStore.getState().log).toEqual([]);
   });
 
@@ -376,7 +374,7 @@ describe('GameScreen AI lifecycle', () => {
     act(() => publishLocalAiStatus({ phase: 'initializing', loadedBytes: browserReady.bytes, totalBytes: browserReady.bytes, modelVersion: browserReady.modelVersion, cached: true }));
     expect(signal.aborted).toBe(false);
     expect(requestLocalAiDecision).toHaveBeenCalledOnce();
-    await user.click(screen.getByRole('button', { name: 'Cancel browser AI preparation' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel AI preparation' }));
     expect(signal.aborted).toBe(true);
     expect(useAppStore.getState().aiPaused).toBe(true);
     expect(useAppStore.getState().log).toEqual([]);
@@ -390,21 +388,19 @@ describe('GameScreen AI lifecycle', () => {
     vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     const user = userEvent.setup();
     render(<GameScreen />);
-    await user.click(await screen.findByRole('button', { name: 'Prepare browser AI' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Analyze position' })).toBeEnabled());
     expect(requestLocalAiDecision).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Analyze position' }));
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
-    expect(requestServerAiDecision).not.toHaveBeenCalled();
     const [request] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     await act(async () => flight.resolve(makeDecision(request)));
     expect(useAppStore.getState().log).toEqual([]);
-    expect(await completedEstimate()).toHaveTextContent('Browser engine');
+    expect(await completedEstimate()).toHaveTextContent('AI');
   });
 
   it('reuses one logical request when Strict Mode replays effects', async () => {
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
 
     render(
       <StrictMode>
@@ -412,9 +408,9 @@ describe('GameScreen AI lifecycle', () => {
       </StrictMode>,
     );
 
-    expect(await screen.findByText('Server AI is thinking…')).toBeInTheDocument();
-    expect(requestServerAiDecision).toHaveBeenCalledOnce();
-    const [request, options] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    expect(await screen.findByText('AI is thinking…')).toBeInTheDocument();
+    expect(requestLocalAiDecision).toHaveBeenCalledOnce();
+    const [request, options] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     expect(options?.signal?.aborted).toBe(false);
     expect(options?.search).toEqual({ simulations: 512, maxConsidered: 16 });
 
@@ -422,7 +418,7 @@ describe('GameScreen AI lifecycle', () => {
     await waitFor(() =>
       expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]),
     );
-    expect(requestServerAiDecision).toHaveBeenCalledOnce();
+    expect(requestLocalAiDecision).toHaveBeenCalledOnce();
     expect(
       screen.getByRole('region', { name: 'Engine estimate' }),
     ).toBeInTheDocument();
@@ -432,12 +428,12 @@ describe('GameScreen AI lifecycle', () => {
   it('aborts on exit and ignores a response that arrives after cancellation', async () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     const user = userEvent.setup();
     render(<PhaseHarness />);
 
-    await screen.findByText('Mac engine — current champion is thinking…');
-    const [request, options] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    await screen.findByText('AI is thinking…');
+    const [request, options] = vi.mocked(requestLocalAiDecision).mock.calls[0];
 
     await user.click(screen.getByRole('button', { name: 'New game' }));
     expect(options?.signal?.aborted).toBe(true);
@@ -458,12 +454,13 @@ describe('GameScreen AI lifecycle', () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
     const flight = deferred<DeltrelAiDecision>();
     const retryFlight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(retryFlight.promise).mockReturnValueOnce(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(retryFlight.promise).mockReturnValueOnce(flight.promise);
     const user = userEvent.setup();
     render(<GameScreen />);
 
-    await screen.findByText('Mac engine — current champion is thinking…');
-    const [request] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    await screen.findByText('AI is thinking…');
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
+    const [request] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     const stale = makeDecision(request);
     flight.resolve({
       ...stale,
@@ -477,34 +474,50 @@ describe('GameScreen AI lifecycle', () => {
     expect(screen.getByRole('region', { name: 'Engine estimate' })).toBeInTheDocument();
     expect(screen.queryByText(/Expected final points come from/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledTimes(2));
-    const [retryRequest] = vi.mocked(requestServerAiDecision).mock.calls[1];
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledTimes(2));
+    const [retryRequest] = vi.mocked(requestLocalAiDecision).mock.calls[1];
     await act(async () => retryFlight.resolve(makeDecision(retryRequest)));
     expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]);
   });
 
   it('retries a recoverable error and applies the successful response', async () => {
     const retryFlight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision)
-      .mockRejectedValueOnce(new DeltrelAiError('network', 'Server AI is offline.', true))
+    vi.mocked(requestLocalAiDecision)
+      .mockRejectedValueOnce(new DeltrelAiError('network', 'AI is offline.', true))
       .mockReturnValueOnce(retryFlight.promise);
     const user = userEvent.setup();
     render(<GameScreen />);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Server AI is offline.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('AI is offline.');
     await user.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledTimes(2));
 
-    const [retryRequest] = vi.mocked(requestServerAiDecision).mock.calls[1];
+    const [retryRequest] = vi.mocked(requestLocalAiDecision).mock.calls[1];
     retryFlight.resolve(makeDecision(retryRequest));
     await waitFor(() =>
       expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]),
     );
   });
 
+  it('clears champion progress on a stream error and keeps the game unchanged', async () => {
+    const flight = deferred<DeltrelAiDecision>();
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
+    render(<GameScreen />);
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
+    const [, options] = vi.mocked(requestLocalAiDecision).mock.calls[0];
+    act(() => options!.onSearchProgress!({ completedSimulations: 128, totalSimulations: 512 }));
+    expect(screen.getByText('25% · 128 of 512 simulations')).toBeVisible();
+    await act(async () => flight.reject(new DeltrelAiError('network', 'Champion connection interrupted.', true)));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Champion connection interrupted.');
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    act(() => options!.onSearchProgress!({ completedSimulations: 512, totalSimulations: 512 }));
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(useAppStore.getState().log).toEqual([]);
+  });
+
   it('lets the current player take over after an AI error', async () => {
-    vi.mocked(requestServerAiDecision).mockRejectedValue(
-      new DeltrelAiError('network', 'Server AI is offline.', true),
+    vi.mocked(requestLocalAiDecision).mockRejectedValue(
+      new DeltrelAiError('network', 'AI is offline.', true),
     );
     const user = userEvent.setup();
     render(<GameScreen />);
@@ -520,56 +533,32 @@ describe('GameScreen AI lifecycle', () => {
     expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]);
   });
 
-  it.each(['0', '1'])('passes server budgets and clamps browser budgets to published limits with devtools=%s', async (devtools) => {
-    vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', devtools);
+  it('uses exact custom browser budgets even when a legacy native budget is saved', async () => {
     resetPlayingStore({
+      controllers: ['server', 'human'],
       aiSearchSettings: {
         server: { simulations: 777, maxConsidered: 21 },
-        local: { simulations: 123, maxConsidered: 9 },
+        local: { simulations: 4096, maxConsidered: 256 },
       },
     });
-    const serverFlight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(serverFlight.promise);
-    const first = render(<GameScreen />);
-
-    await screen.findByText(devtools === '1' ? 'Mac engine — current champion is thinking…' : 'Server AI is thinking…');
-    expect(requestServerAiDecision).toHaveBeenCalledOnce();
-    expect(vi.mocked(requestServerAiDecision).mock.calls[0][1]?.search).toEqual({
-      simulations: 777,
-      maxConsidered: 21,
-    });
-    first.unmount();
-
-    resetPlayingStore({
-      controllers: ['local', 'human'],
-      aiSearchSettings: {
-        server: { simulations: 777, maxConsidered: 21 },
-        local: { simulations: 123, maxConsidered: 9 },
-      },
-    });
-    const localFlight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestLocalAiDecision).mockReturnValue(localFlight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(deferred<DeltrelAiDecision>().promise);
     render(<GameScreen />);
-
-    await screen.findByText(devtools === '1' ? 'Browser AI — trained champion is thinking…' : 'Browser AI is thinking…');
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
-    expect(vi.mocked(requestLocalAiDecision).mock.calls[0][1]?.search).toEqual({
-      simulations: 64,
-      maxConsidered: 8,
-    });
-    expect(screen.getByText('Custom setting: 123 simulations, up to 9 candidate moves.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Deep browser AI strength' })).toHaveAttribute('aria-pressed', 'false');
+    expect(vi.mocked(requestLocalAiDecision).mock.calls[0][1]?.search).toEqual({ simulations: 4096, maxConsidered: 256 });
+    expect(screen.getByText('Custom setting: 4,096 simulations, up to 256 candidate moves.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Deep AI strength' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('renders named estimates and top board labels from the accepted perspective', async () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     const { container } = render(<GameScreen />);
     const user = userEvent.setup();
 
-    await screen.findByText('Mac engine — current champion is thinking…');
-    const [request] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    await screen.findByText('AI is thinking…');
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
+    const [request] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     flight.resolve(
       makeDecision(request, { type: 'place', node: 0 }, {
         outcome: { loss: 0.2, win: 0.8 },
@@ -621,11 +610,12 @@ describe('GameScreen AI lifecycle', () => {
   it('shows official final predictions during normal play without developer settings', async () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '0');
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     const { container } = render(<GameScreen />);
     const user = userEvent.setup();
-    await screen.findByText('Server AI is thinking…');
-    const [request] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    await screen.findByText('AI is thinking…');
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
+    const [request] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     flight.resolve(makeDecision(request, { type: 'place', node: 0 }, {
       predictions: {
         perspective: 0, finalBasis: 'official_end',
@@ -655,18 +645,19 @@ describe('GameScreen AI lifecycle', () => {
   it('maps a second-player analysis to the correct named win estimates', async () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
     resetPlayingStore({
-      controllers: ['human', 'server'],
+      controllers: ['human', 'local'],
       log: [
         { type: 'place', node: 0 },
         { type: 'place', node: 1 },
       ],
     });
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     render(<GameScreen />);
 
-    await screen.findByText('Mac engine — current champion is thinking…');
-    const [request] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    await screen.findByText('AI is thinking…');
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
+    const [request] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     expect(request.state.toMove).toBe(1);
     flight.resolve(
       makeDecision(request, { type: 'place', node: 2 }, {
@@ -686,12 +677,13 @@ describe('GameScreen AI lifecycle', () => {
   it('restores the exact cached estimate on undo', async () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     const user = userEvent.setup();
     render(<GameScreen />);
 
-    await screen.findByText('Mac engine — current champion is thinking…');
-    const [request] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    await screen.findByText('AI is thinking…');
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
+    const [request] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     flight.resolve(makeDecision(request));
     await completedEstimate();
 
@@ -704,22 +696,22 @@ describe('GameScreen AI lifecycle', () => {
 
   it('retains the previous estimate and expanded details during the next search and an error', async () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
-    resetPlayingStore({ controllers: ['server', 'server'] });
+    resetPlayingStore({ controllers: ['local', 'local'] });
     const first = deferred<DeltrelAiDecision>();
     const second = deferred<DeltrelAiDecision>();
     const user = userEvent.setup();
-    vi.mocked(requestServerAiDecision)
+    vi.mocked(requestLocalAiDecision)
       .mockReturnValueOnce(first.promise)
       .mockReturnValueOnce(second.promise);
     render(<GameScreen />);
 
-    await screen.findByText('Mac engine — current champion is thinking…');
-    const [firstRequest] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    await screen.findByText('AI is thinking…');
+    const [firstRequest] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     first.resolve(makeDecision(firstRequest));
     const panel = await completedEstimate();
     await user.click(within(panel).getByRole('button', { name: /^Search candidates/ }));
     await waitFor(() =>
-      expect(requestServerAiDecision).toHaveBeenCalledTimes(2),
+      expect(requestLocalAiDecision).toHaveBeenCalledTimes(2),
     );
 
     second.reject(new DeltrelAiError('timeout', 'Engine timed out.', true));
@@ -734,7 +726,7 @@ describe('GameScreen AI lifecycle', () => {
   it.each(['0', '1'])('retries a timeout with less effort with devtools=%s', async (devtools) => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', devtools);
     const retryFlight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision)
+    vi.mocked(requestLocalAiDecision)
       .mockRejectedValueOnce(new DeltrelAiError('timeout', 'Engine timed out.', true))
       .mockReturnValueOnce(retryFlight.promise);
     const user = userEvent.setup();
@@ -743,13 +735,13 @@ describe('GameScreen AI lifecycle', () => {
     await screen.findByRole('alert');
     await user.click(screen.getByRole('button', { name: 'Use less effort' }));
     await waitFor(() =>
-      expect(requestServerAiDecision).toHaveBeenCalledTimes(2),
+      expect(requestLocalAiDecision).toHaveBeenCalledTimes(2),
     );
-    expect(useAppStore.getState().aiSearchSettings.server).toEqual({
+    expect(useAppStore.getState().aiSearchSettings.local).toEqual({
       simulations: 256,
       maxConsidered: 8,
     });
-    expect(vi.mocked(requestServerAiDecision).mock.calls[1][1]?.search).toEqual({
+    expect(vi.mocked(requestLocalAiDecision).mock.calls[1][1]?.search).toEqual({
       simulations: 256,
       maxConsidered: 8,
     });
@@ -761,15 +753,15 @@ describe('GameScreen AI lifecycle', () => {
 
     expect(screen.queryByRole('button', { name: 'Pass' })).not.toBeInTheDocument();
     expect((await axe(container)).violations).toEqual([]);
-    expect(requestServerAiDecision).not.toHaveBeenCalled();
+    expect(requestLocalAiDecision).not.toHaveBeenCalled();
   });
 
   it('blocks automatic play for the clinch decision and proof view', async () => {
     const user = userEvent.setup();
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     resetPlayingStore({
-      controllers: ['server', 'server'],
+      controllers: ['local', 'local'],
       log: Array.from({ length: 49 }, (_, node) => ({
         type: 'place' as const,
         node,
@@ -780,12 +772,12 @@ describe('GameScreen AI lifecycle', () => {
     const clinch = screen.getByRole('dialog', {
       name: 'Grace cannot be caught',
     });
-    expect(requestServerAiDecision).not.toHaveBeenCalled();
+    expect(requestLocalAiDecision).not.toHaveBeenCalled();
     await user.click(
       within(clinch).getByRole('button', { name: 'Continue playing' }),
     );
-    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledOnce());
-    const signal = vi.mocked(requestServerAiDecision).mock.calls[0][1]?.signal;
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
+    const signal = vi.mocked(requestLocalAiDecision).mock.calls[0][1]?.signal;
     expect(signal?.aborted).toBe(false);
 
     const actionDock = within(
@@ -801,9 +793,9 @@ describe('GameScreen AI lifecycle', () => {
   it('does not reopen Rules after an AI finishes the game behind it', async () => {
     const user = userEvent.setup();
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     resetPlayingStore({
-      controllers: ['server', 'server'],
+      controllers: ['local', 'local'],
       log: Array.from({ length: 49 }, (_, node) => ({
         type: 'place' as const,
         node,
@@ -812,13 +804,13 @@ describe('GameScreen AI lifecycle', () => {
     });
     render(<GameScreen />);
 
-    await screen.findByText(/server ai is thinking/i);
+    await screen.findByText(/AI is thinking/i);
     await user.click(screen.getByRole('button', { name: 'Rules' }));
     expect(
       screen.getByRole('dialog', { name: 'How to play Deltrel' }),
     ).toBeInTheDocument();
 
-    const [request] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    const [request] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     flight.resolve(makeDecision(request, { type: 'place', node: 49 }));
     const result = await screen.findByRole('dialog', { name: 'Game over' });
     await user.click(
@@ -838,13 +830,12 @@ describe('GameScreen position-scoped engine inspection', () => {
   it('analyzes a human position without applying the suggested move', async () => {
     resetPlayingStore({ controllers: ['human', 'human'] });
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     const user = userEvent.setup();
     render(<GameScreen />);
     const before = useAppStore.getState().log;
     await user.click(screen.getByRole('button', { name: 'Analyze position' }));
-    const [request, options] = vi.mocked(requestServerAiDecision).mock.calls[0];
-    expect(options?.includeNetworkOutput).toBe(true);
+    const [request] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     flight.resolve(makeDecision(request));
     const panel = await completedEstimate();
     expect(useAppStore.getState().log).toBe(before);
@@ -856,11 +847,11 @@ describe('GameScreen position-scoped engine inspection', () => {
   it('cancels inspection when a human moves and rejects the late result', async () => {
     resetPlayingStore({ controllers: ['human', 'human'] });
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     const user = userEvent.setup();
     render(<GameScreen />);
     await user.click(screen.getByRole('button', { name: 'Analyze position' }));
-    const [request, options] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    const [request, options] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     await user.click(screen.getByRole('button', { name: /^Node E4, empty/ }));
     expect(options?.signal?.aborted).toBe(true);
     await act(async () => { flight.resolve(makeDecision(request)); await flight.promise; });
@@ -869,23 +860,23 @@ describe('GameScreen position-scoped engine inspection', () => {
   });
 
   it('keeps reviewed-position estimates fixed while AI-versus-AI play continues', async () => {
-    resetPlayingStore({ controllers: ['server', 'server'] });
+    resetPlayingStore({ controllers: ['local', 'local'] });
     const first = deferred<DeltrelAiDecision>();
     const second = deferred<DeltrelAiDecision>();
     const pending = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(pending.promise)
+    vi.mocked(requestLocalAiDecision).mockReturnValue(pending.promise)
       .mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     const user = userEvent.setup();
     render(<GameScreen />);
-    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledOnce());
-    const firstRequest = vi.mocked(requestServerAiDecision).mock.calls[0][0];
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
+    const firstRequest = vi.mocked(requestLocalAiDecision).mock.calls[0][0];
     first.resolve(makeDecision(firstRequest));
     await completedEstimate();
-    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledTimes(2));
     await user.click(screen.getByRole('button', { name: 'Jump to the empty board' }));
     const panel = screen.getByRole('region', { name: 'Engine estimate' });
     expect(within(panel).getByText(/Opening position/)).toBeInTheDocument();
-    const secondRequest = vi.mocked(requestServerAiDecision).mock.calls[1][0];
+    const secondRequest = vi.mocked(requestLocalAiDecision).mock.calls[1][0];
     second.resolve(makeDecision(secondRequest, { type: 'place', node: 1 }, {
       outcome: { loss: 0.1, win: 0.9 }, modelValue: 0.8,
     }));
@@ -898,19 +889,19 @@ describe('GameScreen position-scoped engine inspection', () => {
   });
 
   it('pauses AI-versus-AI play without losing the latest estimate and resumes the same position', async () => {
-    resetPlayingStore({ controllers: ['server', 'server'] });
+    resetPlayingStore({ controllers: ['local', 'local'] });
     const first = deferred<DeltrelAiDecision>();
     const second = deferred<DeltrelAiDecision>();
     const pending = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(pending.promise)
+    vi.mocked(requestLocalAiDecision).mockReturnValue(pending.promise)
       .mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
     const user = userEvent.setup();
     render(<GameScreen />);
-    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledOnce());
-    first.resolve(makeDecision(vi.mocked(requestServerAiDecision).mock.calls[0][0]));
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
+    first.resolve(makeDecision(vi.mocked(requestLocalAiDecision).mock.calls[0][0]));
     await completedEstimate();
-    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledTimes(2));
-    const [secondRequest, secondOptions] = vi.mocked(requestServerAiDecision).mock.calls[1];
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledTimes(2));
+    const [secondRequest, secondOptions] = vi.mocked(requestLocalAiDecision).mock.calls[1];
     await user.click(screen.getByRole('button', { name: 'Pause AI' }));
     expect(secondOptions?.signal?.aborted).toBe(true);
     expect(useAppStore.getState().aiPaused).toBe(true);
@@ -918,11 +909,11 @@ describe('GameScreen position-scoped engine inspection', () => {
     expect(useAppStore.getState().log).toHaveLength(1);
     expect(screen.getByText(/Expected final points come from/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Resume AI' }));
-    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledTimes(3));
-    expect(vi.mocked(requestServerAiDecision).mock.calls[2][0].stateHash).toBe(secondRequest.stateHash);
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(requestLocalAiDecision).mock.calls[2][0].stateHash).toBe(secondRequest.stateHash);
   });
 
-  it.each(['local', 'server'] as const)(
+  it.each(['local'] as const)(
     'requires paused play before browser inspection while the next %s turn is running',
     async (nextController) => {
       resetPlayingStore({ controllers: ['local', nextController] });
@@ -931,18 +922,16 @@ describe('GameScreen position-scoped engine inspection', () => {
       const inspection = deferred<DeltrelAiDecision>();
       const resumed = deferred<DeltrelAiDecision>();
       const local = vi.mocked(requestLocalAiDecision);
-      const server = vi.mocked(requestServerAiDecision);
       local.mockReturnValue(resumed.promise).mockReturnValueOnce(first.promise);
-      if (nextController === 'local') local.mockReturnValueOnce(autoplay.promise);
-      else server.mockReturnValue(resumed.promise).mockReturnValueOnce(autoplay.promise);
+      local.mockReturnValueOnce(autoplay.promise);
       local.mockReturnValueOnce(inspection.promise);
       const user = userEvent.setup();
       render(<GameScreen />);
       await waitFor(() => expect(local).toHaveBeenCalledOnce());
       first.resolve(makeDecision(local.mock.calls[0][0]));
       await completedEstimate();
-      const automatic = nextController === 'local' ? local : server;
-      const autoCallIndex = nextController === 'local' ? 1 : 0;
+      const automatic = local;
+      const autoCallIndex = 1;
       await waitFor(() => expect(automatic).toHaveBeenCalledTimes(autoCallIndex + 1));
       const [autoRequest, autoOptions] = automatic.mock.calls[autoCallIndex];
       await user.click(screen.getByRole('button', { name: 'Jump to the empty board' }));
@@ -950,7 +939,7 @@ describe('GameScreen position-scoped engine inspection', () => {
       expect(analyze).toBeDisabled();
       expect(screen.getByText('Pause AI to analyze this position with the browser engine.')).toBeInTheDocument();
       await user.click(analyze);
-      expect(local).toHaveBeenCalledTimes(nextController === 'local' ? 2 : 1);
+      expect(local).toHaveBeenCalledTimes(2);
       expect(autoOptions?.signal?.aborted).toBe(false);
 
       await user.click(screen.getByRole('button', { name: 'Pause AI' }));
@@ -958,7 +947,7 @@ describe('GameScreen position-scoped engine inspection', () => {
       expect(autoOptions?.signal?.aborted).toBe(true);
       expect(analyze).toBeEnabled();
       await user.click(analyze);
-      const inspectionIndex = nextController === 'local' ? 2 : 1;
+      const inspectionIndex = 2;
       await waitFor(() => expect(local).toHaveBeenCalledTimes(inspectionIndex + 1));
       const [inspectionRequest, inspectionOptions] = local.mock.calls[inspectionIndex];
       expect(inspectionRequest.actionLog).toHaveLength(0);
@@ -971,7 +960,7 @@ describe('GameScreen position-scoped engine inspection', () => {
       });
       expect(useAppStore.getState().log).toHaveLength(1);
       await user.click(screen.getByRole('button', { name: 'Resume AI' }));
-      const expectedCalls = nextController === 'local' ? 4 : 2;
+      const expectedCalls = 4;
       await waitFor(() => expect(automatic).toHaveBeenCalledTimes(expectedCalls));
       expect(automatic.mock.calls.at(-1)?.[0].stateHash).toBe(autoRequest.stateHash);
     },
@@ -980,11 +969,11 @@ describe('GameScreen position-scoped engine inspection', () => {
   it('clears analysis on rematch even when the opening position has the same identity', async () => {
     resetPlayingStore({ config: { ...config, playerNames: [...config.playerNames], pieRule: true }, controllers: ['human', 'human'] });
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestServerAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     const user = userEvent.setup();
     render(<GameScreen />);
     await user.click(screen.getByRole('button', { name: 'Analyze position' }));
-    flight.resolve(makeDecision(vi.mocked(requestServerAiDecision).mock.calls[0][0]));
+    flight.resolve(makeDecision(vi.mocked(requestLocalAiDecision).mock.calls[0][0]));
     await completedEstimate();
     await user.click(screen.getByRole('button', { name: 'Resign Ada' }));
     await user.click(within(screen.getByRole('dialog', { name: 'Resign Ada?' })).getByRole('button', { name: 'Resign Ada' }));
@@ -1297,16 +1286,16 @@ describe('GameScreen score guidance', () => {
     });
 
     resetPlayingStore({
-      controllers: ['human', 'server'],
+      controllers: ['human', 'local'],
       log: [{ type: 'place', node: 0 }],
     });
-    vi.mocked(requestServerAiDecision).mockReturnValue(
+    vi.mocked(requestLocalAiDecision).mockReturnValue(
       deferred<DeltrelAiDecision>().promise,
     );
     rerender(<GameScreen />);
     expect(screen.getByRole('button', { name: 'Resign Ada' })).toBeInTheDocument();
 
-    resetPlayingStore({ controllers: ['server', 'local'] });
+    resetPlayingStore({ controllers: ['local', 'local'] });
     rerender(<GameScreen />);
     expect(
       screen.queryByRole('button', { name: /resign/i }),

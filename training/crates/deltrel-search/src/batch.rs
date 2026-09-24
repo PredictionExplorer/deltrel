@@ -417,7 +417,8 @@ fn match_responses<E>(
     Ok(matched)
 }
 
-fn derive_root_seed(nonce: u64, state_hash: u64, index: usize) -> u64 {
+/// Derive the scheduler seed shared by native batches and browser actors.
+pub fn derive_root_seed(nonce: u64, state_hash: u64, index: usize) -> u64 {
     splitmix64(nonce ^ state_hash.rotate_left(17) ^ (index as u64).rotate_left(41))
 }
 

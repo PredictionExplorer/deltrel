@@ -28,7 +28,9 @@ from deltreltrain.inference_batching import (
     CohortInferenceAdapter,
 )
 from deltreltrain.auxiliary_inference import AuxiliaryPrediction
-from deltreltrain.auxiliary_upgrade import auxiliary_heads_ready as _auxiliary_heads_ready
+from deltreltrain.auxiliary_upgrade import (
+    auxiliary_heads_ready as _auxiliary_heads_ready,
+)
 from deltreltrain.model import GraphResTNet
 from deltreltrain.contracts import MODE_INDEX
 from deltreltrain.native import (
@@ -406,6 +408,7 @@ class NativeAnalysisService:
         self,
         request: AnalyzeRequest,
         cancellation: threading.Event,
+        progress: Callable[[int, int], None] | None = None,
     ) -> dict[str, object]:
         started = time.perf_counter()
         states = self._import_state(request)
@@ -461,6 +464,34 @@ class NativeAnalysisService:
                     reuse_tree=True,
                     max_reused_nodes=execution.subtree_reuse_max_nodes,
                 )
+            last_completed = -1
+
+            def report_progress() -> None:
+                nonlocal last_completed
+                if progress is None:
+                    return
+                completed = getattr(search, "completed_simulations", None)
+                if completed is None:
+                    raise AnalysisError(
+                        "native_incompatible",
+                        "deltrel_native lacks live simulation progress; rebuild the extension",
+                    )
+                if (
+                    not isinstance(completed, list)
+                    or len(completed) != 1
+                    or type(completed[0]) is not int
+                    or not max(0, last_completed)
+                    <= completed[0]
+                    <= request.search.simulations
+                ):
+                    raise AnalysisError(
+                        "native_search_error", "native search returned invalid progress"
+                    )
+                if completed[0] != last_completed:
+                    last_completed = completed[0]
+                    progress(last_completed, request.search.simulations)
+
+            report_progress()
             roots = search.root_requests()
             if len(roots) != 1:
                 raise AnalysisError(
@@ -471,6 +502,7 @@ class NativeAnalysisService:
             if cancellation.is_set():
                 raise SearchCancelled()
             search.initialize_roots(*detailed.response.submit_args())
+            report_progress()
             guard = 0
             maximum_iterations = request.search.simulations * 4 + 16
             while not search.is_done():
@@ -491,12 +523,16 @@ class NativeAnalysisService:
                     if execution.enabled
                     else search.next_requests()
                 )
+                # Selection can complete terminal or cached leaves without any
+                # inference submission, so count both native transitions.
+                report_progress()
                 if len(requests) == 0:
                     continue
                 response = evaluator.evaluate(requests)
                 if cancellation.is_set():
                     raise SearchCancelled()
                 search.submit(*response.submit_args())
+                report_progress()
             if cancellation.is_set():
                 raise SearchCancelled()
             results = search.results()
@@ -828,7 +864,6 @@ class NativeAnalysisService:
         return payload
 
 
-
 def _auxiliary_payload(
     prediction: AuxiliaryPrediction,
     request: AnalyzeRequest,
@@ -900,7 +935,9 @@ def _auxiliary_payload(
         "final_counts": counts,
         "opponent_reply": future_move(
             prediction.opponent_reply_probabilities, 1 - request.to_move, swap=True
-        ) if sum(stone == -1 for stone in request.stones) > request.moves_left else None,
+        )
+        if sum(stone == -1 for stone in request.stones) > request.moves_left
+        else None,
         "second_stone": future_move(
             prediction.second_stone_probabilities, request.to_move, swap=False
         )

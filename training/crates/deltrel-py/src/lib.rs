@@ -22,7 +22,7 @@ use deltrel_engine::{
 };
 use deltrel_search::{
     Evaluation, EvaluationRequest, GumbelParameters, GumbelSequentialHalving, RootSearchConfig,
-    SearchSession, SearchTree, SessionConfig, SimulationStart,
+    SearchSession, SearchTree, SessionConfig, SimulationStart, derive_root_seed,
 };
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -1793,6 +1793,36 @@ impl PySearchBatch {
         self.budgets.clone()
     }
 
+    /// Completed new simulations per row, excluding outstanding evaluations and
+    /// inherited subtree visits. Terminal and prediction-cached leaves count.
+    #[getter]
+    fn completed_simulations(&self) -> Vec<u32> {
+        self.execution.as_ref().map_or_else(
+            || {
+                self.schedulers.as_ref().map_or_else(
+                    || vec![0; self.trees.len()],
+                    |schedulers| {
+                        schedulers
+                            .iter()
+                            .map(|scheduler| {
+                                scheduler
+                                    .as_ref()
+                                    .map_or(0, GumbelSequentialHalving::simulations)
+                            })
+                            .collect()
+                    },
+                )
+            },
+            |execution| {
+                execution
+                    .sessions
+                    .iter()
+                    .map(SearchSession::simulations)
+                    .collect()
+            },
+        )
+    }
+
     /// Current unique tree nodes per root, for bounded completed-search pools.
     #[getter]
     fn unique_state_counts(&self) -> Vec<usize> {
@@ -3408,22 +3438,11 @@ fn validate_evaluation_native(evaluation: &Evaluation, expected: usize) -> Resul
     Ok(())
 }
 
-fn derive_root_seed(nonce: u64, state_hash: u64, index: usize) -> u64 {
-    splitmix64(nonce ^ state_hash.rotate_left(17) ^ (index as u64).rotate_left(41))
-}
-
 fn scheduler_seed(search: &PySearchBatch, index: usize, state_hash: u64) -> u64 {
     search.seeds_per_root.as_ref().map_or_else(
         || derive_root_seed(search.config.nonce.value(), state_hash, index),
         |seeds| derive_root_seed(seeds[index], state_hash, 0),
     )
-}
-
-const fn splitmix64(mut value: u64) -> u64 {
-    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
 }
 
 fn value_error(error: impl std::fmt::Display) -> PyErr {

@@ -28,9 +28,11 @@ for (const game of fixture.games) {
     const request = buildAiRequest(game.config, game.actions.slice(0, index), `browser-${cases.length}`);
     const encoded = encodeDeltrelFeatures(request.state), n = encoded.nodeCount, d = encoded.maxDegree;
     const tensor = (type, data, dims) => ({type, data: Array.from(data, Number), dims});
+    const featureTensor = (values, dims) => tensor(manifest.model.precision,
+      manifest.model.precision === 'float16' ? float32ToFloat16Array(values) : values, dims);
     cases.push({name: `${game.id}:${index}`, rings: game.config.rings, nodes: n, legal: request.legalActions, feeds: {
-      node_features: tensor('float16', float32ToFloat16Array(encoded.nodeFeatures), [1, n, 19]),
-      global_features: tensor('float16', float32ToFloat16Array(encoded.globalFeatures), [1, 25]),
+      node_features: featureTensor(encoded.nodeFeatures, [1, n, 19]),
+      global_features: featureTensor(encoded.globalFeatures, [1, 25]),
       neighbor_index: tensor('int64', encoded.neighborIndex, [1, n, d]),
       neighbor_mask: tensor('bool', encoded.neighborMask, [1, n, d]),
       neighbor_edge_type: tensor('int64', encoded.neighborEdgeType, [1, n, d]),
@@ -67,7 +69,7 @@ const browser = await chromium.launch({headless: true, args: ['--disable-gpu']})
 try {
   const page = await browser.newPage();
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
-  const report = await page.evaluate(async ({expectedNames, expectedBytes, expectedHash}) => {
+  const report = await page.evaluate(async ({expectedNames, expectedBytes, expectedHash, precision}) => {
     const ort = await import('/ort/ort.webgpu.min.mjs');
     ort.env.wasm.numThreads = 1;
     ort.env.wasm.wasmPaths = `${location.origin}/ort/`;
@@ -86,14 +88,14 @@ try {
     for (const row of records) {
       const feeds = {};
       for (const [name, input] of Object.entries(row.feeds)) {
-        const data = input.type === 'int64' ? new BigInt64Array(input.data.map(BigInt)) : input.type === 'bool' ? new Uint8Array(input.data) : new Uint16Array(input.data);
+        const data = input.type === 'int64' ? new BigInt64Array(input.data.map(BigInt)) : input.type === 'bool' ? new Uint8Array(input.data) : input.type === 'float32' ? new Float32Array(input.data) : new Uint16Array(input.data);
         feeds[name] = new ort.Tensor(input.type, data, input.dims);
       }
       const start = performance.now();
       const outputs = await session.run(feeds);
       if (Object.keys(outputs).sort().join('|') !== [...expectedNames].sort().join('|')) throw new Error(`head set mismatch: ${row.name}`);
       for (const [name, tensor] of Object.entries(outputs)) {
-        if (tensor.type !== 'float16' || !Array.from(tensor.data, tensor.data instanceof Uint16Array ? float16 : Number).every(Number.isFinite)) throw new Error(`invalid ${name}: ${row.name}; ${tensor.data.constructor.name}; ${Array.from(tensor.data).slice(0, 5)}`);
+        if (tensor.type !== precision || !Array.from(tensor.data, tensor.data instanceof Uint16Array ? float16 : Number).every(Number.isFinite)) throw new Error(`invalid ${name}: ${row.name}; ${tensor.data.constructor.name}; ${Array.from(tensor.data).slice(0, 5)}`);
       }
       const policy = Array.from(outputs.policy_logits.data, outputs.policy_logits.data instanceof Uint16Array ? float16 : Number);
       const selected = row.legal.reduce((best, node) => policy[node] > policy[best] ? node : best, row.legal[0]);
@@ -103,7 +105,7 @@ try {
     }
     await session.release();
     return {provider: 'wasm', loadMilliseconds, positions: reports.length, reports};
-  }, {expectedNames: manifest.model.outputs, expectedBytes: manifest.model.bytes, expectedHash: checksum});
+  }, {expectedNames: manifest.model.outputs, expectedBytes: manifest.model.bytes, expectedHash: checksum, precision: manifest.model.precision});
   console.log(JSON.stringify({modelVersion: manifest.modelVersion, bytes: manifest.model.bytes, ...report}, null, 2));
 } finally {
   await browser.close();

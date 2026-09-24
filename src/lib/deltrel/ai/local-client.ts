@@ -77,6 +77,10 @@ export class LocalDeltrelAiClient {
   private readyReject: ((error: DeltrelAiError) => void) | null = null;
   private handshakeTimeout: ReturnType<typeof setTimeout> | null = null;
   private idleTimeout: ReturnType<typeof setTimeout> | null = null;
+  // Keep the verified release across idle disposal and cancelled searches.
+  // A fresh page gets a fresh pointer; an ongoing game keeps the same model.
+  private pinnedRelease: unknown;
+  private pinnedModelVersion: string | null = null;
 
   constructor(
     private readonly workerFactory: WorkerFactory = createLocalWorker,
@@ -103,7 +107,9 @@ export class LocalDeltrelAiClient {
       this.onStatus({ phase: 'checking', loadedBytes: 0, totalBytes: null, modelVersion: null, cached: false });
       try {
         void this.ensureWorker().then((worker) => {
-          if (this.preparations.has(taskId)) worker.postMessage({ type: 'prepare', taskId } satisfies DeltrelAiWorkerCommand);
+          if (this.preparations.has(taskId)) worker.postMessage({ type: 'prepare', taskId,
+            ...(this.pinnedRelease === undefined ? {} : { release: this.pinnedRelease }),
+          } satisfies DeltrelAiWorkerCommand);
         }).catch((error) => {
           if (this.preparations.has(taskId)) this.resetWorker(error instanceof DeltrelAiError ? error : new DeltrelAiError('unavailable', 'Browser AI could not start. Please retry.', true, error));
         });
@@ -189,6 +195,7 @@ export class LocalDeltrelAiClient {
             taskId: request.requestId,
             request,
             search,
+            ...(this.pinnedRelease === undefined ? {} : { release: this.pinnedRelease }),
           };
           worker.postMessage(command);
         })
@@ -210,6 +217,10 @@ export class LocalDeltrelAiClient {
 
   dispose(): void {
     this.resetWorker(new DeltrelAiError('cancelled', 'Local AI disposed.'));
+  }
+
+  getPinnedRelease(): unknown {
+    return this.pinnedRelease;
   }
 
   private ensureWorker(): Promise<Worker> {
@@ -277,6 +288,14 @@ export class LocalDeltrelAiClient {
       return;
     }
     if (message.type === 'prepared') {
+      if (this.pinnedModelVersion !== null && message.info.modelVersion !== this.pinnedModelVersion) {
+        this.resetWorker(new DeltrelAiError('protocol', 'AI changed its model during this game. Reload to update the champion.'));
+        return;
+      }
+      if (message.release !== undefined) {
+        this.pinnedRelease ??= message.release;
+        this.pinnedModelVersion = message.info.modelVersion;
+      }
       this.onStatus({ phase: 'ready', info: message.info });
       const preparation = this.preparations.get(message.taskId);
       if (preparation) {
@@ -318,6 +337,9 @@ export class LocalDeltrelAiClient {
     }
     try {
       const decision = parseDeltrelAiDecision(pending.request, message.decision);
+      if (this.pinnedModelVersion !== null && decision.analysis.modelVersion !== this.pinnedModelVersion) {
+        throw new DeltrelAiError('protocol', 'AI returned a move from a different model release.');
+      }
       if ((pending.totalSimulations !== null && decision.analysis.simulations !== pending.totalSimulations) ||
           (pending.requestedSearch && decision.analysis.maxConsidered !== pending.requestedSearch.maxConsidered)) {
         throw new DeltrelAiError('protocol', 'Local AI result does not match its search budget.');
@@ -411,6 +433,11 @@ const localClient = new LocalDeltrelAiClient(createLocalWorker, publishLocalAiSt
 
 export function prepareLocalAi(options: LocalAiPreparationOptions = {}): Promise<LocalAiReadyInfo> {
   return localClient.prepare(options);
+}
+
+/** Verified page-session publication; independent of the mutable latest pointer. */
+export function getPinnedLocalAiRelease(): unknown {
+  return localClient.getPinnedRelease();
 }
 
 export function requestLocalAiAction(

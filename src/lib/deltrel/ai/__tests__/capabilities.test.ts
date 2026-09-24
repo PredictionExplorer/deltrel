@@ -1,16 +1,59 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   checkLocalAiCapability,
+  checkAiCapabilities,
   checkServerAiCapability,
   localBrowserCapabilityIssue,
 } from '../capabilities';
 import { DELTREL_FEATURE_SCHEMA_HASH } from '../protocol';
+import publishedManifest from '../../../../../public/models/deltrel/manifest.json';
+import * as localClient from '../local-client';
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe('AI capability preflight', () => {
+  it('uses the verified pinned release without network access after preparation', async () => {
+    vi.stubGlobal('Worker', class {});
+    vi.spyOn(localClient, 'getPinnedLocalAiRelease').mockReturnValue(publishedManifest);
+    const fetchMock = vi.fn(() => Promise.reject(new Error('offline')));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(checkAiCapabilities()).resolves.toMatchObject({ local: {
+      status: 'available', browserModel: { modelVersion: publishedManifest.model_version },
+      search: { default: { simulations: 512, maxConsidered: 16 } },
+    } });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('advertises native custom limits separately from the published search defaults and presets', async () => {
+    vi.stubGlobal('Worker', class {});
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, options?: RequestInit) =>
+      options?.method === 'HEAD' ? new Response(null) : Response.json(publishedManifest)));
+    await expect(checkLocalAiCapability()).resolves.toMatchObject({
+      status: 'available',
+      search: {
+        default: { simulations: 512, maxConsidered: 16 },
+        maximum: { simulations: 536_870_911, maxConsidered: 4_294_967_295 },
+        presets: { maximum: { simulations: 4096, maxConsidered: 64 } },
+      },
+    });
+  });
+
+  it('checks only the published browser release for public gameplay', async () => {
+    vi.stubGlobal('Worker', class {});
+    const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
+      expect(url).not.toContain('/v2/');
+      expect(options?.cache).toBe('no-store');
+      return options?.method === 'HEAD' ? new Response(null) : Response.json(publishedManifest);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(checkAiCapabilities()).resolves.toMatchObject({
+      local: { status: 'available' }, server: { status: 'unavailable', code: 'browser_only' },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it('does not send an already-cancelled health check', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

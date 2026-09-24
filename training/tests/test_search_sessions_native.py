@@ -132,6 +132,41 @@ def test_single_root_prefetch_reduces_round_trips_without_extra_evaluations():
 
 
 @pytest.mark.native
+@pytest.mark.parametrize("width", [1, 8])
+def test_live_counters_exclude_pending_evaluations_and_use_each_roots_budget(width):
+    native = pytest.importorskip("deltrel_native")
+    states = native.StateBatch(4, 2)
+    budgets = [3, 9]
+    search = native.SearchBatch(
+        states,
+        simulations=9,
+        simulations_per_root=budgets,
+        max_considered=8,
+        first_visit_batch_size=width,
+    )
+    assert search.completed_simulations == [0, 0]
+    roots = search.root_requests()
+    search.initialize_roots(*response(roots).submit_args())
+    assert search.completed_simulations == [0, 0]
+    leaves = search.next_requests()
+    assert len(leaves) > 0
+    assert search.completed_simulations == [0, 0]
+    search.submit(*response(leaves).submit_args())
+    previous = search.completed_simulations
+    while not search.is_done():
+        leaves = search.next_requests()
+        if len(leaves):
+            search.submit(*response(leaves).submit_args())
+        current = search.completed_simulations
+        assert all(
+            before <= after <= total
+            for before, after, total in zip(previous, current, budgets)
+        )
+        previous = current
+    assert search.completed_simulations == budgets
+
+
+@pytest.mark.native
 @pytest.mark.parametrize(
     "invalidate", [None, "model", "pda", "parameters", "cap", "same-root"]
 )

@@ -256,7 +256,7 @@ export function EngineEstimatePanel({ analysis, board, playerNames, context, onA
   const outsideBoardRange = points?.some((value) => value < -1e-6 || value > total + 1e-6) ?? false;
   const exact = context?.isExact ?? (context ? context.analyzedPly === context.displayedPly : false);
   const position = context?.analyzedPly === 0 ? 'Opening position' : context?.analyzedPly != null ? `After move ${context.analyzedPly}` : 'Evaluated position';
-  const source = context?.source === 'server' ? 'Champion engine' : context?.source === 'local' ? 'Browser engine' : 'Engine';
+  const source = context?.source ? 'AI' : 'Engine';
   const marginLeader = analysis ? playerNames[analysis.expectedMargin >= 0 ? analysis.perspective : 1 - analysis.perspective] : '';
   const returnedHeads = analysis?.networkOutput ? Object.values(analysis.networkOutput.heads).filter(Boolean).length : 0;
   const staleLabel = context && !exact ? context.analyzedPly !== null && context.analyzedPly < context.displayedPly ? 'Earlier position' : 'Different position' : null;

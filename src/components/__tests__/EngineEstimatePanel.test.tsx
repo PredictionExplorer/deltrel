@@ -78,7 +78,7 @@ describe('EngineEstimatePanel', () => {
     expect(onAnalyze).toHaveBeenCalledOnce();
     expect(onPause).toHaveBeenCalledOnce();
     rerender(<EngineEstimatePanel analysis={analysisFixture({ expectedMargin: 0 })} board={estimateBoard} playerNames={playerNames} context={{ ...liveContext, analyzedPly: 0, source: 'local', action: { type: 'swap' }, applied: true }} onPause={onPause} canPause={false} />);
-    expect(screen.getByText(/Browser engine · Opening position/)).toBeVisible();
+    expect(screen.getByText(/AI · Opening position/)).toBeVisible();
     expect(screen.getByText('Selected move')).toBeVisible();
     expect(screen.getByText('Pie swap')).toBeVisible();
     expect(screen.getByText(/Even · 0.0/)).toBeVisible();

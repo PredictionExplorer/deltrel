@@ -8,9 +8,9 @@ export interface BrowserStrengthOption {
 }
 
 const LEVELS: readonly BrowserStrengthOption[] = [
-  { id: 'quick', label: 'Quick', description: 'Faster replies', budget: { simulations: 8, maxConsidered: 4 } },
-  { id: 'balanced', label: 'Balanced', description: 'More thinking', budget: { simulations: 32, maxConsidered: 8 } },
-  { id: 'deep', label: 'Deep', description: 'Deepest search', budget: { simulations: 64, maxConsidered: 8 } },
+  { id: 'quick', label: 'Quick', description: 'Faster replies', budget: { simulations: 128, maxConsidered: 8 } },
+  { id: 'balanced', label: 'Standard', description: 'Champion search settings', budget: { simulations: 512, maxConsidered: 16 } },
+  { id: 'deep', label: 'Deep', description: 'Deeper search', budget: { simulations: 4_096, maxConsidered: 64 } },
 ];
 
 function validMaximum(maximum: DeltrelAiSearchBudget): void {
@@ -20,15 +20,13 @@ function validMaximum(maximum: DeltrelAiSearchBudget): void {
   }
 }
 
-/** Public levels are bounded by the currently published model, without duplicate choices. */
+/** Familiar presets stay stable as custom runtime limits increase, without duplicate choices. */
 export function browserStrengthOptions(maximum: DeltrelAiSearchBudget): BrowserStrengthOption[] {
   validMaximum(maximum);
   const seen = new Set<string>();
   const options: BrowserStrengthOption[] = [];
   for (const level of LEVELS) {
-    // Deep always uses the release's actual maximum; its label must remain true
-    // when a later model publishes limits above the original 64/8 release.
-    const budget = level.id === 'deep' ? maximum : level.budget;
+    const budget = level.budget;
     const simulations = Math.min(budget.simulations, maximum.simulations);
     const maxConsidered = Math.min(budget.maxConsidered, maximum.maxConsidered, simulations);
     const key = `${simulations}:${maxConsidered}`;

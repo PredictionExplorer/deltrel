@@ -22,24 +22,30 @@ export const DELTREL_BROWSER_MODEL_MANIFEST_SCHEMA_ID =
   'deltreltrain.browser-model' as const;
 export const DELTREL_BROWSER_MODEL_MANIFEST_VERSION = 3 as const;
 export const DELTREL_BROWSER_MODEL_ARCHITECTURE_VERSION = 3 as const;
-export const DELTREL_BROWSER_MODEL_PRECISION = 'float16' as const;
+export const DELTREL_BROWSER_MODEL_PRECISION = 'float32' as const;
+export type DeltrelModelPrecision = 'float32' | 'float16';
+export const DELTREL_NATIVE_SEARCH_SEED_CONTRACT = 'native-search-batch-v1' as const;
 export const DELTREL_AUXILIARY_MODEL_OUTPUT_NAMES = [
   'opponent_reply_logits', 'second_stone_logits', 'final_shores_logits',
   'final_networks_logits', 'final_capes_logits',
 ] as const;
-export const MAX_BROWSER_AI_SIMULATIONS = 1_024;
-export const MAX_BROWSER_AI_MAX_CONSIDERED = 128;
+// The scheduler can store one wasm32 usize per simulation in a Vec: Rust requires
+// its byte capacity to fit isize::MAX, so floor(0x7fff_ffff / 4) is the native limit.
+// This also leaves room for completed-Q's u32 visits + 1; available memory may be lower.
+export const MAX_BROWSER_AI_SIMULATIONS = 0x1fff_ffff;
+// Candidate counts cross the WASM boundary as wasm32 usize.
+export const MAX_BROWSER_AI_MAX_CONSIDERED = 0xffff_ffff;
 export const MAX_BROWSER_AI_FIRST_VISIT_BATCH_SIZE = 64;
 export const DEFAULT_BROWSER_AI_SUBTREE_REUSE_MAX_NODES = 4_096;
 export const MAX_BROWSER_AI_SUBTREE_REUSE_NODES = 65_536;
 
 /** Deployment convention; intentionally absent until a trained model is published. */
 export const DELTREL_BROWSER_MODEL_MANIFEST_PATH = '/models/deltrel/manifest.json' as const;
-/** The WASM package directory is keyed by the rules hash it was built from. */
+/** Immutable package identity includes both its rules hash and search implementation. */
 export const DELTREL_WASM_MODULE_PATH =
-  '/models/deltrel/wasm-46e4fbcff4e17fd3/deltrel_wasm.js' as const;
+  '/models/deltrel/wasm-46e4fbcff4e17fd3-champion-v1/deltrel_wasm.js' as const;
 export const DELTREL_WASM_BINARY_PATH =
-  '/models/deltrel/wasm-46e4fbcff4e17fd3/deltrel_wasm_bg.wasm' as const;
+  '/models/deltrel/wasm-46e4fbcff4e17fd3-champion-v1/deltrel_wasm_bg.wasm' as const;
 
 export interface DeltrelBrowserModelManifest {
   format: typeof DELTREL_BROWSER_MODEL_MANIFEST_SCHEMA_ID;
@@ -65,7 +71,7 @@ export interface DeltrelBrowserModelManifest {
   };
   model: {
     format: 'onnx';
-    precision: typeof DELTREL_BROWSER_MODEL_PRECISION;
+    precision: DeltrelModelPrecision;
     url: string;
     sha256: string;
     bytes: number;
@@ -76,12 +82,16 @@ export interface DeltrelBrowserModelManifest {
   search: {
     simulations: number;
     maxConsidered: number;
+    /** Published recommended preset ceiling; explicit custom budgets can exceed it. */
     maximumSimulations: number;
     maximumMaxConsidered: number;
     cVisit: number;
     cScale: number;
     /** A pie responder swaps when the selected keep continuation is below -deadZone. */
     swapDeadZone: number;
+    /** Secondary score preference used by the native champion evaluator. */
+    scoreUtilityWeight?: number;
+    seedContract?: typeof DELTREL_NATIVE_SEARCH_SEED_CONTRACT;
     firstVisitBatchSize?: number;
     subtreeReuse?: boolean;
     subtreeReuseMaxNodes?: number;
@@ -136,7 +146,7 @@ function sameShape(value: unknown, expected: readonly (string | number)[]): bool
 
 function validateTensorEntry(
   value: unknown,
-  dtype: 'float16' | 'int64' | 'bool',
+  dtype: DeltrelModelPrecision | 'int64' | 'bool',
   shape: readonly (string | number)[],
 ): boolean {
   return (
@@ -150,7 +160,7 @@ function validateTensorEntry(
 function validateTensorMap(
   value: unknown,
   expectations: ReadonlyArray<
-    readonly [string, 'float16' | 'int64' | 'bool', readonly (string | number)[]]
+    readonly [string, DeltrelModelPrecision | 'int64' | 'bool', readonly (string | number)[]]
   >,
 ): boolean {
   if (!isRecord(value) || !hasExactKeys(value, expectations.map(([name]) => name))) {
@@ -218,7 +228,7 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
     !hasExactKeys(payload, topLevelKeys) ||
     payload.format !== DELTREL_BROWSER_MODEL_MANIFEST_SCHEMA_ID ||
     payload.schema_version !== DELTREL_BROWSER_MODEL_MANIFEST_VERSION ||
-    payload.precision !== DELTREL_BROWSER_MODEL_PRECISION ||
+    (payload.precision !== 'float32' && payload.precision !== 'float16') ||
     payload.weights !== 'ema' ||
     typeof payload.created_ns !== 'number' ||
     !Number.isFinite(payload.created_ns) ||
@@ -283,6 +293,7 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
     throw new DeltrelAiError('unavailable', 'Local AI model identity is invalid.');
   }
 
+  const precision = payload.precision as DeltrelModelPrecision;
   if (
     !isRecord(architecture) ||
     !hasExactKeys(architecture, [
@@ -307,8 +318,8 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
     !isRecord(tensors) ||
     !hasExactKeys(tensors, ['inputs', 'outputs']) ||
     !validateTensorMap(tensors.inputs, [
-      ['node_features', 'float16', ['batch', 'nodes', DELTREL_NODE_FEATURE_DIM]],
-      ['global_features', 'float16', ['batch', DELTREL_GLOBAL_FEATURE_DIM]],
+      ['node_features', precision, ['batch', 'nodes', DELTREL_NODE_FEATURE_DIM]],
+      ['global_features', precision, ['batch', DELTREL_GLOBAL_FEATURE_DIM]],
       ['neighbor_index', 'int64', ['batch', 'nodes', 'degree']],
       ['neighbor_mask', 'bool', ['batch', 'nodes', 'degree']],
       ['neighbor_edge_type', 'int64', ['batch', 'nodes', 'degree']],
@@ -317,18 +328,18 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
       ['rings', 'int64', ['batch']],
     ]) ||
     !validateTensorMap(tensors.outputs, [
-      ['policy_logits', 'float16', ['batch', 'nodes']],
-      ['outcome_logits', 'float16', ['batch', 2]],
-      ['score_margin_logits', 'float16', ['batch', 303]],
-      ['ownership_logits', 'float16', ['batch', 'nodes', 3]],
-      ['alive_logits', 'float16', ['batch', 'nodes']],
-      ['soft_policy_logits', 'float16', ['batch', 'nodes']],
+      ['policy_logits', precision, ['batch', 'nodes']],
+      ['outcome_logits', precision, ['batch', 2]],
+      ['score_margin_logits', precision, ['batch', 303]],
+      ['ownership_logits', precision, ['batch', 'nodes', 3]],
+      ['alive_logits', precision, ['batch', 'nodes']],
+      ['soft_policy_logits', precision, ['batch', 'nodes']],
       ...(hasAuxiliary ? [
-        ['opponent_reply_logits', 'float16', ['batch', 'nodes+1']],
-        ['second_stone_logits', 'float16', ['batch', 'nodes']],
-        ['final_shores_logits', 'float16', ['batch', 2, 51]],
-        ['final_networks_logits', 'float16', ['batch', 2, 26]],
-        ['final_capes_logits', 'float16', ['batch', 2, 6]],
+        ['opponent_reply_logits', precision, ['batch', 'nodes+1']],
+        ['second_stone_logits', precision, ['batch', 'nodes']],
+        ['final_shores_logits', precision, ['batch', 2, 51]],
+        ['final_networks_logits', precision, ['batch', 2, 26]],
+        ['final_capes_logits', precision, ['batch', 2, 6]],
       ] as const : []),
     ]) ||
     !isRecord(search) ||
@@ -338,7 +349,7 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
       'c_visit',
       'c_scale',
       'swap_dead_zone',
-      ...['first_visit_batch_size', 'subtree_reuse', 'subtree_reuse_max_nodes', 'maximum_simulations', 'maximum_max_considered']
+      ...['first_visit_batch_size', 'subtree_reuse', 'subtree_reuse_max_nodes', 'maximum_simulations', 'maximum_max_considered', 'score_utility_weight', 'seed_contract']
         .filter((key) => Object.hasOwn(search, key)),
     ]) ||
     !positiveInteger(search.simulations, MAX_BROWSER_AI_SIMULATIONS) ||
@@ -353,6 +364,10 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
     !Number.isFinite(search.swap_dead_zone) ||
     search.swap_dead_zone < 0 ||
     search.swap_dead_zone >= 1 ||
+    (search.score_utility_weight !== undefined &&
+      (typeof search.score_utility_weight !== 'number' || !Number.isFinite(search.score_utility_weight) ||
+        search.score_utility_weight < 0 || search.score_utility_weight > 1)) ||
+    (search.seed_contract !== undefined && search.seed_contract !== DELTREL_NATIVE_SEARCH_SEED_CONTRACT) ||
     (search.first_visit_batch_size !== undefined &&
       !positiveInteger(search.first_visit_batch_size, MAX_BROWSER_AI_FIRST_VISIT_BATCH_SIZE)) ||
     (search.subtree_reuse !== undefined && typeof search.subtree_reuse !== 'boolean') ||
@@ -389,7 +404,7 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
     },
     model: {
       format: 'onnx',
-      precision: DELTREL_BROWSER_MODEL_PRECISION,
+      precision,
       url: `/models/deltrel/${onnx.file as string}`,
       sha256: `sha256:${onnx.sha256 as string}`,
       bytes: onnx.bytes as number,
@@ -400,11 +415,14 @@ export function parseDeltrelBrowserModelManifest(payload: unknown): DeltrelBrows
     search: {
       simulations: search.simulations,
       maxConsidered: search.max_considered,
-      maximumSimulations: search.maximum_simulations === undefined ? MAX_BROWSER_AI_SIMULATIONS : search.maximum_simulations as number,
-      maximumMaxConsidered: search.maximum_max_considered === undefined ? MAX_BROWSER_AI_MAX_CONSIDERED : search.maximum_max_considered as number,
+      // Keep older manifests' recommended presets independent of custom runtime limits.
+      maximumSimulations: search.maximum_simulations === undefined ? Math.max(1_024, search.simulations) : search.maximum_simulations as number,
+      maximumMaxConsidered: search.maximum_max_considered === undefined ? Math.max(128, search.max_considered) : search.maximum_max_considered as number,
       cVisit: search.c_visit,
       cScale: search.c_scale,
       swapDeadZone: search.swap_dead_zone,
+      ...(search.score_utility_weight !== undefined ? { scoreUtilityWeight: search.score_utility_weight as number } : {}),
+      ...(search.seed_contract !== undefined ? { seedContract: DELTREL_NATIVE_SEARCH_SEED_CONTRACT } : {}),
       ...(search.first_visit_batch_size !== undefined
         ? { firstVisitBatchSize: search.first_visit_batch_size as number } : {}),
       ...(search.subtree_reuse !== undefined ? { subtreeReuse: search.subtree_reuse as boolean } : {}),
