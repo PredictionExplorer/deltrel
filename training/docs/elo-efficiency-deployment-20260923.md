@@ -6,6 +6,10 @@ independent strength measurement, fixes the reproduced cooperative handoff stall
 prevents admission of history expected to expire, and strengthens reporting,
 calibration and recovery. It does not establish an Elo/hour improvement yet.
 
+**Latest production source:** `1ad289502b0a7aa6428b4f2750b81b58054fc68a`,
+the qualified source-only runtime follow-up completed at 02:26:04 UTC. The initial
+release and follow-up evidence are distinguished below.
+
 ## Source and qualification
 
 | Item | Evidence |
@@ -13,7 +17,7 @@ calibration and recovery. It does not establish an Elo/hour improvement yet.
 | Plan commit | `7b75c9d` |
 | Main implementation | `d2028876a4bde2d7c2c0faee0013bbcaefc8b616` |
 | Production compatibility branch | `codex/training-efficiency-production` |
-| Deployed implementation | `db5470806d899519be77a2f18e2c2de5fe885fba` |
+| Initial deployed implementation | `db5470806d899519be77a2f18e2c2de5fe885fba` |
 | Previous production source | `7a077107b1ebba55494b09f80689989e773b9dde` |
 | Local regression suite | 3,954 passed; zero failures, errors or skips |
 | Target-host regression suite | 3,930 passed; zero failures, errors or skips |
@@ -56,7 +60,7 @@ consumed examples. Its SHA-256 is
 The controller verified the resumed checkpoint identity, rather than inferring
 continuity from a later step number.
 
-The active profile is
+The initial release's profile is
 `/home/ubuntu/edgeconnect-runs/variant-network/profile-elo-efficiency-20260923.yaml`.
 The migration changes only the four scheduling settings documented in the
 [release notes](elo-efficiency-release-20260923.md), with an immutable admission
@@ -102,6 +106,64 @@ does not establish the plan's proposed percentile recovery-point objective.
 The receipt is `evidence/postdeployment-disaster-snapshot-verification.json` under
 the server evidence root. The regular backup timer continued running afterward.
 
+## Qualified source-only follow-up
+
+The [streaming replay validator](replay-validation-efficiency-20260923.md) reduced
+median full-manifest validation time from 33.3028 to 29.4437 seconds (**11.59% less
+time**) on 806,717 publications. This is a component measurement; it is not an
+observed whole-startup or Elo/hour gain. Canonical key checks preserve join
+cardinality, and malformed replacement schemas fail closed.
+
+Main commits `e2ba105` and `2305545` add forward deployment recovery and the
+qualified validator. Production runtime commit
+`1ad289502b0a7aa6428b4f2750b81b58054fc68a` preserves the existing lineage.
+All **4,068 target-host tests passed**, with no failures, errors or skips. Ruff and
+Pyright passed; all 677 source hashes verified. All 103 package versions and the
+native binary remained unchanged. The stopped-boundary CUDA smoke also passed.
+
+The controller drained a successful disaster backup before stopping training.
+That snapshot's catalog/commit marker and successful writer exit were checked:
+`3055bc44e45085fef795fd948aa5f9b20d4a0692dfa5f530eabfc25504f95327`,
+53,597 files, completed at 02:08:30 UTC. This receipt does not claim a new exhaustive
+remote payload scan. The prior independent disaster verification and fully hashed
+v2 local archive retain their separately stated scopes above.
+
+The follow-up preserved **57,043 files**, including **56,356 replay shards**,
+and resumed exact checkpoint **589,660** / **301,905,920 examples**. Checkpoint
+SHA-256: `f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e`
+(213,775,175 bytes). No updates or examples were discarded. The v3 archive's
+critical control artifacts and checkpoint were verified; a second exhaustive
+replay/model payload rescan was not performed.
+
+Migration evidence records `kind=source-only` and `changes=[]`. Exact profile bytes,
+strength epoch and UTD accounting are unchanged. The saved 3,873,924-byte coordinator
+journal prefix, 1,355.210442548 seconds of promotion service, 602.143260378 seconds
+of measurement service, scheduling debt and pinned matchup survived. All durable
+action prefixes and completed results survived for 152 promotion games and 32
+measurement games.
+
+The supervised rollout completed at **02:26:04 UTC**. The independent canary passed
+at **02:26:46 UTC**, with learner step **589,783**, all ten workers healthy, zero
+restarts and all eight GPUs healthy. GPU 7 was correctly leased to evaluation.
+Monitoring and backup timers were restored; the first v3 disaster-backup process
+started at 02:26:04 UTC with the correct release and profile. Its completion is not
+claimed by this canary; durable formats did not change in this follow-up.
+
+Current release:
+`/home/ubuntu/edgeconnect-releases/variant-elo-efficiency-20260923-v3`.
+Current profile:
+`/home/ubuntu/edgeconnect-runs/variant-network/profile-elo-efficiency-runtime-20260923.yaml`.
+It retains SHA-256 `d811d2246dd0364a5fcc9eba5dad7778ad7fb0600734f26014c6ae420da474b3`.
+The sealed source archive SHA-256 is
+`7e4fdbda06ddedf93c56723c59e88e2cb14a846511e9b4cfffe68f11430c14ce`.
+
+The [machine-readable follow-up evidence](elo-efficiency-runtime-deployment-evidence-20260923.json)
+contains qualification, controller, canary, preservation and scoped backup receipts.
+The controller's source-only preparation enforces identical profile bytes and gives
+its bounded recovery path a two-hour stop-post allowance. A subsequent test-only
+commit improves the recovery fixture to publish a new immutable checkpoint; it
+does not change the deployed runtime.
+
 ## Scope and remaining gates
 
 This is the first validated engineering release, not completion of every research
@@ -114,3 +176,8 @@ dedicated-evaluator experiments remain unlaunched. They require the declared
 campaign budget, complete measurement evidence and the plan's existing adoption
 gates. No new hardware was provisioned. Later exact performance improvements are
 recorded separately with their own validation and activation evidence.
+
+A bounded CPU-only [backup header probe](backup-efficiency-next-benchmarks-20260923.md)
+completed during the safe drain interval. It measured catalog parsing and retained
+memory without changing runtime behavior. That evidence identifies the next backup
+profiling priority; it is not an adopted backup optimization or a full-backup gain.

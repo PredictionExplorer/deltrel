@@ -57,7 +57,9 @@ interrupted installation/readiness, tampered authority and intent, and first-tim
 auxiliary-head compatibility. Profile-changing recovery retains its existing
 compatible-settings migration when one is needed.
 
-Activation must use a fresh deployment plan and profile basename, with identical
-training settings. The migration must report `kind=source-only`, `changes=[]`,
-unchanged epoch and zero discarded learner updates. Final activation evidence is
-recorded with the deployment report after the target-host qualification and canary.
+Activation used a fresh deployment plan and profile basename with identical
+training settings. The migration reported `kind=source-only`, `changes=[]`,
+unchanged epoch and zero discarded learner updates. The source-only release
+completed at 02:26:04 UTC on September 24, and its independent canary passed.
+See the [deployment report](elo-efficiency-deployment-20260923.md) for qualification,
+checkpoint continuity and precisely scoped preservation/backup evidence.

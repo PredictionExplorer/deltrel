@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "status": "completed",
+  "completed_utc": "2026-09-24T02:02:53Z",
+  "baseline_production_commit": "db5470806d899519be77a2f18e2c2de5fe885fba",
+  "scope": "Bounded historical header parsing/cache retention only; unchanged deployed validation; existing backup overlap; not a whole-backup or storage throughput benchmark",
+  "cases": [
+    {
+      "headers": 8,
+      "environment": {
+        "backup_overlap": "existing capture began 2026-09-24T01:46:54Z; no payload reads in this probe",
+        "baseline_rss_bytes": 544325632,
+        "baseline_vms_bytes": 3353591808,
+        "bounds": {
+          "address_space_bytes": 8589934592,
+          "deadline_utc": "2026-09-24T02:06:00Z",
+          "rss_watchdog_bytes": 7516192768,
+          "wall_seconds": 180
+        },
+        "case": 8,
+        "cpu": 207,
+        "nice": 19,
+        "runtime_source": "/home/ubuntu/edgeconnect-releases/variant-elo-efficiency-20260923-v2/training/scripts/training_disaster_recovery.py",
+        "runtime_source_sha256": "b90212675d5d456b63120794d96d8f83233cbd789d41aa5678c54939e5f3c0ae",
+        "selected_bytes": 82050107,
+        "status": "started"
+      },
+      "passes": [
+        {
+          "case": 8,
+          "cpu_seconds": 5.995006663,
+          "pass": 1,
+          "peak_rss_bytes": 902926336,
+          "rchar_bytes": 164103271,
+          "retained_catalog_entries": 422639,
+          "retained_headers": 8,
+          "rss_bytes": 881561600,
+          "status": "pass_complete",
+          "wall_seconds": 6.048288820777088
+        },
+        {
+          "case": 8,
+          "cpu_seconds": 0.11364143100000046,
+          "pass": 2,
+          "peak_rss_bytes": 902926336,
+          "rchar_bytes": 82053165,
+          "retained_catalog_entries": 422639,
+          "retained_headers": 8,
+          "rss_bytes": 881561600,
+          "status": "pass_complete",
+          "wall_seconds": 0.12423967476934195
+        }
+      ],
+      "status": "complete"
+    },
+    {
+      "headers": 32,
+      "environment": {
+        "backup_overlap": "existing capture began 2026-09-24T01:46:54Z; no payload reads in this probe",
+        "baseline_rss_bytes": 533983232,
+        "baseline_vms_bytes": 3343122432,
+        "bounds": {
+          "address_space_bytes": 8589934592,
+          "deadline_utc": "2026-09-24T02:06:00Z",
+          "rss_watchdog_bytes": 7516192768,
+          "wall_seconds": 180
+        },
+        "case": 32,
+        "cpu": 207,
+        "nice": 19,
+        "runtime_source": "/home/ubuntu/edgeconnect-releases/variant-elo-efficiency-20260923-v2/training/scripts/training_disaster_recovery.py",
+        "runtime_source_sha256": "b90212675d5d456b63120794d96d8f83233cbd789d41aa5678c54939e5f3c0ae",
+        "selected_bytes": 325740430,
+        "status": "started"
+      },
+      "passes": [
+        {
+          "case": 32,
+          "cpu_seconds": 23.750787728,
+          "pass": 1,
+          "peak_rss_bytes": 1838739456,
+          "rchar_bytes": 651492744,
+          "retained_catalog_entries": 1677859,
+          "retained_headers": 32,
+          "rss_bytes": 1810440192,
+          "status": "pass_complete",
+          "wall_seconds": 23.850692396983504
+        },
+        {
+          "case": 32,
+          "cpu_seconds": 0.44617325899999827,
+          "pass": 2,
+          "peak_rss_bytes": 1838739456,
+          "rchar_bytes": 325752315,
+          "retained_catalog_entries": 1677859,
+          "retained_headers": 32,
+          "rss_bytes": 1810448384,
+          "status": "pass_complete",
+          "wall_seconds": 0.49099439196288586
+        }
+      ],
+      "status": "complete"
+    }
+  ],
+  "watchdog_summary": [
+    {
+      "count": 8,
+      "status": "complete",
+      "exit_code": 0,
+      "reason": null,
+      "parent_wall_seconds": 8.472614765167236,
+      "parent_peak_rss_bytes": 881627136,
+      "selected_bytes": 82050107,
+      "log": "/home/ubuntu/edgeconnect-rollouts/elo-efficiency-20260923-v3/header-probe/case-8.jsonl"
+    },
+    {
+      "count": 32,
+      "status": "complete",
+      "exit_code": 0,
+      "reason": null,
+      "parent_wall_seconds": 27.676007509231567,
+      "parent_peak_rss_bytes": 1839407104,
+      "selected_bytes": 325740430,
+      "log": "/home/ubuntu/edgeconnect-rollouts/elo-efficiency-20260923-v3/header-probe/case-32.jsonl"
+    }
+  ]
+}

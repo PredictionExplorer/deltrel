@@ -111,7 +111,14 @@ The existing warm-start runner is not a full-state continuation runner for a pur
 reuse trial: optimizer state and LR/EMA/replay-age clocks need explicit support.
 See [trial readiness](protected-strength-measurement-20260923.md#learning-trial-readiness).
 
-The first live canary must establish continued learner/self-play progress, successful
-protected measurement slices, clean lease settlement, fresh identity-correct
-telemetry and a verified disaster snapshot. Independent Elo/hour remains unavailable
-until the required new-epoch measurement evidence exists.
+The first live canary passed: learner/self-play progress continued, a protected
+measurement slice completed and settled its lease, telemetry identified current
+processes, and the first disaster snapshot passed its independent catalog and
+recovery-dependency checks. The stopped archive separately passed full byte
+verification. See the [deployment evidence](elo-efficiency-deployment-20260923.md)
+for exact scope, counts and checkpoint continuity.
+
+Independent Elo/hour remains unavailable until the required new-epoch measurement
+evidence exists. A separately qualified
+[replay validation follow-up](replay-validation-efficiency-20260923.md) records the observed startup bottleneck,
+its measured component improvement and source-only recovery hardening.

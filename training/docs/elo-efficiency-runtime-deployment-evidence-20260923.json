@@ -1,0 +1,489 @@
+{
+  "schema_version": 1,
+  "status": "deployed-and-canary-passed",
+  "scope": "Source-only runtime follow-up; unchanged settings and durable formats; v3 payload rescan not repeated",
+  "server_evidence_root": "/home/ubuntu/edgeconnect-rollouts/elo-efficiency-20260923-v3",
+  "qualification": {
+    "status": "qualified",
+    "commit": "1ad289502b0a7aa6428b4f2750b81b58054fc68a",
+    "main_commit": "230554588c1d89d7f14b956be82820003e9a80fb",
+    "archive_sha256": "7e4fdbda06ddedf93c56723c59e88e2cb14a846511e9b4cfffe68f11430c14ce",
+    "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
+    "release": "/home/ubuntu/edgeconnect-releases/variant-elo-efficiency-20260923-v3",
+    "candidate_profile": "/home/ubuntu/edgeconnect-rollouts/elo-efficiency-20260923-v3/profile-efficiency-candidate.yaml",
+    "completed_ns": 1790214431484396989
+  },
+  "linux_regressions": {
+    "status": "passed",
+    "selected": 4068,
+    "reported": 4068,
+    "groups": [
+      {
+        "group": 0,
+        "selected": 1017,
+        "exit_code": 0
+      },
+      {
+        "group": 1,
+        "selected": 1017,
+        "exit_code": 0
+      },
+      {
+        "group": 2,
+        "selected": 1017,
+        "exit_code": 0
+      },
+      {
+        "group": 3,
+        "selected": 1017,
+        "exit_code": 0
+      }
+    ],
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "started_ns": 1790213822182583697,
+    "completed_ns": 1790214367810523417
+  },
+  "controller": {
+    "completed_ns": 1790216764915910082,
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-elo-efficiency-runtime-20260923.yaml",
+    "readiness": {
+      "actual_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e.pt",
+      "expected_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e.pt",
+      "observed_ns": 1790216764807701074,
+      "ready": true,
+      "step": 589781
+    },
+    "source_commit": "1ad289502b0a7aa6428b4f2750b81b58054fc68a",
+    "status": "complete"
+  },
+  "canary": {
+    "schema_version": 1,
+    "status": "passed",
+    "observed_ns": 1790216806638691331,
+    "source_commit": "1ad289502b0a7aa6428b4f2750b81b58054fc68a",
+    "release": "/home/ubuntu/edgeconnect-releases/variant-elo-efficiency-20260923-v3",
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-elo-efficiency-runtime-20260923.yaml",
+    "profile_sha256": "d811d2246dd0364a5fcc9eba5dad7778ad7fb0600734f26014c6ae420da474b3",
+    "profile_settings_changed": false,
+    "strength_epoch_unchanged": true,
+    "utd_segment_unchanged": true,
+    "checkpoint": {
+      "checkpoint": "recovery/sha256-f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e.pt",
+      "checkpoint_bytes": 213775175,
+      "checkpoint_sha256": "f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e",
+      "epoch": 17905,
+      "examples_consumed": 301905920,
+      "format": "startrain.recovery-pointer",
+      "generation_family": "variant-network-a",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "step": 589660,
+      "updated_ns": 1790215720722595171
+    },
+    "learner_step": 589783,
+    "examples_consumed": 301968896,
+    "worker_count": 10,
+    "worker_restarts": 0,
+    "workers": {
+      "actor-cpu-ring4": {
+        "pid": 838069,
+        "state": "running",
+        "heartbeat_age_seconds": 0.046602778
+      },
+      "actor-gpu-1": {
+        "pid": 838062,
+        "state": "running",
+        "heartbeat_age_seconds": 0.012941654
+      },
+      "actor-gpu-2": {
+        "pid": 838063,
+        "state": "running",
+        "heartbeat_age_seconds": 0.811777285
+      },
+      "actor-gpu-3": {
+        "pid": 838064,
+        "state": "running",
+        "heartbeat_age_seconds": 0.191665925
+      },
+      "actor-gpu-4": {
+        "pid": 838065,
+        "state": "running",
+        "heartbeat_age_seconds": 0.713325094
+      },
+      "actor-gpu-5": {
+        "pid": 838066,
+        "state": "running",
+        "heartbeat_age_seconds": 0.71168883
+      },
+      "actor-gpu-6": {
+        "pid": 838067,
+        "state": "running",
+        "heartbeat_age_seconds": 0.568160252
+      },
+      "actor-gpu-7": {
+        "pid": 838068,
+        "state": "paused",
+        "heartbeat_age_seconds": 1.368928666
+      },
+      "arena-promotion": {
+        "pid": 838070,
+        "state": "running",
+        "heartbeat_age_seconds": 0.693109797
+      },
+      "learner": {
+        "pid": 838061,
+        "state": "running",
+        "heartbeat_age_seconds": 0.209520786
+      }
+    },
+    "gpu_health_observed_ns": 1790216796017240330,
+    "migration": {
+      "champion_manifest_sha256": "babc31c58508136c4662a5e32739a137109e7296526934953754f0944acb1966",
+      "champion_model_identity": "sha256-c07f575085e985346328b51e4fdbf5e9a9755a8995baa0a875416a66fa35762c",
+      "champion_model_step": 537130,
+      "champion_pointer_sha256": "f35cf7ea4b20b468b18bfa353a8382c8525e0f320608bc6138e346ca4b7d493a",
+      "changes": [],
+      "committed_replay_samples": 208020143,
+      "discarded_uncheckpointed_steps": 0,
+      "examples_consumed": 301905920,
+      "from_config_sha256": "5ebd9304cee027e78431a42e4e2dc872d2c0966dddc22240816725788a35f5f0",
+      "from_profile": "profile-elo-efficiency-20260923.yaml",
+      "from_profile_sha256": "d811d2246dd0364a5fcc9eba5dad7778ad7fb0600734f26014c6ae420da474b3",
+      "from_source_commit": "db5470806d899519be77a2f18e2c2de5fe885fba",
+      "generation_family": "variant-network-a",
+      "heartbeat_examples_consumed": 301905920,
+      "heartbeat_step": 589660,
+      "kind": "source-only",
+      "learner_step": 589660,
+      "reason": "Stream replay validation with canonical key checks and fix source-only forward recovery; preserve all settings, epoch, learned state and evaluation evidence",
+      "recovery_checkpoint_bytes": 213775175,
+      "recovery_checkpoint_sha256": "f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e",
+      "recovery_pointer_sha256": "2dfd046854d211784cd84fc987a09f98e12f195039650f8166e14be21d043018",
+      "replay_counter_updated_ns": 1790215907562042802,
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "timestamp_ns": 1790216012527382621,
+      "to_config_sha256": "5ebd9304cee027e78431a42e4e2dc872d2c0966dddc22240816725788a35f5f0",
+      "to_profile": "profile-elo-efficiency-runtime-20260923.yaml",
+      "to_profile_sha256": "d811d2246dd0364a5fcc9eba5dad7778ad7fb0600734f26014c6ae420da474b3",
+      "to_source_commit": "1ad289502b0a7aa6428b4f2750b81b58054fc68a"
+    },
+    "measurement_ledger": {
+      "accounting_complete": true,
+      "applied_restore_receipts": [],
+      "baseline_manifest": "/home/ubuntu/edgeconnect-runs/variant-network/learner/manifests/manifest-8b5fbd05aefca467bbda5f21d52d593fa7596fa9a75aec1103a4e4a3ce4082ce.json",
+      "candidate_manifest": "/home/ubuntu/edgeconnect-runs/variant-network/learner/manifests/manifest-babc31c58508136c4662a5e32739a137109e7296526934953754f0944acb1966.json",
+      "debt_ns": -210672519793,
+      "generation_family": "variant-network-a",
+      "journal_offset": 3875569,
+      "journal_witness": "bf3d5d70653143f0ecac59b18cd9cd6841c632caac3f28cdf702aa3fc17b71d3",
+      "last_measurement_ready_ns": 1790215391689784203,
+      "leases": {
+        "28c63c82b8c54317a5494aa7d669db11": {
+          "fraction": 0.2,
+          "kind": "promotion",
+          "owner_pid": 838070,
+          "ready_ns": null
+        }
+      },
+      "measurement_gpu_ns": 602143260378,
+      "pending_since_ns": 1790215391689784203,
+      "pinned_job": {
+        "baseline": "sha256-608494b0081593d0774c2d152d6ead6da11f2e0a004197f7db1a01f4f9b84f00",
+        "candidate": "sha256-c07f575085e985346328b51e4fdbf5e9a9755a8995baa0a875416a66fa35762c"
+      },
+      "promotion_gpu_ns": 1355210442548,
+      "run_id": "variant-network",
+      "schema_version": 1
+    },
+    "stopped_settled_service": {
+      "measurement_gpu_ns": 602143260378,
+      "promotion_gpu_ns": 1355210442548,
+      "debt_ns": -210672519793
+    },
+    "completed_pin_evidence": [],
+    "support_states": {
+      "edgeconnect-startrain-variant-network.service": "active",
+      "edgeconnect-startrain-variant-network-monitor.service": "active",
+      "edgeconnect-startrain-variant-network-report.timer": "active",
+      "edgeconnect-startrain-variant-network-backup.timer": "active",
+      "edgeconnect-startrain-variant-network-disaster-backup.timer": "active"
+    },
+    "prior_disaster_snapshot_compatible": "26ef796ab61156c71181b5ce66057557d03d55ee4bb9594fd751fdf033fb6027"
+  },
+  "preserved_archive": {
+    "checkpoint": {
+      "checkpoint": "recovery/sha256-f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e.pt",
+      "checkpoint_bytes": 213775175,
+      "checkpoint_sha256": "f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e",
+      "epoch": 17905,
+      "examples_consumed": 301905920,
+      "format": "startrain.recovery-pointer",
+      "generation_family": "variant-network-a",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "step": 589660,
+      "updated_ns": 1790215720722595171
+    },
+    "checkpoint_sha256": "f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e",
+    "checkpoint_step": 589660,
+    "created_ns": 1790215925740995632,
+    "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/elo-efficiency-cutover-20260923-v3",
+    "files": 57043,
+    "format": "startrain.preserved-stopped-run",
+    "inventory_sha256": "2d999f1fb082e3364b44ff1bf0db747a05d052359d0ddd217d2460d0aeb4d2b8",
+    "payload_checksum_verification": "deferred-to-offline-verify",
+    "replay_shards": 56356,
+    "schema_version": 1,
+    "source_run_root": "/home/ubuntu/edgeconnect-runs/variant-network",
+    "status": "preserved"
+  },
+  "stopped_control_verification": {
+    "archive": "/home/ubuntu/edgeconnect-preserved/variant-network/elo-efficiency-cutover-20260923-v3",
+    "archived_ledger": {
+      "accounting_complete": true,
+      "applied_restore_receipts": [],
+      "baseline_manifest": "/home/ubuntu/edgeconnect-runs/variant-network/learner/manifests/manifest-8b5fbd05aefca467bbda5f21d52d593fa7596fa9a75aec1103a4e4a3ce4082ce.json",
+      "candidate_manifest": "/home/ubuntu/edgeconnect-runs/variant-network/learner/manifests/manifest-babc31c58508136c4662a5e32739a137109e7296526934953754f0944acb1966.json",
+      "debt_ns": -210672519793,
+      "generation_family": "variant-network-a",
+      "journal_offset": 3871687,
+      "journal_witness": "df9fe692edb49cd4764cc6cb2c8696e73504bc71a0a736098cd1b1322424f00f",
+      "last_measurement_ready_ns": 1790215391689784203,
+      "leases": {},
+      "measurement_gpu_ns": 602143260378,
+      "pending_since_ns": 1790215391689784203,
+      "pinned_job": {
+        "baseline": "sha256-608494b0081593d0774c2d152d6ead6da11f2e0a004197f7db1a01f4f9b84f00",
+        "candidate": "sha256-c07f575085e985346328b51e4fdbf5e9a9755a8995baa0a875416a66fa35762c"
+      },
+      "promotion_gpu_ns": 1355210442548,
+      "run_id": "variant-network",
+      "schema_version": 1
+    },
+    "arena_resumes": [
+      {
+        "game_states": 152,
+        "kind": "promotion",
+        "logical": "arena/balanced-400dc692f581a442-sha256-876b5a7bf3efe843d0c3ae26b5ea14a358980759d73a1f9f7ed2c490c03478be-vs-sha256-c07f575085e985346328b51e4fdbf5e9a9755a8995baa0a875416a66fa35762c.resume.json",
+        "progress": {
+          "completed_games": 112,
+          "completed_moves": 27149,
+          "completed_pairs": 56
+        },
+        "sha256": "d4ba33c7a791de0e3cfd294796cee3dbeb3ef91764f804446d60fe1f797e548a"
+      },
+      {
+        "game_states": 32,
+        "kind": "measurement",
+        "logical": "arena/crossplay-sha256-c07f575085e985346328b51e4fdbf5e9a9755a8995baa0a875416a66fa35762c-vs-sha256-608494b0081593d0774c2d152d6ead6da11f2e0a004197f7db1a01f4f9b84f00-b62ec3697a8134c1.resume.json",
+        "progress": {
+          "completed_games": 0,
+          "completed_moves": 484,
+          "completed_pairs": 0
+        },
+        "sha256": "8a6d0a2473d7872c9cf1748f90112fa9f7ba5e024eac035a4db20330fccff234"
+      }
+    ],
+    "checkpoint": {
+      "checkpoint": "recovery/sha256-f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e.pt",
+      "checkpoint_bytes": 213775175,
+      "checkpoint_sha256": "f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e",
+      "epoch": 17905,
+      "examples_consumed": 301905920,
+      "format": "startrain.recovery-pointer",
+      "generation_family": "variant-network-a",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "step": 589660,
+      "updated_ns": 1790215720722595171
+    },
+    "control_hashes": {
+      "arena/measurement-service.json": {
+        "bytes": 962,
+        "sha256": "1d0fead97db7204c68ab6b12a97a098d5f1151d08e8e909324bd893c965ea6b5"
+      },
+      "learner/recovery.json": {
+        "bytes": 432,
+        "sha256": "2dfd046854d211784cd84fc987a09f98e12f195039650f8166e14be21d043018"
+      },
+      "learner/utd-segment.json": {
+        "bytes": 274,
+        "sha256": "1e6b4dfd1b1f0ed76dd471a200e22567afa5c5838798dd12ac461f24b7def288"
+      },
+      "metrics/coordinator.jsonl": {
+        "bytes": 3873924,
+        "sha256": "07fb21c475f3effe1069c8183047ca6fd010f69e4da13fe37294a6efd3348728"
+      },
+      "profile-elo-efficiency-20260923.yaml": {
+        "bytes": 13098,
+        "sha256": "d811d2246dd0364a5fcc9eba5dad7778ad7fb0600734f26014c6ae420da474b3"
+      },
+      "strength-epoch.json": {
+        "bytes": 549,
+        "sha256": "b1fc9c51ae7ed4af35a840305bc4d5f5b5e821f51ba06549207690e9b4f22faf"
+      }
+    },
+    "discarded_uncheckpointed_examples": 0,
+    "discarded_uncheckpointed_steps": 0,
+    "epoch_and_utd_bytes_unchanged": true,
+    "inventory_sha256": "2d999f1fb082e3364b44ff1bf0db747a05d052359d0ddd217d2460d0aeb4d2b8",
+    "ledger_projection_method": "exact runtime refresh parser with persistence disabled in this independent process",
+    "observed_ns": 1790216191597296327,
+    "profile_bytes_unchanged": true,
+    "scope": "stopped control records, inventory identity and checkpoint metadata, exact ledger journal prefix/settlement and selected arena resume records only; no repeated checkpoint/replay payload scan",
+    "settled_ledger": {
+      "accounting_complete": true,
+      "applied_restore_receipts": [],
+      "baseline_manifest": "/home/ubuntu/edgeconnect-runs/variant-network/learner/manifests/manifest-8b5fbd05aefca467bbda5f21d52d593fa7596fa9a75aec1103a4e4a3ce4082ce.json",
+      "candidate_manifest": "/home/ubuntu/edgeconnect-runs/variant-network/learner/manifests/manifest-babc31c58508136c4662a5e32739a137109e7296526934953754f0944acb1966.json",
+      "debt_ns": -210672519793,
+      "generation_family": "variant-network-a",
+      "journal_offset": 3873924,
+      "journal_witness": "07fb21c475f3effe1069c8183047ca6fd010f69e4da13fe37294a6efd3348728",
+      "last_measurement_ready_ns": 1790215391689784203,
+      "leases": {},
+      "measurement_gpu_ns": 602143260378,
+      "pending_since_ns": 1790215391689784203,
+      "pinned_job": {
+        "baseline": "sha256-608494b0081593d0774c2d152d6ead6da11f2e0a004197f7db1a01f4f9b84f00",
+        "candidate": "sha256-c07f575085e985346328b51e4fdbf5e9a9755a8995baa0a875416a66fa35762c"
+      },
+      "promotion_gpu_ns": 1355210442548,
+      "run_id": "variant-network",
+      "schema_version": 1
+    },
+    "status": "verified"
+  },
+  "resumed_control_verification": {
+    "archived_journal_prefix_bytes_preserved": 3873924,
+    "arena_continuity": [
+      {
+        "archived_progress": {
+          "completed_games": 112,
+          "completed_moves": 27149,
+          "completed_pairs": 56
+        },
+        "current_progress": {
+          "completed_games": 112,
+          "completed_moves": 27149,
+          "completed_pairs": 56
+        },
+        "games_checked": 152,
+        "kind": "promotion",
+        "logical": "arena/balanced-400dc692f581a442-sha256-876b5a7bf3efe843d0c3ae26b5ea14a358980759d73a1f9f7ed2c490c03478be-vs-sha256-c07f575085e985346328b51e4fdbf5e9a9755a8995baa0a875416a66fa35762c.resume.json",
+        "status": "all_durable_prefixes_and_completed_results_retained"
+      },
+      {
+        "archived_progress": {
+          "completed_games": 0,
+          "completed_moves": 484,
+          "completed_pairs": 0
+        },
+        "current_progress": {
+          "completed_games": 0,
+          "completed_moves": 484,
+          "completed_pairs": 0
+        },
+        "games_checked": 32,
+        "kind": "measurement",
+        "logical": "arena/crossplay-sha256-c07f575085e985346328b51e4fdbf5e9a9755a8995baa0a875416a66fa35762c-vs-sha256-608494b0081593d0774c2d152d6ead6da11f2e0a004197f7db1a01f4f9b84f00-b62ec3697a8134c1.resume.json",
+        "status": "all_durable_prefixes_and_completed_results_retained"
+      }
+    ],
+    "checkpoint_resumed_step": 589660,
+    "current_debt_ns": -210672519793,
+    "debt_rounding_tolerance_ns": 2,
+    "epoch_and_utd_bytes_unchanged": true,
+    "learner_observed_step": 589737,
+    "observed_ns": 1790216458990455670,
+    "pinned_job_retained": true,
+    "resumed_from": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e.pt",
+    "scope": "profile and epoch/UTD byte hashes, checkpoint resume identity, ledger/journal continuity and changed in-flight arena records only; no repeated model/replay payload scan",
+    "service_credit_delta_ns": {
+      "measurement_gpu_ns": 0,
+      "promotion_gpu_ns": 0
+    },
+    "status": "verified",
+    "target_commit": "1ad289502b0a7aa6428b4f2750b81b58054fc68a",
+    "target_profile_sha256": "d811d2246dd0364a5fcc9eba5dad7778ad7fb0600734f26014c6ae420da474b3"
+  },
+  "precutover_disaster_snapshot_verification": {
+    "catalog_files": 53597,
+    "commit_marker": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1790215485126276554-3055bc44e45085fef795fd948aa5f9b20d4a0692dfa5f530eabfc25504f95327.json.commit",
+    "observed_ns": 1790215829674299926,
+    "scope": "immutable snapshot catalog SHA256/size, matching commit marker, source profile and writer successful exit only; no exhaustive remote payload read",
+    "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1790215485126276554-3055bc44e45085fef795fd948aa5f9b20d4a0692dfa5f530eabfc25504f95327.json",
+    "snapshot_bytes": 10404724,
+    "snapshot_created_ns": 1790215485126276554,
+    "snapshot_sha256": "3055bc44e45085fef795fd948aa5f9b20d4a0692dfa5f530eabfc25504f95327",
+    "source_profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-elo-efficiency-20260923.yaml",
+    "source_replay_backup": {
+      "bytes": 1737949184,
+      "created_ns": 1790214497373473554,
+      "cutoff_started_ns": 1790214419745042956,
+      "sha256": "07f8d436f1588e6e41227cd86cf4ff9fbbd6e920339441b5be8c666dd180e8a1"
+    },
+    "status": "verified_control_evidence",
+    "writer": {
+      "ActiveState": "inactive",
+      "ExecMainExitTimestamp": "Thu 2026-09-24 02:08:30 UTC",
+      "ExecMainStartTimestamp": "Thu 2026-09-24 01:46:54 UTC",
+      "ExecMainStatus": "0",
+      "Result": "success",
+      "SubState": "dead"
+    }
+  },
+  "receipt_sha256": {
+    "release-qualified.json": "4f3381b5aec0c9e627dc95a6b2ae4ae1f3d096daea6365b60e79be86b507fcca",
+    "result.json": "9e4d215155d97d216a64fa6074e9a45d8ad18d5b6447b68da7c367b636a68e51",
+    "complete.json": "1b493e601ece848fd2f9111fcfa5bb2d7d55fc53bba5fe8b02fbdad461ff676d",
+    "canary.json": "b44e8ebdca6fba1a7d04994a48eb603e3e60b970a1cd10bd0e329f3751cdca14",
+    "preserved-snapshot.json": "b8fd57ae5225ad371ffe5282218a0bba91cb6382e21be41b1a3078cddf0acfcc",
+    "stopped-control-state-verification.json": "3951cc8bee34d5df829cd1fc21b7819a521f92adc9124d1658a85938e8d3edb4",
+    "resumed-control-state-verification.json": "123cfd43c678b7633165dd304472a2abafce24535f27997b4347373aec3e7be7",
+    "precutover-disaster-snapshot-control-verification.json": "3cb4883f7ef481c1505ac09db52af7e276e7a8a6b7d188b7c38835d8bcad9ec2",
+    "deployment-completion-observation.json": "c721a6d533df793a5e7a765a1c915f7b16dff1bf71c15433b38758af35ec45af"
+  },
+  "validation_benchmark": "replay-validation-benchmark-20260923.json",
+  "header_probe": "backup-header-retention-benchmark-20260923.json",
+  "prior_deployment_evidence": "elo-efficiency-deployment-evidence-20260923.json",
+  "post_start_backup_scope": "Regular backup support restored; no new v3 snapshot completion is claimed by this receipt.",
+  "completion_and_backup_resumption_observation": {
+    "canary_receipt": "/home/ubuntu/edgeconnect-rollouts/elo-efficiency-20260923-v3/canary.json",
+    "controller_complete": {
+      "completed_ns": 1790216764915910082,
+      "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-elo-efficiency-runtime-20260923.yaml",
+      "readiness": {
+        "actual_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e.pt",
+        "expected_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-f3d1ed5962117fcaa0b3f9ff2cb43770a17fc7ca35de1e0a19903ef4b48b917e.pt",
+        "observed_ns": 1790216764807701074,
+        "ready": true,
+        "step": 589781
+      },
+      "source_commit": "1ad289502b0a7aa6428b4f2750b81b58054fc68a",
+      "status": "complete"
+    },
+    "controller_complete_sha256": "1b493e601ece848fd2f9111fcfa5bb2d7d55fc53bba5fe8b02fbdad461ff676d",
+    "deployment_unit": {
+      "ActiveState": "inactive",
+      "ExecMainStatus": "0",
+      "Result": "success",
+      "SubState": "dead"
+    },
+    "disaster_backup_unit": {
+      "ActiveState": "activating",
+      "ExecMainStartTimestamp": "Thu 2026-09-24 02:26:04 UTC",
+      "ExecMainStatus": "0",
+      "ExecStart": "{ path=/home/ubuntu/edgeconnect-releases/variant-elo-efficiency-20260923-v3/training/.venv/bin/python ; argv[]=/home/ubuntu/edgeconnect-releases/variant-elo-efficiency-20260923-v3/training/.venv/bin/python /home/ubuntu/edgeconnect-releases/variant-elo-efficiency-20260923-v3/training/scripts/training_disaster_recovery.py snapshot --run-root /home/ubuntu/edgeconnect-runs/variant-network --profile /home/ubuntu/edgeconnect-runs/variant-network/profile-elo-efficiency-runtime-20260923.yaml --backup-root /lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network --expected-backup-mount /lambda/nfs/texas-north-fs ; ignore_errors=no ; start_time=[Thu 2026-09-24 02:26:04 UTC] ; stop_time=[n/a] ; pid=840103 ; code=(null) ; status=0/0 }",
+      "MainPID": "840103",
+      "SubState": "start",
+      "WorkingDirectory": "/home/ubuntu/edgeconnect-releases/variant-elo-efficiency-20260923-v3/training"
+    },
+    "observed_ns": 1790216910300290740,
+    "scope": "controller completion and successful exit, plus new-release disaster backup invocation started only; no claim that this new backup has completed and no payload rescan",
+    "status": "deployment_complete_backup_started"
+  }
+}
