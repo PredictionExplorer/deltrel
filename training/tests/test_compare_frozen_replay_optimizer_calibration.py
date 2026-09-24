@@ -70,6 +70,7 @@ def _payload(
     observations = [
         {
             "index": index,
+            "game_identity": f"game-{index}",
             "samples": 10,
             "reference": reference,
             "candidate": {
@@ -198,19 +199,26 @@ def _payload(
             ],
         },
         "partition": {
-            "method": "bounded-latest-window-hash-order-exact-split-v1",
+            "method": runner.PARTITION_METHOD,
             "train_samples": 100,
             "holdout_samples": 40,
             "train_sha256": "e" * 64,
             "holdout_sha256": "f" * 64,
             "partition_sha256": "0" * 64,
             "disjoint": True,
+            "game_disjoint": True,
+            "train_games": 10,
+            "holdout_games": len(observations),
+            "train_game_ids": [f"training-game-{index}" for index in range(10)],
+            "holdout_game_ids": [row["game_identity"] for row in observations],
         },
         "evaluation": {
             "batch_size": 10,
             "augmentation": False,
             "composite": "policy/value",
-            "observation_unit": "deterministic-held-out-batch",
+            "observation_unit": runner.OBSERVATION_UNIT,
+            "component_normalization": runner.COMPONENT_NORMALIZATION,
+            "aggregation": runner.HOLDOUT_AGGREGATION,
         },
         "optimizer": {
             "fresh_from_champion_ema": True,
@@ -260,7 +268,8 @@ def _payload(
             "finite": finite,
             "samples": 10 * len(observations),
             "batches": len(observations),
-            "observation_unit": "deterministic-held-out-batch",
+            "games": len(observations),
+            "observation_unit": runner.OBSERVATION_UNIT,
             "reference": reference,
             "candidate": {
                 "policy": sum(candidate_composites) / len(candidate_composites) / 2,
@@ -540,3 +549,50 @@ def test_comparator_rejects_actual_progress_drift_in_isolation(
     treatment = result["arms"]["ring10-optimizer-clip-norm-5"]
     assert treatment["gates"]["common_source_and_partition_parity"] is False
     assert treatment["passes_all_selection_gates"] is False
+
+
+@pytest.mark.parametrize(
+    "mutation,match",
+    [
+        (lambda p: p.update(schema_version=1), "not a completed calibration"),
+        (lambda p: p["partition"].update(game_disjoint=False), "game-disjoint"),
+        (
+            lambda p: p["partition"].update(train_game_ids=["game-0"], train_games=1),
+            "overlap",
+        ),
+        (lambda p: p["partition"].update(holdout_samples=41), "sample count"),
+        (lambda p: p["heldout"].update(games=True), "game count"),
+        (
+            lambda p: p["heldout"]["observations"][1].update(game_identity="game-0"),
+            "duplicated",
+        ),
+        (lambda p: p["evaluation"].pop("component_normalization"), "game-disjoint"),
+    ],
+)
+def test_comparator_rejects_legacy_or_inconsistent_game_evidence(
+    tmp_path, mutation, match
+):
+    path = _write_suite(tmp_path)[0]
+    payload = json.loads(path.read_text())
+    mutation(payload)
+    payload.pop("result_sha256")
+    payload["result_sha256"] = runner._digest(payload)
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match=match):
+        comparator._read_result(path)
+
+
+def test_bootstrap_resamples_complete_games_with_their_row_weights():
+    values = [(100, 1.0), (1, -2.0)]
+    assert (
+        comparator.one_sided_bootstrap_lower_bound(
+            values, confidence=0.95, samples=1000, seed=17
+        )
+        == -2.0
+    )
+    assert (
+        comparator.one_sided_bootstrap_lower_bound(
+            [(1000, 1.0)], confidence=0.95, samples=1000, seed=17
+        )
+        is None
+    )

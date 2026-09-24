@@ -74,6 +74,28 @@ metrics distinguish `eligible_samples_at_commit` and
 `ineligible_samples_at_commit`; later eviction can still remove eligible samples,
 so these counts are an eligibility observation, not proof of training consumption.
 
+`orchestration.model_refresh.history_horizon_enabled` optionally reserves enough
+replay-age headroom for newly admitted historical games to finish. It defaults to
+false. The estimate uses recent learner heartbeat progress over at least thirty
+seconds and the longest of eight recent completed tasks for the same ring and
+variant, with a 25% duration margin. The duration floor is the larger of
+`history_horizon_initial_seconds` (3,600 by default) and the actor's configured
+model-pin duration; task timing includes shared-GPU pauses. Cohorts share these
+bounded observations. A learner restart, rewind, stale heartbeat or missing rate
+temporarily excludes historical models instead of guessing progress; scheduling
+retains the requested history role while the existing current-model fallback
+supplies the work. Eligible younger history still uses the normal spaced pool.
+
+When a pinned history model reaches the forecast boundary, rolling actors stop
+starting new games and finish the active games with their original weights. The
+existing continuation preserves the unstarted game quota and variant while
+selecting fresh eligible weights. Published rows and UTD credit are unchanged.
+`history_horizon_*` selection metrics and the one-shot
+`history_horizon_refill_stopped` event explain these decisions. This forecast
+reduces expiry risk; unexpected learner acceleration or unusually long games can
+still outlive it. Task-completion eligibility labels are not an exact count of
+rows discarded at individual publication times.
+
 `selfplay.exact_endgame_max_empty` enables exhaustive CPU solving for small tails
 (0 disables, maximum 8). `exact_endgame_max_nodes` bounds every attempted tree
 (default 100,000, maximum 1,000,000). A fully explored tree returns a real terminal

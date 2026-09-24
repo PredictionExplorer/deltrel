@@ -211,6 +211,9 @@ def test_readiness_requires_all_live_cohorts_idle_inference_and_cuda_sync(pause)
     first = pause.pool.submit(pause.gate.checkpoint, "cohort-0")
     status = pause.await_parked(1)
     assert status["phase"] == "arena_gpu_quiescing"
+    assert status["pause_stage"] == "waiting_for_cohorts"
+    assert status["parked_cohort_ids"] == ["cohort-0"]
+    assert status["unparked_cohort_ids"] == ["cohort-1"]
     assert not status["actor_quiescent"]
     assert not pause.synchronizations
 
@@ -218,6 +221,7 @@ def test_readiness_requires_all_live_cohorts_idle_inference_and_cuda_sync(pause)
     pause.gate.finish("cohort-1")
     status = pause.gate.poll()
     assert status["live_cohorts"] == 1
+    assert status["pause_stage"] == "waiting_for_inference"
     assert not status["inference_idle"]
     assert not status["cuda_synchronized"]
     assert not pause.synchronizations
@@ -226,12 +230,56 @@ def test_readiness_requires_all_live_cohorts_idle_inference_and_cuda_sync(pause)
     status = pause.gate.poll()
     assert status["phase"] == "arena_gpu_pause"
     assert status["actor_quiescent"] is True
+    assert status["pause_stage"] == "ready"
+    assert status["unparked_cohort_ids"] == []
     assert status["inference_idle"] is True
     assert status["cuda_synchronized"] is True
     assert pause.synchronizations == ["synchronized"]
     assert pause.gate.poll() == status
     assert pause.synchronizations == ["synchronized"]
     assert not first.done()
+
+
+def test_wait_diagnostics_identify_unparked_thread_without_exposing_locals(pause):
+    entered = threading.Event()
+    release = threading.Event()
+
+    def blocked_model_load():
+        private_model_data = "must-not-appear-in-diagnostics"
+        pause.gate.checkpoint("cohort-1")
+        entered.set()
+        release.wait(5)
+        assert private_model_data
+        pause.gate.checkpoint("cohort-1")
+
+    blocked = pause.pool.submit(blocked_model_load)
+    try:
+        assert entered.wait(5)
+        pause.request_pause()
+        parked = pause.pool.submit(pause.gate.checkpoint, "cohort-0")
+        pause.await_parked(1)
+        pause.gate._last_diagnostics_at = time.monotonic() - 31
+        status = pause.gate.poll()
+        assert status is not None and not status["actor_quiescent"]
+        assert set(status["unparked_cohort_stacks"]) == {"cohort-1"}
+        locations = status["unparked_cohort_stacks"]["cohort-1"]
+        assert any("blocked_model_load" in location for location in locations)
+        assert len(locations) <= 12
+        assert "must-not-appear-in-diagnostics" not in json.dumps(status)
+        # Sparse diagnostics remain stable and do not turn every poll into a
+        # progress heartbeat or retain stale stacks after the producer parks.
+        assert pause.gate.poll() == status
+        release.set()
+        ready = pause.await_parked(2)
+        assert ready["unparked_cohort_stacks"] == {}
+        assert ready["actor_quiescent"]
+        pause.write_ack(state="released", ack_ns=time.time_ns())
+        pause.await_resumed()
+        parked.result(timeout=5)
+        blocked.result(timeout=5)
+    finally:
+        release.set()
+        pause.gate.close()
 
 
 def test_sqlite_writer_commits_before_pause_readiness(pause, tmp_path):

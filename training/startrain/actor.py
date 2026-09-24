@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import random
 import statistics
 import threading
@@ -41,6 +42,7 @@ from .device import (
 )
 from .inference import GraphInferenceAdapter, InferenceConfig
 from .inference_batching import CohortInferenceAdapter
+from .history_horizon import HistoryHorizon, HistoryHorizonTracker
 from .model import GraphResTNet
 from .replay_store import ReplayStore, ReplayStoreCancelled
 from .runtime import HeartbeatReporter, RunIdentity, append_jsonl
@@ -435,7 +437,7 @@ class HistoricalModelPool:
         self.evaluator_cache_size = min(pool_size, evaluator_cache_size)
         self.providers: OrderedDict[str, ManifestModelProvider] = OrderedDict()
         self.cutover_path = Path(cutover_path) if cutover_path is not None else None
-        self.last_selection_metrics: dict[str, int] = {}
+        self.last_selection_metrics: dict[str, object] = {}
         self.registry = registry
 
     def select(
@@ -562,6 +564,7 @@ class ActorSupervisor:
         gpu_pause_path: str | Path | None = None,
         pause_checkpoint: Callable[[], None] | None = None,
         work_coordinator: CompatibleWorkCoordinator | None = None,
+        history_horizon_tracker: HistoryHorizonTracker | None = None,
     ) -> None:
         experiment = resolve_actor_experiment(experiment, gpu)
         if gpu.role != "actor" or gpu.actor_batch_size is None:
@@ -581,6 +584,9 @@ class ActorSupervisor:
             )
         self.games_per_batch = selected_games
         self.work_coordinator = work_coordinator
+        self._history_horizon_tracker = (
+            history_horizon_tracker or HistoryHorizonTracker()
+        )
         self._continuation: tuple[WorkLease, int] | None = None
         self._active_work_provider: ManifestModelProvider | None = None
         if gpu_pause_path is not None and (
@@ -890,6 +896,7 @@ class ActorSupervisor:
                             {
                                 "requested_model_role": model_role,
                                 "model_role": model_role,
+                                "model_step": evaluator.model_step,
                                 "ring": ring,
                                 "mode_category": category,
                                 "variant": variant,
@@ -963,6 +970,7 @@ class ActorSupervisor:
                             metadata={
                                 "schema_version": 1,
                                 "worker": self.actor_id,
+                                "pid": os.getpid(),
                                 "process_started_ns": process_started_ns,
                                 "task_started_ns": batch_started_ns,
                                 "cohort_search_budgets": batch_config.cohort_search_budgets,
@@ -1056,6 +1064,13 @@ class ActorSupervisor:
                                 evaluator.close()
                             self._active_work_provider = None
                     elapsed = time.monotonic() - started
+                    if (
+                        self.experiment.orchestration.model_refresh.history_horizon_enabled
+                        and summaries
+                    ):
+                        self._history_horizon_tracker.observe_task(
+                            ring=ring, mode=variant.label, seconds=elapsed
+                        )
                     evaluator_calls = (
                         int(getattr(evaluator, "evaluator_calls", 0))
                         - evaluator_calls_before
@@ -1197,6 +1212,7 @@ class ActorSupervisor:
                             "cohort_search_budgets": batch_config.cohort_search_budgets,
                             "search_allocation": batch_config.search_allocation_facts(),
                             "worker": self.actor_id,
+                            "pid": os.getpid(),
                             "gpu_id": self.gpu.gpu_id,
                             "compute_device": str(self.device),
                             "physical_gpu_id": self.gpu.gpu_id
@@ -1530,6 +1546,7 @@ class ActorSupervisor:
                     actor_id=f"{self.actor_id}-cohort-{cohort}",
                     registry=registry,
                     work_coordinator=work_coordinator,
+                    history_horizon_tracker=self._history_horizon_tracker,
                     allowed_rings=self.allowed_rings,
                     games_per_batch=self.games_per_batch,
                     **paths,
@@ -1597,7 +1614,11 @@ class ActorSupervisor:
                             inference=broker.metrics_snapshot(),
                             effective_coordinated_work=work_coordinator is not None,
                             **(
-                                {"compatible_work": work_coordinator.metrics_snapshot()}
+                                {
+                                    "compatible_work": work_coordinator.metrics_snapshot(
+                                        blocking=False
+                                    )
+                                }
                                 if work_coordinator is not None
                                 else {}
                             ),
@@ -1850,12 +1871,11 @@ class ActorSupervisor:
         history_metrics = {}
         if requested == "history":
             assert self.history_pool is not None
-            historical = self.history_pool.select(
+            historical = self._select_history_provider(
                 random_source=random_source,
-                minimum_model_step=max(
-                    0, step - self.experiment.learner.max_replay_lag_steps + 1
-                ),
-                maximum_model_step=step,
+                learner_step=step,
+                ring=ring,
+                modes=tuple(lease["variant"].label for lease in lease_modes),
                 exclude={candidate.model_identity, champion.model_identity},
             )
             history_metrics = dict(self.history_pool.last_selection_metrics)
@@ -1969,6 +1989,36 @@ class ActorSupervisor:
             )
             candidate = self._read_candidate()
             champion = self._read_champion()
+            refresh = self.experiment.orchestration.model_refresh
+            if refresh.history_horizon_enabled:
+                step, _ = self._read_learner_scheduling_step(
+                    fallback_step=candidate.model_step
+                )
+                if metadata.get("model_role") == "history":
+                    variant = metadata["variant"]
+                    horizon = self._history_horizon(
+                        learner_step=step,
+                        ring=metadata["ring"],
+                        modes=(variant.label,),
+                    )
+                    if metadata["model_step"] < horizon.minimum_model_step:
+                        stopping = True
+                        append_jsonl(
+                            self.metrics_path,
+                            {
+                                "schema_version": 1,
+                                "timestamp_ns": time.time_ns(),
+                                "worker": self.actor_id,
+                                "pid": os.getpid(),
+                                "event": "history_horizon_refill_stopped",
+                                "model_step": metadata["model_step"],
+                                "learner_step": step,
+                                "ring": metadata["ring"],
+                                "variant": variant.label,
+                                **horizon.metrics(),
+                            },
+                        )
+                        return True
             stopping = (
                 candidate.model_identity != metadata["candidate_identity_at_start"]
                 or champion.model_identity != metadata["champion_identity_at_start"]
@@ -2003,13 +2053,9 @@ class ActorSupervisor:
             scheduling_step, _ = self._read_learner_scheduling_step(
                 fallback_step=candidate.model_step
             )
-            historical = self.history_pool.select(
+            historical = self._select_history_provider(
                 random_source=self.model_random,
-                minimum_model_step=max(
-                    0,
-                    scheduling_step - self.experiment.learner.max_replay_lag_steps + 1,
-                ),
-                maximum_model_step=scheduling_step,
+                learner_step=scheduling_step,
                 exclude={
                     candidate.model_identity,
                     *({champion_identity} if champion_identity is not None else set()),
@@ -2018,6 +2064,66 @@ class ActorSupervisor:
             if historical is not None:
                 return "history", historical
         return "champion", self.provider
+
+    def _history_horizon(
+        self,
+        *,
+        learner_step: int,
+        ring: int | None = None,
+        modes: tuple[str, ...] = (),
+    ) -> HistoryHorizon:
+        refresh = self.experiment.orchestration.model_refresh
+        pipeline = self.gpu.actor_pipeline
+        initial = max(
+            refresh.history_horizon_initial_seconds,
+            pipeline.max_model_pin_seconds if pipeline is not None else 0.0,
+        )
+        return self._history_horizon_tracker.forecast(
+            learner_step=learner_step,
+            max_lag_steps=self.experiment.learner.max_replay_lag_steps,
+            ring=ring,
+            modes=modes,
+            initial_seconds=initial,
+        )
+
+    def _select_history_provider(
+        self,
+        *,
+        random_source: random.Random,
+        learner_step: int,
+        exclude: set[str],
+        ring: int | None = None,
+        modes: tuple[str, ...] = (),
+    ) -> ManifestModelProvider | None:
+        assert self.history_pool is not None
+        minimum = max(
+            0, learner_step - self.experiment.learner.max_replay_lag_steps + 1
+        )
+        metrics: dict[str, object] = {}
+        if self.experiment.orchestration.model_refresh.history_horizon_enabled:
+            horizon = self._history_horizon(
+                learner_step=learner_step, ring=ring, modes=modes
+            )
+            minimum = horizon.minimum_model_step
+            metrics = horizon.metrics()
+        if minimum > learner_step:
+            # No guessed rate: retain the requested history role in scheduling
+            # accounting, but temporarily fall back to a current model.
+            self.history_pool.last_selection_metrics = {
+                "history_eligible_models": 0,
+                "history_minimum_model_step": minimum,
+                **metrics,
+            }
+            return None
+        selected = self.history_pool.select(
+            random_source=random_source,
+            exclude=exclude,
+            minimum_model_step=minimum,
+            maximum_model_step=learner_step,
+        )
+        if metrics:
+            self.history_pool.last_selection_metrics.update(metrics)
+        return selected
 
     def _read_candidate(self) -> ModelManifest:
         stat = self.candidate_manifest_path.stat()
@@ -2077,6 +2183,17 @@ class ActorSupervisor:
             step = payload.get("step") if isinstance(payload, dict) else None
             if isinstance(step, bool) or not isinstance(step, int) or step < 0:
                 raise ValueError("learner heartbeat step is invalid")
+            if self.experiment.orchestration.model_refresh.history_horizon_enabled:
+                heartbeat_ns = payload.get("heartbeat_ns")
+                pid = payload.get("pid")
+                if type(heartbeat_ns) is int and type(pid) is int:
+                    self._history_horizon_tracker.observe_learner(
+                        step=step, heartbeat_ns=heartbeat_ns, pid=pid
+                    )
+                else:
+                    self._history_horizon_tracker.invalidate_rate()
             return step, "learner_heartbeat"
         except (OSError, json.JSONDecodeError, ValueError):
+            if self.experiment.orchestration.model_refresh.history_horizon_enabled:
+                self._history_horizon_tracker.invalidate_rate()
             return fallback_step, "candidate_manifest"

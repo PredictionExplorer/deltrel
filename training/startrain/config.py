@@ -792,6 +792,8 @@ class ModelRefreshConfig:
     candidate_probability: float = 0.8
     history_probability: float = 0.0
     history_pool_size: int = 8
+    history_horizon_enabled: bool = False
+    history_horizon_initial_seconds: float = 3600.0
     compatible_cohort_work: bool = False
     inference: ActorInferenceConfig = ActorInferenceConfig()
     work_scheduling: ActorWorkSchedulingConfig = ActorWorkSchedulingConfig()
@@ -803,8 +805,16 @@ class ModelRefreshConfig:
             type(self.refresh_only_between_batches) is not bool
             or type(self.inference_compile_dynamic) is not bool
             or type(self.compatible_cohort_work) is not bool
+            or type(self.history_horizon_enabled) is not bool
         ):
             raise ConfigError("model refresh compile settings must use booleans")
+        if (
+            isinstance(self.history_horizon_initial_seconds, bool)
+            or not isinstance(self.history_horizon_initial_seconds, (int, float))
+            or not math.isfinite(self.history_horizon_initial_seconds)
+            or not 1 <= self.history_horizon_initial_seconds <= 86400
+        ):
+            raise ConfigError("history_horizon_initial_seconds must be in [1, 86400]")
         if self.manifest_poll_seconds <= 0 or self.startup_timeout_seconds <= 0:
             raise ConfigError("model refresh intervals must be positive")
         if self.inference_compile_mode not in (
@@ -1082,6 +1092,9 @@ class HistoricalEvaluationConfig:
     # Bound each scheduling slice, preserving completed pairs and game progress.
     session_seconds: float = 300.0
     cooldown_seconds: float = 1_800.0
+    # Zero preserves background-only scheduling and creates no service ledger.
+    measurement_service_fraction: float = 0.0
+    measurement_max_wait_seconds: float = 3_600.0
 
     def __post_init__(self) -> None:
         if (
@@ -1092,6 +1105,12 @@ class HistoricalEvaluationConfig:
         for name, value, minimum, inclusive in (
             ("session_seconds", self.session_seconds, 0, False),
             ("cooldown_seconds", self.cooldown_seconds, 0, True),
+            (
+                "measurement_max_wait_seconds",
+                self.measurement_max_wait_seconds,
+                0,
+                False,
+            ),
         ):
             if (
                 isinstance(value, bool)
@@ -1103,6 +1122,18 @@ class HistoricalEvaluationConfig:
                 raise ConfigError(
                     f"historical evaluation {name} must be finite and {bound}"
                 )
+        fraction = self.measurement_service_fraction
+        if (
+            isinstance(fraction, bool)
+            or not isinstance(fraction, int | float)
+            or not math.isfinite(float(fraction))
+            or not 0 <= fraction < 1
+        ):
+            raise ConfigError("measurement_service_fraction must be finite in [0, 1)")
+        if fraction and not (self.enabled and self.measure_direct_predecessor):
+            raise ConfigError(
+                "measurement reservation requires enabled predecessor measurement"
+            )
         values = (
             self.every_promotions,
             self.anchors_per_evaluation,
@@ -1422,6 +1453,14 @@ class OrchestrationConfig:
         promotion_overlap = (
             self.promotion.enabled and self.promotion.gpu_id in actor_ids | learner_ids
         )
+        if self.historical_evaluation.measurement_service_fraction and not (
+            self.enabled
+            and self.promotion.enabled
+            and self.promotion.pause_sharing_mode
+        ):
+            raise ConfigError(
+                "measurement reservation requires enabled orchestration and pause-sharing promotion"
+            )
         if promotion_overlap and not self.promotion.pause_sharing_mode:
             raise ConfigError("promotion GPU overlap requires pause-sharing mode")
         if (
@@ -2087,7 +2126,12 @@ class ExperimentConfig:
             )
 
     def as_dict(self) -> dict[str, Any]:
-        result = asdict(self)
+        from .config_compatibility import without_efficiency_program_defaults
+
+        # Disabled additive scheduling options serialize exactly as before this
+        # release, avoiding a new compatibility-hash dimension on old runs.
+        # Enabled/nondefault values remain explicit and authoritative.
+        result = without_efficiency_program_defaults(asdict(self))
         # Preserve the exact serialized authority of pre-auxiliary profiles.
         # Enabled heads and nonzero weights always remain in the fingerprint.
         if self.model.auxiliary_predictions is False:
