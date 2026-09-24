@@ -678,16 +678,106 @@ def validate_publications(
         counter_columns = {
             row[1] for row in connection.execute("PRAGMA table_info(run_counters)")
         }
-        shard_columns = {
-            row[1] for row in connection.execute("PRAGMA table_info(shards)")
-        }
+        shard_info = tuple(connection.execute("PRAGMA table_info(shards)"))
+        shard_columns = {row[1] for row in shard_info}
         if (
             not {"replay_revision", "enriched_rows", "history_complete"}
             <= counter_columns
             or "fresh_sample_count" not in shard_columns
         ):
             raise ValueError("schema-six logical credit columns are missing")
-        query = "SELECT game_id,run_id,generation_family,latest_shard_id,revision,sample_count,policy_digest,payload_digest,context_digest,finalized,enriched_samples,record_json FROM game_publications"
+        # Joining must not multiply a publication when a malformed replacement
+        # table has lost its unique key. Require the canonical key contracts;
+        # merely observing no duplicates today would not prove join cardinality.
+        for table, key, kind, columns in (
+            ("shards", "id", "INTEGER", shard_info),
+            (
+                "games",
+                "game_id",
+                "TEXT",
+                tuple(connection.execute("PRAGMA table_info(games)")),
+            ),
+            (
+                "game_publications",
+                "game_id",
+                "TEXT",
+                tuple(connection.execute("PRAGMA table_info(game_publications)")),
+            ),
+        ):
+            primary = [
+                (row[1], str(row[2]).upper(), row[5]) for row in columns if row[5]
+            ]
+            if primary != [(key, kind, 1)]:
+                raise ValueError(f"schema-six {table} primary key is incompatible")
+        publication_columns = (
+            "game_id",
+            "run_id",
+            "generation_family",
+            "latest_shard_id",
+            "revision",
+            "sample_count",
+            "policy_digest",
+            "payload_digest",
+            "context_digest",
+            "finalized",
+            "enriched_samples",
+            "record_json",
+        )
+        game_columns = (
+            "shard_id",
+            "run_id",
+            "generation_family",
+            "actor_id",
+            "generation",
+            "ring",
+            "model_identity",
+        )
+        metadata_keys = (
+            "created_ns",
+            "sample_count",
+            "ring",
+            "phase_min",
+            "phase_max",
+            "model_version",
+            "model_step",
+            "model_identity",
+            "run_id",
+            "generation_family",
+            "actor_id",
+            "generation",
+            "game_count",
+            "checksum_sha256",
+            "variant",
+            "segment",
+        )
+        shard_columns_for_validation = (
+            "relative_path",
+            "state",
+            "fresh_sample_count",
+            "rules_hash",
+            "feature_schema_hash",
+            *metadata_keys,
+        )
+        # The primary-key joins preserve one row per durable publication. Keep
+        # explicit presence columns: a missing game is corruption, whereas a
+        # GC-retired shard is allowed and its durable descriptor is still checked.
+        query = (
+            "SELECT "
+            + ",".join(
+                (
+                    *(f"p.{column}" for column in publication_columns),
+                    "g.game_id",
+                    *(f"g.{column}" for column in game_columns),
+                    "s.id",
+                    *(f"s.{column}" for column in shard_columns_for_validation),
+                )
+            )
+            + (
+                " FROM game_publications AS p"
+                " LEFT JOIN games AS g ON g.game_id=p.game_id"
+                " LEFT JOIN shards AS s ON s.id=p.latest_shard_id"
+            )
+        )
         parameters: list[str] = []
         clauses = []
         for column, value in (
@@ -698,9 +788,12 @@ def validate_publications(
                 clauses.append(f"{column}=?")
                 parameters.append(value)
         if clauses:
-            query += " WHERE " + " AND ".join(clauses)
+            query += " WHERE " + " AND ".join(f"p.{clause}" for clause in clauses)
         totals: dict[tuple[str, str], list[int]] = {}
-        for row in connection.execute(query, parameters):
+        game_offset = len(publication_columns) + 1
+        shard_offset = game_offset + len(game_columns)
+        for joined in connection.execute(query, parameters):
+            row = tuple(joined)
             (
                 game_id,
                 run,
@@ -714,7 +807,7 @@ def validate_publications(
                 finalized,
                 enriched,
                 serialized,
-            ) = tuple(row)
+            ) = row[: len(publication_columns)]
             if not (
                 isinstance(revision, int)
                 and 1 <= revision <= count + 1
@@ -768,10 +861,11 @@ def validate_publications(
                 )
             ):
                 raise ValueError("publication head and record metadata disagree")
-            game = connection.execute(
-                "SELECT shard_id,run_id,generation_family,actor_id,generation,ring,model_identity FROM games WHERE game_id=?",
-                (game_id,),
-            ).fetchone()
+            game = (
+                None
+                if row[len(publication_columns)] is None
+                else row[game_offset:shard_offset]
+            )
             expected_game = (
                 shard_id,
                 run,
@@ -783,30 +877,7 @@ def validate_publications(
             )
             if game is None or tuple(game) != expected_game:
                 raise ValueError("publication head and game identity disagree")
-            metadata_keys = (
-                "created_ns",
-                "sample_count",
-                "ring",
-                "phase_min",
-                "phase_max",
-                "model_version",
-                "model_step",
-                "model_identity",
-                "run_id",
-                "generation_family",
-                "actor_id",
-                "generation",
-                "game_count",
-                "checksum_sha256",
-                "variant",
-                "segment",
-            )
-            shard = connection.execute(
-                "SELECT relative_path,state,fresh_sample_count,rules_hash,feature_schema_hash,"
-                + ",".join(metadata_keys)
-                + " FROM shards WHERE id=?",
-                (shard_id,),
-            ).fetchone()
+            shard = None if row[shard_offset] is None else row[shard_offset + 1 :]
             if shard is not None and (
                 shard[0] != values["path"]
                 or shard[1] not in ("ready", "quarantined")

@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "started_ns": 1790213511233905655,
+  "completed_ns": 1790213710971151477,
+  "database": "/home/ubuntu/edgeconnect-preserved/variant-network/elo-efficiency-cutover-20260923-v2/replay/manifest.sqlite3",
+  "database_bytes": 1732681728,
+  "publication_heads": 806717,
+  "candidate_function_sha256": "ebb6d7949c0bd8fc6611aaddc8e92eab3afd5a9d2572c906ee9bf5111958eddd",
+  "baseline_commit": "db5470806d899519be77a2f18e2c2de5fe885fba",
+  "scope": "Full immutable production manifest; warm OS cache, fresh connection and process per run; CPU-only and no live database writes",
+  "predeclared_minimum_fraction_improvement": 0.1,
+  "results": [
+    {
+      "arm": "baseline",
+      "wall_seconds": 33.65965539216995,
+      "peak_rss_kib": 546896,
+      "status": "passed"
+    },
+    {
+      "arm": "joined",
+      "wall_seconds": 29.44374417886138,
+      "peak_rss_kib": 549188,
+      "status": "passed"
+    },
+    {
+      "arm": "joined",
+      "wall_seconds": 29.48340193228796,
+      "peak_rss_kib": 546892,
+      "status": "passed"
+    },
+    {
+      "arm": "baseline",
+      "wall_seconds": 32.68710106983781,
+      "peak_rss_kib": 546936,
+      "status": "passed"
+    },
+    {
+      "arm": "baseline",
+      "wall_seconds": 33.30275336606428,
+      "peak_rss_kib": 548748,
+      "status": "passed"
+    },
+    {
+      "arm": "joined",
+      "wall_seconds": 29.164949183817953,
+      "peak_rss_kib": 547076,
+      "status": "passed"
+    }
+  ],
+  "median_wall_seconds": {
+    "baseline": 33.30275336606428,
+    "joined": 29.44374417886138
+  },
+  "fraction_improvement": 0.11587658067741802
+}
