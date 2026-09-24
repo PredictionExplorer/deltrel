@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "status": "deployed-and-verified",
+  "scope": "First measurement and reliability engineering release; no measured Elo/hour gain claimed",
+  "main_commit": "d2028876a4bde2d7c2c0faee0013bbcaefc8b616",
+  "production_commit": "db5470806d899519be77a2f18e2c2de5fe885fba",
+  "release": "/home/ubuntu/edgeconnect-releases/variant-elo-efficiency-20260923-v2",
+  "server_evidence_root": "/home/ubuntu/edgeconnect-rollouts/elo-efficiency-20260923-v2",
+  "source_archive_sha256": "6e59921f52762f4af27976c5458f0284dad965cdf6561dc6e5bbdc42d8d30252",
+  "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
+  "active_profile_sha256": "d811d2246dd0364a5fcc9eba5dad7778ad7fb0600734f26014c6ae420da474b3",
+  "regressions": {
+    "local": {
+      "passed": 3954,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "linux": {
+      "passed": 3930,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "static_checks": "Ruff and Pyright passed both lineages",
+    "cuda_smoke": "production search and resume passed; graph parity passed in shadow only"
+  },
+  "cutover": {
+    "completed_ns": 1790211734183367207,
+    "checkpoint_step": 587954,
+    "examples_consumed": 301032448,
+    "checkpoint_sha256": "d4f8aa41fd48135ea146b7e95209028dc5a75089864bcd9f970b750706ab171e",
+    "checkpoint_bytes": 213774983,
+    "discarded_steps": 0,
+    "discarded_examples": 0
+  },
+  "canary": {
+    "status": "passed",
+    "workers": 10,
+    "worker_restarts": 0,
+    "healthy_gpus": 8,
+    "step": 588234,
+    "measurement_gpu_seconds": 301.148670485,
+    "measurement_searched_moves": 242,
+    "measurement_game_states": 32,
+    "measurement_completed_pairs": 0,
+    "current_actor_streams": 29,
+    "retired_rows_excluded": 13,
+    "current_champion_step": 537130,
+    "independent_elo_available": false,
+    "elo_per_hour_available": false
+  },
+  "stopped_archive": {
+    "verification": "all files fully verified",
+    "files": 56440,
+    "replay_shards": 55763,
+    "model_artifacts": 157,
+    "arena_files": 427,
+    "started_promotion_games_preserved": 112,
+    "completed_games": 108,
+    "completed_pairs": 54,
+    "searched_moves": 23109,
+    "receipt": "evidence/preserved-archive-full-verification.json"
+  },
+  "disaster_snapshot_verification": {
+    "admission_dependency_count": 25,
+    "admission_transition_layers": [
+      "training_policy_transition",
+      "promotion_allocation_transition",
+      "auxiliary_prediction_transition",
+      "efficiency_scheduling_transition"
+    ],
+    "catalog_bytes": 17840669401,
+    "catalog_files": 53593,
+    "completed_ns": 1790213059437612038,
+    "created_ns": 1790212846361706140,
+    "generation_family": "variant-network-a",
+    "measurement_ledger": {
+      "accounting_complete": true,
+      "debt_ns": -240918936388,
+      "journal_offset": 3843711,
+      "journal_witness": "756eeea3337f0ff4a451a1145abe1a91c1fd1eb78b33c93ff7b7375eab3c5d46",
+      "measurement_gpu_ns": 301148670485,
+      "pinned_job": {
+        "baseline": "sha256-608494b0081593d0774c2d152d6ead6da11f2e0a004197f7db1a01f4f9b84f00",
+        "candidate": "sha256-c07f575085e985346328b51e4fdbf5e9a9755a8995baa0a875416a66fa35762c"
+      },
+      "promotion_gpu_ns": 0
+    },
+    "objects": 53591,
+    "replay_cutoff_age_seconds_at_verification": 1320.191586627,
+    "required_artifacts": {
+      "arena/measurement-service.json": {
+        "bytes": 950,
+        "kind": "arena-json",
+        "sha256": "ac5c4b08270c92ab2972dbd02a2d09d71a01e91fb6498290699d0a784215caec"
+      },
+      "learner/manifests/manifest-babc31c58508136c4662a5e32739a137109e7296526934953754f0944acb1966.json": {
+        "bytes": 701,
+        "kind": "model-manifest",
+        "sha256": "babc31c58508136c4662a5e32739a137109e7296526934953754f0944acb1966"
+      },
+      "metrics/coordinator.jsonl": {
+        "bytes": 3843913,
+        "kind": "coordinator-journal",
+        "sha256": "8594583fc76b5d36529ec2c0da448ec7328a2793eb7025e14bdeda0d73808f93"
+      },
+      "profile-elo-efficiency-20260923.yaml": {
+        "bytes": 13098,
+        "kind": "profile",
+        "sha256": "d811d2246dd0364a5fcc9eba5dad7778ad7fb0600734f26014c6ae420da474b3"
+      },
+      "source-commit.txt": {
+        "bytes": 41,
+        "kind": "source-commit",
+        "sha256": "a74e055587dd3be156ff72b929d5c6137c63a2dd4d7ff1957d853722483fc08e"
+      },
+      "strength-epoch.json": {
+        "bytes": 549,
+        "kind": "run-metadata",
+        "sha256": "b1fc9c51ae7ed4af35a840305bc4d5f5b5e821f51ba06549207690e9b4f22faf"
+      }
+    },
+    "run_id": "variant-network",
+    "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1790212846361706140-26ef796ab61156c71181b5ce66057557d03d55ee4bb9594fd751fdf033fb6027.json",
+    "snapshot_bytes": 10403408,
+    "snapshot_sha256": "26ef796ab61156c71181b5ce66057557d03d55ee4bb9594fd751fdf033fb6027",
+    "source_replay_backup": {
+      "bytes": 1733513216,
+      "created_ns": 1790211814955125299,
+      "cutoff_started_ns": 1790211739246025411,
+      "sha256": "52a3900ffa807000c3a198d039a3e0403778c158145e2d54fc60544623d9ab9e"
+    },
+    "started_ns": 1790212978656395261,
+    "status": "ok",
+    "strength_epoch": {
+      "anchor_identity": "sha256-c07f575085e985346328b51e4fdbf5e9a9755a8995baa0a875416a66fa35762c",
+      "anchor_manifest": "/home/ubuntu/edgeconnect-runs/variant-network/learner/manifests/manifest-babc31c58508136c4662a5e32739a137109e7296526934953754f0944acb1966.json",
+      "evaluation_contract_identity": "sha256-b62ec3697a8134c1017892a6950870656ab2e22b5764979ee6b89ad08440c8d8",
+      "minimum_candidate_step": 587954,
+      "reason": "protected_measurement_activation",
+      "schema_version": 1,
+      "source_commit": "db5470806d899519be77a2f18e2c2de5fe885fba",
+      "started_ns": 1790210859176292323
+    },
+    "verification_scope": "committed catalog, metadata of every object, semantic recovery dependencies, and full hashes of required control artifacts; replay objects were not exhaustively re-read"
+  },
+  "remaining_gates": [
+    "Complete current independent strength measurement/cost pilot",
+    "Declared compute budget before learning trials",
+    "Separate exact workload gates for arena/inference improvements",
+    "Controlled strength evidence before changed learning/search/resource allocation"
+  ]
+}
