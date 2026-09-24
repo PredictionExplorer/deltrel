@@ -115,7 +115,8 @@ def test_auxiliary_losses_can_be_disabled_without_removing_trained_heads(tmp_pat
 def test_controller_recovery_retains_new_heads_checkpoint_and_progress(
     deployment, monkeypatch, interrupt_once, source_auxiliary
 ):
-    source = {"model": {"width": 384}, "loss": {"policy": 1.0, "outcome": 1.0}}
+    source = load_config(Path(__file__).parents[1] / "configs/small.yaml").as_dict()
+    source["model"]["width"] = 384
     if source_auxiliary:
         source["model"]["auxiliary_predictions"] = True
         source["loss"].update({name: 0.02 for name in AUXILIARY_LOSSES})
@@ -125,6 +126,8 @@ def test_controller_recovery_retains_new_heads_checkpoint_and_progress(
         candidate["loss"].update({name: 0.05 for name in AUXILIARY_LOSSES})
     deployment.source.write_text(yaml.safe_dump(source))
     deployment.candidate.write_text(yaml.safe_dump(candidate))
+    deployment.plan["source_profile_sha256"] = deploy.digest(deployment.source)
+    deployment.plan["candidate_profile_sha256"] = deploy.digest(deployment.candidate)
     deployment.target.write_bytes(deployment.candidate.read_bytes())
     (deployment.root / "profile.sha256").write_text(
         f"{deploy.digest(deployment.target)}  {deployment.target}\n"
@@ -189,7 +192,7 @@ def test_controller_recovery_retains_new_heads_checkpoint_and_progress(
         with pytest.raises(RuntimeError, match="interrupted after inverse"):
             deployment.recover()
     deployment.recover()
-    assert len(migrations) == 1
+    assert len(migrations) == (0 if source_auxiliary else 1)
     if source_auxiliary:
         assert gates == []
         assert not (deployment.base / "auxiliary-compatible-recovery.yaml").exists()

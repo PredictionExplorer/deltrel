@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from scripts import graceful_training_deploy as deploy
 
@@ -27,10 +28,11 @@ def deployment(tmp_path):
     for release in (source_release, target_release):
         (release / "training").mkdir(parents=True)
     (target_release / "SOURCE_COMMIT").write_text("b" * 40)
+    profile_bytes = (Path(__file__).parents[1] / "configs/small.yaml").read_bytes()
     source = root / "source.yaml"
-    source.write_text("{}\n")
+    source.write_bytes(profile_bytes)
     candidate = tmp_path / "candidate.yaml"
-    candidate.write_text("{}\n")
+    candidate.write_bytes(profile_bytes)
     smoke = tmp_path / "smoke.py"
     smoke.write_text("raise AssertionError('tests never execute smoke')\n")
     plan = {
@@ -868,6 +870,201 @@ def test_recovery_after_completed_inverse_migration_does_not_migrate_twice(
     assert json.loads((deployment.base / "recovered.json").read_text())[
         "profile"
     ] == str(rollback)
+
+
+def activate_source_only_target(deployment, *, formatting_only=False):
+    if formatting_only:
+        payload = yaml.safe_load(deployment.source.read_text())
+        deployment.candidate.write_text(
+            "# Same settings, different serialization.\n"
+            + yaml.safe_dump(payload, sort_keys=True)
+        )
+        deployment.plan["candidate_profile_sha256"] = deploy.digest(
+            deployment.candidate
+        )
+        write(deployment.test_plan_path, deployment.plan)
+        replacement = deploy.Deployment(deployment.test_plan_path)
+        replacement.test_plan_path = deployment.test_plan_path
+        deployment = replacement
+    deployment.target.write_bytes(deployment.candidate.read_bytes())
+    (deployment.root / "profile.sha256").write_text(
+        f"{deploy.digest(deployment.target)}  {deployment.target}\n"
+    )
+    (deployment.root / "source-commit.txt").write_text(deployment.plan["target_commit"])
+    write(deployment.base / "prepared.json", {"plan": deployment.plan})
+    write(deployment.base / "stop-requested.json", {})
+    write(
+        deployment.base / "failure.json",
+        {"error": "new workload failed sustained readiness"},
+    )
+    checkpoint = stopped_files(deployment)
+    preserved_paths = (
+        deployment.root / "source-commit.txt",
+        deployment.root / "profile.sha256",
+        deployment.root / "strength-epoch.json",
+        deployment.root / "learner/utd-segment.json",
+        deployment.root / "arena/measurement-service.json",
+        deployment.root / "continuous-migrations.jsonl",
+    )
+    for path in preserved_paths[2:]:
+        write(path, {"preserve": path.name})
+    return deployment, checkpoint, {path: path.read_bytes() for path in preserved_paths}
+
+
+@pytest.mark.parametrize("formatting_only", [False, True])
+def test_source_only_failed_readiness_recovers_forward_without_noop_migration(
+    deployment, monkeypatch, formatting_only
+):
+    subject, checkpoint, preserved = activate_source_only_target(
+        deployment, formatting_only=formatting_only
+    )
+    mock_stop(subject, monkeypatch)
+    monkeypatch.setattr(
+        subject,
+        "migrate",
+        lambda *a, **k: pytest.fail("source-only recovery attempted a no-op migration"),
+    )
+    calls = []
+    monkeypatch.setattr(
+        subject,
+        "install_units",
+        lambda profile, **kw: calls.append(("install", profile, kw)),
+    )
+    monkeypatch.setattr(
+        subject,
+        "start",
+        lambda profile, resume: (
+            calls.append(("start", profile, resume)) or {"ready": True}
+        ),
+    )
+    monkeypatch.setattr(subject, "restore_support", lambda: calls.append(("support",)))
+    subject.recover()
+    assert calls == [
+        ("install", subject.target, {}),
+        ("start", subject.target, checkpoint),
+        ("support",),
+    ]
+    assert all(path.read_bytes() == content for path, content in preserved.items())
+    intent = json.loads(
+        (subject.base / "source-only-forward-recovery.json").read_text()
+    )
+    assert intent["canonical_configuration_matches_recovery"] is True
+    assert intent["target_commit"] == subject.plan["target_commit"]
+    assert intent["profile_sha256"] == deploy.digest(subject.target)
+    recovered = json.loads((subject.base / "recovered.json").read_text())
+    assert recovered["recovery_policy"] == "forward_source_only"
+    assert recovered["stopped_boundary"]["checkpoint"] == checkpoint
+    calls.clear()
+    subject.recover()
+    assert calls == []
+
+
+@pytest.mark.parametrize("interruption", ["install", "readiness"])
+def test_interrupted_source_only_forward_recovery_reuses_intent_and_latest_checkpoint(
+    deployment, monkeypatch, interruption
+):
+    subject, checkpoint, preserved = activate_source_only_target(deployment)
+    mock_stop(subject, monkeypatch)
+    monkeypatch.setattr(
+        subject, "migrate", lambda *a, **k: pytest.fail("unexpected migration")
+    )
+
+    def interrupted_install(*args, **kwargs):
+        if interruption == "install":
+            raise RuntimeError("interrupted before restart")
+
+    monkeypatch.setattr(subject, "install_units", interrupted_install)
+    monkeypatch.setattr(
+        subject,
+        "start",
+        lambda *a: (_ for _ in ()).throw(RuntimeError("interrupted during readiness")),
+    )
+    monkeypatch.setattr(
+        subject, "restore_support", lambda: pytest.fail("not ready yet")
+    )
+    with pytest.raises(RuntimeError, match="interrupted"):
+        subject.recover()
+    intent_before = (subject.base / "source-only-forward-recovery.json").read_bytes()
+    assert not (subject.base / "recovered.json").exists()
+    if interruption == "readiness":
+        # The failed start may have trained before its readiness gate failed.
+        # Recover the newly checkpointed state, never the original rollout step.
+        payload = b"new checkpoint from interrupted recovery"
+        (subject.root / "learner" / checkpoint["checkpoint"]).write_bytes(payload)
+        checkpoint = {
+            **checkpoint,
+            "step": 6,
+            "examples_consumed": 3072,
+            "checkpoint_bytes": len(payload),
+            "checkpoint_sha256": hashlib.sha256(payload).hexdigest(),
+        }
+        write(subject.root / "learner/recovery.json", checkpoint)
+        write(
+            subject.root / "status/learner.heartbeat.json",
+            {"step": 6, "examples_consumed": 3072},
+        )
+    resumed = deploy.Deployment(subject.test_plan_path)
+    mock_stop(resumed, monkeypatch)
+    monkeypatch.setattr(
+        resumed,
+        "migrate",
+        lambda *a, **k: pytest.fail("interrupted recovery repeated migration"),
+    )
+    monkeypatch.setattr(resumed, "install_units", lambda *a, **k: None)
+    seen = []
+    monkeypatch.setattr(
+        resumed,
+        "start",
+        lambda profile, resume: seen.append((profile, resume)) or {"ready": True},
+    )
+    monkeypatch.setattr(resumed, "restore_support", lambda: None)
+    resumed.recover()
+    assert seen == [(resumed.target, checkpoint)]
+    assert (
+        resumed.base / "source-only-forward-recovery.json"
+    ).read_bytes() == intent_before
+    assert all(path.read_bytes() == content for path, content in preserved.items())
+
+
+@pytest.mark.parametrize(
+    "tamper", ["intent", "source", "candidate", "target", "authority"]
+)
+def test_source_only_forward_recovery_rejects_tampered_authority_or_intent(
+    deployment, monkeypatch, tamper
+):
+    subject, _checkpoint, _preserved = activate_source_only_target(deployment)
+    assert subject._forward_source_only_recovery(
+        subject.target, subject.plan["target_commit"], subject.source
+    )
+    if tamper == "intent":
+        path = subject.base / "source-only-forward-recovery.json"
+        value = json.loads(path.read_text())
+        value["policy"] = "untrusted"
+        write(path, value)
+    elif tamper == "authority":
+        (subject.root / "source-commit.txt").write_text("c" * 40)
+    else:
+        path = getattr(subject, tamper)
+        path.write_text(path.read_text() + "\n# unexpected bytes\n")
+        if tamper == "target":
+            # Even a rewritten active checksum cannot override the pinned plan.
+            (subject.root / "profile.sha256").write_text(
+                f"{deploy.digest(path)}  {path}\n"
+            )
+    mock_stop(subject, monkeypatch)
+    monkeypatch.setattr(
+        subject, "migrate", lambda *a, **k: pytest.fail("tampered authority migrated")
+    )
+    monkeypatch.setattr(
+        subject,
+        "install_units",
+        lambda *a, **k: pytest.fail("tampered authority installed"),
+    )
+    monkeypatch.setattr(
+        subject, "start", lambda *a, **k: pytest.fail("tampered authority restarted")
+    )
+    with pytest.raises(RuntimeError, match="changed|authority"):
+        subject.recover()
 
 
 def test_recovery_rejects_a_changed_plan_before_any_service_mutation(

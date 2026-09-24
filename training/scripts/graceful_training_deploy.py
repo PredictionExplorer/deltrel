@@ -1158,6 +1158,55 @@ class Deployment:
             },
         )
 
+    def _forward_source_only_recovery(
+        self, profile: Path, commit: str, recovery_source: Path
+    ) -> bool:
+        """Keep committed authority when it already matches compatible recovery.
+
+        The migrator correctly rejects a no-op source migration whose commits
+        are equal. Recovery does not need such a migration: only the process
+        and unit installation failed, and the verified target remains authority.
+        The comparison uses recovery settings, which may retain newly added
+        auxiliary heads; it does not claim the original profile was identical.
+        """
+        if profile != self.target:
+            return False
+        require(commit == self.plan["target_commit"], "unexpected recovery authority")
+        require(
+            digest(self.source) == self.plan["source_profile_sha256"],
+            "source profile changed during recovery",
+        )
+        require(
+            digest(self.candidate) == self.plan["candidate_profile_sha256"]
+            and digest(profile) == self.plan["candidate_profile_sha256"],
+            "target profile changed during recovery",
+        )
+        from deltreltrain.config import load_config
+
+        if load_config(recovery_source).as_dict() != load_config(profile).as_dict():
+            return False
+        intent = {
+            "schema_version": 1,
+            "policy": "resume-authoritative-compatible-target-without-migration",
+            "source_commit": self.plan["source_commit"],
+            "target_commit": commit,
+            "target_release": str(self.release),
+            "profile": str(profile),
+            "profile_sha256": digest(profile),
+            "source_profile_sha256": digest(self.source),
+            "recovery_profile_sha256": digest(recovery_source),
+            "canonical_configuration_matches_recovery": True,
+        }
+        path = self.base / "source-only-forward-recovery.json"
+        if path.exists():
+            require(
+                read(path) == intent,
+                "source-only forward recovery intent changed",
+            )
+        else:
+            self.save(path.name, intent)
+        return True
+
     def recover(self) -> None:
         if (self.base / "complete.json").exists() or (
             self.base / "recovered.json"
@@ -1242,8 +1291,11 @@ class Deployment:
 
                 ensure_auxiliary_gate(self.source, recovery_source)
         recovery_path = self.base / "recovery-intent.json"
+        recovery_policy = "original_or_compatible_profile"
         if profile != self.source:
-            if (
+            if self._forward_source_only_recovery(profile, commit, recovery_source):
+                recovery_policy = "forward_source_only"
+            elif (
                 recovery_path.exists()
                 and profile == self.root / read(recovery_path)["profile_name"]
             ):
@@ -1276,6 +1328,7 @@ class Deployment:
             "recovered.json",
             {
                 "status": "recovered",
+                "recovery_policy": recovery_policy,
                 "profile": str(profile),
                 "readiness": observation,
                 "stopped_boundary": boundary,
