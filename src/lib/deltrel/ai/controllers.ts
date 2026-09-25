@@ -13,6 +13,19 @@ export function isControllerType(value: unknown): value is ControllerType {
   return value === 'human' || value === 'local' || value === 'server';
 }
 
+/** Independent of game rules and which seat the human occupies. */
+export function isHumanVsAi(controllers: PlayerControllers): boolean {
+  return (controllers[0] === 'human') !== (controllers[1] === 'human');
+}
+
+/** A human's match stays private even after a controller takeover. */
+export function canShowAiInsights(
+  controllers: PlayerControllers,
+  aiInsightsHidden: boolean,
+): boolean {
+  return !aiInsightsHidden && !isHumanVsAi(controllers);
+}
+
 /**
  * The variant-capable network plays every rule variant: classic and double
  * turns, handicap openings, and pie games (including the swap decision). Only

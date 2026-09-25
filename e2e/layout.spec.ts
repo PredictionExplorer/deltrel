@@ -74,6 +74,8 @@ for (const viewport of viewports) {
     await page.getByRole('button', { name: 'Begin the game' }).click();
 
     await expect(page.locator('[data-game-status="thinking"]')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Engine estimate' })).toHaveCount(0);
+    await expect(page.getByRole('progressbar', { name: 'AI search progress' })).toHaveCount(0);
     expect(await page.evaluate(() => window.scrollY)).toBeLessThanOrEqual(1);
     const stageBefore = await bounds(page, '[data-board-stage]');
     const boardBefore = await bounds(page, '[data-board-stage] svg');
@@ -85,6 +87,8 @@ for (const viewport of viewports) {
     ai.releaseMoves();
     await expect(page.locator('[data-game-status="human"]')).toBeVisible();
     await expect(page.getByText('Player 2 to play')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Engine estimate' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Analyze position' })).toHaveCount(0);
     await expect(
       page.getByRole('group', {
         name: /Deltrel board with 4 rings, 1 of 50 nodes occupied/i,

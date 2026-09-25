@@ -124,10 +124,18 @@ The native service remains a development/reference tool, outside public gameplay
 
 ### Inspecting the engine
 
-The **Engine estimate** panel shows each player's win probability and expected
-final points during human–AI and AI–AI games. Forecasts update after each completed
-search. The panel identifies the analyzed position and keeps the last completed
-forecast visible while the next search runs.
+In human–AI matches, engine forecasts, win probabilities, search progress,
+candidate moves, raw outputs, and position analysis are completely hidden from
+the game interface. This applies to every board, variant, opening, turn, and
+review state. The restriction persists through pauses, reloads, and controller
+takeovers for the rest of that match. Normal scores, influence, and clinch proofs
+remain available because they are computed from the game rules.
+
+The **Engine estimate** panel remains available for AI–AI self-play and games
+that have only human players. It shows each player's win probability and expected
+final points. Forecasts update after each completed search; the panel identifies
+the analyzed position and keeps the last completed forecast visible while the
+next search runs.
 
 Expand the panel's sections to inspect every search candidate, final-count
 forecasts, and all network outputs: move and soft-move policies, win/loss and
@@ -139,8 +147,8 @@ exports remain supported and clearly mark unavailable auxiliary outputs.
 
 Use **Pause AI** to stop automatic play and **Analyze position** to inspect a
 position without making a move, including positions selected from move history.
-During automatic play, AI shows a progress bar with the actual completed
-simulation count.
+During AI–AI automatic play, AI shows a progress bar with the actual completed
+simulation count. Human–AI play shows only a neutral turn/activity indicator.
 Use **Resume AI** to continue. The latest 64 analyzed positions are kept in memory
 for the current game and matched to their exact history; an uncached position can
 be analyzed again. Reloading the page restores the game, but not this analysis cache.

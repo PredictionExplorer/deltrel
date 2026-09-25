@@ -12,6 +12,7 @@ import { getBoard, isSupportedRings } from './deltrel/board';
 import {
   HUMAN_CONTROLLERS,
   isControllerType,
+  isHumanVsAi,
   normalizeControllers,
   type ControllerType,
   type PlayerControllers,
@@ -60,6 +61,8 @@ export interface AppState {
   phase: Phase;
   config: GameConfig;
   controllers: PlayerControllers;
+  /** Stays true for any match that has included a human playing against AI. */
+  aiInsightsHidden: boolean;
   aiSearchSettings: AiSearchSettings;
   aiPaused: boolean;
   log: GameAction[];
@@ -93,6 +96,7 @@ export interface PersistedAppState {
   phase: Phase;
   config: GameConfig;
   controllers: PlayerControllers;
+  aiInsightsHidden: boolean;
   aiSearchSettings: AiSearchSettings;
   aiPaused: boolean;
   log: GameAction[];
@@ -114,7 +118,7 @@ export const DEFAULT_AI_SEARCH_SETTINGS: AiSearchSettings = {
   server: { simulations: 512, maxConsidered: 16 },
   local: { simulations: 512, maxConsidered: 16 },
 };
-export const APP_STORE_VERSION = 7;
+export const APP_STORE_VERSION = 8;
 
 const AI_SEARCH_LIMITS: Record<AiRuntime, DeltrelAiSearchBudget> = {
   server: {
@@ -323,6 +327,7 @@ function setupSnapshot(
     phase: 'setup',
     config: { ...config, playerNames: [...config.playerNames] },
     controllers: normalizeControllers(config, controllers),
+    aiInsightsHidden: false,
     aiSearchSettings: normalizeAiSearchSettings(aiSearchSettings),
     aiPaused: false,
     log: [],
@@ -413,6 +418,8 @@ export function sanitizePersistedState(value: unknown): PersistedAppState {
     phase: 'playing',
     config,
     controllers,
+    // A stale or missing preference must never expose an active human-AI game.
+    aiInsightsHidden: value.aiInsightsHidden === true || isHumanVsAi(controllers),
     aiSearchSettings,
     aiPaused: value.aiPaused === true,
     log,
@@ -455,6 +462,7 @@ export const useAppStore = create<AppState>()(
       phase: 'setup',
       config: DEFAULT_CONFIG,
       controllers: DEFAULT_CONTROLLERS,
+      aiInsightsHidden: false,
       aiSearchSettings: normalizeAiSearchSettings(undefined),
       aiPaused: false,
       log: [],
@@ -469,10 +477,12 @@ export const useAppStore = create<AppState>()(
           throw new Error('cannot start a game with an unsupported configuration');
         }
         const validConfig = normalizeNewGameConfig(parsedConfig);
+        const validControllers = normalizeControllers(validConfig, controllers);
         set({
           phase: 'playing',
           config: validConfig,
-          controllers: normalizeControllers(validConfig, controllers),
+          controllers: validControllers,
+          aiInsightsHidden: isHumanVsAi(validControllers),
           aiPaused: false,
           log: [],
           redoStack: [],
@@ -543,6 +553,7 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           phase: 'playing',
           config: normalizeNewGameConfig(state.config),
+          aiInsightsHidden: isHumanVsAi(state.controllers),
           log: [],
           redoStack: [],
           aiPaused: false,
@@ -553,6 +564,7 @@ export const useAppStore = create<AppState>()(
       toSetup: () =>
         set({
           phase: 'setup',
+          aiInsightsHidden: false,
           log: [],
           redoStack: [],
           aiPaused: false,
@@ -567,8 +579,12 @@ export const useAppStore = create<AppState>()(
           if ((player !== 0 && player !== 1) || !isControllerType(controller)) return state;
           const requested: PlayerControllers = [...state.controllers];
           requested[player] = controller;
+          const controllers = normalizeControllers(state.config, requested);
           return {
-            controllers: normalizeControllers(state.config, requested),
+            controllers,
+            aiInsightsHidden:
+              state.phase === 'playing' &&
+              (state.aiInsightsHidden || isHumanVsAi(state.controllers) || isHumanVsAi(controllers)),
             aiPaused: false,
           };
         }),
@@ -668,6 +684,7 @@ export const useAppStore = create<AppState>()(
         phase: s.phase,
         config: s.config,
         controllers: s.controllers,
+        aiInsightsHidden: s.aiInsightsHidden,
         aiSearchSettings: s.aiSearchSettings,
         aiPaused: s.aiPaused,
         log: s.log,

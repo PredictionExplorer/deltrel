@@ -48,7 +48,7 @@ export interface EngineEstimatePanelProps {
   canAnalyze?: boolean;
   onPause?: () => void;
   canPause?: boolean;
-  /** Retained for older callers; all engine outputs are available during normal play. */
+  /** Retained for older callers; GameScreen controls match-level analysis visibility. */
   showSearchDetails?: boolean;
 }
 

@@ -16,7 +16,7 @@ test('Full-board 64-simulation search on the Firefox CPU fallback', async ({ pag
   const controller = page.getByRole('combobox', { name: 'Player 1 controller' });
   await expect(controller.locator('option[value="local"]')).toBeEnabled();
   await controller.selectOption('local');
-  await page.getByRole('combobox', { name: 'Player 2 controller' }).selectOption('human');
+  await page.getByRole('combobox', { name: 'Player 2 controller' }).selectOption('local');
   await setAiSearchBudget(page, 64, 8);
   await expect(page.getByRole('button', { name: 'AI selected', exact: true })).toBeVisible({ timeout: 120_000 });
   const started = Date.now();
@@ -28,6 +28,7 @@ test('Full-board 64-simulation search on the Firefox CPU fallback', async ({ pag
   expect(firstProgress).toBeGreaterThan(0);
   await expect(page.locator('[data-move-chip="0"]').or(page.getByRole('main').getByRole('alert')).first()).toBeVisible({ timeout: 780_000 });
   await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Pause AI', exact: true }).click();
   await expect(page.locator('[data-move-chip]')).toHaveCount(1);
   const estimate = page.getByRole('region', { name: 'Engine estimate', exact: true });
   await estimate.getByRole('button', { name: /^Raw engine output/ }).click();

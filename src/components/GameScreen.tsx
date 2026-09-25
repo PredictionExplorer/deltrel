@@ -13,7 +13,7 @@ import {
   Trophy,
   Undo2,
 } from 'lucide-react';
-import { aiMatchLabel, controllerLabel, normalizeControllers, playerNamesForControllers, type ControllerType } from '@/lib/deltrel/ai/controllers';
+import { aiMatchLabel, canShowAiInsights, controllerLabel, normalizeControllers, playerNamesForControllers, type ControllerType } from '@/lib/deltrel/ai/controllers';
 import { INITIAL_AI_CAPABILITIES, checkAiCapabilities, type AiCapabilities } from '@/lib/deltrel/ai/capabilities';
 import {
   DeltrelAiError,
@@ -104,6 +104,7 @@ function reducedSearchBudget(
 export function GameScreen() {
   const storedConfig = useAppStore((state) => state.config);
   const storedControllers = useAppStore((state) => state.controllers);
+  const aiInsightsVisible = useAppStore((state) => canShowAiInsights(state.controllers, state.aiInsightsHidden));
   const controllers = useMemo(() => normalizeControllers(storedConfig, storedControllers), [storedConfig, storedControllers]);
   const config = useMemo(() => {
     const playerNames = playerNamesForControllers(storedConfig.playerNames, controllers);
@@ -173,6 +174,14 @@ export function GameScreen() {
   }, []);
 
   useEffect(() => () => { inspectionRef.current?.abort(); }, []);
+
+  useEffect(() => useAppStore.subscribe((current, previous) => {
+    if (!canShowAiInsights(current.controllers, current.aiInsightsHidden) &&
+        canShowAiInsights(previous.controllers, previous.aiInsightsHidden)) {
+      cancelInspection();
+      setAnalysisHistory([]);
+    }
+  }), [cancelInspection]);
 
   const game = useMemo(() => {
     try {
@@ -362,6 +371,7 @@ export function GameScreen() {
       onSearchProgress: (progress: DeltrelAiSearchProgress) => {
         if (flight.cancelled || flight.settled || flightRef.current !== flight) return;
         const current = useAppStore.getState();
+        if (!canShowAiInsights(current.controllers, current.aiInsightsHidden)) return;
         if (current.phase !== 'playing' || current.aiPaused || current.earlyOutcome ||
             current.config !== positionConfig || current.log !== log ||
             normalizeControllers(current.config, current.controllers)[request.state.toMove] !== controller) return;
@@ -405,15 +415,17 @@ export function GameScreen() {
         flight.settled = true;
         setAiStatus({ kind: 'idle' });
         current.act(accepted.action);
-        setAnalysisHistory((history) => recordEngineAnalysis(history, {
-          analysis: decision.analysis,
-          source: controller,
-          ply: log.length,
-          configKey: analysisConfigKey(config),
-          prefix: log,
-          action: accepted.action,
-          applied: true,
-        }));
+        if (canShowAiInsights(current.controllers, current.aiInsightsHidden)) {
+          setAnalysisHistory((history) => recordEngineAnalysis(history, {
+            analysis: decision.analysis,
+            source: controller,
+            ply: log.length,
+            configKey: analysisConfigKey(config),
+            prefix: log,
+            action: accepted.action,
+            applied: true,
+          }));
+        }
       })
       .catch((error) => {
         if (flight.cancelled || flightRef.current !== flight) return;
@@ -586,6 +598,8 @@ export function GameScreen() {
   const localInspectionNeedsPause = currentController !== 'human' && !aiPaused && !uiBlocksPlay;
 
   const analyzePosition = useCallback(() => {
+    const current = useAppStore.getState();
+    if (!canShowAiInsights(current.controllers, current.aiInsightsHidden)) return;
     if (!shownGame || shownGame.over || validProofMode || localInspectionNeedsPause || !inspectionRuntimeReady ||
         typeof BigInt !== 'function') return;
     // A separate, read-only request never applies the returned suggested move.
@@ -609,12 +623,13 @@ export function GameScreen() {
       requestLocalAiDecision(request, options));
     void pending.then((decision) => {
       if (inspectionRef.current !== abortController || abortController.signal.aborted) return;
+      const current = useAppStore.getState();
+      if (!canShowAiInsights(current.controllers, current.aiInsightsHidden)) return;
       const accepted = acceptAiResponse(request, decision.response, config, prefix);
       if (!accepted.ok || decision.analysis.stateHash !== request.stateHash ||
           decision.analysis.perspective !== request.state.toMove) {
         throw new DeltrelAiError('protocol', 'Engine analysis does not match the requested position.');
       }
-      const current = useAppStore.getState();
       const entry: StoredEngineAnalysis = {
         analysis: decision.analysis, source: 'local', ply: prefix.length,
         configKey: analysisConfigKey(config), prefix, action: accepted.action,
@@ -805,13 +820,13 @@ export function GameScreen() {
         ? ({ kind: 'ended' } as const)
         : ({ kind: 'live' } as const);
 
-  const analysisSelection = proofActive ? null : inspectedAnalysis;
+  const analysisSelection = !aiInsightsVisible || proofActive ? null : inspectedAnalysis;
   const inspectionThinking = inspectionStatus.kind === 'thinking' &&
     inspectionStatus.stateHash === shownPositionHash;
   const inspectionError = inspectionStatus.kind === 'error' &&
     inspectionStatus.stateHash === shownPositionHash ? inspectionStatus.message : null;
   const estimateThinking = inspectionThinking || (!viewingHistory && thinking && !aiPaused && !uiBlocksPlay);
-  const canAnalyze = !shownGame.over && !proofActive && !inspectionThinking && !localInspectionNeedsPause && inspectionRuntimeReady &&
+  const canAnalyze = aiInsightsVisible && !shownGame.over && !proofActive && !inspectionThinking && !localInspectionNeedsPause && inspectionRuntimeReady &&
     typeof BigInt === 'function' &&
     (viewingHistory || currentController === 'human' || aiPaused || effectiveOver);
   const estimateMessage = proofActive
@@ -951,7 +966,7 @@ export function GameScreen() {
             controllerName={currentControllerName}
             matchLabel={aiMatchLabel(controllers)}
             waitingReason={aiWaitingReason}
-            searchProgress={thinking && aiStatus.kind === 'thinking'
+            searchProgress={aiInsightsVisible && thinking && aiStatus.kind === 'thinking'
               ? aiStatus.searchProgress : undefined}
             mode={config.mode}
             movesLeft={shownGame.movesLeft}
@@ -976,7 +991,9 @@ export function GameScreen() {
                     />
                     <div className="min-w-0 flex-1">
                       {aiPaused ? (
-                        <p>AI play is paused. Inspect the forecasts, then resume when ready.</p>
+                        <p>{aiInsightsVisible
+                          ? 'AI play is paused. Inspect the forecasts, then resume when ready.'
+                          : 'AI play is paused. Resume when ready.'}</p>
                       ) : activeAiError ? (
                         <p role="alert">
                           {activeAiError.message}{' '}
@@ -1150,7 +1167,14 @@ export function GameScreen() {
               onChange={(budget) => setAiSearchBudget('local', budget)}
               inGame
             />
-            <EngineEstimatePanel
+            {!aiInsightsVisible && currentController !== 'human' && !aiPaused && !uiBlocksPlay && (
+              <button
+                type="button"
+                onClick={pauseAiAction}
+                className="min-h-10 rounded-xl border border-sand/40 px-3 py-2 text-sm text-sand-strong transition-colors hover:bg-sand/10"
+              >Pause AI</button>
+            )}
+            {aiInsightsVisible && <EngineEstimatePanel
               analysis={analysisSelection?.entry.analysis ?? null}
               board={board}
               playerNames={config.playerNames}
@@ -1172,7 +1196,7 @@ export function GameScreen() {
               canAnalyze={canAnalyze}
               onPause={pauseAiAction}
               canPause={currentController !== 'human' && !aiPaused && !uiBlocksPlay}
-            />
+            />}
 
           <ScorePanel
             game={shownGame}

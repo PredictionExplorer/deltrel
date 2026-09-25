@@ -136,6 +136,7 @@ function resetPlayingStore(overrides: Partial<AppState> = {}) {
     phase: 'playing',
     config: { ...config, playerNames: [...config.playerNames] },
     controllers: ['local', 'human'],
+    aiInsightsHidden: false,
     aiSearchSettings: {
       server: { ...DEFAULT_AI_SEARCH_SETTINGS.server },
       local: { ...DEFAULT_AI_SEARCH_SETTINGS.local },
@@ -420,8 +421,8 @@ describe('GameScreen AI lifecycle', () => {
     );
     expect(requestLocalAiDecision).toHaveBeenCalledOnce();
     expect(
-      screen.getByRole('region', { name: 'Engine estimate' }),
-    ).toBeInTheDocument();
+      screen.queryByRole('region', { name: 'Engine estimate' }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText('Search input value')).not.toBeInTheDocument();
   });
 
@@ -471,7 +472,7 @@ describe('GameScreen AI lifecycle', () => {
     expect(useAppStore.getState().log).toEqual([]);
     expect(screen.getByRole('alert')).toHaveTextContent('obsolete position');
     expect(screen.getByText('AI needs attention')).toBeVisible();
-    expect(screen.getByRole('region', { name: 'Engine estimate' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Engine estimate' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Expected final points come from/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledTimes(2));
@@ -499,7 +500,8 @@ describe('GameScreen AI lifecycle', () => {
     );
   });
 
-  it('clears champion progress on a stream error and keeps the game unchanged', async () => {
+  it('clears AI progress on a search error and keeps the game unchanged', async () => {
+    resetPlayingStore({ controllers: ['local', 'local'] });
     const flight = deferred<DeltrelAiDecision>();
     vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
     render(<GameScreen />);
@@ -551,8 +553,11 @@ describe('GameScreen AI lifecycle', () => {
 
   it('renders named estimates and top board labels from the accepted perspective', async () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
+    resetPlayingStore({ controllers: ['local', 'local'] });
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision)
+      .mockReturnValue(deferred<DeltrelAiDecision>().promise)
+      .mockReturnValueOnce(flight.promise);
     const { container } = render(<GameScreen />);
     const user = userEvent.setup();
 
@@ -607,10 +612,13 @@ describe('GameScreen AI lifecycle', () => {
     expect((await axe(container)).violations).toEqual([]);
   });
 
-  it('shows official final predictions during normal play without developer settings', async () => {
+  it('shows official final predictions during AI-versus-AI play without developer settings', async () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '0');
+    resetPlayingStore({ controllers: ['local', 'local'] });
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision)
+      .mockReturnValue(deferred<DeltrelAiDecision>().promise)
+      .mockReturnValueOnce(flight.promise);
     const { container } = render(<GameScreen />);
     const user = userEvent.setup();
     await screen.findByText('AI is thinking…');
@@ -645,14 +653,16 @@ describe('GameScreen AI lifecycle', () => {
   it('maps a second-player analysis to the correct named win estimates', async () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
     resetPlayingStore({
-      controllers: ['human', 'local'],
+      controllers: ['local', 'local'],
       log: [
         { type: 'place', node: 0 },
         { type: 'place', node: 1 },
       ],
     });
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision)
+      .mockReturnValue(deferred<DeltrelAiDecision>().promise)
+      .mockReturnValueOnce(flight.promise);
     render(<GameScreen />);
 
     await screen.findByText('AI is thinking…');
@@ -676,8 +686,11 @@ describe('GameScreen AI lifecycle', () => {
 
   it('restores the exact cached estimate on undo', async () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '1');
+    resetPlayingStore({ controllers: ['local', 'local'] });
     const flight = deferred<DeltrelAiDecision>();
-    vi.mocked(requestLocalAiDecision).mockReturnValue(flight.promise);
+    vi.mocked(requestLocalAiDecision)
+      .mockReturnValue(deferred<DeltrelAiDecision>().promise)
+      .mockReturnValueOnce(flight.promise);
     const user = userEvent.setup();
     render(<GameScreen />);
 

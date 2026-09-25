@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   CONTROLLER_TYPES,
+  canShowAiInsights,
   controllerLabel,
+  isHumanVsAi,
   normalizeControllers,
   aiMatchLabel,
   playerNamesForControllers,
@@ -18,6 +20,23 @@ const double: GameConfig = {
 };
 
 describe('AI controller validation', () => {
+  it.each([
+    ['human', 'human', false],
+    ['human', 'local', true],
+    ['local', 'human', true],
+    ['human', 'server', true],
+    ['server', 'human', true],
+    ['local', 'local', false],
+    ['server', 'local', false],
+    ['local', 'server', false],
+    ['server', 'server', false],
+  ] as const)('protects AI insights for %s versus %s', (first, second, hidden) => {
+    const controllers: PlayerControllers = [first, second];
+    expect(isHumanVsAi(controllers)).toBe(hidden);
+    expect(canShowAiInsights(controllers, false)).toBe(!hidden);
+    expect(canShowAiInsights(controllers, true)).toBe(false);
+  });
+
   it('offers a single AI controller while accepting legacy saved controller values', () => {
     expect(CONTROLLER_TYPES).toEqual(['human', 'local']);
     expect(controllerLabel('local')).toBe('AI');

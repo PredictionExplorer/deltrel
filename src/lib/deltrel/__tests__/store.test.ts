@@ -13,6 +13,7 @@ import {
   useAppStore,
 } from '../../store';
 import { replay, type GameAction, type GameConfig } from '../game';
+import { canShowAiInsights, type PlayerControllers } from '../ai/controllers';
 
 const double: GameConfig = {
   rings: 6,
@@ -35,6 +36,7 @@ afterEach(() => {
     phase: 'setup',
     config: DEFAULT_CONFIG,
     controllers: ['human', 'human'],
+    aiInsightsHidden: false,
     aiSearchSettings: {
       server: { ...DEFAULT_AI_SEARCH_SETTINGS.server },
       local: { ...DEFAULT_AI_SEARCH_SETTINGS.local },
@@ -253,7 +255,7 @@ describe('persisted app-state validation', () => {
         log: [{ type: 'place', node: 0 }],
         redoStack: [{ type: 'place', node: 1 }],
       },
-      APP_STORE_VERSION - 1,
+      5,
     );
     expect(migrated).toMatchObject({
       phase: 'playing',
@@ -277,7 +279,7 @@ describe('persisted app-state validation', () => {
         },
         controllers: ['local', 'local'],
       },
-      APP_STORE_VERSION - 2,
+      4,
     );
     expect(migrated).toEqual({
       phase: 'setup',
@@ -289,6 +291,7 @@ describe('persisted app-state validation', () => {
         playerNames: ['Ada', 'Grace'],
       },
       controllers: ['local', 'local'],
+      aiInsightsHidden: false,
       aiSearchSettings: DEFAULT_AI_SEARCH_SETTINGS,
       aiPaused: false,
       log: [],
@@ -428,6 +431,108 @@ describe('persisted app-state validation', () => {
       simulations: 4_096,
       maxConsidered: 256,
     });
+  });
+});
+
+describe('human versus AI insight privacy', () => {
+  it.each(['classic', 'double'] as const)(
+    'hides AI insights for both human seats across every %s opening',
+    (mode) => {
+      const openings = [
+        { pieRule: true, handicap: 1 },
+        ...Array.from({ length: 9 }, (_, index) => ({ pieRule: false, handicap: index + 1 })),
+      ];
+      for (const opening of openings) {
+        for (const controllers of [
+          ['human', 'local'], ['local', 'human'],
+          ['human', 'server'], ['server', 'human'],
+        ] satisfies PlayerControllers[]) {
+          useAppStore.getState().startGame({ ...double, rings: 10, mode, ...opening }, controllers);
+          expect(useAppStore.getState().aiInsightsHidden).toBe(true);
+        }
+      }
+    },
+  );
+
+  it.each([5, 6, 7, APP_STORE_VERSION])(
+    'hides version %i saved human-AI games without losing match state or custom effort',
+    (version) => {
+      for (const aiInsightsHidden of [undefined, false, true]) {
+        const saved = {
+          phase: 'playing',
+          config: { ...double, handicap: 3 },
+          controllers: ['server', 'human'],
+          aiInsightsHidden,
+          aiSearchSettings: { local: { simulations: 2_048, maxConsidered: 32 } },
+          aiPaused: true,
+          log: [{ type: 'place', node: 0 }],
+          redoStack: [{ type: 'place', node: 1 }],
+        };
+        const restored = migratePersistedState(saved, version);
+        expect(restored).toMatchObject({
+          ...saved,
+          controllers: ['local', 'human'],
+          aiInsightsHidden: true,
+        });
+        expect(sanitizePersistedState(saved).aiInsightsHidden).toBe(true);
+      }
+    },
+  );
+
+  it('keeps insights hidden through takeover, history navigation, review, and save restoration', () => {
+    useAppStore.getState().startGame(double, ['human', 'local']);
+    useAppStore.getState().act({ type: 'place', node: 0 });
+    useAppStore.getState().act({ type: 'place', node: 1 });
+    useAppStore.getState().setPlayerController(0, 'local');
+    useAppStore.getState().pauseAi();
+    useAppStore.getState().undo();
+    useAppStore.getState().redo();
+    useAppStore.getState().rewindTo(1);
+    useAppStore.getState().setReviewing(true);
+    useAppStore.getState().resign(0);
+    const current = useAppStore.getState();
+    expect(current.controllers).toEqual(['local', 'local']);
+    expect(current.aiInsightsHidden).toBe(true);
+    expect(canShowAiInsights(current.controllers, current.aiInsightsHidden)).toBe(false);
+
+    expect(sanitizePersistedState(JSON.parse(JSON.stringify(current)))).toMatchObject({
+      aiInsightsHidden: true,
+      controllers: ['local', 'local'],
+      aiPaused: true,
+      log: [{ type: 'place', node: 0 }],
+      redoStack: [{ type: 'place', node: 1 }],
+    });
+  });
+
+  it('protects self-play as soon as a human takes over, including a later second takeover', () => {
+    useAppStore.getState().startGame(double, ['local', 'local']);
+    expect(useAppStore.getState().aiInsightsHidden).toBe(false);
+    useAppStore.getState().setPlayerController(0, 'human');
+    expect(useAppStore.getState().aiInsightsHidden).toBe(true);
+    useAppStore.getState().setPlayerController(1, 'human');
+    const current = useAppStore.getState();
+    expect(current.controllers).toEqual(['human', 'human']);
+    expect(current.aiInsightsHidden).toBe(true);
+    expect(sanitizePersistedState(current).aiInsightsHidden).toBe(true);
+  });
+
+  it('recomputes privacy for new games and rematches and clears it on leaving a game', () => {
+    useAppStore.getState().startGame(double, ['human', 'local']);
+    useAppStore.getState().rematch();
+    expect(useAppStore.getState().aiInsightsHidden).toBe(true);
+    useAppStore.getState().setPlayerController(0, 'local');
+    useAppStore.getState().rematch();
+    expect(useAppStore.getState().aiInsightsHidden).toBe(false);
+    useAppStore.getState().setPlayerController(0, 'human');
+    useAppStore.getState().startGame(double, ['human', 'human']);
+    expect(useAppStore.getState().aiInsightsHidden).toBe(false);
+    useAppStore.getState().setPlayerController(1, 'local');
+    expect(useAppStore.getState().aiInsightsHidden).toBe(true);
+    useAppStore.getState().toSetup();
+    expect(useAppStore.getState().aiInsightsHidden).toBe(false);
+    useAppStore.getState().setPlayerController(0, 'local');
+    expect(useAppStore.getState().aiInsightsHidden).toBe(false);
+    expect(sanitizePersistedState({ ...useAppStore.getState(), aiInsightsHidden: true }).aiInsightsHidden).toBe(false);
   });
 });
 
