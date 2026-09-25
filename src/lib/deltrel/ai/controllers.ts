@@ -9,6 +9,13 @@ export type PlayerControllers = [ControllerType, ControllerType];
 
 export const HUMAN_CONTROLLERS: PlayerControllers = ['human', 'human'];
 
+/** Public games always retain a human seat, including restored self-play games. */
+export function restrictSelfPlay(controllers: PlayerControllers, allowed: boolean): PlayerControllers {
+  return !allowed && controllers.every((controller) => controller !== 'human')
+    ? ['human', controllers[1]]
+    : controllers;
+}
+
 export function isControllerType(value: unknown): value is ControllerType {
   return value === 'human' || value === 'local' || value === 'server';
 }

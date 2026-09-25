@@ -1,9 +1,10 @@
+import { SELF_PLAY_PATH } from './self-play-helpers';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { installAiWorkerFixture } from './ai-worker-fixture';
 
 async function setup(page: Page) {
-  await page.goto('/');
+  await page.goto(SELF_PLAY_PATH);
   await expect(page.getByRole('region', { name: 'AI', exact: true })
     .getByRole('status')).toHaveText('Ready on this device');
   await page.getByRole('button', { name: 'Mini, 4 rings' }).click();

@@ -48,7 +48,6 @@ function decisionFor(request: DeltrelAiRequest): DeltrelAiDecision {
 
 function expectInsightsHidden() {
   expect(screen.queryByRole('region', { name: 'Engine estimate', hidden: true })).not.toBeInTheDocument();
-  expect(screen.queryByRole('progressbar', { name: 'AI search progress', hidden: true })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Analyze position|Search candidates|Raw engine output|All network outputs|Final-count forecasts/, hidden: true })).not.toBeInTheDocument();
   expect(screen.queryByRole('textbox', { name: 'Raw engine output', hidden: true })).not.toBeInTheDocument();
   expect(screen.queryByText('75.0%')).not.toBeInTheDocument();
@@ -57,6 +56,7 @@ function expectInsightsHidden() {
 
 beforeEach(() => {
   localStorage.clear();
+  useAppStore.getState().setSelfPlayAccess(true);
   vi.mocked(requestLocalAiDecision).mockReset();
   vi.mocked(checkAiCapabilities).mockResolvedValue(capabilities);
   publishLocalAiStatus({ phase: 'ready', info: { modelVersion: 'champion-test', bytes: 72_474_137, backend: 'wasm', cached: true } });
@@ -72,7 +72,7 @@ const matches = (['classic', 'double'] as Mode[]).flatMap(mode =>
 );
 
 describe('human-versus-AI insight privacy', () => {
-  it.each(matches)('hides all engine details in $mode, $rings rings, handicap $handicap, AI seat $aiSeat', async match => {
+  it.each(matches)('shows thinking progress while hiding engine insights in $mode, $rings rings, handicap $handicap, AI seat $aiSeat', async match => {
     const { aiSeat, ...rules } = match;
     useAppStore.getState().startGame({ ...config, ...rules }, aiSeat === 0 ? ['local', 'human'] : ['human', 'local']);
     const openingCount = aiSeat === 1 ? rules.handicap : 0;
@@ -84,13 +84,18 @@ describe('human-versus-AI insight privacy', () => {
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
     const [request, options] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     expect(request.state.toMove).toBe(aiSeat);
-    act(() => options!.onSearchProgress?.({ completedSimulations: 256, totalSimulations: 512 }));
+    expect(screen.getByRole('progressbar', { name: 'AI search progress' })).toHaveAttribute('value', '0');
+    expect(screen.getByRole('progressbar', { name: 'AI search progress' })).toHaveAttribute('max', String(options!.search!.simulations));
+    act(() => options!.onSearchProgress?.({ completedSimulations: 272, totalSimulations: 544 }));
+    expect(screen.getByRole('progressbar', { name: 'AI search progress' })).toHaveAttribute('value', '272');
+    expect(screen.getByText('50%')).toBeVisible();
     expectInsightsHidden();
     await act(async () => first.resolve(decisionFor(request)));
     await waitFor(() => expect(useAppStore.getState().log).toHaveLength(openingCount + 1));
     expectInsightsHidden();
     act(() => useAppStore.getState().pauseAi());
     expectInsightsHidden();
+    expect(screen.queryByRole('progressbar', { name: 'AI search progress' })).not.toBeInTheDocument();
   });
 
   it('keeps insight controls out of human turns, history, undo/redo, and ended-game review', async () => {
@@ -100,6 +105,7 @@ describe('human-versus-AI insight privacy', () => {
     render(<GameScreen />);
     expect(screen.getByRole('region', { name: 'Current player scores' })).toBeInTheDocument();
     expectInsightsHidden();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     expect(requestLocalAiDecision).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: /^Node G4, empty/ }));
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
@@ -107,6 +113,7 @@ describe('human-versus-AI insight privacy', () => {
     await waitFor(() => expect(useAppStore.getState().log).toHaveLength(2));
     await user.click(screen.getByRole('button', { name: 'Jump to the empty board' }));
     expectInsightsHidden();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     act(() => useAppStore.getState().undo());
     expectInsightsHidden();
     act(() => useAppStore.getState().redo());
@@ -125,6 +132,7 @@ describe('human-versus-AI insight privacy', () => {
     render(<GameScreen />);
     expect(await screen.findByRole('alert')).toHaveTextContent('AI is offline.');
     expectInsightsHidden();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
   });
 
@@ -138,17 +146,23 @@ describe('human-versus-AI insight privacy', () => {
     const view = render(<GameScreen />);
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
     const [request, options] = vi.mocked(requestLocalAiDecision).mock.calls[0];
+    act(() => options!.onSearchProgress?.({ completedSimulations: 272, totalSimulations: 544 }));
+    expect(screen.getByText('50%')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Pause AI' }));
     expect(options!.signal!.aborted).toBe(true);
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     expectInsightsHidden();
     await act(async () => first.resolve(decisionFor(request)));
     expect(useAppStore.getState().log).toEqual([]);
     await user.click(screen.getByRole('button', { name: 'Resume AI' }));
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledTimes(2));
+    act(() => options!.onSearchProgress?.({ completedSimulations: 544, totalSimulations: 544 }));
+    expect(screen.getByRole('progressbar', { name: 'AI search progress' })).toHaveAttribute('value', '0');
     await user.click(screen.getByRole('button', { name: 'Pause AI' }));
     await user.click(screen.getByRole('button', { name: 'Take over as human' }));
     expect(useAppStore.getState().controllers).toEqual(['human', 'human']);
     expectInsightsHidden();
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     view.unmount();
     render(<GameScreen />);
     expectInsightsHidden();
@@ -169,7 +183,7 @@ describe('human-versus-AI insight privacy', () => {
     await user.click(screen.getByRole('button', { name: 'Take over as human' }));
     expectInsightsHidden();
     const [request, options] = vi.mocked(requestLocalAiDecision).mock.calls[1];
-    act(() => options!.onSearchProgress?.({ completedSimulations: 512, totalSimulations: 512 }));
+    act(() => options!.onSearchProgress?.({ completedSimulations: 544, totalSimulations: 544 }));
     await act(async () => next.resolve(decisionFor(request)));
     expectInsightsHidden();
     expect(useAppStore.getState().log).toHaveLength(1);

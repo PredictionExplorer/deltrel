@@ -1,15 +1,14 @@
 import type { DeltrelAiSearchBudget } from './decision';
 
 export interface BrowserStrengthOption {
-  id: 'quick' | 'balanced' | 'deep';
+  id: 'balanced' | 'deep';
   label: string;
   description: string;
   budget: DeltrelAiSearchBudget;
 }
 
 const LEVELS: readonly BrowserStrengthOption[] = [
-  { id: 'quick', label: 'Quick', description: 'Faster replies', budget: { simulations: 128, maxConsidered: 8 } },
-  { id: 'balanced', label: 'Standard', description: 'Champion search settings', budget: { simulations: 512, maxConsidered: 16 } },
+  { id: 'balanced', label: 'Standard', description: 'Strong everyday play', budget: { simulations: 544, maxConsidered: 16 } },
   { id: 'deep', label: 'Deep', description: 'Deeper search', budget: { simulations: 4_096, maxConsidered: 64 } },
 ];
 
@@ -20,7 +19,7 @@ function validMaximum(maximum: DeltrelAiSearchBudget): void {
   }
 }
 
-/** Familiar presets stay stable as custom runtime limits increase, without duplicate choices. */
+/** Offer only Standard and Deep, bounded by the current engine's limits. */
 export function browserStrengthOptions(maximum: DeltrelAiSearchBudget): BrowserStrengthOption[] {
   validMaximum(maximum);
   const seen = new Set<string>();
@@ -37,7 +36,7 @@ export function browserStrengthOptions(maximum: DeltrelAiSearchBudget): BrowserS
   return options;
 }
 
-/** Only an exact match is a preset; custom and out-of-range saved choices remain custom. */
+/** An exact match identifies a supported preset. */
 export function browserStrengthSelection(
   budget: DeltrelAiSearchBudget,
   maximum: DeltrelAiSearchBudget,
@@ -45,4 +44,18 @@ export function browserStrengthSelection(
   return browserStrengthOptions(maximum).find((option) =>
     option.budget.simulations === budget.simulations && option.budget.maxConsidered === budget.maxConsidered,
   ) ?? null;
+}
+
+/** Upgrade older Quick/Standard settings and replace custom budgets with a supported preset. */
+export function normalizeBrowserStrengthBudget(
+  budget: DeltrelAiSearchBudget,
+  maximum: DeltrelAiSearchBudget = LEVELS[1].budget,
+): DeltrelAiSearchBudget {
+  const options = browserStrengthOptions(maximum);
+  const deep = options.find((option) => option.id === 'deep');
+  const exact = options.find((option) => option.budget.simulations === budget.simulations && option.budget.maxConsidered === budget.maxConsidered);
+  const selection = exact ?? (Number.isFinite(budget.simulations) && budget.simulations >= LEVELS[1].budget.simulations && deep
+    ? deep
+    : options[0]);
+  return { ...selection.budget };
 }

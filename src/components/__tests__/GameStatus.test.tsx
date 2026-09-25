@@ -16,11 +16,19 @@ describe('GameStatus turn instructions', () => {
     const progress = screen.getByRole('progressbar', { name: `${controllerName} search progress` });
     expect(progress).toHaveAttribute('max', '1024');
     expect(progress).toHaveAttribute('value', '256');
-    expect(screen.getByText('25% · 256 of 1,024 simulations')).toBeVisible();
-    rerender(<GameStatus {...props} state="paused" />);
-    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-    rerender(<GameStatus {...props} state="review" />);
-    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(progress).toHaveAttribute('aria-valuetext', '25% complete');
+    expect(screen.getByText('25%')).toBeVisible();
+    for (const state of ['paused', 'review', 'human', 'error', 'waiting', 'over'] as const) {
+      rerender(<GameStatus {...props} state={state} />);
+      expect(screen.queryByRole('progressbar', { hidden: true })).not.toBeInTheDocument();
+      expect(screen.queryByText('25%')).not.toBeInTheDocument();
+    }
+  });
+
+  it('shows zero progress immediately while waiting for the first search update', () => {
+    render(<GameStatus state="thinking" playerName="Player 1" controllerName="AI" mode="classic" movesLeft={1} color={PLAYER_COLORS[0]} />);
+    expect(screen.getByRole('progressbar', { name: 'AI search progress' })).toHaveAttribute('value', '0');
+    expect(screen.getByText('0%')).toBeVisible();
   });
 
   it.each(['classic', 'double'] as const)('describes a nine-stone %s handicap accurately at each placement', (mode) => {

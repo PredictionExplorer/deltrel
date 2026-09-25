@@ -1,6 +1,8 @@
+import { SELF_PLAY_PATH } from './self-play-helpers';
 import { expect, test } from '@playwright/test';
 import type { DeltrelAiAnalysis } from '../src/lib/deltrel/ai/decision';
-import { setAiSearchBudget } from './browser-ai-helpers';
+import { selectAiStrength } from './browser-ai-helpers';
+import { installAiWorkerFixture } from './ai-worker-fixture';
 import publishedModel from '../public/models/deltrel/manifest.json';
 
 // Model inference is CPU-bound in headless Firefox. Keep these real-model
@@ -8,17 +10,17 @@ import publishedModel from '../public/models/deltrel/manifest.json';
 test.describe.configure({ mode: 'default' });
 
 for (const mode of ['classic', 'double'] as const) {
-  test(`${mode}: two real AIs complete a nine-stone handicap and pass play to the opponent`, async ({ page, context, browserName }) => {
-    // Ten Full-board searches take several minutes in Firefox's CPU fallback.
-    // This bounds the whole opening; each stalled engine request still times out.
-    const openingTimeout = browserName === 'firefox' ? 720_000 : 120_000;
-    test.setTimeout(openingTimeout + 60_000);
+  test(`${mode}: the self-play UI completes a nine-stone handicap before the opponent moves`, async ({ page, context }) => {
+    test.setTimeout(45_000);
+    // Exercise UI turn sequencing through the worker protocol without running
+    // ten Full-board searches. Native engine tests cover handicap search rules.
+    const ai = await installAiWorkerFixture(page, { heldCalls: [10, 11] });
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     await context.route('**/v2/health', route => route.fulfill({
       status: 503, contentType: 'application/json', body: '{}',
     }));
-    await page.goto('/');
+    await page.goto(SELF_PLAY_PATH);
     await page.getByRole('button', { name: 'Full, 10 rings', exact: true }).click();
     await page.getByRole('button', { name: mode === 'classic' ? /^Classic Deltrel,/ : /^Double Deltrel,/ }).click();
     await page.getByRole('button', { name: 'Handicap opening', exact: true }).click();
@@ -29,12 +31,21 @@ for (const mode of ['classic', 'double'] as const) {
     await page.getByRole('combobox', { name: 'Player 2 controller' }).selectOption('local');
     await page.getByRole('textbox', { name: 'Player 1 name' }).fill('Drift');
     await page.getByRole('textbox', { name: 'Player 2 name' }).fill('Tide');
-    await setAiSearchBudget(page, 8, 4);
-    await expect(page.getByRole('button', { name: 'AI selected', exact: true })).toBeVisible({ timeout: 120_000 });
+    await selectAiStrength(page, 'Standard');
+    await expect(page.getByRole('button', { name: 'AI selected', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Begin the game', exact: true }).click();
     // Every one of the nine opening placements must complete before side two
-    // places a stone. This uses the shipped ONNX model and WASM search.
-    await expect(page.locator('[data-move-chip="9"]').or(page.getByRole('main').getByRole('alert'))).toBeVisible({ timeout: openingTimeout });
+    // receives a move request; hold its response to inspect that boundary.
+    await expect.poll(() => ai.requests.length).toBe(10);
+    expect(ai.requests.slice(0, 9).map(request => ({
+      toMove: request.state.toMove,
+      opening: request.state.opening,
+      movesLeft: request.state.movesLeft,
+    }))).toEqual(Array.from({ length: 9 }, (_, index) => ({ toMove: 0, opening: true, movesLeft: 9 - index })));
+    expect(ai.requests[9].state.toMove).toBe(1);
+    await expect(page.locator('[data-move-chip]')).toHaveCount(9);
+    await ai.releaseCall(10);
+    await expect(page.locator('[data-move-chip="9"]')).toBeVisible();
     await expect(page.getByRole('main').getByRole('alert')).toHaveCount(0);
     await page.getByRole('button', { name: 'Pause AI', exact: true }).click();
     await expect(page.locator('[data-game-status="paused"]')).toBeVisible();
@@ -68,8 +79,11 @@ async function inspectModelCache() {
 
 // This exercises the published model, real worker, WASM search and ONNX runtime.
 // No remote inference is permitted; the browser uses the shipped model.
-test('preserves AI-versus-AI strength through preparation, plays locally, and reuses its verified cache', async ({ page, context, browserName }, testInfo) => {
-  test.setTimeout(300_000);
+test('preserves Standard strength through preparation, plays two real Mini searches locally, and reuses its verified cache', async ({ page, context, browserName }, testInfo) => {
+  // Both moves use the public Standard preset, including on the CPU fallback.
+  // The real client's 90-second inactivity timeout still detects stalled work.
+  const searchTimeout = browserName === 'firefox' ? 300_000 : 180_000;
+  test.setTimeout(2 * searchTimeout + 180_000);
   let releaseDownload!: () => void;
   const downloadGate = new Promise<void>(resolve => { releaseDownload = resolve; });
   let blockModelDownload = false;
@@ -97,12 +111,13 @@ test('preserves AI-versus-AI strength through preparation, plays locally, and re
         await route.abort('blockedbyclient');
         return;
       }
+      await downloadGate;
     }
-    await downloadGate;
+    // Availability probes use HEAD and must complete while the GET is held.
     await route.continue();
   });
 
-  await page.goto('/');
+  await page.goto(SELF_PLAY_PATH);
   await expect(page.getByRole('heading', { name: 'Deltrel', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Mini, 4 rings', exact: true }).click();
   await page.getByRole('button', { name: 'Classic Deltrel, 1 stone per turn', exact: true }).click();
@@ -113,7 +128,7 @@ test('preserves AI-versus-AI strength through preparation, plays locally, and re
   await playerTwoController.selectOption('local');
   await page.getByRole('textbox', { name: 'Player 1 name' }).fill('Drift');
   await page.getByRole('textbox', { name: 'Player 2 name' }).fill('Tide');
-  await setAiSearchBudget(page, 64, 8);
+  await selectAiStrength(page, 'Standard');
   await expect.poll(() => modelGets).toBe(1);
   await expect(page.getByRole('progressbar', { name: 'AI preparation' })).toBeVisible();
   releaseDownload();
@@ -124,7 +139,9 @@ test('preserves AI-versus-AI strength through preparation, plays locally, and re
   await expect(playerTwoController).toHaveValue('local');
   await expect(page.getByRole('textbox', { name: 'Player 1 name' })).toHaveValue('Drift');
   await expect(page.getByRole('textbox', { name: 'Player 2 name' })).toHaveValue('Tide');
-  await expect(page.getByText('Custom setting: 64 simulations, up to 8 candidate moves.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Standard AI strength', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Quick AI strength', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Custom search budget', { exact: true })).toHaveCount(0);
   const cacheAfterDownload = await page.evaluate(inspectModelCache);
   const expectedModel = publishedModel.artifacts.onnx;
   const cachedEntry = cacheAfterDownload.entries.find(entry => entry.sha256 === expectedModel.sha256);
@@ -140,7 +157,9 @@ test('preserves AI-versus-AI strength through preparation, plays locally, and re
   await expect(page.getByRole('button', { name: /empty .* may place here/i })).toHaveCount(0);
   // Wait for a genuine AI action, then stop autoplay before inspecting its result.
   // Count actions rather than occupied nodes because the pie reply may be a swap.
-  await expect(page.locator('[data-move-chip="0"]')).toBeVisible({ timeout: 95_000 });
+  await expect(page.getByRole('progressbar', { name: 'AI search progress', exact: true })).toBeVisible();
+  await expect(page.getByRole('progressbar', { name: 'AI search progress', exact: true })).toHaveAttribute('max', '544');
+  await expect(page.locator('[data-move-chip="0"]')).toBeVisible({ timeout: searchTimeout });
   const estimate = page.getByRole('region', { name: 'Engine estimate', exact: true });
   await estimate.getByRole('button', { name: 'Pause AI', exact: true }).click();
   await expect(page.locator('[data-game-status="paused"]')).toBeVisible();
@@ -167,9 +186,9 @@ test('preserves AI-versus-AI strength through preparation, plays locally, and re
   };
   expect(report.context).toMatchObject({ source: 'local', applied: true });
   expect(report.board.rings).toBe(4);
-  expect(report.analysis.simulations).toBe(64);
-  expect(report.analysis.maxConsidered).toBe(8);
-  expect(report.analysis.rootVisits.reduce((sum, visits) => sum + visits, 0)).toBe(64);
+  expect(report.analysis.simulations).toBe(544);
+  expect(report.analysis.maxConsidered).toBe(16);
+  expect(report.analysis.rootVisits.reduce((sum, visits) => sum + visits, 0)).toBe(544);
   const network = report.analysis.networkOutput!;
   expect(network.nodeCount).toBe(50);
   expect(network.perspective).toBe(report.analysis.perspective);
@@ -182,9 +201,7 @@ test('preserves AI-versus-AI strength through preparation, plays locally, and re
   expect(report.analysis.predictions?.finalCounts).toHaveLength(2);
   expect(remoteInference).toEqual([]);
 
-  // The 64-simulation search above proves the chosen strength reached the real
-  // engine. Use a smaller custom budget for the cache-reload search.
-  await setAiSearchBudget(page, 8, 4);
+  // Reload with Standard unchanged and verify the next real search uses it too.
   await expect(page.locator('[data-move-chip]')).toHaveCount(pausedPly);
   blockModelDownload = true;
   await page.reload();
@@ -219,17 +236,18 @@ test('preserves AI-versus-AI strength through preparation, plays locally, and re
     expect(modelGets).toBe(expectedModelGets);
   }
   await expect(page.getByText('AI versus AI', { exact: true })).toBeVisible();
-  await expect(page.getByText('Custom setting: 8 simulations, up to 4 candidate moves.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Standard AI strength', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Resume AI', exact: true }).click();
-  await expect(page.locator(`[data-move-chip="${pausedPly}"]`)).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(`[data-move-chip="${pausedPly}"]`)).toBeVisible({ timeout: searchTimeout });
   const resumedEstimate = page.getByRole('region', { name: 'Engine estimate', exact: true });
   await resumedEstimate.getByRole('button', { name: 'Pause AI', exact: true }).click();
   await expect(page.locator('[data-game-status="paused"]')).toBeVisible();
   await expect(resumedEstimate.getByRole('article', { name: 'Tide forecast' })).toContainText(/\d+(?:\.\d+)?%/);
   await resumedEstimate.getByRole('button', { name: /^Raw engine output/ }).click();
   const resumedReport = JSON.parse(await resumedEstimate.getByRole('textbox', { name: 'Raw engine output' }).inputValue()) as { analysis: DeltrelAiAnalysis };
-  expect(resumedReport.analysis.simulations).toBe(8);
-  expect(resumedReport.analysis.maxConsidered).toBe(4);
+  expect(resumedReport.analysis.simulations).toBe(544);
+  expect(resumedReport.analysis.maxConsidered).toBe(16);
+  expect(resumedReport.analysis.rootVisits.reduce((sum, visits) => sum + visits, 0)).toBe(544);
   await expect(page.getByText('Human versus AI', { exact: true })).toHaveCount(0);
   expect(modelGets).toBe(expectedModelGets);
   expect(remoteInference).toEqual([]);

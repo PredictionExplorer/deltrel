@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { Mode } from '@/lib/deltrel/game';
 import type { DeltrelAiSearchProgress } from '@/lib/deltrel/ai/decision';
+import styles from './GameStatus.module.css';
 
 export type GameStatusState =
   | 'human'
@@ -136,6 +137,8 @@ export function GameStatus({
               };
 
   const Icon = presentation.icon;
+  const progress = searchProgress ?? { completedSimulations: 0, totalSimulations: 1 };
+  const percentComplete = Math.floor(progress.completedSimulations / progress.totalSimulations * 100);
   const showPips =
     (state === 'human' || state === 'thinking') &&
     turnProgress !== null &&
@@ -198,21 +201,25 @@ export function GameStatus({
           )}
         </div>
         <p className="mt-0.5 min-h-[1.875rem] text-xs leading-tight text-muted">{presentation.detail}</p>
-        {state === 'thinking' && searchProgress && (
-          <div className="mt-1.5 text-xs text-muted">
-            <progress
-              aria-label={`${controllerName} search progress`}
-              max={searchProgress.totalSimulations}
-              value={searchProgress.completedSimulations}
-              className="block h-1.5 w-full accent-[#e4c9a1]"
-            />
-            <p className="mt-1 tabular-nums">
-              {Math.floor(searchProgress.completedSimulations / searchProgress.totalSimulations * 100)}% ·{' '}
-              {searchProgress.completedSimulations.toLocaleString('en-US')} of{' '}
-              {searchProgress.totalSimulations.toLocaleString('en-US')} simulations
-            </p>
-          </div>
-        )}
+        <div
+          className={`${styles.progressSlot} mt-1.5 text-xs text-muted`}
+          aria-live="off"
+          aria-hidden={state !== 'thinking'}
+        >
+          {state === 'thinking' && (
+            <>
+              <progress
+                aria-label={`${controllerName} search progress`}
+                aria-valuetext={`${percentComplete}% complete`}
+                max={progress.totalSimulations}
+                value={progress.completedSimulations}
+                className={styles.progress}
+                style={{ color: color.bright }}
+              />
+              <p className="mt-1 text-right tabular-nums">{percentComplete}%</p>
+            </>
+          )}
+        </div>
       </div>
     </section>
   );

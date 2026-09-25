@@ -52,7 +52,7 @@ for (const viewport of viewports) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const ai = await installAiWorkerFixture(page, { modelVersion: 'layout-model', holdMoves: true });
     await openFreshSetup(page);
-    await expect(page.getByRole('button', { name: 'Quick AI strength', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Standard AI strength', exact: true })).toBeEnabled();
 
     const setupOverflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -75,7 +75,10 @@ for (const viewport of viewports) {
 
     await expect(page.locator('[data-game-status="thinking"]')).toBeVisible();
     await expect(page.getByRole('region', { name: 'Engine estimate' })).toHaveCount(0);
-    await expect(page.getByRole('progressbar', { name: 'AI search progress' })).toHaveCount(0);
+    await expect(page.getByRole('progressbar', { name: 'AI search progress' })).toBeVisible();
+    if (viewport.screenshot) {
+      await expect(page).toHaveScreenshot(`thinking-${viewport.name}.png`, { fullPage: true });
+    }
     expect(await page.evaluate(() => window.scrollY)).toBeLessThanOrEqual(1);
     const stageBefore = await bounds(page, '[data-board-stage]');
     const boardBefore = await bounds(page, '[data-board-stage] svg');

@@ -14,6 +14,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { aiMatchLabel, canShowAiInsights, controllerLabel, normalizeControllers, playerNamesForControllers, type ControllerType } from '@/lib/deltrel/ai/controllers';
+import { normalizeBrowserStrengthBudget } from '@/lib/deltrel/ai/browser-strength';
 import { INITIAL_AI_CAPABILITIES, checkAiCapabilities, type AiCapabilities } from '@/lib/deltrel/ai/capabilities';
 import {
   DeltrelAiError,
@@ -71,7 +72,7 @@ type AiStatus =
       kind: 'thinking';
       controller: Exclude<ControllerType, 'human'>;
       positionKey: string;
-      searchProgress?: DeltrelAiSearchProgress;
+      searchProgress: DeltrelAiSearchProgress;
     }
   | {
       kind: 'error';
@@ -94,11 +95,8 @@ interface AiFlight {
 function reducedSearchBudget(
   budget: DeltrelAiSearchBudget,
 ): DeltrelAiSearchBudget | null {
-  if (budget.simulations === 1 && budget.maxConsidered === 1) return null;
-  return {
-    simulations: Math.max(1, Math.floor(budget.simulations / 2)),
-    maxConsidered: Math.max(1, Math.floor(budget.maxConsidered / 2)),
-  };
+  if (budget.simulations <= 544) return null;
+  return { simulations: 544, maxConsidered: 16 };
 }
 
 export function GameScreen() {
@@ -144,9 +142,8 @@ export function GameScreen() {
     });
     return () => controller.abort();
   }, [availabilityRefresh, preparedModelVersion]);
-  // The store and worker validate native limits. Keep the user's exact budget,
-  // including custom values above the model's recommended presets.
-  const browserSearch = aiSearchSettings.local;
+  // Old saved custom and Quick budgets use the supported public presets.
+  const browserSearch = useMemo(() => normalizeBrowserStrengthBudget(aiSearchSettings.local), [aiSearchSettings.local]);
 
   const [rulesOpen, setRulesOpen] = useState(false);
   const [showInfluence, setShowInfluence] = useState(false);
@@ -361,7 +358,10 @@ export function GameScreen() {
     const positionConfig = useAppStore.getState().config;
     queueMicrotask(() => {
       if (flightRef.current === flight && !flight.cancelled) {
-        setAiStatus({ kind: 'thinking', controller, positionKey: aiPositionKey });
+        setAiStatus({
+          kind: 'thinking', controller, positionKey: aiPositionKey,
+          searchProgress: { completedSimulations: 0, totalSimulations: selectedSearch.simulations },
+        });
       }
     });
 
@@ -371,7 +371,6 @@ export function GameScreen() {
       onSearchProgress: (progress: DeltrelAiSearchProgress) => {
         if (flight.cancelled || flight.settled || flightRef.current !== flight) return;
         const current = useAppStore.getState();
-        if (!canShowAiInsights(current.controllers, current.aiInsightsHidden)) return;
         if (current.phase !== 'playing' || current.aiPaused || current.earlyOutcome ||
             current.config !== positionConfig || current.log !== log ||
             normalizeControllers(current.config, current.controllers)[request.state.toMove] !== controller) return;
@@ -966,8 +965,9 @@ export function GameScreen() {
             controllerName={currentControllerName}
             matchLabel={aiMatchLabel(controllers)}
             waitingReason={aiWaitingReason}
-            searchProgress={aiInsightsVisible && thinking && aiStatus.kind === 'thinking'
-              ? aiStatus.searchProgress : undefined}
+            searchProgress={thinking && aiStatus.kind === 'thinking'
+              ? aiStatus.searchProgress
+              : { completedSimulations: 0, totalSimulations: browserSearch.simulations }}
             mode={config.mode}
             movesLeft={shownGame.movesLeft}
             turnProgress={turnProgress}
@@ -1032,7 +1032,7 @@ export function GameScreen() {
                         onClick={() => retryWithLessEffort(currentController)}
                         className="min-h-9 rounded-lg border border-sand/50 px-3 py-1 text-sand-strong transition-colors hover:bg-sand/15"
                       >
-                        Use less effort
+                        Use Standard
                       </button>
                     )}
                     <button

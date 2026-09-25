@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'vitest';
 import { GAME_STORAGE_KEY } from '../../persistence';
 import { APP_STORE_VERSION, DEFAULT_CONFIG, useAppStore } from '../../store';
 
+beforeEach(() => {
+  useAppStore.getState().setSelfPlayAccess(true);
+});
+
 afterEach(() => {
   useAppStore.getState().toSetup();
+  useAppStore.getState().setSelfPlayAccess(false);
   window.localStorage.clear();
 });
 

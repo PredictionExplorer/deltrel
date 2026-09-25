@@ -96,7 +96,7 @@ describe('published browser WASM search', () => {
     expect(result.rootVisits.filter(visits => visits > 0)).toHaveLength(request.legalActions.length);
   });
 
-  it('performs the full Quick, Standard and Deep budgets, including immediate cached repeats', async () => {
+  it('performs the full Standard and Deep budgets, including immediate cached repeats', async () => {
     expect(worker.hasExpectedWasmSearch(wasm)).toBe(true);
     // Retain the full deepest synthetic search to exercise a completely cached repeat.
     const f = fixture(8_192);

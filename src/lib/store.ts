@@ -14,10 +14,12 @@ import {
   isControllerType,
   isHumanVsAi,
   normalizeControllers,
+  restrictSelfPlay,
   type ControllerType,
   type PlayerControllers,
 } from './deltrel/ai/controllers';
 import type { DeltrelAiSearchBudget } from './deltrel/ai/decision';
+import { normalizeBrowserStrengthBudget } from './deltrel/ai/browser-strength';
 import {
   MAX_BROWSER_AI_MAX_CONSIDERED,
   MAX_BROWSER_AI_SIMULATIONS,
@@ -58,6 +60,10 @@ export type EarlyGameOutcome =
     };
 
 export interface AppState {
+  /** Granted by the server for this page only; never restored from storage. */
+  selfPlayAllowed: boolean;
+  selfPlayAccessReady: boolean;
+  setSelfPlayAccess: (allowed: boolean) => void;
   phase: Phase;
   config: GameConfig;
   controllers: PlayerControllers;
@@ -115,10 +121,10 @@ export const DEFAULT_CONFIG: GameConfig = {
 
 export const DEFAULT_CONTROLLERS: PlayerControllers = [...HUMAN_CONTROLLERS];
 export const DEFAULT_AI_SEARCH_SETTINGS: AiSearchSettings = {
-  server: { simulations: 512, maxConsidered: 16 },
-  local: { simulations: 512, maxConsidered: 16 },
+  server: { simulations: 544, maxConsidered: 16 },
+  local: { simulations: 544, maxConsidered: 16 },
 };
-export const APP_STORE_VERSION = 8;
+export const APP_STORE_VERSION = 9;
 
 const AI_SEARCH_LIMITS: Record<AiRuntime, DeltrelAiSearchBudget> = {
   server: {
@@ -126,7 +132,7 @@ const AI_SEARCH_LIMITS: Record<AiRuntime, DeltrelAiSearchBudget> = {
     maxConsidered: MAX_SERVER_AI_MAX_CONSIDERED,
   },
   local: {
-    // Persist custom budgets up to the native engine's numeric limits.
+    // Validate old stored budgets before migrating them to supported presets.
     simulations: MAX_BROWSER_AI_SIMULATIONS,
     maxConsidered: MAX_BROWSER_AI_MAX_CONSIDERED,
   },
@@ -237,9 +243,9 @@ export function normalizeAiSearchSettings(value: unknown): AiSearchSettings {
     server:
       parseAiSearchBudget('server', record.server) ??
       { ...DEFAULT_AI_SEARCH_SETTINGS.server },
-    local:
+    local: normalizeBrowserStrengthBudget(
       parseAiSearchBudget('local', record.local) ??
-      { ...DEFAULT_AI_SEARCH_SETTINGS.local },
+      { ...DEFAULT_AI_SEARCH_SETTINGS.local }),
   };
 }
 
@@ -438,13 +444,13 @@ export function migratePersistedState(
     if (persistedVersion < 7 && isRecord(value)) {
       const previousSettings = isRecord(value.aiSearchSettings) ? value.aiSearchSettings : {};
       const local = parseAiSearchBudget('local', previousSettings.local);
-      // Existing custom work budgets remain exact. The old browser default
-      // migrates to champion effort; legacy native games retain their effort.
+      // Preserve the legacy native-vs-browser preference, then map its budget
+      // to the supported Standard or Deep preset.
       if (local === null || (local.simulations === 8 && local.maxConsidered === 4)) {
         const usedNativeAi = Array.isArray(value.controllers) && value.controllers.includes('server');
-        migrated.aiSearchSettings.local = (usedNativeAi
+        migrated.aiSearchSettings.local = normalizeBrowserStrengthBudget((usedNativeAi
           ? parseAiSearchBudget('local', previousSettings.server)
-          : null) ?? { ...DEFAULT_AI_SEARCH_SETTINGS.local };
+          : null) ?? { ...DEFAULT_AI_SEARCH_SETTINGS.local });
       }
     }
     return migrated;
@@ -458,7 +464,20 @@ export function migratePersistedState(
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
+      selfPlayAllowed: false,
+      selfPlayAccessReady: false,
+      setSelfPlayAccess: (allowed) => set((state) => {
+        const controllers = restrictSelfPlay(state.controllers, allowed);
+        const changed = controllers !== state.controllers;
+        return {
+          selfPlayAllowed: allowed,
+          selfPlayAccessReady: true,
+          controllers,
+          aiPaused: changed && state.phase === 'playing' ? true : state.aiPaused,
+          aiInsightsHidden: state.aiInsightsHidden || (state.phase === 'playing' && isHumanVsAi(controllers)),
+        };
+      }),
       phase: 'setup',
       config: DEFAULT_CONFIG,
       controllers: DEFAULT_CONTROLLERS,
@@ -477,7 +496,7 @@ export const useAppStore = create<AppState>()(
           throw new Error('cannot start a game with an unsupported configuration');
         }
         const validConfig = normalizeNewGameConfig(parsedConfig);
-        const validControllers = normalizeControllers(validConfig, controllers);
+        const validControllers = restrictSelfPlay(normalizeControllers(validConfig, controllers), get().selfPlayAllowed);
         set({
           phase: 'playing',
           config: validConfig,
@@ -579,6 +598,7 @@ export const useAppStore = create<AppState>()(
           if ((player !== 0 && player !== 1) || !isControllerType(controller)) return state;
           const requested: PlayerControllers = [...state.controllers];
           requested[player] = controller;
+          if (!state.selfPlayAllowed && requested.every((value) => value !== 'human')) return state;
           const controllers = normalizeControllers(state.config, requested);
           return {
             controllers,
@@ -595,7 +615,7 @@ export const useAppStore = create<AppState>()(
           return {
             aiSearchSettings: {
               ...state.aiSearchSettings,
-              [runtime]: valid,
+              [runtime]: runtime === 'local' ? normalizeBrowserStrengthBudget(valid) : valid,
             },
           };
         }),
@@ -674,6 +694,14 @@ export const useAppStore = create<AppState>()(
       migrate: migratePersistedState,
       merge: (persisted, current) => {
         const valid = sanitizePersistedState(persisted);
+        if (current.selfPlayAccessReady) {
+          const controllers = restrictSelfPlay(valid.controllers, current.selfPlayAllowed);
+          if (controllers !== valid.controllers) {
+            valid.controllers = controllers;
+            valid.aiPaused = valid.phase === 'playing';
+            valid.aiInsightsHidden = valid.phase === 'playing';
+          }
+        }
         return {
           ...current,
           ...valid,

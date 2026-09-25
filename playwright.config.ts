@@ -48,6 +48,7 @@ export default defineConfig({
     },
   ],
   webServer: {
+    env: { DELTREL_SELF_PLAY_SECRET: 'deltrel-e2e-self-play-secret-not-for-production' },
     command: `npm run start -- --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
     // Tests must exercise the production build they just created. An unrelated

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ mounted: true, phase: 'setup' as 'setup' | 'playing' }));
+const state = vi.hoisted(() => ({ mounted: true, phase: 'setup' as 'setup' | 'playing', selfPlayAccessReady: true, selfPlayAllowed: false, setSelfPlayAccess: vi.fn() }));
 
 vi.mock('@/components/GameScreen', () => ({
   GameScreen: () => <div>game-screen</div>,
@@ -17,7 +17,7 @@ vi.mock('@/lib/store', () => ({
   useAppStore: (selector: (value: typeof state) => unknown) => selector(state),
 }));
 
-import Home from './page';
+import { GameApp as Home } from '@/components/GameApp';
 
 describe('Home phase routing', () => {
   beforeEach(() => {

@@ -18,6 +18,7 @@ import {
   CONTROLLER_TYPES,
   controllerLabel,
   normalizeControllers,
+  restrictSelfPlay,
   playerNamesForControllers,
   supportsAiControllers,
   type ControllerType,
@@ -38,6 +39,7 @@ import { RulesDialog } from './RulesDialog';
 import styles from './SetupScreen.module.css';
 
 export function SetupScreen() {
+  const selfPlayAllowed = useAppStore((s) => s.selfPlayAllowed);
   const startGame = useAppStore((s) => s.startGame);
   const lastConfig = useAppStore((s) => s.config);
   const lastControllers = useAppStore((s) => s.controllers);
@@ -57,7 +59,7 @@ export function SetupScreen() {
     playerNamesForControllers(lastConfig.playerNames, lastControllers),
   );
   const [controllers, setControllers] = useState<PlayerControllers>(() =>
-    normalizeControllers(lastConfig, lastControllers),
+    restrictSelfPlay(normalizeControllers(lastConfig, lastControllers), selfPlayAllowed),
   );
   const [capabilities, setCapabilities] = useState<AiCapabilities>(
     INITIAL_AI_CAPABILITIES,
@@ -113,6 +115,7 @@ export function SetupScreen() {
     setControllers((previous) => {
       const next: PlayerControllers = [...previous];
       next[player] = controller;
+      if (!selfPlayAllowed && next.every((value) => value !== 'human')) return previous;
       return next;
     });
   };
@@ -135,7 +138,7 @@ export function SetupScreen() {
       handicap: pieRule ? 1 : handicap,
       playerNames: [names[0].trim() || 'Player 1', names[1].trim() || 'Player 2'],
     };
-    const validControllers = normalizeControllers(config, controllers);
+    const validControllers = restrictSelfPlay(normalizeControllers(config, controllers), selfPlayAllowed);
     if (
       !engineSettingsReady ||
       (validControllers.includes('local') && !browserAi.authorized) ||
@@ -435,7 +438,7 @@ export function SetupScreen() {
                         }
                         className="mt-1 w-full bg-transparent text-xs text-muted outline-none"
                       >
-                        {CONTROLLER_TYPES.map((controller) => {
+                        {CONTROLLER_TYPES.filter((controller) => selfPlayAllowed || controller === 'human' || controllers[1 - i] === 'human').map((controller) => {
                           const capability = capabilityForController(
                             capabilities,
                             controller,

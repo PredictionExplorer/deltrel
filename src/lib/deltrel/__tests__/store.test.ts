@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
   APP_STORE_VERSION,
@@ -31,9 +31,15 @@ const clinchedLog = Array.from({ length: 49 }, (_, node) => ({
   node,
 }));
 
+beforeEach(() => {
+  useAppStore.getState().setSelfPlayAccess(true);
+});
+
 afterEach(() => {
   useAppStore.setState({
     phase: 'setup',
+    selfPlayAllowed: false,
+    selfPlayAccessReady: false,
     config: DEFAULT_CONFIG,
     controllers: ['human', 'human'],
     aiInsightsHidden: false,
@@ -52,9 +58,9 @@ afterEach(() => {
 
 describe('persisted app-state validation', () => {
   it.each([
-    { controllers: ['human', 'local'], local: { simulations: 8, maxConsidered: 4 }, expected: { simulations: 512, maxConsidered: 16 } },
-    { controllers: ['server', 'human'], local: { simulations: 8, maxConsidered: 4 }, expected: { simulations: 777, maxConsidered: 21 } },
-    { controllers: ['server', 'local'], local: { simulations: 9999, maxConsidered: 127 }, expected: { simulations: 9999, maxConsidered: 127 } },
+    { controllers: ['human', 'local'], local: { simulations: 8, maxConsidered: 4 }, expected: { simulations: 544, maxConsidered: 16 } },
+    { controllers: ['server', 'human'], local: { simulations: 8, maxConsidered: 4 }, expected: { simulations: 544, maxConsidered: 16 } },
+    { controllers: ['server', 'local'], local: { simulations: 9999, maxConsidered: 127 }, expected: { simulations: 4096, maxConsidered: 64 } },
   ])('migrates version 6 controllers and effort without losing a paused game: $controllers', ({ controllers, local, expected }) => {
     const saved = {
       phase: 'playing', config: mini, controllers,
@@ -72,12 +78,12 @@ describe('persisted app-state validation', () => {
     expect(saved.aiSearchSettings.local).toEqual(local);
   });
 
-  it('keeps an intentionally selected 8-simulation budget after the version 7 migration', () => {
-    const local = { simulations: 8, maxConsidered: 4 };
+  it.each([7, 8, APP_STORE_VERSION])('upgrades old low search budgets from version %i to Standard', (version) => {
+    const local = { simulations: 128, maxConsidered: 8 };
     expect(migratePersistedState({
       phase: 'playing', config: mini, controllers: ['human', 'local'],
       aiSearchSettings: { local }, aiPaused: true, log: [], redoStack: [],
-    }, APP_STORE_VERSION).aiSearchSettings.local).toEqual(local);
+    }, version).aiSearchSettings.local).toEqual({ simulations: 544, maxConsidered: 16 });
   });
 
   it('rejects saved histories longer than any legal game', () => {
@@ -115,7 +121,7 @@ describe('persisted app-state validation', () => {
       controllers: ['local', 'local'],
       aiSearchSettings: {
         server: { simulations: 128, maxConsidered: 8 },
-        local: { simulations: 32, maxConsidered: 4 },
+        local: { simulations: 544, maxConsidered: 16 },
       },
       aiPaused: true,
       log: [{ type: 'place', node: 0 }],
@@ -390,7 +396,7 @@ describe('persisted app-state validation', () => {
   );
 
   it.each(['setup', 'playing'] as const)(
-    'preserves a deeper custom browser search after saving and restoring %s',
+    'normalizes a deeper custom browser search to Deep after restoring %s',
     (phase) => {
       const budget = { simulations: 4_096, maxConsidered: 256 };
       const saved = JSON.parse(JSON.stringify({
@@ -404,11 +410,11 @@ describe('persisted app-state validation', () => {
 
       expect(sanitizePersistedState(saved)).toMatchObject({
         phase,
-        aiSearchSettings: { local: budget },
+        aiSearchSettings: { local: { simulations: 4096, maxConsidered: 64 } },
       });
       expect(migratePersistedState(saved, APP_STORE_VERSION)).toMatchObject({
         phase,
-        aiSearchSettings: { local: budget },
+        aiSearchSettings: { local: { simulations: 4096, maxConsidered: 64 } },
       });
     },
   );
@@ -420,7 +426,7 @@ describe('persisted app-state validation', () => {
     });
     expect(useAppStore.getState().aiSearchSettings.local).toEqual({
       simulations: 4_096,
-      maxConsidered: 256,
+      maxConsidered: 64,
     });
 
     useAppStore.getState().setAiSearchBudget('local', {
@@ -429,7 +435,7 @@ describe('persisted app-state validation', () => {
     });
     expect(useAppStore.getState().aiSearchSettings.local).toEqual({
       simulations: 4_096,
-      maxConsidered: 256,
+      maxConsidered: 64,
     });
   });
 });
@@ -455,7 +461,7 @@ describe('human versus AI insight privacy', () => {
   );
 
   it.each([5, 6, 7, APP_STORE_VERSION])(
-    'hides version %i saved human-AI games without losing match state or custom effort',
+    'hides version %i saved human-AI games while upgrading unsupported effort',
     (version) => {
       for (const aiInsightsHidden of [undefined, false, true]) {
         const saved = {
@@ -471,6 +477,7 @@ describe('human versus AI insight privacy', () => {
         const restored = migratePersistedState(saved, version);
         expect(restored).toMatchObject({
           ...saved,
+          aiSearchSettings: { local: { simulations: 544, maxConsidered: 16 } },
           controllers: ['local', 'human'],
           aiInsightsHidden: true,
         });

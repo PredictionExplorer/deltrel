@@ -72,7 +72,7 @@ AI service. This is not a claim of superhuman playing strength. See the
 
 Each player has two choices: **Human** or **AI**. AI always runs in a background
 browser worker using the full published champion. Choose AI for one player to
-play against it, or for both players to watch self-play.
+play against it. Computer-versus-computer play requires the private self-play link.
 
 A fresh page automatically checks the current published manifest and prepares
 the **72.5 MB FP32 model**, plus its browser runtime. Verified cached model bytes
@@ -91,15 +91,26 @@ can require another download; storage failure does not block play.
 
 | Level | Simulations | Candidate moves |
 | --- | ---: | ---: |
-| Quick | 128 | 8 |
-| Standard (default) | 512 | 16 |
+| Standard (default) | 544 | 16 |
 | Deep | 4,096 | 64 |
 
-Open **Custom search budget** to enter positive whole-number simulation and
-candidate limits, then choose **Apply custom budget**. Custom values can exceed
-Deep within native representation limits. Available legal moves bound the actual
-candidate set. Settings are saved; changes apply to the next search while a search
-already running keeps its original budget.
+Standard uses 6.25% more search simulations than the previous 512-simulation
+preset; this is an increase in search effort, not a measured strength percentage.
+Old Quick and custom settings migrate to Standard, or Deep for budgets of at least
+4,096 simulations. Settings are saved; changes apply to the next search while an
+active search keeps its original budget.
+
+The release includes a server-side SHA-256 digest of a randomly generated private
+link; the link itself is kept outside Git. The private link is
+`https://deltrel.com/?selfplay=<secret>`. The server validates the link and only
+passes an access flag to the browser. To rotate it without a code change, set
+server-only `DELTREL_SELF_PLAY_SECRET` to a new cryptographically random value of
+32–512 characters and redeploy. The secret must not use a `NEXT_PUBLIC_`
+variable or be committed to Git. Access applies to that page URL and is never
+saved in browser storage. Opening the ordinary website converts a saved self-play
+game to human-versus-AI and pauses it, preserving its moves. An explicitly empty
+or too-short override disables self-play. This gates the website UI; browser-side
+inference remains available to users who write their own clients.
 
 The browser uses the champion's score-margin utility, native seed contract,
 Gumbel search constants, and pie-swap decision. The search value is the win/loss
@@ -147,8 +158,9 @@ exports remain supported and clearly mark unavailable auxiliary outputs.
 
 Use **Pause AI** to stop automatic play and **Analyze position** to inspect a
 position without making a move, including positions selected from move history.
-During AI–AI automatic play, AI shows a progress bar with the actual completed
-simulation count. Human–AI play shows only a neutral turn/activity indicator.
+Whenever AI is thinking, including human-versus-AI play, a progress bar shows
+the percentage of search simulations completed. Human–AI play keeps forecasts
+and engine analysis hidden.
 Use **Resume AI** to continue. The latest 64 analyzed positions are kept in memory
 for the current game and matched to their exact history; an uncached position can
 be analyzed again. Reloading the page restores the game, but not this analysis cache.

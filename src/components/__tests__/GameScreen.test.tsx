@@ -164,6 +164,7 @@ async function completedEstimate() {
 
 beforeEach(() => {
   localStorage.clear();
+  useAppStore.getState().setSelfPlayAccess(true);
   vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '0');
   resetPlayingStore();
   vi.mocked(requestLocalAiDecision).mockReset();
@@ -186,7 +187,7 @@ afterEach(() => {
 describe('GameScreen AI lifecycle', () => {
   it.each(['local'] as const)('shows real %s search progress, retains the active budget, and discards progress from earlier turns', async (runtime) => {
     resetPlayingStore({ controllers: [runtime, runtime], aiSearchSettings: {
-      local: { simulations: 8, maxConsidered: 4 }, server: { simulations: 8, maxConsidered: 4 },
+      local: { simulations: 544, maxConsidered: 16 }, server: { simulations: 544, maxConsidered: 16 },
     } });
     const first = deferred<DeltrelAiDecision>();
     const second = deferred<DeltrelAiDecision>();
@@ -197,30 +198,31 @@ describe('GameScreen AI lifecycle', () => {
     render(<StrictMode><GameScreen /></StrictMode>);
     await waitFor(() => expect(engine).toHaveBeenCalledOnce());
     const [request, firstOptions] = engine.mock.calls[0];
-    expect(screen.queryByRole('progressbar', { name: progressName })).not.toBeInTheDocument();
-    act(() => firstOptions!.onSearchProgress!({ completedSimulations: 2, totalSimulations: 8 }));
-    expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('value', '2');
-    expect(screen.getByText('25% · 2 of 8 simulations')).toBeVisible();
+    expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('value', '0');
+    expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('max', '544');
+    act(() => firstOptions!.onSearchProgress!({ completedSimulations: 136, totalSimulations: 544 }));
+    expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('value', '136');
+    expect(screen.getByText('25%')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Deep AI strength' }));
     expect(engine).toHaveBeenCalledOnce();
-    act(() => firstOptions!.onSearchProgress!({ completedSimulations: 6, totalSimulations: 8 }));
-    expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('max', '8');
-    expect(screen.getByText('75% · 6 of 8 simulations')).toBeVisible();
+    act(() => firstOptions!.onSearchProgress!({ completedSimulations: 408, totalSimulations: 544 }));
+    expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('max', '544');
+    expect(screen.getByText('75%')).toBeVisible();
     await act(async () => first.resolve(makeDecision(request)));
     await waitFor(() => expect(engine).toHaveBeenCalledTimes(2));
-    expect(screen.queryByRole('progressbar', { name: progressName })).not.toBeInTheDocument();
-    act(() => firstOptions!.onSearchProgress!({ completedSimulations: 8, totalSimulations: 8 }));
-    expect(screen.queryByRole('progressbar', { name: progressName })).not.toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('value', '0');
+    act(() => firstOptions!.onSearchProgress!({ completedSimulations: 544, totalSimulations: 544 }));
+    expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('value', '0');
     const [, secondOptions] = engine.mock.calls[1];
     expect(secondOptions!.search!.simulations).toBe(4096);
     act(() => secondOptions!.onSearchProgress!({ completedSimulations: 1024, totalSimulations: 4096 }));
     expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('max', '4096');
-    expect(screen.getByText('25% · 1,024 of 4,096 simulations')).toBeVisible();
+    expect(screen.getByText('25%')).toBeVisible();
   });
 
   it.each(['local'] as const)('clears %s progress when paused and ignores old callbacks after resuming the same position', async (runtime) => {
     resetPlayingStore({ controllers: [runtime, runtime], aiSearchSettings: {
-      local: { simulations: 8, maxConsidered: 4 }, server: { simulations: 8, maxConsidered: 4 },
+      local: { simulations: 544, maxConsidered: 16 }, server: { simulations: 544, maxConsidered: 16 },
     } });
     const engine = vi.mocked(requestLocalAiDecision);
     const progressName = 'AI search progress';
@@ -229,20 +231,20 @@ describe('GameScreen AI lifecycle', () => {
     render(<GameScreen />);
     await waitFor(() => expect(engine).toHaveBeenCalledOnce());
     const [, options] = engine.mock.calls[0];
-    act(() => options!.onSearchProgress!({ completedSimulations: 4, totalSimulations: 8 }));
-    expect(screen.getByText('50% · 4 of 8 simulations')).toBeVisible();
+    act(() => options!.onSearchProgress!({ completedSimulations: 272, totalSimulations: 544 }));
+    expect(screen.getByText('50%')).toBeVisible();
     act(() => {
       useAppStore.getState().pauseAi();
-      options!.onSearchProgress!({ completedSimulations: 5, totalSimulations: 8 });
+      options!.onSearchProgress!({ completedSimulations: 340, totalSimulations: 544 });
     });
     expect(screen.queryByRole('progressbar', { name: progressName })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Resume AI' }));
     await waitFor(() => expect(engine).toHaveBeenCalledTimes(2));
-    act(() => options!.onSearchProgress!({ completedSimulations: 8, totalSimulations: 8 }));
-    expect(screen.queryByRole('progressbar', { name: progressName })).not.toBeInTheDocument();
+    act(() => options!.onSearchProgress!({ completedSimulations: 544, totalSimulations: 544 }));
+    expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('value', '0');
     const [, resumedOptions] = engine.mock.calls[1];
-    act(() => resumedOptions!.onSearchProgress!({ completedSimulations: 1, totalSimulations: 8 }));
-    expect(screen.getByText('12% · 1 of 8 simulations')).toBeVisible();
+    act(() => resumedOptions!.onSearchProgress!({ completedSimulations: 68, totalSimulations: 544 }));
+    expect(screen.getByText('12%')).toBeVisible();
     expect(useAppStore.getState().log).toEqual([]);
   });
 
@@ -309,15 +311,8 @@ describe('GameScreen AI lifecycle', () => {
     const [request, initialOptions] = engine.mock.calls[0];
     const originalBudget = { ...initialOptions!.search! };
     const user = userEvent.setup();
-    await user.click(screen.getByText('Custom search budget'));
-    const simulations = screen.getByRole('spinbutton', { name: 'Simulations' });
-    const candidates = screen.getByRole('spinbutton', { name: 'Candidate moves' });
-    await user.clear(simulations);
-    await user.type(simulations, '4096');
-    await user.clear(candidates);
-    await user.type(candidates, '32');
-    await user.click(screen.getByRole('button', { name: 'Apply custom budget' }));
-    expect(useAppStore.getState().aiSearchSettings.local).toEqual({ simulations: 4096, maxConsidered: 32 });
+    await user.click(screen.getByRole('button', { name: 'Deep AI strength' }));
+    expect(useAppStore.getState().aiSearchSettings.local).toEqual({ simulations: 4096, maxConsidered: 64 });
     await act(async () => { await Promise.resolve(); });
     expect(engine).toHaveBeenCalledOnce();
     expect(initialOptions?.signal?.aborted).toBe(false);
@@ -327,7 +322,7 @@ describe('GameScreen AI lifecycle', () => {
       await first.promise;
     });
     await waitFor(() => expect(engine).toHaveBeenCalledTimes(2));
-    expect(engine.mock.calls[1][1]?.search).toEqual({ simulations: 4096, maxConsidered: 32 });
+    expect(engine.mock.calls[1][1]?.search).toEqual({ simulations: 4096, maxConsidered: 64 });
     expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]);
   });
 
@@ -413,7 +408,7 @@ describe('GameScreen AI lifecycle', () => {
     expect(requestLocalAiDecision).toHaveBeenCalledOnce();
     const [request, options] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     expect(options?.signal?.aborted).toBe(false);
-    expect(options?.search).toEqual({ simulations: 512, maxConsidered: 16 });
+    expect(options?.search).toEqual({ simulations: 544, maxConsidered: 16 });
 
     flight.resolve(makeDecision(request));
     await waitFor(() =>
@@ -507,12 +502,12 @@ describe('GameScreen AI lifecycle', () => {
     render(<GameScreen />);
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
     const [, options] = vi.mocked(requestLocalAiDecision).mock.calls[0];
-    act(() => options!.onSearchProgress!({ completedSimulations: 128, totalSimulations: 512 }));
-    expect(screen.getByText('25% · 128 of 512 simulations')).toBeVisible();
+    act(() => options!.onSearchProgress!({ completedSimulations: 136, totalSimulations: 544 }));
+    expect(screen.getByText('25%')).toBeVisible();
     await act(async () => flight.reject(new DeltrelAiError('network', 'Champion connection interrupted.', true)));
     expect(await screen.findByRole('alert')).toHaveTextContent('Champion connection interrupted.');
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-    act(() => options!.onSearchProgress!({ completedSimulations: 512, totalSimulations: 512 }));
+    act(() => options!.onSearchProgress!({ completedSimulations: 544, totalSimulations: 544 }));
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     expect(useAppStore.getState().log).toEqual([]);
   });
@@ -535,7 +530,7 @@ describe('GameScreen AI lifecycle', () => {
     expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]);
   });
 
-  it('uses exact custom browser budgets even when a legacy native budget is saved', async () => {
+  it('replaces a saved custom browser budget with Deep even when a legacy native budget is saved', async () => {
     resetPlayingStore({
       controllers: ['server', 'human'],
       aiSearchSettings: {
@@ -546,9 +541,9 @@ describe('GameScreen AI lifecycle', () => {
     vi.mocked(requestLocalAiDecision).mockReturnValue(deferred<DeltrelAiDecision>().promise);
     render(<GameScreen />);
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
-    expect(vi.mocked(requestLocalAiDecision).mock.calls[0][1]?.search).toEqual({ simulations: 4096, maxConsidered: 256 });
-    expect(screen.getByText('Custom setting: 4,096 simulations, up to 256 candidate moves.')).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Deep AI strength' })).toHaveAttribute('aria-pressed', 'false');
+    expect(vi.mocked(requestLocalAiDecision).mock.calls[0][1]?.search).toEqual({ simulations: 4096, maxConsidered: 64 });
+    expect(screen.queryByText('Custom search budget')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Deep AI strength' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('renders named estimates and top board labels from the accepted perspective', async () => {
@@ -736,8 +731,11 @@ describe('GameScreen AI lifecycle', () => {
     expect(within(panel).getByText(/Earlier position/)).toBeInTheDocument();
   });
 
-  it.each(['0', '1'])('retries a timeout with less effort with devtools=%s', async (devtools) => {
+  it.each(['0', '1'])('retries a Deep timeout with Standard with devtools=%s', async (devtools) => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', devtools);
+    resetPlayingStore({ aiSearchSettings: {
+      server: { ...DEFAULT_AI_SEARCH_SETTINGS.server }, local: { simulations: 4096, maxConsidered: 64 },
+    } });
     const retryFlight = deferred<DeltrelAiDecision>();
     vi.mocked(requestLocalAiDecision)
       .mockRejectedValueOnce(new DeltrelAiError('timeout', 'Engine timed out.', true))
@@ -746,18 +744,28 @@ describe('GameScreen AI lifecycle', () => {
     render(<GameScreen />);
 
     await screen.findByRole('alert');
-    await user.click(screen.getByRole('button', { name: 'Use less effort' }));
+    await user.click(screen.getByRole('button', { name: 'Use Standard' }));
     await waitFor(() =>
       expect(requestLocalAiDecision).toHaveBeenCalledTimes(2),
     );
     expect(useAppStore.getState().aiSearchSettings.local).toEqual({
-      simulations: 256,
-      maxConsidered: 8,
+      simulations: 544,
+      maxConsidered: 16,
     });
     expect(vi.mocked(requestLocalAiDecision).mock.calls[1][1]?.search).toEqual({
-      simulations: 256,
-      maxConsidered: 8,
+      simulations: 544,
+      maxConsidered: 16,
     });
+  });
+
+  it('does not offer a weaker mode after a Standard search times out', async () => {
+    vi.mocked(requestLocalAiDecision).mockRejectedValue(new DeltrelAiError('timeout', 'Engine timed out.', true));
+    render(<GameScreen />);
+    await screen.findByRole('alert');
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Use Standard' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Use less effort' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Quick AI strength' })).not.toBeInTheDocument();
   });
 
   it('has no detectable accessibility violations for a human turn', async () => {

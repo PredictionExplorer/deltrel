@@ -75,6 +75,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '0');
   resetStore();
+  useAppStore.getState().setSelfPlayAccess(true);
   vi.mocked(checkAiCapabilities).mockReset();
   vi.mocked(checkAiCapabilities).mockResolvedValue(availableCapabilities);
   publishLocalAiStatus({ phase: 'ready', info: browserReady });
@@ -326,13 +327,15 @@ describe('SetupScreen', () => {
     const { container } = render(<SetupScreen />);
     await user.click(await screen.findByRole('button', { name: 'Play against AI' }));
     expect(screen.getByRole('button', { name: 'Standard AI strength' })).toHaveAttribute('aria-pressed', 'true');
-    for (const [label, simulations, maxConsidered] of [['Quick', 128, 8], ['Deep', 4096, 64], ['Standard', 512, 16]] as const) {
+    for (const [label, simulations, maxConsidered] of [['Deep', 4096, 64], ['Standard', 544, 16]] as const) {
       await user.click(screen.getByRole('button', { name: `${label} AI strength` }));
       expect(useAppStore.getState().aiSearchSettings.local).toEqual({ simulations, maxConsidered });
     }
     await user.click(screen.getByText('AI details'));
     expect(screen.getByText(browserReady.modelVersion)).toBeVisible();
-    await user.click(screen.getByText('Custom search budget'));
+    expect(screen.queryByRole('button', { name: 'Quick AI strength' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Custom search budget')).not.toBeInTheDocument();
+    await user.click(screen.getByText('Search details'));
     expect((await axe(container)).violations).toEqual([]);
   });
 
