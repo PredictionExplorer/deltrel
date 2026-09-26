@@ -6,6 +6,31 @@ champion 566,428, with unchanged EMA weights and FP32 inference. Dependencies ar
 locked to PyTorch 2.13.0+cu130, Python 3.11.16, and the repository's native engine
 built with Rust 1.93.0. The GPU is an H100 PCIe with 80 GB memory.
 
+## Champion verification before production publication
+
+At 06:10–06:13 UTC on September 26, the training host still identified step
+566,428 as its champion, with a completed, conclusive `promote` decision. Newer
+candidate checkpoints had not replaced this approved champion.
+
+The live website's 72,474,137-byte browser download matched the checked-in FP32
+ONNX artifact exactly, with SHA-256
+`20f52f268869396de096ce23419ca071c69a43d0f5002e4ee2e03d984255a8bb`.
+The cloud service reported ready with champion step 566,428, and its on-disk
+213,745,031-byte checkpoint matched SHA-256
+`47a8e20edb462330bd7d2877e6a2fc3de15f3c0d9d88c7e4c6406c854521d42b`.
+
+A fresh CPU-only comparison against the original approved training checkpoint
+(`876b5a7bf3efe843d0c3ae26b5ea14a358980759d73a1f9f7ed2c490c03478be`)
+confirmed exact equality of values, shapes, and dtypes for all 267 model tensors
+and all 267 EMA tensors: 17,467,840 parameters in each set. The comparison mapped
+only the three documented final-count head renames during identity migration.
+This verifies the cloud's actual weights; the browser serves the exact export
+whose numerical parity is documented in the original browser release evidence.
+
+The reviewed implementation was pushed to `main` as `f8d9079`. Public cloud
+connectivity remains a separate requirement, described below; model identity
+verification does not imply that Vercel can reach the GPU service.
+
 ## Real GPU workload
 
 `scripts/benchmark_cloud_serving.py` generated distinct legal Double/pie positions
