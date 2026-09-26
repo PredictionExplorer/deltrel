@@ -13,7 +13,11 @@ from deltrelserve.config import (
     ServingInferenceConfig,
     load_server_config,
 )
-from deltrelserve.runtime import AtomicModelManager, NativeAnalysisService, SearchCancelled
+from deltrelserve.runtime import (
+    AtomicModelManager,
+    NativeAnalysisService,
+    SearchCancelled,
+)
 from deltrelserve.schemas import AnalyzeRequest
 from deltreltrain.checkpoint import ModelManifest
 from deltreltrain.config import load_config
@@ -54,7 +58,8 @@ def model_manager(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime_module, "GraphResTNet", make_model)
     monkeypatch.setattr(runtime_module, "load_ema_checkpoint", load_weights)
     monkeypatch.setattr(
-        "deltreltrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
+        "deltreltrain.inference.encode_native_feature_data",
+        lambda data, **_: data.encoded,
     )
     managers = []
 
@@ -222,6 +227,12 @@ def test_cancellation_drains_owned_inference_before_model_shutdown(
         {"max_pending_requests": False},
         {"max_wait_seconds": float("nan")},
         {"max_wait_seconds": -0.1},
+        {"cuda_graphs": 1},
+        {"cuda_graphs": True, "shared_batching": False},
+        {"cuda_graph_max_entries": 0},
+        {"cuda_graph_max_entries": 65},
+        {"cuda_graph_max_bytes": 0},
+        {"cuda_graph_max_bytes": False},
     ],
 )
 def test_server_inference_limits_reject_invalid_values(changes):
@@ -232,3 +243,21 @@ def test_server_inference_limits_reject_invalid_values(changes):
 def test_shipped_server_config_enables_bounded_inference():
     config = load_server_config("configs/deltrelserve.yaml")
     assert config.inference == ServingInferenceConfig()
+
+
+def test_serving_passes_graph_residency_limits_to_shared_model_owner(model_manager):
+    create, _, _ = model_manager
+    manager = create(
+        inference=ServingInferenceConfig(
+            cuda_graphs=True,
+            cuda_graph_max_entries=32,
+            cuda_graph_max_bytes=8 * 1024**3,
+        )
+    )
+    with manager.lease() as lease:
+        assert isinstance(lease.model.evaluator, CohortInferenceAdapter)
+        config = lease.model.evaluator.base.config
+        assert config.cuda_graphs is True
+        assert config.cuda_graph_max_entries == 32
+        assert config.cuda_graph_max_bytes == 8 * 1024**3
+        assert config.precision == "fp32"

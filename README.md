@@ -70,12 +70,14 @@ AI service. This is not a claim of superhuman playing strength. See the
 
 ### Playing in the browser
 
-Each player has two choices: **Human** or **AI**. AI always runs in a background
-browser worker using the full published champion. Choose AI for one player to
-play against it. Computer-versus-computer play requires the private self-play link.
+Each player can be **Human**, **AI on this device**, or **Cloud AI**. On-device AI
+runs in a background browser worker. Cloud AI sends the position and search
+settings to our GPU service, with the same progress and move controls and no
+model download. Computer-versus-computer play requires the private self-play link
+for either AI option.
 
-A fresh page automatically checks the current published manifest and prepares
-the **72.5 MB FP32 model**, plus its browser runtime. Verified cached model bytes
+A fresh page checks the current published manifest. Selecting on-device AI (or
+choosing Download AI) prepares the **72.5 MB FP32 model**, plus its browser runtime. Verified cached model bytes
 are reused; a changed release downloads under a new content-addressed identity.
 Download, integrity checking, and initialization show their progress and can be
 cancelled or retried. Preparation never changes player selections or a saved game.
@@ -99,6 +101,14 @@ preset; this is an increase in search effort, not a measured strength percentage
 Old Quick and custom settings migrate to Standard, or Deep for budgets of at least
 4,096 simulations. Settings are saved; changes apply to the next search while an
 active search keeps its original budget.
+
+Cloud AI additionally accepts custom search budgets within the server's reported
+limits. Its settings are saved independently of the on-device settings. Cloud
+availability is checked before play. If the server is offline or busy, the board
+stays saved and the player can retry or explicitly switch to on-device AI. An
+availability recheck does not retry a failed move or download the browser model.
+See the [cloud serving runbook](training/docs/cloud-ai-serving.md) for deployment,
+concurrency, shutdown, and model-update procedures.
 
 The release includes a server-side SHA-256 digest of a randomly generated private
 link; the link itself is kept outside Git. The private link is
@@ -230,11 +240,13 @@ copies the matching ONNX runtime files from the locked dependency into public
 assets, so Vercel does not need Python or Rust to build the site. Immutable model
 and runtime files are cached; the current-model manifest is revalidated.
 
-Optional server AI uses
+Cloud AI uses
 same-origin Next.js routes at `/v2/move`, `/v2/analyze`, and `/v2/health`; configure
-the deployment with server-only `DELTREL_AI_SERVER_URL` and, when enabled by `deltrelserve`,
-`DELTREL_AI_BEARER_TOKEN`. Never expose the bearer token through a `NEXT_PUBLIC_*`
-variable.
+the deployment with server-only `DELTREL_AI_SERVER_URL` (an HTTPS upstream in
+production) and `DELTREL_AI_BEARER_TOKEN`, matching the service's
+`DELTRELSERVE_BEARER_TOKEN`. Never expose the bearer token through a `NEXT_PUBLIC_*`
+variable. An unconfigured or unreachable service makes Cloud AI unavailable;
+human and on-device games remain usable. The route duration must support 200 seconds.
 
 ### Site identity
 

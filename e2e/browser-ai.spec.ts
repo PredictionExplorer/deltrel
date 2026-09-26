@@ -214,7 +214,7 @@ test('preserves Standard strength through preparation, plays two real Mini searc
   if (browserName !== 'webkit') expect(cachePersisted).toBe(true);
   await expect(page.locator('[data-move-chip]')).toHaveCount(pausedPly);
   const preparationProgress = page.getByRole('progressbar', { name: 'AI preparation' });
-  const browserPreparation = page.getByRole('region', { name: 'AI', exact: true });
+  const browserPreparation = page.getByRole('region', { name: 'AI on this device', exact: true });
   let expectedModelGets = 1;
   if (cachePersisted) {
     await expect(browserPreparation).toBeHidden({ timeout: 30_000 });

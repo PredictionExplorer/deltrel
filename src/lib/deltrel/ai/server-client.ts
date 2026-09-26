@@ -22,12 +22,12 @@ import {
   type DeltrelAiResponse,
 } from './protocol';
 
-export const DEFAULT_DELTREL_AI_TIMEOUT_MS = 65_000;
+export const DEFAULT_DELTREL_AI_TIMEOUT_MS = 195_000;
 export const DEFAULT_DELTREL_AI_MOVE_URL = '/v2/move' as const;
 export const DEFAULT_DELTREL_AI_HEALTH_URL = '/v2/health' as const;
-export const DEFAULT_SERVER_AI_SIMULATIONS = 4_096;
+export const DEFAULT_SERVER_AI_SIMULATIONS = 544;
 export const MAX_SERVER_AI_SIMULATIONS = 16_384;
-export const DEFAULT_SERVER_AI_MAX_CONSIDERED = 32;
+export const DEFAULT_SERVER_AI_MAX_CONSIDERED = 16;
 export const MAX_SERVER_AI_MAX_CONSIDERED = 128;
 
 export type ServerSearchBudget = DeltrelAiSearchBudget;
@@ -136,7 +136,7 @@ export function resolveServerSearchBudget(
       overrides.simulations === undefined
         ? configured.simulations
         : strictBudgetInteger(
-            'Server AI simulations',
+            'Cloud AI simulations',
             overrides.simulations,
             MAX_SERVER_AI_SIMULATIONS,
           ),
@@ -144,7 +144,7 @@ export function resolveServerSearchBudget(
       overrides.maxConsidered === undefined
         ? configured.maxConsidered
         : strictBudgetInteger(
-            'Server AI max-considered',
+            'Cloud AI max-considered',
             overrides.maxConsidered,
             MAX_SERVER_AI_MAX_CONSIDERED,
           ),
@@ -163,12 +163,12 @@ export function toAnalyzeRequest(
   includeNetworkOutput = false,
 ): AnalyzeRequestV3 {
   const simulations = strictBudgetInteger(
-    'Server AI simulations',
+    'Cloud AI simulations',
     search.simulations,
     MAX_SERVER_AI_SIMULATIONS,
   );
   const maxConsidered = strictBudgetInteger(
-    'Server AI max-considered',
+    'Cloud AI max-considered',
     search.maxConsidered,
     MAX_SERVER_AI_MAX_CONSIDERED,
   );
@@ -228,16 +228,19 @@ function endpointPath(pathname: string): string {
  */
 export function resolveDeltrelAiMoveUrl(value: string): string {
   const normalized = value.trim();
-  if (!normalized) throw new DeltrelAiError('unavailable', 'Server AI URL is empty.');
+  if (!normalized) throw new DeltrelAiError('unavailable', 'Cloud AI URL is empty.');
   if (
     /(?:^|\/)v\d+(?:\/|$)/.test(normalized) &&
     !/(?:^|\/)v2(?:\/|$)/.test(normalized)
   ) {
-    throw new DeltrelAiError('protocol', 'Server AI URL must use the v2 API.');
+    throw new DeltrelAiError('protocol', 'Cloud AI URL must use the v2 API.');
   }
   if (normalized.startsWith('/')) {
+    if (normalized.startsWith('//') || normalized.includes('\\')) {
+      throw new DeltrelAiError('protocol', 'Cloud AI URL must be absolute or root-relative.');
+    }
     if (normalized.includes('?') || normalized.includes('#')) {
-      throw new DeltrelAiError('protocol', 'Server AI URL must not contain a query or fragment.');
+      throw new DeltrelAiError('protocol', 'Cloud AI URL must not contain a query or fragment.');
     }
     return endpointPath(normalized);
   }
@@ -246,7 +249,7 @@ export function resolveDeltrelAiMoveUrl(value: string): string {
   try {
     url = new URL(normalized);
   } catch (error) {
-    throw new DeltrelAiError('protocol', 'Server AI URL must be absolute or root-relative.', false, error);
+    throw new DeltrelAiError('protocol', 'Cloud AI URL must be absolute or root-relative.', false, error);
   }
   if (
     (url.protocol !== 'http:' && url.protocol !== 'https:') ||
@@ -257,7 +260,7 @@ export function resolveDeltrelAiMoveUrl(value: string): string {
   ) {
     throw new DeltrelAiError(
       'protocol',
-      'Server AI URL must be an HTTP(S) base without credentials, query, or fragment.',
+      'Cloud AI URL must be an HTTP(S) base without credentials, query, or fragment.',
     );
   }
   url.pathname = endpointPath(url.pathname);
@@ -515,12 +518,12 @@ export function parseAnalyzeResponse(
     maxConsidered: rootActions.length,
   };
   strictBudgetInteger(
-    'Server AI simulations',
+    'Cloud AI simulations',
     effectiveSearch.simulations,
     MAX_SERVER_AI_SIMULATIONS,
   );
   strictBudgetInteger(
-    'Server AI max-considered',
+    'Cloud AI max-considered',
     effectiveSearch.maxConsidered,
     MAX_SERVER_AI_MAX_CONSIDERED,
   );
@@ -568,32 +571,41 @@ export function parseAnalyzeResponse(
 
 const MAX_SERVER_RESPONSE_BYTES = 1024 * 1024;
 
-async function readBoundedServerJson(response: Response): Promise<unknown> {
+async function readBoundedServerJson(response: Response, signal: AbortSignal): Promise<unknown> {
+  signal.throwIfAborted();
   const declared = response.headers.get('Content-Length');
   if (declared !== null && (!Number.isSafeInteger(Number(declared)) || Number(declared) < 0 || Number(declared) > MAX_SERVER_RESPONSE_BYTES)) {
-    throw new DeltrelAiError('protocol', 'Server AI response exceeds its size limit.');
+    void response.body?.cancel().catch(() => {});
+    throw new DeltrelAiError('protocol', 'Cloud AI response exceeds its size limit.');
   }
-  if (!response.body) throw new DeltrelAiError('protocol', 'Server AI returned an empty response.');
+  if (!response.body) throw new DeltrelAiError('protocol', 'Cloud AI returned an empty response.');
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let length = 0;
+  const abort = () => { void reader.cancel(signal.reason).catch(() => {}); };
+  signal.addEventListener('abort', abort, { once: true });
   try {
     while (true) {
+      signal.throwIfAborted();
       const {done, value} = await reader.read();
+      signal.throwIfAborted();
       if (done) break;
       length += value.byteLength;
       if (length > MAX_SERVER_RESPONSE_BYTES) {
         await reader.cancel();
-        throw new DeltrelAiError('protocol', 'Server AI response exceeds its size limit.');
+        throw new DeltrelAiError('protocol', 'Cloud AI response exceeds its size limit.');
       }
       chunks.push(value);
     }
-  } finally { reader.releaseLock(); }
+  } finally {
+    signal.removeEventListener('abort', abort);
+    reader.releaseLock();
+  }
   const bytes = new Uint8Array(length);
   let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
   try { return JSON.parse(new TextDecoder().decode(bytes)); }
-  catch (error) { throw new DeltrelAiError('protocol', 'Server AI returned invalid JSON.', false, error); }
+  catch (error) { throw new DeltrelAiError('protocol', 'Cloud AI returned invalid JSON.', false, error); }
 }
 
 function rejectsOnlyNetworkOutput(response: Response, payload: unknown): boolean {
@@ -641,6 +653,7 @@ export async function requestServerAiDecision(
       return fetch(url, {
         method: 'POST',
         cache: 'no-store',
+        redirect: 'error',
         headers: {
           Accept: options.onSearchProgress ? `${SERVER_SEARCH_STREAM_CONTENT_TYPE}, application/json` : 'application/json',
           'Content-Type': 'application/json',
@@ -654,7 +667,14 @@ export async function requestServerAiDecision(
       // Older services may answer the same request with JSON. Consume it once;
       // negotiation must never cause a completed search to run again.
       if (!response.ok || !isServerSearchStream(response.headers.get('Content-Type'))) {
-        return readBoundedServerJson(response);
+        try {
+          return await readBoundedServerJson(response, controller.signal);
+        } catch (error) {
+          // An offline gateway may return HTML or an empty body. Its HTTP status
+          // still tells us whether the search can be retried later.
+          if (response.ok || controller.signal.aborted) throw error;
+          return undefined;
+        }
       }
       let result: unknown;
       let streamError: DeltrelAiError | undefined;
@@ -698,25 +718,27 @@ export async function requestServerAiDecision(
         const message =
           typeof payload.error.message === 'string'
             ? payload.error.message
-            : `Server AI returned HTTP ${response.status}.`;
+            : `Cloud AI returned HTTP ${response.status}.`;
         const retryable =
           typeof payload.error.retryable === 'boolean'
             ? payload.error.retryable
             : response.status >= 500 || response.status === 429;
         const upstreamCode = payload.error.code;
         const code =
-          upstreamCode === 'deltrel_ai_timeout'
+          upstreamCode === 'deltrel_ai_timeout' || upstreamCode === 'analysis_timeout' || response.status === 504
             ? 'timeout'
-            : upstreamCode === 'deltrel_ai_unavailable' || response.status >= 500
+            : upstreamCode === 'deltrel_ai_cancelled' || upstreamCode === 'client_disconnected'
+              ? 'cancelled'
+            : upstreamCode === 'deltrel_ai_unavailable' || upstreamCode === 'deltrel_ai_busy' ||
+                response.status >= 500 || [401, 403, 429].includes(response.status)
               ? 'unavailable'
-              : response.status === 429
-                ? 'network'
-                : 'protocol';
+              : 'protocol';
         throw new DeltrelAiError(code, message, retryable);
       }
       throw new DeltrelAiError(
-        response.status >= 500 ? 'unavailable' : 'protocol',
-        `Server AI returned HTTP ${response.status}.`,
+        response.status === 504 ? 'timeout' : response.status >= 500 || [401, 403, 429].includes(response.status) ? 'unavailable' : 'protocol',
+        response.status === 429 ? 'Cloud AI is busy. Try again shortly.' : response.status === 504
+          ? 'Cloud AI timed out.' : response.status >= 500 ? 'Cloud AI is unavailable.' : `Cloud AI returned HTTP ${response.status}.`,
         response.status >= 500 || response.status === 429,
       );
     }
@@ -731,10 +753,10 @@ export async function requestServerAiDecision(
       throw new DeltrelAiError('cancelled', 'AI request cancelled.', false, error);
     }
     if (timedOut) {
-      throw new DeltrelAiError('timeout', 'Server AI timed out.', true, error);
+      throw new DeltrelAiError('timeout', 'Cloud AI timed out.', true, error);
     }
     if (error instanceof DeltrelAiError) throw error;
-    throw new DeltrelAiError('network', 'Could not reach Server AI.', true, error);
+    throw new DeltrelAiError('network', 'Could not reach Cloud AI.', true, error);
   } finally {
     clearTimeout(timeout);
     options.signal?.removeEventListener('abort', abortFromCaller);

@@ -5,7 +5,8 @@ import { installAiWorkerFixture } from './ai-worker-fixture';
 
 async function setup(page: Page) {
   await page.goto(SELF_PLAY_PATH);
-  await expect(page.getByRole('region', { name: 'AI', exact: true })
+  await page.getByRole('button', { name: 'Download AI', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'AI on this device', exact: true })
     .getByRole('status')).toHaveText('Ready on this device');
   await page.getByRole('button', { name: 'Mini, 4 rings' }).click();
   await page.getByRole('textbox', { name: 'Player 1 name' }).fill('Ada');

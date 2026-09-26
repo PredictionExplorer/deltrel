@@ -805,7 +805,8 @@ npm run dev
 - Optional `NEXT_PUBLIC_DELTREL_AI_SIMULATIONS` and
   `NEXT_PUBLIC_DELTREL_AI_MAX_CONSIDERED` must not exceed the limits in
   `configs/deltrelserve.yaml`.
-- `deltrelserve` health is unauthenticated; move/analyze requests use the bearer token when
+- `deltrelserve` exposes minimal readiness at `/healthz`; detailed `/v2/health`,
+  OpenAPI, and move/analyze requests use the bearer token when
   configured. Direct-browser CORS origins must be explicit; `*` is rejected.
 
 See [serving and distillation](docs/serving-and-distillation.md) for the API contract and

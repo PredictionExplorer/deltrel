@@ -1,10 +1,9 @@
 import { configHandicap, type GameConfig } from '../game';
 import { DELTREL_MAX_HANDICAP } from '../rules';
 
-export const CONTROLLER_TYPES = ['human', 'local'] as const;
+export const CONTROLLER_TYPES = ['human', 'local', 'server'] as const;
 
-/** `server` is accepted only for saved games and native-engine diagnostics. */
-export type ControllerType = (typeof CONTROLLER_TYPES)[number] | 'server';
+export type ControllerType = (typeof CONTROLLER_TYPES)[number];
 export type PlayerControllers = [ControllerType, ControllerType];
 
 export const HUMAN_CONTROLLERS: PlayerControllers = ['human', 'human'];
@@ -64,8 +63,8 @@ export function normalizeControllers(
   }
 
   return [
-    isControllerType(value[0]) && value[0] !== 'human' ? 'local' : 'human',
-    isControllerType(value[1]) && value[1] !== 'human' ? 'local' : 'human',
+    isControllerType(value[0]) ? value[0] : 'human',
+    isControllerType(value[1]) ? value[1] : 'human',
   ];
 }
 
@@ -74,6 +73,7 @@ export function controllerLabel(controller: ControllerType): string {
     case 'human':
       return 'Human';
     case 'server':
+      return 'Cloud AI';
     case 'local':
       return 'AI';
   }

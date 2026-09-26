@@ -14,3 +14,7 @@
 .details { margin-top: .3rem; color: #b8cec4; font-size: .62rem; line-height: 1.5; }
 .details summary { min-height: 1.9rem; padding-top: .45rem; cursor: pointer; }
 .details p { margin: .25rem 0 0; font-variant-numeric: tabular-nums; }
+.custom { display: grid; gap: .6rem; padding-top: .35rem; }
+.custom label { display: grid; grid-template-columns: 1fr 7rem; align-items: center; gap: .5rem; }
+.custom input, .custom button { min-height: 2.25rem; border: 1px solid rgba(175, 213, 194, .3); border-radius: .5rem; padding: .35rem .5rem; background: rgba(255, 255, 255, .04); color: var(--ink); }
+.custom button:disabled { opacity: .45; cursor: not-allowed; }

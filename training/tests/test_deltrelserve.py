@@ -29,7 +29,12 @@ from deltrelserve.runtime import (
     SearchCancelled,
     validate_device_availability,
 )
-from deltrelserve.schemas import AnalyzeRequest, AnalyzeResponse, AtomicAction, ScoreBelief
+from deltrelserve.schemas import (
+    AnalyzeRequest,
+    AnalyzeResponse,
+    AtomicAction,
+    ScoreBelief,
+)
 from deltreltrain.checkpoint import ModelManifest
 from deltreltrain.contracts import (
     ACTION_LAYOUT_SCHEMA_ID,
@@ -168,7 +173,9 @@ def test_v3_api_health_auth_and_binary_response(tmp_path, monkeypatch) -> None:
         ),
     )
     with TestClient(create_app(config, service=FakeService())) as client:
-        health = client.get("/v2/health")
+        health = client.get(
+            "/v2/health", headers={"Authorization": "Bearer correct-secret"}
+        )
         assert health.status_code == 200
         assert health.json()["api_schema_version"] == 3
         assert health.json()["server_config_schema_version"] == 2
@@ -195,9 +202,8 @@ def test_v3_api_health_auth_and_binary_response(tmp_path, monkeypatch) -> None:
             "defaults": {"simulations": 4, "max_considered": 2},
             "maximums": {"simulations": 16, "max_considered": 64},
             "presets": {
-                "quick": {"simulations": 4, "max_considered": 2},
-                "strong": {"simulations": 4, "max_considered": 2},
-                "maximum": {"simulations": 16, "max_considered": 64},
+                "standard": {"simulations": 4, "max_considered": 2},
+                "deep": {"simulations": 16, "max_considered": 64},
             },
         }
 
@@ -350,7 +356,13 @@ def test_cli_device_override_supports_cpu_fallback(
         lambda _path: server_config(tmp_path, device="mps"),
     )
     cli_module.main(
-        ["--config", "snapshot/deltrelserve-mac.yaml", "--device", "cpu", "--check-config"]
+        [
+            "--config",
+            "snapshot/deltrelserve-mac.yaml",
+            "--device",
+            "cpu",
+            "--check-config",
+        ]
     )
     assert json.loads(capsys.readouterr().out)["device"] == "cpu"
 
@@ -788,7 +800,11 @@ def test_pie_swap_uses_selected_keep_action_value(
         total_ms=0,
         node_count=get_topology(4).n,
         request=SimpleNamespace(
-            swap_available=True, mode="double", handicap=1, pie=True, history=None,
+            swap_available=True,
+            mode="double",
+            handicap=1,
+            pie=True,
+            history=None,
             include_predictions=False,
         ),
     )

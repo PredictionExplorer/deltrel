@@ -11,7 +11,7 @@ feature_schema_hash: 058eb071d77948a7
 action_schema_id: deltrel.action-layout.nodes-only.v1
 
 search:
-  default_simulations: 512
+  default_simulations: 544
   maximum_simulations: 4096
   default_max_considered: 16
   maximum_max_considered: 64
@@ -21,6 +21,7 @@ search:
 
 limits:
   max_concurrency: 2
+  max_queued_requests: 8
   max_request_bytes: 1048576
   request_timeout_seconds: 60.0
   queue_timeout_seconds: 5.0

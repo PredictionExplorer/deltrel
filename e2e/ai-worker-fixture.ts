@@ -85,6 +85,12 @@ export async function installAiWorkerFixture(page: Page, options: {
   if (!options.holdPreparation) preparation.resolve();
   if (!options.holdMoves) moves.resolve();
 
+  // Local-engine scenarios must not depend on the configured cloud service.
+  // Cloud-specific tests install their own health and move routes instead.
+  await page.route('**/v2/health', route => route.fulfill({
+    status: 503,
+    json: { error: { code: 'deltrel_ai_unavailable', message: 'Cloud AI is offline.', retryable: true } },
+  }));
   await page.route('**/models/deltrel/manifest.json', route => route.fulfill({ json: release }));
   await page.exposeFunction('__deltrelAiFixtureDelivered', (taskId: string, discarded: boolean) => {
     if (discarded) discardedRequests.add(taskId);

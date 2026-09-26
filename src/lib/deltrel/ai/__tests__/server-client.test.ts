@@ -467,6 +467,7 @@ describe('deltrelserve v3 adapter', () => {
   });
 
   it('bounds defaults and rejects malformed explicit budgets', () => {
+    expect(resolveServerSearchBudget({}, {})).toEqual({ simulations: 544, maxConsidered: 16 });
     expect(
       resolveServerSearchBudget(
         {},
@@ -519,6 +520,27 @@ describe('deltrelserve v3 adapter', () => {
     vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_URL', '');
     expect(configuredServerAiUrl()).toBe('/v2/move');
     expect(configuredServerHealthUrl()).toBe('/v2/health');
+  });
+
+  it.each(['//private.example', '/\\private.example'])('rejects ambiguous relative URL %s', (url) => {
+    expect(() => resolveDeltrelAiMoveUrl(url)).toThrow(/root-relative/);
+  });
+
+  it.each([429, 502, 503, 504])('treats an HTML HTTP %s failure as a retryable outage', async (status) => {
+    const fetchMock = vi.fn(async () => new Response('<html>Gateway unavailable</html>', { status }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(requestServerAiDecision(request)).rejects.toMatchObject({ code: status === 504 ? 'timeout' : 'unavailable', retryable: true });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('cancels a stalled JSON body at the original request deadline', async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({ cancel }))));
+    const expected = expect(requestServerAiDecision(request, { timeoutMs: 10 })).rejects.toMatchObject({ code: 'timeout' });
+    await vi.advanceTimersByTimeAsync(10);
+    await expected;
+    expect(cancel).toHaveBeenCalledOnce();
   });
 
   it('posts schema v3 with request identity and no browser bearer secret', async () => {

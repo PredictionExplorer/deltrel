@@ -31,7 +31,7 @@ class ServerConfigError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class SearchConfig:
-    default_simulations: int = 512
+    default_simulations: int = 544
     maximum_simulations: int = 4_096
     default_max_considered: int = 16
     maximum_max_considered: int = 64
@@ -59,20 +59,24 @@ class SearchConfig:
             raise ServerConfigError("default simulations exceed the configured maximum")
         if self.default_max_considered > self.maximum_max_considered:
             raise ServerConfigError("default max_considered exceeds its maximum")
-        if self.c_visit <= 0 or self.c_scale <= 0:
-            raise ServerConfigError("Gumbel search constants must be positive")
+        for value in (self.c_visit, self.c_scale):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int | float)
+                or not math.isfinite(value)
+                or value <= 0
+            ):
+                raise ServerConfigError(
+                    "Gumbel search constants must be finite and positive"
+                )
 
     def named_presets(self) -> dict[str, dict[str, int]]:
         return {
-            "quick": {
-                "simulations": min(128, self.default_simulations),
-                "max_considered": min(8, self.default_max_considered),
-            },
-            "strong": {
+            "standard": {
                 "simulations": self.default_simulations,
                 "max_considered": self.default_max_considered,
             },
-            "maximum": {
+            "deep": {
                 "simulations": self.maximum_simulations,
                 "max_considered": self.maximum_max_considered,
             },
@@ -82,6 +86,7 @@ class SearchConfig:
 @dataclass(frozen=True, slots=True)
 class LimitConfig:
     max_concurrency: int = 2
+    max_queued_requests: int = 8
     max_request_bytes: int = 1_048_576
     request_timeout_seconds: float = 60.0
     queue_timeout_seconds: float = 5.0
@@ -89,10 +94,18 @@ class LimitConfig:
     def __post_init__(self) -> None:
         if type(self.max_concurrency) is not int or self.max_concurrency <= 0:
             raise ServerConfigError("max_concurrency must be a positive integer")
+        if type(self.max_queued_requests) is not int or self.max_queued_requests < 0:
+            raise ServerConfigError("max_queued_requests must be a nonnegative integer")
         if type(self.max_request_bytes) is not int or self.max_request_bytes <= 0:
             raise ServerConfigError("max_request_bytes must be a positive integer")
-        if self.request_timeout_seconds <= 0 or self.queue_timeout_seconds <= 0:
-            raise ServerConfigError("service timeouts must be positive")
+        for value in (self.request_timeout_seconds, self.queue_timeout_seconds):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, int | float)
+                or not math.isfinite(value)
+                or value <= 0
+            ):
+                raise ServerConfigError("service timeouts must be finite and positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +119,9 @@ class ServingInferenceConfig:
     max_pending_requests: int = 16
     max_wait_seconds: float = 0.001
     search_cache_entries: int = 8
+    cuda_graphs: bool = False
+    cuda_graph_max_entries: int = 8
+    cuda_graph_max_bytes: int = 2 * 1024**3
 
     def __post_init__(self) -> None:
         if (
@@ -121,6 +137,19 @@ class ServingInferenceConfig:
             raise ServerConfigError("both cache limits must be positive or zero")
         if type(self.shared_batching) is not bool:
             raise ServerConfigError("shared_batching must be boolean")
+        if type(self.cuda_graphs) is not bool:
+            raise ServerConfigError("cuda_graphs must be boolean")
+        if self.cuda_graphs and not self.shared_batching:
+            raise ServerConfigError(
+                "cuda_graphs requires shared_batching for single-owner execution"
+            )
+        if (
+            type(self.cuda_graph_max_entries) is not int
+            or not 1 <= self.cuda_graph_max_entries <= 64
+        ):
+            raise ServerConfigError("cuda_graph_max_entries must be in [1, 64]")
+        if type(self.cuda_graph_max_bytes) is not int or self.cuda_graph_max_bytes <= 0:
+            raise ServerConfigError("cuda_graph_max_bytes must be positive")
         for name in ("max_batch_rows", "max_pending_requests"):
             value = getattr(self, name)
             if type(value) is not int or value <= 0:

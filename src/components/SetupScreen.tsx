@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ArrowUpRight, BookOpen, Users, Waves } from 'lucide-react';
 import {
   getBoard,
@@ -9,10 +9,7 @@ import {
   MIN_RINGS,
 } from '@/lib/deltrel/board';
 import {
-  INITIAL_AI_CAPABILITIES,
   capabilityForController,
-  checkAiCapabilities,
-  type AiCapabilities,
 } from '@/lib/deltrel/ai/capabilities';
 import {
   CONTROLLER_TYPES,
@@ -33,6 +30,8 @@ import { DeltrelBoard } from './DeltrelBoard';
 import { BrowserAiPreparation } from './BrowserAiPreparation';
 import { BrowserAiStrengthControl, budgetFitsCapability } from './BrowserAiStrengthControl';
 import { useBrowserAiPreparation } from './useBrowserAiPreparation';
+import { useAiCapabilities } from './useAiCapabilities';
+import { CloudAiControl } from './CloudAiControl';
 import { BOARD_PRESETS, PLAYER_COLORS } from './theme';
 import { DeltrelMark } from './DeltrelMark';
 import { RulesDialog } from './RulesDialog';
@@ -45,8 +44,6 @@ export function SetupScreen() {
   const lastControllers = useAppStore((s) => s.controllers);
   const aiSearchSettings = useAppStore((s) => s.aiSearchSettings);
   const setAiSearchBudget = useAppStore((s) => s.setAiSearchBudget);
-  const browserAi = useBrowserAiPreparation();
-  const preparedModelVersion = browserAi.status.phase === 'ready' ? browserAi.status.info.modelVersion : null;
 
   const [showRules, setShowRules] = useState(false);
   const [mode, setMode] = useState<Mode>(lastConfig.mode);
@@ -61,10 +58,9 @@ export function SetupScreen() {
   const [controllers, setControllers] = useState<PlayerControllers>(() =>
     restrictSelfPlay(normalizeControllers(lastConfig, lastControllers), selfPlayAllowed),
   );
-  const [capabilities, setCapabilities] = useState<AiCapabilities>(
-    INITIAL_AI_CAPABILITIES,
-  );
-  const [capabilityCheck, setCapabilityCheck] = useState(0);
+  const browserAi = useBrowserAiPreparation(controllers.includes('local'));
+  const preparedModelVersion = browserAi.status.phase === 'ready' ? browserAi.status.info.modelVersion : null;
+  const { capabilities, checkAgain: checkCapabilitiesAgain } = useAiCapabilities(preparedModelVersion);
 
 
   const board = useMemo(() => getBoard(rings), [rings]);
@@ -94,14 +90,6 @@ export function SetupScreen() {
         budgetFitsCapability(aiSearchSettings[runtime], capability.search);
     });
 
-  useEffect(() => {
-    const controller = new AbortController();
-    void checkAiCapabilities(controller.signal).then((result) => {
-      if (!controller.signal.aborted) setCapabilities(result);
-    });
-    return () => controller.abort();
-  }, [capabilityCheck, preparedModelVersion]);
-
   const chooseMode = (nextMode: Mode) => {
     setMode(nextMode);
   };
@@ -123,11 +111,6 @@ export function SetupScreen() {
   const chooseBrowserChampion = () => {
     if (controllers.includes('local')) return;
     setControllers(['human', 'local']);
-  };
-
-  const checkCapabilitiesAgain = () => {
-    setCapabilities(INITIAL_AI_CAPABILITIES);
-    setCapabilityCheck((value) => value + 1);
   };
 
   const start = () => {
@@ -215,6 +198,21 @@ export function SetupScreen() {
             <h2>Set your course.</h2>
           </div>
           <div className={`${styles.setupScroll} thin-scroll`}>
+          <CloudAiControl
+            capability={capabilities.server}
+            selected={controllers.includes('server')}
+            onSelect={() => setControllers(['human', 'server'])}
+            onCheck={checkCapabilitiesAgain}
+            onUseDevice={capabilities.local.status === 'available'
+              ? () => setControllers((previous) => previous.map((controller) => controller === 'server' ? 'local' : controller) as PlayerControllers)
+              : undefined}
+          />
+          {controllers.includes('server') && <BrowserAiStrengthControl
+            budget={aiSearchSettings.server}
+            capability={capabilities.server}
+            onChange={(budget) => setAiSearchBudget('server', budget)}
+            runtime="server"
+          />}
           <BrowserAiPreparation
             status={browserAi.status}
             authorized={browserAi.authorized}
@@ -226,11 +224,11 @@ export function SetupScreen() {
             onCancel={browserAi.cancel}
             onCheck={checkCapabilitiesAgain}
           />
-          <BrowserAiStrengthControl
+          {(!controllers.includes('server') || controllers.includes('local')) && <BrowserAiStrengthControl
             budget={aiSearchSettings.local}
             capability={capabilities.local}
             onChange={(budget) => setAiSearchBudget('local', budget)}
-          />
+          />}
 
           {/* Mode */}
           <section>
@@ -456,7 +454,7 @@ export function SetupScreen() {
                               disabled={capability.status !== 'available'}
                               className="bg-[#103e40]"
                             >
-                              {controllerLabel(controller)}
+                              {controller === 'local' ? 'AI on this device' : controllerLabel(controller)}
                               {suffix}
                             </option>
                           );

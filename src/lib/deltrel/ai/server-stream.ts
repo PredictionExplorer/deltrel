@@ -22,7 +22,7 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function invalid(message = 'Server AI returned an invalid progress stream.'): never {
+function invalid(message = 'Cloud AI returned an invalid progress stream.'): never {
   throw new DeltrelAiError('protocol', message);
 }
 
@@ -36,9 +36,9 @@ export async function* readServerSearchEvents(
   if (declared !== null && (!Number.isSafeInteger(Number(declared)) ||
       Number(declared) < 0 || Number(declared) > MAX_SERVER_SEARCH_STREAM_BYTES)) {
     void response.body?.cancel().catch(() => {});
-    invalid('Server AI progress stream exceeds its size limit.');
+    invalid('Cloud AI progress stream exceeds its size limit.');
   }
-  if (!response.body) invalid('Server AI returned an empty progress stream.');
+  if (!response.body) invalid('Cloud AI returned an empty progress stream.');
   const reader = response.body.getReader();
   const decoder = new TextDecoder('utf-8', { fatal: true });
   const encoder = new TextEncoder();
@@ -59,20 +59,20 @@ export async function* readServerSearchEvents(
       if (chunk.done) {
         ended = true;
         try { pending += decoder.decode(); } catch { invalid(); }
-        if (pending.length !== 0 || !terminal) invalid('Server AI progress stream ended before a complete result.');
+        if (pending.length !== 0 || !terminal) invalid('Cloud AI progress stream ended before a complete result.');
         return;
       }
       bytes += chunk.value.byteLength;
-      if (bytes > MAX_SERVER_SEARCH_STREAM_BYTES) invalid('Server AI progress stream exceeds its size limit.');
+      if (bytes > MAX_SERVER_SEARCH_STREAM_BYTES) invalid('Cloud AI progress stream exceeds its size limit.');
       try { pending += decoder.decode(chunk.value, { stream: true }); } catch { invalid(); }
       let newline: number;
       while ((newline = pending.indexOf('\n')) !== -1) {
         const line = pending.slice(0, newline);
         pending = pending.slice(newline + 1);
         if (encoder.encode(line).byteLength > MAX_SERVER_SEARCH_EVENT_BYTES || ++events > MAX_SERVER_SEARCH_EVENTS) {
-          invalid('Server AI progress stream exceeds its size limit.');
+          invalid('Cloud AI progress stream exceeds its size limit.');
         }
-        if (terminal) invalid('Server AI returned data after its final result.');
+        if (terminal) invalid('Cloud AI returned data after its final result.');
         let event: unknown;
         try { event = JSON.parse(line); } catch { invalid(); }
         if (!record(event)) invalid();
@@ -96,7 +96,7 @@ export async function* readServerSearchEvents(
         } else invalid();
       }
       if (encoder.encode(pending).byteLength > MAX_SERVER_SEARCH_EVENT_BYTES) {
-        invalid('Server AI progress stream exceeds its size limit.');
+        invalid('Cloud AI progress stream exceeds its size limit.');
       }
     }
   } finally {

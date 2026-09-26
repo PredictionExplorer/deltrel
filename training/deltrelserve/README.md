@@ -14,6 +14,41 @@ event backlog. The existing JSON response remains the default for clients that
 do not request streaming. The web proxy forwards the stream as it arrives, and
 the game discards progress from cancelled or superseded searches.
 
+Admission happens before sending response headers, including for streaming
+clients. `limits.max_concurrency` bounds active native searches, while
+`limits.max_queued_requests` bounds additional waiting requests (zero disables
+waiting). A full queue or expired queue deadline returns HTTP 503 with
+`error.code: "service_busy"` and `Retry-After: 1`; callers should offer an explicit
+retry without making a move. The request deadline includes queue time. Waiting
+requests leave the queue immediately on disconnect. Running requests signal
+cooperative cancellation and retain their slot until native work finishes.
+
+Health includes `capacity` with active, queued, and configured request counts.
+When a bearer token is configured, `/v2/health` and `/v2/openapi.json` require it,
+just like analysis. The unauthenticated `/healthz` exposes only readiness status.
+A full queue does not make the model unready: the service still reports its
+loaded champion while rejecting excess work. Shutdown rejects new admissions,
+cancels outstanding work, and drains native workers before releasing the model.
+
+`configs/deltrelserve-cloud.yaml` is a starting configuration for one H100 with
+eight concurrent games, sixteen waiting requests, and a 512 MiB prediction cache.
+Run one service process per GPU so requests share the same batching worker.
+Standard uses 544 simulations and 16 candidates; Deep uses 4,096 simulations
+and 64 candidates, matching the local controls. Benchmark the largest board and
+Deep under concurrent load before increasing capacity. The cloud configuration
+binds to loopback and requires `DELTRELSERVE_BEARER_TOKEN`; the website's server
+must reach it over a private or TLS-protected transport. Stop the service or
+machine whenever needed; the website treats it as temporarily unavailable.
+
+Cloud inference enables the existing CUDA graph cache to reduce repeated launch
+overhead without changing precision or search budgets. Each capture is checked
+against eager inference before use; unsupported captures fall back to eager.
+Retained graphs are bounded by `cuda_graph_max_entries` (32) and
+`cuda_graph_max_bytes` (8 GiB), in addition to prediction-cache limits. Install
+CUDA runtime bindings (`cuda.bindings.runtime`) on the GPU host. This option
+requires shared batching so one thread owns graph capture and replay. Other
+server configurations leave `cuda_graphs` disabled by default.
+
 The optional `inference` section in the server YAML controls prediction reuse and
 cross-request batching. Defaults retain at most 4,096 exact-input predictions,
 charged against a 64 MiB per-model budget, and allow at most sixteen pending

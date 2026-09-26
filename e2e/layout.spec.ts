@@ -24,8 +24,14 @@ async function openFreshSetup(page: Page, waitForAi = true) {
   await expect(
     page.getByRole('heading', { level: 1, name: 'Deltrel' }),
   ).toBeVisible();
-  if (waitForAi) await expect(page.getByRole('region', { name: 'AI', exact: true })
+  if (waitForAi) await page.getByRole('button', { name: 'Download AI', exact: true }).click();
+  if (waitForAi) await expect(page.getByRole('region', { name: 'AI on this device', exact: true })
     .getByRole('status')).toHaveText('Ready on this device');
+  // Preparing the optional device engine may scroll its button into view.
+  // Capture the same initial setup position at every viewport.
+  await page.getByRole('region', { name: 'New game setup' }).locator('.thin-scroll')
+    .evaluate(element => { element.scrollTop = 0; });
+  await page.evaluate(() => window.scrollTo(0, 0));
 }
 
 async function bounds(page: Page, selector: string) {

@@ -14,16 +14,17 @@ afterEach(() => {
 });
 
 describe('AI capability preflight', () => {
-  it('uses the verified pinned release without network access after preparation', async () => {
+  it('uses the pinned local release even while the cloud is offline', async () => {
     vi.stubGlobal('Worker', class {});
     vi.spyOn(localClient, 'getPinnedLocalAiRelease').mockReturnValue(publishedManifest);
-    const fetchMock = vi.fn(() => Promise.reject(new Error('offline')));
+    const fetchMock = vi.fn<(url: string) => Promise<Response>>(() => Promise.reject(new Error('offline')));
     vi.stubGlobal('fetch', fetchMock);
     await expect(checkAiCapabilities()).resolves.toMatchObject({ local: {
       status: 'available', browserModel: { modelVersion: publishedManifest.model_version },
       search: { default: { simulations: 512, maxConsidered: 16 } },
     } });
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][0]).toContain('/v2/health');
   });
 
   it('advertises native custom limits separately from the published search defaults and presets', async () => {
@@ -40,18 +41,18 @@ describe('AI capability preflight', () => {
     });
   });
 
-  it('checks only the published browser release for public gameplay', async () => {
+  it('checks cloud health independently from the published browser release', async () => {
     vi.stubGlobal('Worker', class {});
     const fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
-      expect(url).not.toContain('/v2/');
+      if (url.includes('/v2/health')) return Response.json({ error: { message: 'Offline' } }, { status: 503 });
       expect(options?.cache).toBe('no-store');
       return options?.method === 'HEAD' ? new Response(null) : Response.json(publishedManifest);
     });
     vi.stubGlobal('fetch', fetchMock);
     await expect(checkAiCapabilities()).resolves.toMatchObject({
-      local: { status: 'available' }, server: { status: 'unavailable', code: 'browser_only' },
+      local: { status: 'available' }, server: { status: 'unavailable', code: 'server_unavailable' },
     });
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
   it('does not send an already-cancelled health check', async () => {
@@ -112,7 +113,7 @@ describe('AI capability preflight', () => {
     vi.stubGlobal('fetch', fetchMock);
     await expect(checkServerAiCapability()).resolves.toEqual({
       status: 'available',
-      label: 'Server AI',
+      label: 'Cloud AI',
     });
   });
 
@@ -181,7 +182,7 @@ describe('AI capability preflight', () => {
     );
     await expect(checkServerAiCapability()).resolves.toEqual({
       status: 'available',
-      label: 'Server AI',
+      label: 'Cloud AI',
       device: 'mps',
       champion: {
         role: 'champion',

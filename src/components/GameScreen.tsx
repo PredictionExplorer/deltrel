@@ -15,7 +15,8 @@ import {
 } from 'lucide-react';
 import { aiMatchLabel, canShowAiInsights, controllerLabel, normalizeControllers, playerNamesForControllers, type ControllerType } from '@/lib/deltrel/ai/controllers';
 import { normalizeBrowserStrengthBudget } from '@/lib/deltrel/ai/browser-strength';
-import { INITIAL_AI_CAPABILITIES, checkAiCapabilities, type AiCapabilities } from '@/lib/deltrel/ai/capabilities';
+import { useAiCapabilities } from './useAiCapabilities';
+import { CloudAiControl } from './CloudAiControl';
 import {
   DeltrelAiError,
   asDeltrelAiError,
@@ -51,7 +52,7 @@ import { BoardStage } from './BoardStage';
 import { DeltrelMark } from './DeltrelMark';
 import { EngineEstimatePanel } from './EngineEstimatePanel';
 import { BrowserAiPreparation, browserAiIsPreparing } from './BrowserAiPreparation';
-import { BrowserAiStrengthControl } from './BrowserAiStrengthControl';
+import { BrowserAiStrengthControl, budgetFitsCapability } from './BrowserAiStrengthControl';
 import { useBrowserAiPreparation } from './useBrowserAiPreparation';
 import {
   ClinchDialog,
@@ -131,17 +132,9 @@ export function GameScreen() {
   const acknowledgeClinch = useAppStore((state) => state.acknowledgeClinch);
   const endClinchedGame = useAppStore((state) => state.endClinchedGame);
   const resign = useAppStore((state) => state.resign);
-  const { status: browserStatus, authorized: browserAuthorized, notice: browserNotice, prepare: prepareBrowserAi, cancel: cancelBrowserAi } = useBrowserAiPreparation();
+  const { status: browserStatus, authorized: browserAuthorized, notice: browserNotice, prepare: prepareBrowserAi, cancel: cancelBrowserAi } = useBrowserAiPreparation(controllers.includes('local') || (aiInsightsVisible && !controllers.includes('server')));
   const preparedModelVersion = browserStatus.phase === 'ready' ? browserStatus.info.modelVersion : null;
-  const [runtimeCapabilities, setRuntimeCapabilities] = useState<AiCapabilities>(INITIAL_AI_CAPABILITIES);
-  const [availabilityRefresh, setAvailabilityRefresh] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    void checkAiCapabilities(controller.signal).then((capabilities) => {
-      if (!controller.signal.aborted) setRuntimeCapabilities(capabilities);
-    });
-    return () => controller.abort();
-  }, [availabilityRefresh, preparedModelVersion]);
+  const { capabilities: runtimeCapabilities, checkAgain: checkCapabilitiesAgain, markCloudUnavailable } = useAiCapabilities(preparedModelVersion);
   // Old saved custom and Quick budgets use the supported public presets.
   const browserSearch = useMemo(() => normalizeBrowserStrengthBudget(aiSearchSettings.local), [aiSearchSettings.local]);
 
@@ -162,6 +155,7 @@ export function GameScreen() {
   const inspectionRef = useRef<AbortController | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const flightRef = useRef<AiFlight | null>(null);
+  const failedRequestKey = useRef<string | null>(null);
   const boardStageRef = useRef<HTMLElement>(null);
 
   const cancelInspection = useCallback(() => {
@@ -280,6 +274,7 @@ export function GameScreen() {
 
   const cancelActiveAi = useCallback(() => {
     cancelInspection();
+    failedRequestKey.current = null;
     setAiStatus({ kind: 'idle' });
     const flight = flightRef.current;
     if (!flight) return;
@@ -289,9 +284,14 @@ export function GameScreen() {
     flight.abortController.abort();
   }, [cancelInspection]);
 
-  const autoplayReady = browserAuthorized && runtimeCapabilities.local.status === 'available';
-  const autoplaySimulations = browserSearch.simulations;
-  const autoplayMaxConsidered = browserSearch.maxConsidered;
+  const turnController = game ? controllers[game.toMove] : 'human';
+  const autoplaySearch = turnController === 'server' ? aiSearchSettings.server : browserSearch;
+  const turnCapability = turnController === 'human' ? null : runtimeCapabilities[turnController];
+  const autoplayReady = turnCapability?.status === 'available' &&
+    budgetFitsCapability(autoplaySearch, turnCapability.search) &&
+    (turnController === 'server' || browserAuthorized);
+  const autoplaySimulations = autoplaySearch.simulations;
+  const autoplayMaxConsidered = autoplaySearch.maxConsidered;
 
   useEffect(() => {
     if (!game || game.over || aiPaused || uiBlocksPlay) return;
@@ -303,6 +303,7 @@ export function GameScreen() {
     // Strength changes apply to the next request. Reattach to an in-flight
     // search for this same position instead of discarding its completed work.
     const key = `${aiPositionKey}:${retryNonce}`;
+    if (failedRequestKey.current === key) return;
     const scheduleCancellation = (flight: AiFlight) => {
       if (flight.settled) return;
       flight.cancelScheduled = true;
@@ -380,9 +381,9 @@ export function GameScreen() {
         });
       },
     };
-    const response = import('@/lib/deltrel/ai/local-client').then(({ requestLocalAiDecision }) =>
-      requestLocalAiDecision(request, options),
-    );
+    const response = controller === 'server'
+      ? import('@/lib/deltrel/ai/server-client').then(({ requestServerAiDecision }) => requestServerAiDecision(request, options))
+      : import('@/lib/deltrel/ai/local-client').then(({ requestLocalAiDecision }) => requestLocalAiDecision(request, options));
 
     void response
       .then((decision) => {
@@ -430,6 +431,8 @@ export function GameScreen() {
         if (flight.cancelled || flightRef.current !== flight) return;
         flight.settled = true;
         const aiError = asDeltrelAiError(error);
+        failedRequestKey.current = key;
+        if (flight.controller === 'server' && ['network', 'timeout', 'unavailable'].includes(aiError.code)) markCloudUnavailable();
         setAiStatus({
           kind: 'error',
           controller: flight.controller,
@@ -456,6 +459,7 @@ export function GameScreen() {
     game,
     log,
     retryNonce,
+    markCloudUnavailable,
     uiBlocksPlay,
   ]);
 
@@ -519,8 +523,10 @@ export function GameScreen() {
   const resumeAiAction = useCallback(() => {
     cancelInspection();
     setAiStatus({ kind: 'idle' });
+    setRetryNonce((value) => value + 1);
+    checkCapabilitiesAgain();
     resumeAi();
-  }, [cancelInspection, resumeAi]);
+  }, [cancelInspection, checkCapabilitiesAgain, resumeAi]);
 
   const pauseAiAction = useCallback(() => {
     cancelActiveAi();
@@ -536,8 +542,10 @@ export function GameScreen() {
       if (!reduced) return;
       setAiStatus({ kind: 'idle' });
       setAiSearchBudget(controller, reduced);
+      setRetryNonce((value) => value + 1);
+      if (controller === 'server') checkCapabilitiesAgain();
     },
-    [setAiSearchBudget],
+    [checkCapabilitiesAgain, setAiSearchBudget],
   );
 
   const currentController = game ? controllers[game.toMove] : 'human';
@@ -591,7 +599,9 @@ export function GameScreen() {
     config, log, positionHash: shownPositionHash, ply: currentPly,
     allowPrevious: !viewingHistory,
   }), [analysisHistory, config, currentPly, log, shownPositionHash, viewingHistory]);
-  const inspectionRuntimeReady = runtimeCapabilities.local.status === 'available' && browserAuthorized;
+  const inspectionRuntime = controllers.includes('server') && !controllers.includes('local') ? 'server' : 'local';
+  const inspectionRuntimeReady = runtimeCapabilities[inspectionRuntime].status === 'available' && (inspectionRuntime === 'server' || browserAuthorized);
+  const inspectionSearch = inspectionRuntime === 'server' ? aiSearchSettings.server : browserSearch;
   // Cancelling a request resets the shared browser worker, so inspection
   // cannot overlap an automatic move.
   const localInspectionNeedsPause = currentController !== 'human' && !aiPaused && !uiBlocksPlay;
@@ -616,10 +626,11 @@ export function GameScreen() {
     setInspectionStatus({ kind: 'thinking', stateHash: request.stateHash });
     const options = {
       signal: abortController.signal,
-      search: browserSearch,
+      search: inspectionSearch,
     };
-    const pending = import('@/lib/deltrel/ai/local-client').then(({ requestLocalAiDecision }) =>
-      requestLocalAiDecision(request, options));
+    const pending = inspectionRuntime === 'server'
+      ? import('@/lib/deltrel/ai/server-client').then(({ requestServerAiDecision }) => requestServerAiDecision(request, options))
+      : import('@/lib/deltrel/ai/local-client').then(({ requestLocalAiDecision }) => requestLocalAiDecision(request, options));
     void pending.then((decision) => {
       if (inspectionRef.current !== abortController || abortController.signal.aborted) return;
       const current = useAppStore.getState();
@@ -630,7 +641,7 @@ export function GameScreen() {
         throw new DeltrelAiError('protocol', 'Engine analysis does not match the requested position.');
       }
       const entry: StoredEngineAnalysis = {
-        analysis: decision.analysis, source: 'local', ply: prefix.length,
+        analysis: decision.analysis, source: inspectionRuntime, ply: prefix.length,
         configKey: analysisConfigKey(config), prefix, action: accepted.action,
         applied: false,
       };
@@ -645,7 +656,7 @@ export function GameScreen() {
     }).finally(() => {
       if (inspectionRef.current === abortController) inspectionRef.current = null;
     });
-  }, [aiPaused, browserSearch, cancelInspection, config, currentController, currentPly,
+  }, [aiPaused, inspectionSearch, inspectionRuntime, cancelInspection, config, currentController, currentPly,
     effectiveOver, inspectionRuntimeReady, localInspectionNeedsPause, log, shownGame, shownPositionHash, validProofMode, viewingHistory]);
 
   // Arrow keys step through the move history whenever no dialog needs them.
@@ -787,7 +798,10 @@ export function GameScreen() {
                   : !autoplayReady
                     ? 'waiting'
                   : 'thinking';
-  const aiWaitingReason = runtimeCapabilities.local.status === 'checking'
+  const aiWaitingReason = currentController === 'server'
+    ? runtimeCapabilities.server.status === 'unavailable' ? 'Cloud AI is unavailable. Your game is saved.'
+      : runtimeCapabilities.server.status === 'available' ? 'Choose a supported cloud search setting.' : 'Checking cloud availability.'
+    : runtimeCapabilities.local.status === 'checking'
     ? 'Checking AI availability.'
     : runtimeCapabilities.local.status === 'unavailable'
       ? runtimeCapabilities.local.reason
@@ -979,7 +993,7 @@ export function GameScreen() {
           <div className={`${styles.rail} thin-scroll flex min-w-0 flex-col gap-3`}>
             {!effectiveOver &&
               currentController !== 'human' &&
-              (aiPaused || activeAiError) && (
+              (aiPaused || activeAiError || (currentController === 'server' && runtimeCapabilities.server.status === 'unavailable')) && (
                 <section
                   aria-live="polite"
                   className="rounded-2xl border border-danger/35 bg-danger/[0.06] px-4 py-3 text-xs text-muted"
@@ -1001,7 +1015,7 @@ export function GameScreen() {
                             ({activeAiError.code})
                           </span>
                         </p>
-                      ) : null}
+                      ) : currentController === 'server' ? <p role="alert">Cloud AI is unavailable. Your game is saved. Retry later or switch to AI on this device.</p> : null}
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 pl-7">
@@ -1014,18 +1028,30 @@ export function GameScreen() {
                         Resume AI
                       </button>
                     )}
-                    {activeAiError?.retryable && (
+                    {(activeAiError?.retryable || (currentController === 'server' && runtimeCapabilities.server.status === 'unavailable')) && (
                       <button
                         type="button"
                         onClick={() => {
                           setAiStatus({ kind: 'idle' });
                           setRetryNonce((value) => value + 1);
+                          if (currentController === 'server') checkCapabilitiesAgain();
                         }}
                         className="min-h-9 rounded-lg border border-sand/50 px-3 py-1 text-sand-strong transition-colors hover:bg-sand/15"
                       >
                         Retry
                       </button>
                     )}
+                    {currentController === 'server' && <button
+                      type="button"
+                      disabled={runtimeCapabilities.local.status !== 'available'}
+                      title={runtimeCapabilities.local.status === 'unavailable' ? runtimeCapabilities.local.reason : undefined}
+                      onClick={() => {
+                        cancelActiveAi();
+                        setPlayerController(game.toMove, 'local');
+                        resumeAi();
+                      }}
+                      className="min-h-9 rounded-lg border border-sand/50 px-3 py-1 text-sand-strong transition-colors hover:bg-sand/15"
+                    >Switch to AI on this device</button>}
                     {canUseLessEffort && (
                       <button
                         type="button"
@@ -1134,7 +1160,7 @@ export function GameScreen() {
               </section>
             )}
 
-            {(!browserAuthorized || runtimeCapabilities.local.status !== 'available' || browserAiIsPreparing(browserStatus) || browserStatus.phase === 'error') && (
+            {(controllers.includes('local') || (aiInsightsVisible && !controllers.includes('server'))) && (!browserAuthorized || runtimeCapabilities.local.status !== 'available' || browserAiIsPreparing(browserStatus) || browserStatus.phase === 'error') && (
               <BrowserAiPreparation
                 status={browserStatus}
                 authorized={browserAuthorized}
@@ -1155,18 +1181,26 @@ export function GameScreen() {
                   cancelActiveAi();
                   cancelBrowserAi();
                 }}
-                onCheck={() => {
-                  setRuntimeCapabilities(INITIAL_AI_CAPABILITIES);
-                  setAvailabilityRefresh((value) => value + 1);
-                }}
+                onCheck={checkCapabilitiesAgain}
               />
             )}
-            <BrowserAiStrengthControl
+            {controllers.includes('server') && <>
+              <CloudAiControl capability={runtimeCapabilities.server} selected onCheck={checkCapabilitiesAgain} />
+              <BrowserAiStrengthControl
+                budget={aiSearchSettings.server}
+                capability={runtimeCapabilities.server}
+                onChange={(budget) => setAiSearchBudget('server', budget)}
+                runtime="server"
+                inGame
+              />
+              {runtimeCapabilities.server.status === 'available' && runtimeCapabilities.server.search && !budgetFitsCapability(aiSearchSettings.server, runtimeCapabilities.server.search) && <button type="button" onClick={() => { if (runtimeCapabilities.server.status === 'available' && runtimeCapabilities.server.search) setAiSearchBudget('server', { ...runtimeCapabilities.server.search.default }); }}>Use recommended cloud search</button>}
+            </>}
+            {(!controllers.includes('server') || controllers.includes('local')) && <BrowserAiStrengthControl
               budget={aiSearchSettings.local}
               capability={runtimeCapabilities.local}
               onChange={(budget) => setAiSearchBudget('local', budget)}
               inGame
-            />
+            />}
             {!aiInsightsVisible && currentController !== 'human' && !aiPaused && !uiBlocksPlay && (
               <button
                 type="button"

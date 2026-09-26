@@ -15,9 +15,9 @@
 .progressText strong { font-weight: 550; color: #f1e3c7; }
 .hint { margin: .5rem 0 0; color: #b8cec4; font-size: .67rem; line-height: 1.55; }
 .error { margin-top: .65rem; color: #ffc5ad; font-size: .72rem; line-height: 1.55; }
-.actions { display: flex; gap: .5rem; margin-top: .8rem; }
+.actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .8rem; }
 .actions:empty { display: none; }
-.actions button { min-height: 2.65rem; width: 100%; border: 1px solid rgba(228, 201, 161, .42); border-radius: .65rem; padding: .5rem .7rem; background: rgba(228, 201, 161, .075); color: #f2e2c5; font: inherit; font-size: .75rem; font-weight: 500; cursor: pointer; }
+.actions button { flex: 1 1 10rem; min-width: 0; min-height: 2.65rem; width: 100%; border: 1px solid rgba(228, 201, 161, .42); border-radius: .65rem; padding: .5rem .7rem; background: rgba(228, 201, 161, .075); color: #f2e2c5; font: inherit; font-size: .75rem; font-weight: 500; cursor: pointer; }
 .actions button:hover:not(:disabled) { border-color: rgba(228, 201, 161, .7); background: rgba(228, 201, 161, .13); }
 .actions button:disabled { opacity: .48; cursor: default; }
 .actions button[aria-pressed='true'] { border-color: #88c9b0; color: #d5ecdc; }

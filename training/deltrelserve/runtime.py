@@ -262,7 +262,7 @@ class AtomicModelManager:
         with self._condition:
             current = self._current
             return {
-                "ready": current is not None,
+                "ready": current is not None and not self._closed,
                 "model_version": (
                     current.manifest.model_version if current is not None else None
                 ),
@@ -342,6 +342,9 @@ class AtomicModelManager:
                 cache_max_bytes=self.config.inference.cache_max_bytes,
                 deduplicate=self.config.inference.shared_batching,
                 preserve_broadcast_topology=True,
+                cuda_graphs=self.config.inference.cuda_graphs,
+                cuda_graph_max_entries=self.config.inference.cuda_graph_max_entries,
+                cuda_graph_max_bytes=self.config.inference.cuda_graph_max_bytes,
             ),
             model_version=manifest.model_version,
             model_step=manifest.model_step,

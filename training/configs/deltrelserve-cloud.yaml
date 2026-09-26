@@ -1,0 +1,44 @@
+# One service process owns the GPU; concurrent games share inference batches.
+# Publish a verified champion snapshot and its matching FP32 experiment profile
+# (train.precision: fp32, train.compile: false) under ../runs/cloud/ first.
+schema_version: 2
+experiment_config: ../runs/cloud/profile.yaml
+model_manifest: ../runs/cloud/champion.json
+device: cuda:0
+host: 127.0.0.1
+port: 8080
+
+search:
+  default_simulations: 544
+  maximum_simulations: 4096
+  default_max_considered: 16
+  maximum_max_considered: 64
+  c_visit: 50.0
+  c_scale: 1.0
+  swap_dead_zone: 0.02
+
+limits:
+  max_concurrency: 8
+  max_queued_requests: 16
+  max_request_bytes: 65536
+  # Concurrent Full-board Deep searches need more time than a single search.
+  request_timeout_seconds: 180.0
+  queue_timeout_seconds: 5.0
+
+inference:
+  cache_max_entries: 32768
+  cache_max_bytes: 536870912
+  shared_batching: true
+  max_batch_rows: 8
+  max_pending_requests: 16
+  max_wait_seconds: 0.001
+  # Captures validate against eager output before use; precision is unchanged.
+  # Requires CUDA runtime bindings (cuda.bindings.runtime) on the GPU host.
+  cuda_graphs: true
+  cuda_graph_max_entries: 32
+  cuda_graph_max_bytes: 8589934592
+
+security:
+  # The website's server calls this through an authenticated, private transport.
+  cors_allow_origins: []
+  bearer_token_env: DELTRELSERVE_BEARER_TOKEN

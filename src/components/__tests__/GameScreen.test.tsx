@@ -21,6 +21,7 @@ import {
   type AtomicGameAction,
   type DeltrelAiRequest,
 } from '@/lib/deltrel/ai/protocol';
+import { requestServerAiDecision } from '@/lib/deltrel/ai/server-client';
 import { prepareLocalAi, requestLocalAiDecision } from '@/lib/deltrel/ai/local-client';
 import { checkAiCapabilities, type AiCapabilities } from '@/lib/deltrel/ai/capabilities';
 import { publishLocalAiStatus } from '@/lib/deltrel/ai/local-ai-status';
@@ -47,6 +48,11 @@ vi.mock('@/lib/deltrel/ai/local-client', async () => {
   return { ...actual, requestLocalAiDecision: vi.fn(), prepareLocalAi: vi.fn() };
 });
 
+vi.mock('@/lib/deltrel/ai/server-client', async () => ({
+  ...await vi.importActual<typeof import('@/lib/deltrel/ai/server-client')>('@/lib/deltrel/ai/server-client'),
+  requestServerAiDecision: vi.fn(),
+}));
+
 vi.mock('@/lib/deltrel/ai/capabilities', async () => ({
   ...await vi.importActual<typeof import('@/lib/deltrel/ai/capabilities')>('@/lib/deltrel/ai/capabilities'),
   checkAiCapabilities: vi.fn(),
@@ -54,7 +60,7 @@ vi.mock('@/lib/deltrel/ai/capabilities', async () => ({
 
 const browserReady = { modelVersion: 'browser-champion', bytes: 37_577_312, backend: 'wasm' as const, cached: true };
 const browserCapabilities: AiCapabilities = {
-  server: { status: 'available', label: 'AI' },
+  server: { status: 'available', label: 'Cloud AI', search: { default: { simulations: 544, maxConsidered: 16 }, maximum: { simulations: 16384, maxConsidered: 128 }, presets: {} } },
   local: {
     status: 'available', label: 'AI',
     browserModel: { modelVersion: browserReady.modelVersion, bytes: browserReady.bytes, sha256: 'a'.repeat(64) },
@@ -168,6 +174,7 @@ beforeEach(() => {
   vi.stubEnv('NEXT_PUBLIC_DELTREL_AI_DEVTOOLS', '0');
   resetPlayingStore();
   vi.mocked(requestLocalAiDecision).mockReset();
+  vi.mocked(requestServerAiDecision).mockReset();
   publishLocalAiStatus({ phase: 'ready', info: browserReady });
   vi.mocked(checkAiCapabilities).mockReset();
   vi.mocked(checkAiCapabilities).mockResolvedValue(browserCapabilities);
@@ -185,14 +192,14 @@ afterEach(() => {
 });
 
 describe('GameScreen AI lifecycle', () => {
-  it.each(['local'] as const)('shows real %s search progress, retains the active budget, and discards progress from earlier turns', async (runtime) => {
+  it.each(['local', 'server'] as const)('shows real %s search progress, retains the active budget, and discards progress from earlier turns', async (runtime) => {
     resetPlayingStore({ controllers: [runtime, runtime], aiSearchSettings: {
       local: { simulations: 544, maxConsidered: 16 }, server: { simulations: 544, maxConsidered: 16 },
     } });
     const first = deferred<DeltrelAiDecision>();
     const second = deferred<DeltrelAiDecision>();
-    const engine = vi.mocked(requestLocalAiDecision);
-    const progressName = 'AI search progress';
+    const engine = vi.mocked(runtime === 'server' ? requestServerAiDecision : requestLocalAiDecision);
+    const progressName = runtime === 'server' ? 'Cloud AI search progress' : 'AI search progress';
     engine.mockReturnValue(second.promise).mockReturnValueOnce(first.promise);
     const user = userEvent.setup();
     render(<StrictMode><GameScreen /></StrictMode>);
@@ -203,7 +210,7 @@ describe('GameScreen AI lifecycle', () => {
     act(() => firstOptions!.onSearchProgress!({ completedSimulations: 136, totalSimulations: 544 }));
     expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('value', '136');
     expect(screen.getByText('25%')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Deep AI strength' }));
+    await user.click(screen.getByRole('button', { name: runtime === 'server' ? 'Deep Cloud AI strength' : 'Deep AI strength' }));
     expect(engine).toHaveBeenCalledOnce();
     act(() => firstOptions!.onSearchProgress!({ completedSimulations: 408, totalSimulations: 544 }));
     expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('max', '544');
@@ -220,12 +227,12 @@ describe('GameScreen AI lifecycle', () => {
     expect(screen.getByText('25%')).toBeVisible();
   });
 
-  it.each(['local'] as const)('clears %s progress when paused and ignores old callbacks after resuming the same position', async (runtime) => {
+  it.each(['local', 'server'] as const)('clears %s progress when paused and ignores old callbacks after resuming the same position', async (runtime) => {
     resetPlayingStore({ controllers: [runtime, runtime], aiSearchSettings: {
       local: { simulations: 544, maxConsidered: 16 }, server: { simulations: 544, maxConsidered: 16 },
     } });
-    const engine = vi.mocked(requestLocalAiDecision);
-    const progressName = 'AI search progress';
+    const engine = vi.mocked(runtime === 'server' ? requestServerAiDecision : requestLocalAiDecision);
+    const progressName = runtime === 'server' ? 'Cloud AI search progress' : 'AI search progress';
     engine.mockImplementation(() => deferred<DeltrelAiDecision>().promise);
     const user = userEvent.setup();
     render(<GameScreen />);
@@ -341,9 +348,74 @@ describe('GameScreen AI lifecycle', () => {
     expect(useAppStore.getState().config.playerNames).toEqual(['You', 'Marina']);
     expect(useAppStore.getState().controllers).toEqual(['local', 'local']);
   });
-  it('prepares a restored AI turn automatically before requesting its move', async () => {
+  it('restores cloud play without preparing the browser engine and keeps human insights private', async () => {
+    publishLocalAiStatus({ phase: 'idle' });
+    resetPlayingStore({ controllers: ['server', 'human'], aiSearchSettings: {
+      ...DEFAULT_AI_SEARCH_SETTINGS, server: { simulations: 777, maxConsidered: 21 },
+    } });
+    const move = deferred<DeltrelAiDecision>();
+    vi.mocked(requestServerAiDecision).mockReturnValue(move.promise);
+    render(<GameScreen />);
+    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledOnce());
+    const [request, options] = vi.mocked(requestServerAiDecision).mock.calls[0];
+    expect(options?.search).toEqual({ simulations: 777, maxConsidered: 21 });
+    expect(prepareLocalAi).not.toHaveBeenCalled();
+    expect(requestLocalAiDecision).not.toHaveBeenCalled();
+    expect(screen.queryByRole('region', { name: 'Engine estimate' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Prepare AI' })).not.toBeInTheDocument();
+    await act(async () => move.resolve(makeDecision(request)));
+    expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]);
+    expect(screen.queryByRole('region', { name: 'Engine estimate' })).not.toBeInTheDocument();
+  });
+
+  it('preserves a failed cloud position without search retry loops and resumes only on Retry', async () => {
     publishLocalAiStatus({ phase: 'idle' });
     resetPlayingStore({ controllers: ['server', 'human'] });
+    const next = deferred<DeltrelAiDecision>();
+    vi.mocked(requestServerAiDecision).mockReturnValue(next.promise)
+      .mockRejectedValueOnce(new DeltrelAiError('unavailable', 'Cloud AI is offline.', true));
+    const user = userEvent.setup();
+    render(<GameScreen />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cloud AI is offline.');
+    expect(useAppStore.getState().log).toEqual([]);
+    expect(prepareLocalAi).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Check cloud availability' }));
+    await screen.findByText('Cloud AI is ready');
+    expect(requestServerAiDecision).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('button', { name: 'Deep Cloud AI strength' }));
+    expect(requestServerAiDecision).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(requestServerAiDecision).mock.calls[1][1]?.search).toEqual({ simulations: 4096, maxConsidered: 64 });
+    await act(async () => next.resolve(makeDecision(vi.mocked(requestServerAiDecision).mock.calls[1][0])));
+    expect(useAppStore.getState().log).toHaveLength(1);
+    expect(useAppStore.getState().controllers).toEqual(['server', 'human']);
+    expect(prepareLocalAi).not.toHaveBeenCalled();
+  });
+
+  it('offers an explicit local switch when a restored cloud game is offline', async () => {
+    publishLocalAiStatus({ phase: 'idle' });
+    resetPlayingStore({ controllers: ['server', 'human'] });
+    vi.mocked(checkAiCapabilities).mockResolvedValue({ ...browserCapabilities, server: {
+      status: 'unavailable', label: 'Cloud AI', code: 'offline', reason: 'Offline', retryable: true,
+    } });
+    vi.mocked(requestLocalAiDecision).mockReturnValue(deferred<DeltrelAiDecision>().promise);
+    const user = userEvent.setup();
+    render(<GameScreen />);
+    await screen.findByRole('alert');
+    expect(requestServerAiDecision).not.toHaveBeenCalled();
+    expect(prepareLocalAi).not.toHaveBeenCalled();
+    expect(useAppStore.getState().controllers).toEqual(['server', 'human']);
+    await user.click(screen.getByRole('button', { name: 'Switch to AI on this device' }));
+    await waitFor(() => expect(prepareLocalAi).toHaveBeenCalledOnce());
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
+    expect(useAppStore.getState().controllers).toEqual(['local', 'human']);
+    expect(useAppStore.getState().log).toEqual([]);
+  });
+
+  it('prepares a restored AI turn automatically before requesting its move', async () => {
+    publishLocalAiStatus({ phase: 'idle' });
+    resetPlayingStore({ controllers: ['local', 'human'] });
     const preparation = deferred<typeof browserReady>();
     vi.mocked(prepareLocalAi).mockReturnValue(preparation.promise);
     vi.mocked(requestLocalAiDecision).mockReturnValue(deferred<DeltrelAiDecision>().promise);
@@ -532,7 +604,7 @@ describe('GameScreen AI lifecycle', () => {
 
   it('replaces a saved custom browser budget with Deep even when a legacy native budget is saved', async () => {
     resetPlayingStore({
-      controllers: ['server', 'human'],
+      controllers: ['local', 'human'],
       aiSearchSettings: {
         server: { simulations: 777, maxConsidered: 21 },
         local: { simulations: 4096, maxConsidered: 256 },

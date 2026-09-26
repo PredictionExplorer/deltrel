@@ -1,0 +1,44 @@
+[Unit]
+Description=Deltrel cloud AI (verified champion and shared GPU inference)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=deltrelserve
+Group=deltrelserve
+WorkingDirectory=/opt/deltrel-cloud/current/training
+EnvironmentFile=/etc/deltrelserve/service.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=OMP_NUM_THREADS=2
+Environment=MKL_NUM_THREADS=2
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=RAYON_NUM_THREADS=2
+Environment=TORCHINDUCTOR_CACHE_DIR=/var/cache/deltrelserve/torchinductor
+ExecStart=/opt/deltrel-cloud/current/training/.venv/bin/deltrelserve --config /etc/deltrelserve/production.yaml
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=210
+KillSignal=SIGTERM
+CacheDirectory=deltrelserve
+StateDirectory=deltrelserve
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+CapabilityBoundingSet=
+TasksMax=256
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

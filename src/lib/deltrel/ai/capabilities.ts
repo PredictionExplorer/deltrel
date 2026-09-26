@@ -49,7 +49,7 @@ export interface AiCapabilities {
 }
 
 export const INITIAL_AI_CAPABILITIES: AiCapabilities = {
-  server: { status: 'checking', label: 'Server AI' },
+  server: { status: 'checking', label: 'Cloud AI' },
   local: { status: 'checking', label: 'Local AI' },
 };
 
@@ -243,7 +243,7 @@ export async function checkServerAiCapability(
 ): Promise<AiCapability> {
   if (typeof fetch !== 'function' || typeof AbortController !== 'function') {
     return unavailable(
-      'Server AI',
+      'Cloud AI',
       'browser_unsupported',
       'Required browser networking APIs are not supported.',
       false,
@@ -251,7 +251,7 @@ export async function checkServerAiCapability(
   }
   if (typeof BigInt !== 'function') {
     return unavailable(
-      'Server AI',
+      'Cloud AI',
       'browser_unsupported',
       'AI controllers require BigInt browser support.',
       false,
@@ -276,8 +276,8 @@ export async function checkServerAiCapability(
         isRecord(payload.error) &&
         typeof payload.error.message === 'string'
           ? payload.error.message
-          : 'Server AI is not ready.';
-      return unavailable('Server AI', 'server_unavailable', reason, response.status >= 500);
+          : 'Cloud AI is not ready.';
+      return unavailable('Cloud AI', 'server_unavailable', reason, response.status >= 500);
     }
     if (
       !isRecord(payload) ||
@@ -296,9 +296,9 @@ export async function checkServerAiCapability(
       payload.model.ready !== true
     ) {
       return unavailable(
-        'Server AI',
+        'Cloud AI',
         'server_incompatible',
-        'Server AI is incompatible with this game build.',
+        'Cloud AI is incompatible with this game build.',
         false,
       );
     }
@@ -319,24 +319,24 @@ export async function checkServerAiCapability(
       const champion = parseChampionCapability(payload.model);
       return {
         status: 'available',
-        label: 'Server AI',
+        label: 'Cloud AI',
         ...(device === undefined ? {} : { device }),
         ...(search === undefined ? {} : { search }),
         ...(champion === undefined ? {} : { champion }),
       };
     } catch {
       return unavailable(
-        'Server AI',
+        'Cloud AI',
         'server_incompatible',
-        'Server AI capability metadata is invalid.',
+        'Cloud AI capability metadata is invalid.',
         false,
       );
     }
   } catch {
     return unavailable(
-      'Server AI',
+      'Cloud AI',
       timeout.timedOut() ? 'server_timeout' : 'server_unavailable',
-      timeout.timedOut() ? 'Server AI health check timed out.' : 'Server AI is unavailable.',
+      timeout.timedOut() ? 'Cloud AI health check timed out.' : 'Cloud AI is unavailable.',
       true,
     );
   } finally {
@@ -436,10 +436,11 @@ export async function checkLocalAiCapability(
 }
 
 export async function checkAiCapabilities(signal?: AbortSignal): Promise<AiCapabilities> {
-  const local = await checkLocalAiCapability(signal);
-  // The public game has one on-device AI. Keep the legacy field for persisted
-  // diagnostics and reference clients without probing a private service.
-  return { local, server: unavailable('AI', 'browser_only', 'AI runs in your browser.', false) };
+  const [local, server] = await Promise.all([
+    checkLocalAiCapability(signal),
+    checkServerAiCapability(signal),
+  ]);
+  return { local, server };
 }
 
 export function capabilityForController(

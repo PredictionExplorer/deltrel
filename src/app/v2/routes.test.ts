@@ -48,6 +48,14 @@ describe('same-origin AI v2 route adapters', () => {
     expect(analyzeMaxDuration).toBe(moveMaxDuration);
   });
 
+  it('allows the cloud search deadline plus transport and route cleanup time', async () => {
+    const { DELTREL_AI_PROXY_MOVE_TIMEOUT_MS } = await vi.importActual<typeof import('@/lib/deltrel/ai/server-proxy')>('@/lib/deltrel/ai/server-proxy');
+    const { DEFAULT_DELTREL_AI_TIMEOUT_MS } = await import('@/lib/deltrel/ai/server-client');
+    expect(DELTREL_AI_PROXY_MOVE_TIMEOUT_MS).toBeGreaterThan(180_000);
+    expect(DEFAULT_DELTREL_AI_TIMEOUT_MS).toBeGreaterThan(DELTREL_AI_PROXY_MOVE_TIMEOUT_MS);
+    expect(moveMaxDuration * 1000).toBeGreaterThan(DEFAULT_DELTREL_AI_TIMEOUT_MS);
+  });
+
   it('forwards requests only to fixed upstream paths', async () => {
     const healthRequest = new Request('https://public.example/v2/health');
     const moveRequest = new Request('https://public.example/v2/move', {

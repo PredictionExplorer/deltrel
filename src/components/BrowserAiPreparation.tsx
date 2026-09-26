@@ -52,10 +52,10 @@ export function BrowserAiPreparation({ status, authorized, capability, selected 
   return (
     <section className={styles.panel} aria-labelledby={titleId} aria-busy={preparing}>
       <header className={styles.header}>
-        <h2 id={titleId}>{ready ? <Check size={17} aria-hidden /> : <Download size={17} aria-hidden />} AI</h2>
+        <h2 id={titleId}>{ready ? <Check size={17} aria-hidden /> : <Download size={17} aria-hidden />} AI on this device</h2>
         <span className={styles.badge}>{ready ? 'On-device' : 'No installation'}</span>
       </header>
-      <p className={styles.description}>Play the latest published champion. The model downloads automatically, and every move is calculated in your browser.</p>
+      <p className={styles.description}>Play the latest published champion. Download the model once, then calculate moves in your browser.</p>
       <p id={detailId} className={styles.size}>
         {ready ? status.info.cached ? 'Loaded from this browser’s saved model.' : 'The engine is ready to play.'
           : modelBytes ? `${formatModelBytes(modelBytes)} for the model. Saved copies are reused when available.` : 'A model download may be needed. Saved copies are reused when available.'}

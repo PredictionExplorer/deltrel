@@ -131,7 +131,7 @@ describe('streaming same-origin AI proxy', () => {
   it.each([
     ['analysis_timeout', 'deltrel_ai_timeout', true],
     ['client_disconnected', 'deltrel_ai_cancelled', false],
-    ['service_busy', 'deltrel_ai_unavailable', true],
+    ['service_busy', 'deltrel_ai_busy', true],
   ])('maps backend %s to a safe public stream error', async (upstreamCode, code, retryable) => {
     vi.stubGlobal('fetch', vi.fn(async () => streaming(JSON.stringify({
       type: 'error', error: { code: upstreamCode, message: 'Private error details.' },
@@ -146,6 +146,144 @@ describe('streaming same-origin AI proxy', () => {
 });
 
 describe('same-origin deltrelserve proxy', () => {
+  it.each([
+    { Origin: 'https://another.example' },
+    { Origin: 'null' },
+    { 'Sec-Fetch-Site': 'cross-site' },
+    { 'Sec-Fetch-Site': 'same-site' },
+    { Origin: 'https://public.example', 'Sec-Fetch-Site': 'cross-site' },
+  ])('rejects cross-origin browser searches before contacting the service: %j', async (headers) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const response = await proxyDeltrelAiRequest(new Request('https://public.example/v2/move', {
+      method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' } as HeadersInit,
+      body: '{}',
+    }), DELTREL_AI_PROXY_MOVE_PATH, { serverUrl: 'https://private.example' });
+    expect(response.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts a same-origin browser search', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ action: 0 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const response = await proxyDeltrelAiRequest(new Request('https://public.example/v2/move', {
+      method: 'POST', headers: { Origin: 'https://public.example', 'Sec-Fetch-Site': 'same-origin',
+        'Content-Type': 'application/json' }, body: '{}',
+    }), DELTREL_AI_PROXY_MOVE_PATH, { serverUrl: 'https://private.example' });
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { url: 'http://localhost:3219/v2/move', host: '127.0.0.1:3219', origin: 'http://127.0.0.1:3219' },
+    { url: 'http://localhost:3219/v2/move', host: '[::1]:3219', origin: 'http://[::1]:3219' },
+    { url: 'http://localhost:3000/v2/move', host: 'public.example', origin: 'https://public.example', protocol: 'https' },
+  ])('accepts the actual browser origin when Next normalizes the internal URL: $origin', async ({ url, host, origin, protocol }) => {
+    const fetchMock = vi.fn(async () => Response.json({ action: 0 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const headers = new Headers({ Host: host, Origin: origin, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json' });
+    if (protocol) headers.set('X-Forwarded-Proto', protocol);
+    const response = await proxyDeltrelAiRequest(new Request(url, { method: 'POST', headers, body: '{}' }),
+      DELTREL_AI_PROXY_MOVE_PATH, { serverUrl: 'https://private.example', bearerToken: 'private-token' });
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { Host: '127.0.0.1:3219', Origin: 'http://localhost:3219', 'Sec-Fetch-Site': 'same-origin' },
+    { Host: 'public.example', Origin: 'https://other.public.example', 'Sec-Fetch-Site': 'same-site', 'X-Forwarded-Proto': 'https' },
+    { Host: 'public.example', Origin: 'https://public.example', 'Sec-Fetch-Site': 'same-site', 'X-Forwarded-Proto': 'https' },
+    { Host: 'public.example', Origin: 'https://other.example', 'X-Forwarded-Host': 'other.example', 'X-Forwarded-Proto': 'https' },
+    { Host: 'public.example@other.example', Origin: 'https://other.example', 'X-Forwarded-Proto': 'https' },
+    { Host: 'public.example/path', Origin: 'https://public.example', 'X-Forwarded-Proto': 'https' },
+    { Host: 'public.example', Origin: 'https://public.example', 'X-Forwarded-Proto': 'https,http' },
+  ])('rejects a mismatched or ambiguous external origin despite an internal URL: %j', async (headers) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const requestHeaders = new Headers({ 'Content-Type': 'application/json' });
+    for (const [name, value] of Object.entries(headers)) {
+      if (value !== undefined) requestHeaders.set(name, value);
+    }
+    const response = await proxyDeltrelAiRequest(new Request('http://localhost:3219/v2/move', {
+      method: 'POST', headers: requestHeaders, body: '{}',
+    }), DELTREL_AI_PROXY_MOVE_PATH, { serverUrl: 'https://private.example' });
+    expect(response.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [429, '<html>private-token</html>', 'text/html', 'deltrel_ai_busy', 429],
+    [503, '{invalid private-token', 'application/json', 'deltrel_ai_unavailable', 503],
+    [504, '', 'text/html', 'deltrel_ai_timeout', 503],
+    [401, 'private-token', 'text/plain', 'deltrel_ai_unavailable', 503],
+    [403, '{}', 'application/json', 'deltrel_ai_unavailable', 503],
+    [503, JSON.stringify({ error: { code: 'service_busy', message: 'private-token' } }), 'application/json', 'deltrel_ai_busy', 503],
+    [504, JSON.stringify({ error: { code: 'analysis_timeout', message: 'private-token' } }), 'application/json', 'deltrel_ai_timeout', 503],
+  ])('normalizes upstream HTTP %s failures without exposing private details', async (status, body, contentType, code, publicStatus) => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, {
+      status, headers: { 'Content-Type': contentType, 'Retry-After': '2', Authorization: 'Bearer private-token' },
+    })));
+    const response = await proxyDeltrelAiRequest(new Request('https://public.example/v2/health'),
+      DELTREL_AI_PROXY_HEALTH_PATH, { serverUrl: 'https://private.example' });
+    expect(response.status).toBe(publicStatus);
+    expect(response.headers.get('Retry-After')).toBe('2');
+    expect(response.headers.has('Authorization')).toBe(false);
+    const payload = await response.json();
+    expect(payload).toMatchObject({ error: { code, retryable: true } });
+    expect(JSON.stringify(payload)).not.toContain('private-token');
+  });
+
+  it.each([
+    ['999999', '300'], ['invalid', null], ['-1', null],
+    ['Sat, 26 Sep 2026 00:00:10 GMT', '10'],
+  ])('bounds upstream Retry-After %s', async (value, expected) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-26T00:00:00Z'));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 503, headers: { 'Retry-After': value } })));
+    const response = await proxyDeltrelAiRequest(new Request('https://public.example/v2/health'),
+      DELTREL_AI_PROXY_HEALTH_PATH, { serverUrl: 'https://private.example' });
+    expect(response.headers.get('Retry-After')).toBe(expected);
+  });
+
+  it('keeps only public model health and capacity metadata', async () => {
+    const model = { ready: true, role: 'champion', model_version: 'champion-123', model_step: 123, model_identity: 'sha256:abc' };
+    const capacity = { active_requests: 2, queued_requests: 1, max_concurrency: 8, max_queued_requests: 16 };
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ status: 'degraded', api_schema_version: 3,
+      model: { ...model, model_path: '/private/checkpoint', last_reload_error: 'private-token' },
+      capacity, private_target: 'https://private.example',
+    })));
+    const response = await proxyDeltrelAiRequest(new Request('https://public.example/v2/health'),
+      DELTREL_AI_PROXY_HEALTH_PATH, { serverUrl: 'https://private.example' });
+    await expect(response.json()).resolves.toEqual({ status: 'degraded', api_schema_version: 3, model, capacity });
+  });
+
+  it('strips private validation text but retains the safe optional-field negotiation signal', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: { code: 'invalid_request', message: 'private-token',
+      details: [{ type: 'extra_forbidden', location: ['body', 'include_network_output'], message: '/private/path' }],
+    } }, { status: 422 })));
+    const response = await proxyDeltrelAiRequest(new Request('https://public.example/v2/move', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    }), DELTREL_AI_PROXY_MOVE_PATH, { serverUrl: 'https://private.example' });
+    const payload = await response.json();
+    expect(response.status).toBe(422);
+    expect(payload.error.details).toEqual([{ type: 'extra_forbidden', location: ['body', 'include_network_output'] }]);
+    expect(JSON.stringify(payload)).not.toContain('private');
+  });
+
+  it('cancels a stalled JSON body even if its reader does not observe fetch cancellation', async () => {
+    vi.useFakeTimers();
+    const cancel = vi.fn();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({ cancel }), {
+      headers: { 'Content-Type': 'application/json' },
+    })));
+    const pending = proxyDeltrelAiRequest(new Request('https://public.example/v2/health'),
+      DELTREL_AI_PROXY_HEALTH_PATH, { serverUrl: 'https://private.example', healthTimeoutMs: 10 });
+    await vi.advanceTimersByTimeAsync(10);
+    const response = await pending;
+    await expect(response.json()).resolves.toMatchObject({ error: { code: 'deltrel_ai_timeout' } });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it('uses only the fixed private target and forwards identity/auth server-side', async () => {
     const upstreamPayload = { schema_version: 2, request_id: 'proxy-request' };
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {

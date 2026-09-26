@@ -37,11 +37,11 @@ describe('AI controller validation', () => {
     expect(canShowAiInsights(controllers, true)).toBe(false);
   });
 
-  it('offers a single AI controller while accepting legacy saved controller values', () => {
-    expect(CONTROLLER_TYPES).toEqual(['human', 'local']);
+  it('offers cloud and device AI while preserving saved controller choices', () => {
+    expect(CONTROLLER_TYPES).toEqual(['human', 'local', 'server']);
     expect(controllerLabel('local')).toBe('AI');
-    expect(controllerLabel('server')).toBe('AI');
-    expect(normalizeControllers(double, ['server', 'human'])).toEqual(['local', 'human']);
+    expect(controllerLabel('server')).toBe('Cloud AI');
+    expect(normalizeControllers(double, ['server', 'human'])).toEqual(['server', 'human']);
   });
 
   it.each([
@@ -66,21 +66,21 @@ describe('AI controller validation', () => {
   it('keeps independent valid controllers only for no-pie Double Deltrel', () => {
     const controllers: PlayerControllers = ['server', 'local'];
     expect(supportsAiControllers(double)).toBe(true);
-    expect(normalizeControllers(double, controllers)).toEqual(['local', 'local']);
+    expect(normalizeControllers(double, controllers)).toEqual(['server', 'local']);
   });
 
   it('keeps AI controllers for every rules-v3 variant', () => {
     expect(normalizeControllers({ ...double, mode: 'classic' }, ['server', 'local'])).toEqual([
-      'local',
+      'server',
       'local',
     ]);
     expect(normalizeControllers({ ...double, pieRule: true }, ['server', 'local'])).toEqual([
-      'local',
+      'server',
       'local',
     ]);
     expect(
       normalizeControllers({ ...double, handicap: 9 }, ['server', 'local']),
-    ).toEqual(['local', 'local']);
+    ).toEqual(['server', 'local']);
   });
 
   it('forces persisted AI controllers back to human outside the rules family', () => {
@@ -93,7 +93,7 @@ describe('AI controller validation', () => {
   });
 
   it('sanitizes malformed persisted controller tuples per player', () => {
-    expect(normalizeControllers(double, ['server', 'remote'])).toEqual(['local', 'human']);
+    expect(normalizeControllers(double, ['server', 'remote'])).toEqual(['server', 'human']);
     expect(normalizeControllers(double, ['local'])).toEqual(['human', 'human']);
     expect(normalizeControllers(double, null)).toEqual(['human', 'human']);
   });

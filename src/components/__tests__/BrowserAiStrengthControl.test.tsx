@@ -37,6 +37,33 @@ describe('BrowserAiStrengthControl', () => {
     expect(onChange).toHaveBeenLastCalledWith({ simulations: 544, maxConsidered: 16 });
   });
 
+  it('keeps cloud custom budgets explicit and enforces published limits before applying', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const cloud: AiCapability = { status: 'available', label: 'Cloud AI', search: {
+      default: { simulations: 544, maxConsidered: 16 }, maximum: { simulations: 16384, maxConsidered: 128 }, presets: {},
+    } };
+    const { container } = render(<BrowserAiStrengthControl runtime="server" capability={cloud} budget={{ simulations: 777, maxConsidered: 21 }} onChange={onChange} />);
+    expect(screen.getByLabelText('Selected strength: Custom')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Standard Cloud AI strength' })).toHaveAttribute('aria-pressed', 'false');
+    await user.click(screen.getByText('Custom cloud search'));
+    const simulations = screen.getByRole('spinbutton', { name: 'Simulations' });
+    const candidates = screen.getByRole('spinbutton', { name: 'Candidate moves' });
+    expect(simulations).toHaveValue(777);
+    expect(candidates).toHaveValue(21);
+    await user.clear(simulations);
+    await user.type(simulations, '16385');
+    expect(screen.getByRole('button', { name: 'Apply custom search' })).toBeDisabled();
+    expect(onChange).not.toHaveBeenCalled();
+    await user.clear(simulations);
+    await user.type(simulations, '1024');
+    await user.clear(candidates);
+    await user.type(candidates, '32');
+    await user.click(screen.getByRole('button', { name: 'Apply custom search' }));
+    expect(onChange).toHaveBeenCalledExactlyOnceWith({ simulations: 1024, maxConsidered: 32 });
+    expect((await axe(container)).violations).toEqual([]);
+  });
+
   it('presents old saved settings as supported presets without side effects during render', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

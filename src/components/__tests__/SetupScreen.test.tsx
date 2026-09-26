@@ -38,7 +38,6 @@ vi.mock('@/lib/deltrel/ai/capabilities', async () => {
 });
 
 const availableCapabilities: AiCapabilities = {
-  // A legacy native service must never reappear in player choices.
   server: { status: 'available', label: 'Server AI' },
   local: {
     status: 'available', label: 'AI',
@@ -104,6 +103,38 @@ describe('SetupScreen', () => {
     expect(useAppStore.getState().config.playerNames).toEqual(['You', 'Champion']);
   });
 
+
+  it('starts a cloud game without preparing any local model and preserves the required human seat', async () => {
+    useAppStore.getState().setSelfPlayAccess(false);
+    publishLocalAiStatus({ phase: 'idle' });
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Play against Cloud AI' })).toBeEnabled());
+    expect(prepareLocalAi).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Play against Cloud AI' }));
+    const human = screen.getByRole('combobox', { name: 'Player 1 controller' });
+    expect(within(human).getAllByRole('option')).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Begin the game' }));
+    expect(useAppStore.getState().controllers).toEqual(['human', 'server']);
+    expect(prepareLocalAi).not.toHaveBeenCalled();
+  });
+
+  it('retains a saved offline cloud seat and allows an explicit availability retry', async () => {
+    publishLocalAiStatus({ phase: 'idle' });
+    resetStore({ controllers: ['human', 'server'] });
+    vi.mocked(checkAiCapabilities).mockResolvedValueOnce({ ...availableCapabilities, server: {
+      status: 'unavailable', label: 'Cloud AI', code: 'offline', reason: 'The server is offline.', retryable: true,
+    } });
+    const user = userEvent.setup();
+    render(<SetupScreen />);
+    await screen.findByText('Cloud AI is currently unavailable');
+    expect(screen.getByRole('combobox', { name: 'Player 2 controller' })).toHaveValue('server');
+    expect(screen.getByRole('button', { name: 'Begin the game' })).toBeDisabled();
+    expect(prepareLocalAi).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Check cloud availability' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Begin the game' })).toBeEnabled());
+    expect(screen.getByRole('combobox', { name: 'Player 2 controller' })).toHaveValue('server');
+  });
 
   it('keeps neutral names when switching a prepared quick start to two humans or two computers', async () => {
     publishLocalAiStatus({ phase: 'ready', info: browserReady });
@@ -291,20 +322,20 @@ describe('SetupScreen', () => {
   });
 
 
-  it('offers only Human and AI for each seat and preserves names when migrating a native game', async () => {
+  it('offers both AI runtimes and preserves saved choices and names', async () => {
     resetStore({ controllers: ['server', 'local'], config: { ...DEFAULT_CONFIG, playerNames: ['Drift', 'Tide'] } });
     const user = userEvent.setup();
     render(<SetupScreen />);
     await waitFor(() => expect(checkAiCapabilities).toHaveBeenCalledOnce());
     for (const player of [1, 2]) {
       const controller = screen.getByRole('combobox', { name: `Player ${player} controller` });
-      expect(within(controller).getAllByRole('option').map(option => option.textContent)).toEqual(['Human', 'AI']);
-      expect(controller).toHaveValue('local');
+      expect(within(controller).getAllByRole('option').map(option => option.textContent)).toEqual(['Human', 'AI on this device', 'Cloud AI']);
+      expect(controller).toHaveValue(player === 1 ? 'server' : 'local');
     }
     expect(screen.queryByText('Current champion')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'AI selected' }));
     await user.click(screen.getByRole('button', { name: 'Begin the game' }));
-    expect(useAppStore.getState().controllers).toEqual(['local', 'local']);
+    expect(useAppStore.getState().controllers).toEqual(['server', 'local']);
     expect(useAppStore.getState().config.playerNames).toEqual(['Drift', 'Tide']);
   });
 

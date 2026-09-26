@@ -440,20 +440,9 @@ export function migratePersistedState(
   persistedVersion: number,
 ): PersistedAppState {
   if (persistedVersion >= 5) {
-    const migrated = sanitizePersistedState(value);
-    if (persistedVersion < 7 && isRecord(value)) {
-      const previousSettings = isRecord(value.aiSearchSettings) ? value.aiSearchSettings : {};
-      const local = parseAiSearchBudget('local', previousSettings.local);
-      // Preserve the legacy native-vs-browser preference, then map its budget
-      // to the supported Standard or Deep preset.
-      if (local === null || (local.simulations === 8 && local.maxConsidered === 4)) {
-        const usedNativeAi = Array.isArray(value.controllers) && value.controllers.includes('server');
-        migrated.aiSearchSettings.local = normalizeBrowserStrengthBudget((usedNativeAi
-          ? parseAiSearchBudget('local', previousSettings.server)
-          : null) ?? { ...DEFAULT_AI_SEARCH_SETTINGS.local });
-      }
-    }
-    return migrated;
+    // Cloud and browser controllers now retain their own saved search settings.
+    // The sanitizer upgrades old browser budgets without borrowing cloud effort.
+    return sanitizePersistedState(value);
   }
   const record = isRecord(value) ? value : {};
   const config = normalizeGameConfig(record.config);

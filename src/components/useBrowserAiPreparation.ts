@@ -7,8 +7,8 @@ import {
   subscribeLocalAiStatus,
 } from '@/lib/deltrel/ai/local-ai-status';
 
-/** Prepare the published champion on a fresh visit; a ready session survives screen changes. */
-export function useBrowserAiPreparation() {
+/** Prepare only a selected local engine; cloud games never download the model. */
+export function useBrowserAiPreparation(enabled = true) {
   const status = useSyncExternalStore(subscribeLocalAiStatus, getLocalAiStatus, getServerLocalAiStatus);
   const [authorized, setAuthorized] = useState(() => getLocalAiStatus().phase === 'ready');
   const [notice, setNotice] = useState<string | null>(null);
@@ -42,14 +42,14 @@ export function useBrowserAiPreparation() {
     // React Strict Mode replays mount effects. Start only after its discarded
     // effect has cleaned up, so it cannot cancel the actual download.
     queueMicrotask(() => {
-      if (mounted && getLocalAiStatus().phase === 'idle') void prepare();
+      if (mounted && enabled && getLocalAiStatus().phase === 'idle') void prepare();
     });
     return () => {
       mounted = false;
       controllerRef.current?.abort();
       controllerRef.current = null;
     };
-  }, [prepare]);
+  }, [enabled, prepare]);
 
   const cancel = useCallback(() => {
     controllerRef.current?.abort();

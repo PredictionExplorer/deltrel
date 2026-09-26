@@ -72,10 +72,22 @@ describe('persisted app-state validation', () => {
     expect(result).toMatchObject({
       phase: 'playing', config: mini, aiPaused: true,
       log: saved.log, redoStack: saved.redoStack,
-      controllers: controllers.map(controller => controller === 'human' ? 'human' : 'local'),
-      aiSearchSettings: { local: expected },
+      controllers,
+      aiSearchSettings: { server: saved.aiSearchSettings.server, local: expected },
     });
     expect(saved.aiSearchSettings.local).toEqual(local);
+  });
+
+  it.each([5, 6, 7, APP_STORE_VERSION])('preserves independent cloud and browser effort from version %i', (version) => {
+    const saved = {
+      phase: 'playing', config: mini, controllers: ['human', 'server'],
+      aiSearchSettings: { server: { simulations: 4096, maxConsidered: 64 }, local: { simulations: 8, maxConsidered: 4 } },
+      aiPaused: true, log: [{ type: 'place', node: 0 }], redoStack: [{ type: 'place', node: 1 }],
+    };
+    expect(migratePersistedState(saved, version)).toMatchObject({
+      ...saved,
+      aiSearchSettings: { server: saved.aiSearchSettings.server, local: { simulations: 544, maxConsidered: 16 } },
+    });
   });
 
   it.each([7, 8, APP_STORE_VERSION])('upgrades old low search budgets from version %i to Standard', (version) => {
@@ -438,6 +450,20 @@ describe('persisted app-state validation', () => {
       maxConsidered: 64,
     });
   });
+
+  it('updates cloud effort without changing the browser setting and vice versa', () => {
+    const state = useAppStore.getState();
+    state.setAiSearchBudget('server', { simulations: 2048, maxConsidered: 32 });
+    expect(useAppStore.getState().aiSearchSettings).toEqual({
+      server: { simulations: 2048, maxConsidered: 32 }, local: DEFAULT_AI_SEARCH_SETTINGS.local,
+    });
+    state.setAiSearchBudget('local', { simulations: 4096, maxConsidered: 64 });
+    expect(useAppStore.getState().aiSearchSettings).toEqual({
+      server: { simulations: 2048, maxConsidered: 32 }, local: { simulations: 4096, maxConsidered: 64 },
+    });
+    state.setAiSearchBudget('server', { simulations: 16385, maxConsidered: 32 });
+    expect(useAppStore.getState().aiSearchSettings.server).toEqual({ simulations: 2048, maxConsidered: 32 });
+  });
 });
 
 describe('human versus AI insight privacy', () => {
@@ -478,7 +504,7 @@ describe('human versus AI insight privacy', () => {
         expect(restored).toMatchObject({
           ...saved,
           aiSearchSettings: { local: { simulations: 544, maxConsidered: 16 } },
-          controllers: ['local', 'human'],
+          controllers: ['server', 'human'],
           aiInsightsHidden: true,
         });
         expect(sanitizePersistedState(saved).aiInsightsHidden).toBe(true);
