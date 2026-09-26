@@ -27,9 +27,10 @@ only the three documented final-count head renames during identity migration.
 This verifies the cloud's actual weights; the browser serves the exact export
 whose numerical parity is documented in the original browser release evidence.
 
-The reviewed implementation was pushed to `main` as `f8d9079`. Public cloud
-connectivity remains a separate requirement, described below; model identity
-verification does not imply that Vercel can reach the GPU service.
+The reviewed implementation was pushed to `main` as `f8d9079`. The subsequent
+production redeployment of `9bfcaa0` connected the public website to the cloud
+service. Model identity verification and the later public connectivity evidence
+are recorded separately below.
 
 ## Real GPU workload
 
@@ -65,7 +66,11 @@ per-game first-visit row count, and model precision are unchanged.
   returned readiness without model or filesystem diagnostics.
 - The production Next.js build played a real Full-board cloud game through an
   encrypted SSH tunnel. It displayed simulation progress and applied the move.
-- Stopping the actual service during that game produced an unavailable state;
+- After public connection, a fresh Brave tab at `https://deltrel.com/` played
+  a Classic, pie-enabled, six-ring game with Cloud AI as Player 1 and Standard
+  effort (544 simulations). The game recorded its first move at A9 and showed
+  Cloud AI ready, without preparing the local model.
+- Stopping the actual service during the SSH-connected preview game produced an unavailable state;
   the board and swap history remained intact. Restoring health did not retry
   the failed move. Explicit Retry resumed the same game.
 - Pausing a live request cancelled it and released backend capacity. Resume
@@ -89,22 +94,36 @@ per-game first-visit row count, and model precision are unchanged.
 
 ## Public deployment status
 
-The backend is ready over SSH; it is **not connected to the public website yet**.
-The provider firewall blocks inbound HTTP/HTTPS, although nginx serves the ACME
-challenge correctly on the host itself. Vercel's deployment settings also require
-account access. No service token has been exposed to browsers or committed.
+**The public website is connected to Cloud AI.** At approximately 06:38 UTC on
+September 26, `https://deltrel.com/v2/health` returned HTTP 200 with `status: ok`,
+`model.ready: true`, champion step 566,428, and the migrated model identity
+`sha256-47a8e20edb462330bd7d2877e6a2fc3de15f3c0d9d88c7e4c6406c854521d42b`.
+An unauthenticated request to `https://209.20.158.77/v2/health` returned HTTP 401
+with successful certificate verification. Python port 8080 remains private.
 
-To finish public deployment:
+The earlier firewall, TLS, and website-configuration blockers are resolved:
 
-1. Allow inbound TCP 80 and 443 on this instance's Lambda firewall.
-2. Issue a trusted certificate for `ai.deltrel.com` after pointing DNS to the
-   instance, or use an IP certificate for `209.20.158.77`. Certbot 5.8 is installed.
-   IP certificates require the `shortlived` profile, automatic renewal, and a
-   renewal hook to reload nginx; see [Certbot IP certificate guidance](https://letsencrypt.org/2026/03/11/shorter-certs-certbot).
-3. Install the prepared TLS nginx configuration with the selected hostname/IP
-   and certificate paths. Keep Python port 8080 private.
-4. Set the two server-only variables from the
-   [serving runbook](cloud-ai-serving.md) in Vercel, confirm a runtime supporting
-   the 200-second route duration, and deploy the feature branch.
-5. Verify cloud readiness and a real search on `deltrel.com`, including service
-   stop/start recovery, before calling the public cutover complete.
+1. With explicit user approval in the signed-in browser, the Lambda workspace's
+   shared `Default` firewall was updated to allow inbound TCP 80 and 443. Before
+   opening those shared rules, a persistent IPv4/IPv6 host guard was installed
+   on training host `192.222.52.230` to keep its non-loopback web ports private.
+   SSH and training were not interrupted. The guard is reproduced by
+   [the script](../deploy/deltrel-training-web-guard.sh) and
+   [service unit](../deploy/deltrel-training-web-guard.service). Provider rulesets
+   can be assigned only when creating an instance; no unused ruleset was created.
+2. Let's Encrypt issued a publicly trusted IP certificate for `209.20.158.77`
+   using the `shortlived` profile, expiring October 2, 2026. TLS is active in
+   nginx. Certbot's snap renewal timer is enabled; its next run observed during
+   deployment was 07:25 UTC on September 26. A successful-renewal deploy hook
+   reloads nginx. See
+   [Certbot IP certificate guidance](https://letsencrypt.org/2026/03/11/shorter-certs-certbot).
+3. The Deltrel Vercel project now has `DELTREL_AI_SERVER_URL` and
+   `DELTREL_AI_BEARER_TOKEN` stored as private secrets for Production only. The
+   server URL is `https://209.20.158.77`. Redeploying `9bfcaa0` through the Vercel
+   UI activated the connection. No token value was put in a browser build,
+   committed, or included in this evidence.
+
+Public health, authentication, and a real production-browser move are verified.
+The certificate-renewal dry run succeeded, including the nginx reload deploy
+hook. The service stop/start recovery test documented above used the SSH-connected
+production-build preview.

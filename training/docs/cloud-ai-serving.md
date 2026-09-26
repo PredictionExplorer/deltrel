@@ -83,18 +83,49 @@ Generate a cryptographically random token and save it as
 token in Git, command arguments, URLs, browser storage, or public build variables.
 The service listens on `127.0.0.1:8080`. Keep that port private.
 
-Point `ai.deltrel.com` at the GPU host, issue a publicly trusted TLS certificate,
-and install [the nginx configuration](../deploy/deltrelserve.nginx.conf). It
-exposes only the three application endpoints, disables buffering, and never
-automatically retries an inference request. Enable automatic certificate renewal
-with a successful-renewal nginx reload. Do not reuse the host's Jupyter tunnel.
+The public deployment uses `https://209.20.158.77`, with a publicly trusted
+Let's Encrypt IP certificate using the `shortlived` profile. The certificate
+issued on September 26, 2026 expires on October 2, 2026. Certbot's snap renewal
+timer is enabled, with a successful-renewal hook that runs
+`systemctl reload nginx`. IP certificates last only about six days, so keep
+automatic renewal and the HTTP ACME challenge reachable. See
+[Certbot IP certificate guidance](https://letsencrypt.org/2026/03/11/shorter-certs-certbot).
+The renewal dry run, including the deploy hook, passed before public cutover
+validation was completed.
+
+Install [the nginx configuration](../deploy/deltrelserve.nginx.conf), replacing
+its example `ai.deltrel.com` server name and certificate paths with those of the
+issued certificate. A DNS hostname remains an alternative for a future host.
+The deployed nginx configuration exposes only the three application endpoints,
+disables buffering, and never automatically retries an inference request.
+Do not reuse the host's Jupyter tunnel.
+
+The existing Lambda instances use the shared workspace `Default` firewall.
+Inbound TCP 80 and 443 were enabled there with explicit operator approval.
+Before that change, the training host `192.222.52.230` received a persistent
+IPv4/IPv6 guard that drops non-loopback traffic to those two ports, leaving SSH
+and training untouched. The checked-in
+[guard script](../deploy/deltrel-training-web-guard.sh) and
+[systemd unit](../deploy/deltrel-training-web-guard.service) reproduce that
+protection. Retain the guard while the shared provider rules allow web traffic;
+protect any other private hosts that use the same rules. The provider allows
+ruleset assignment only at instance creation, so an unattached per-instance
+ruleset would not have protected these existing hosts.
 
 In the website deployment, set these server-only variables and redeploy:
 
 ```
-DELTREL_AI_SERVER_URL=https://ai.deltrel.com
+DELTREL_AI_SERVER_URL=https://209.20.158.77
 DELTREL_AI_BEARER_TOKEN=<same private token as DELTRELSERVE_BEARER_TOKEN>
 ```
+
+Both variables are configured as private Production secrets in the Deltrel
+Vercel project. They are not public build variables, and Preview deployments
+require their own explicit configuration. The September 26 redeployment of
+`9bfcaa0` connected `https://deltrel.com/v2/health` to the ready champion; an
+unauthenticated request to the direct HTTPS health endpoint receives HTTP 401.
+A subsequent browser game on `https://deltrel.com/` completed a Standard cloud
+move through this public connection.
 
 The backend requires the token for search, detailed health, and OpenAPI. Public
 loopback `/healthz` reports only readiness. The website exposes only sanitized
@@ -144,8 +175,10 @@ shutdown does not suspend billing. Preserve the model snapshot and configuration
 outside the instance before termination, then recreate from the release and
 snapshot when needed. See [Lambda billing](https://docs.lambda.ai/public-cloud/billing/)
 and [instance operations](https://docs.lambda.ai/public-cloud/console/).
-The enabled service starts automatically after an ordinary reboot. Verify
-whether a recreated instance has a new IP and update DNS if needed. Offline browsers retain
+The enabled service starts automatically after an ordinary reboot. If a
+recreated instance has a new IP, issue a certificate for the new address and
+update `DELTREL_AI_SERVER_URL` before redeploying the website; update DNS instead
+when using a hostname. Offline browsers retain
 their game, recheck availability every 30 seconds while visible, and offer
 explicit Retry or Switch to AI on this device after a failed move.
 
