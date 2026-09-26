@@ -62,6 +62,7 @@ import {
 import { GameOverOverlay, type GameResult } from './GameOverOverlay';
 import { GameStatus, type GameStatusState } from './GameStatus';
 import { MovesPanel } from './MovesPanel';
+import { GameLibraryButton, GameSaveStatus } from './GameLibrary';
 import { RulesDialog } from './RulesDialog';
 import { ScorePanel } from './ScorePanel';
 import styles from './GameScreen.module.css';
@@ -680,7 +681,7 @@ export function GameScreen() {
       const target = event.target;
       if (
         target instanceof Element &&
-        target.closest('input, textarea, select, [contenteditable="true"]')
+        target.closest('dialog, input, textarea, select, [contenteditable="true"]')
       ) {
         return;
       }
@@ -876,7 +877,7 @@ export function GameScreen() {
           className="group flex min-h-11 min-w-0 items-center gap-3 text-left"
         >
           <DeltrelMark className="h-9 w-9 shrink-0 text-sand" />
-          <span className="font-display text-3xl font-semibold leading-none tracking-tight text-sand-strong">
+          <span className="hidden font-display text-3xl font-semibold leading-none tracking-tight text-sand-strong sm:inline">
             Deltrel
           </span>
           <span className="hidden truncate text-xs text-muted sm:block">
@@ -886,6 +887,8 @@ export function GameScreen() {
           </span>
         </button>
         <nav className="flex shrink-0 items-center gap-1.5 sm:gap-2" aria-label="Game">
+          <GameLibraryButton onOpen={() => { pauseAi(); cancelActiveAi(); }} />
+          <GameLibraryButton share onOpen={() => { pauseAi(); cancelActiveAi(); }} />
           {effectiveOver && reviewing && (
             <button
               type="button"
@@ -1249,6 +1252,7 @@ export function GameScreen() {
               onSeek={seek}
               onRewind={rewindToViewed}
             />
+            <GameSaveStatus />
 
             <details className="rounded-xl border border-white/10 bg-white/[0.025] px-3">
               <summary className="flex min-h-11 cursor-pointer items-center text-xs font-medium text-muted">

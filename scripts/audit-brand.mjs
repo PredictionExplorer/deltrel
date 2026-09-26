@@ -12,8 +12,8 @@ const names = new RegExp(
 );
 const symbols = new RegExp(`(?:${title}|${retired})(?=[A-Z])`);
 const oldTerms = new RegExp(String.fromCharCode(113, 117, 97, 114, 107), 'i');
-// Letter/number map coordinates are current notation; only the retired symbol
-// prefix identifies an obsolete coordinate unambiguously.
+// Current polar addresses use A–E; only the retired symbol prefix identifies
+// obsolete coordinates unambiguously.
 const oldCoordinates = /["'`]\\{0,2}\*\d{2}["'`]/;
 const oldSymbols = /[\u2605\u2606\u2733-\u273c\u2726\u2727\u274b]/u;
 

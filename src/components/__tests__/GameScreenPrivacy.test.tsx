@@ -107,7 +107,7 @@ describe('human-versus-AI insight privacy', () => {
     expectInsightsHidden();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     expect(requestLocalAiDecision).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: /^Node G4, empty/ }));
+    await user.click(screen.getByRole('button', { name: /^Node A10, empty/ }));
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
     await act(async () => first.resolve(decisionFor(vi.mocked(requestLocalAiDecision).mock.calls[0][0])));
     await waitFor(() => expect(useAppStore.getState().log).toHaveLength(2));

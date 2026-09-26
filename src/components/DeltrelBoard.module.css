@@ -15,6 +15,13 @@
   opacity: 0.3;
 }
 
+.coordinateArm {
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 6.5px;
+  font-weight: 650;
+  fill: #fff2d8;
+}
+
 .coordinateTooltip {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   font-size: 5.8px;
@@ -55,5 +62,7 @@
   .board [data-water-decoration] { display: none; }
   .board [data-channel-layer] { stroke: CanvasText; }
   .board [data-coordinate-tooltip] rect { fill: Canvas; stroke: CanvasText; }
-  .coordinateTooltip { fill: CanvasText; }
+  .coordinateTooltip, .coordinateArm { fill: CanvasText; }
+  .board [data-coordinate-arm] circle { fill: Canvas; stroke: CanvasText; }
+  .board [data-coordinate-arm] line { stroke: CanvasText; }
 }

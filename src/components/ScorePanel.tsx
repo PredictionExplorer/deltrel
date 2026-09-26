@@ -15,7 +15,7 @@ interface ScorePanelProps {
     | { kind: 'live' }
     | { kind: 'proof'; fillPlayer: 0 | 1 }
     | { kind: 'ended' }
-    | { kind: 'review'; ply: number; total: number };
+    | { kind: 'review'; ply: number; total: number; readOnly?: boolean };
 }
 
 interface ScoreRow {
@@ -301,7 +301,9 @@ export function ScorePanel({
             — this is not a final score
           </>
         ) : view.kind === 'review' ? (
-          view.ply === 0 ? (
+          view.readOnly ? (
+            <>recorded position · scores are provisional until the board is full</>
+          ) : view.ply === 0 ? (
             <>the board before the first stone — return to live to continue</>
           ) : (
             <>

@@ -14,27 +14,16 @@ RULES_HASH = 0x46E4FBCFF4E17FD3
 
 # Presentation is independently versioned: changing coordinates never changes
 # gameplay, model inputs, checkpoints, or the serving compatibility fingerprint.
-BOARD_NOTATION_SCHEMA_ID = "deltrel.board-notation.v2"
-BOARD_NOTATION_VERSION = 2
-BOARD_NOTATION_CELL = 800_000_000
-BOARD_NOTATION_VERTEX_X = (587_785_252, -587_785_252, -951_056_516, 0, 951_056_516)
-BOARD_NOTATION_VERTEX_Y_UP = (
-    -809_016_994,
-    -809_016_994,
-    309_016_994,
-    1_000_000_000,
-    309_016_994,
-)
+BOARD_NOTATION_SCHEMA_ID = "deltrel.board-notation.v3"
+BOARD_NOTATION_VERSION = 3
 BOARD_NOTATION_CONTRACT = {
     "schema": BOARD_NOTATION_SCHEMA_ID,
     "version": BOARD_NOTATION_VERSION,
-    "files": "letters left to right",
-    "ranks": "positive integers bottom to top",
-    "cellUnits": BOARD_NOTATION_CELL,
-    "vertexX": list(BOARD_NOTATION_VERTEX_X),
-    "vertexYUp": list(BOARD_NOTATION_VERTEX_Y_UP),
-    "rounding": "nearest integer; exact halves away from zero",
-    "origin": "minimum rounded cape column and rank on the selected board",
+    "sectors": ["A", "B", "C", "D", "E"],
+    "sectorOrder": "clockwise, beginning at the lower-right radial arm",
+    "ring": "distance from the center, 1 through 9; 0 denotes ring 10",
+    "position": "clockwise steps from the named arm, 0 through ring minus 1",
+    "format": "sector letter, ring digit, position digit",
 }
 
 # Search behavior changes independently of model inputs and game rules. Arena

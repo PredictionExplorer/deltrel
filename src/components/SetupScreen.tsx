@@ -35,6 +35,7 @@ import { CloudAiControl } from './CloudAiControl';
 import { BOARD_PRESETS, PLAYER_COLORS } from './theme';
 import { DeltrelMark } from './DeltrelMark';
 import { RulesDialog } from './RulesDialog';
+import { GameLibraryButton } from './GameLibrary';
 import styles from './SetupScreen.module.css';
 
 export function SetupScreen() {
@@ -153,6 +154,7 @@ export function SetupScreen() {
         </div>
         <div className={styles.headerAside}>
           <p>Two players.<br /><span>A world between you.</span></p>
+          <GameLibraryButton />
           <button type="button" onClick={() => setShowRules(true)} className={styles.rulesButton}>
             <BookOpen size={15} aria-hidden /> How to play
           </button>

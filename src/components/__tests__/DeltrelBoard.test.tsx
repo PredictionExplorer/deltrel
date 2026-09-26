@@ -426,7 +426,7 @@ describe('DeltrelBoard', () => {
     }
   });
 
-  it('renders recessed confluence crossings without persistent coordinate labels or guides', () => {
+  it('renders recessed confluence crossings and five labeled coordinate arms', () => {
     const { container } = render(<DeltrelBoard board={board} stones={emptyBoard()} interactive />);
     expect(container.querySelector('polygon')).not.toBeInTheDocument();
     expect(container.querySelectorAll('[data-channel-crossing]')).toHaveLength(5);
@@ -435,8 +435,31 @@ describe('DeltrelBoard', () => {
       expect(crossing.querySelector('[data-channel-layer="confluence"]')).toHaveAttribute('d', expect.stringContaining('C'));
     }
     expect(container.querySelector('[data-coordinate-axes], [data-coordinate-axis], [data-coordinate-guides], [data-coordinate-band], [data-coordinate-cell]')).not.toBeInTheDocument();
-    expect(container.querySelector('text')).not.toBeInTheDocument();
+    expect([...container.querySelectorAll('[data-coordinate-arm] text')].map((label) => label.textContent)).toEqual(['A', 'B', 'C', 'D', 'E']);
     expect(screen.getByRole('group')).toHaveAccessibleDescription(/crossings are not playable junctions/i);
+  });
+
+  it('keeps arm badges outside placement targets on the smallest board', () => {
+    const onPlace = vi.fn();
+    const { container } = render(<DeltrelBoard board={board} stones={emptyBoard()} interactive onPlace={onPlace} />);
+    const svg = screen.getByRole('group');
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+      x: 0, y: 0, top: 0, left: 0,
+      right: BOARD_VIEWBOX_SIZE, bottom: BOARD_VIEWBOX_SIZE,
+      width: BOARD_VIEWBOX_SIZE, height: BOARD_VIEWBOX_SIZE,
+      toJSON: () => ({}),
+    });
+    for (const badge of container.querySelectorAll('[data-coordinate-arm] circle')) {
+      const x = Number(badge.getAttribute('cx'));
+      const y = Number(badge.getAttribute('cy'));
+      const radius = Number(badge.getAttribute('r'));
+      const nearestEdge = 1 - radius / Math.hypot(x, y);
+      fireEvent.click(svg, {
+        clientX: x * nearestEdge + BOARD_VIEWBOX_HALF,
+        clientY: y * nearestEdge + BOARD_VIEWBOX_HALF,
+      });
+    }
+    expect(onPlace).not.toHaveBeenCalled();
   });
 
   it.each(SUPPORTED_RINGS)('shows only the hovered point coordinate on a %i-ring board', (rings) => {
@@ -451,11 +474,11 @@ describe('DeltrelBoard', () => {
       expect(container.querySelectorAll('[data-coordinate-tooltip]')).toHaveLength(1);
       expect(container.querySelector('[data-coordinate-tooltip]')).toHaveAttribute('data-coordinate-tooltip', atlas.labels[node]);
       expect(container.querySelector('[data-coordinate-tooltip]')).toHaveTextContent(atlas.labels[node]);
-      expect(container.querySelectorAll('text')).toHaveLength(1);
+      expect(container.querySelectorAll('text')).toHaveLength(6);
     }
     fireEvent.mouseLeave(screen.getByRole('group'));
     expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
-    expect(container.querySelector('text')).not.toBeInTheDocument();
+    expect([...container.querySelectorAll('[data-coordinate-arm] text')].map((label) => label.textContent)).toEqual(['A', 'B', 'C', 'D', 'E']);
   });
 
   it('reveals the focused point coordinate through keyboard navigation and keeps proof boards read-only', async () => {

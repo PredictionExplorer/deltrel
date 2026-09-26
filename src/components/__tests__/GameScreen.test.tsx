@@ -596,7 +596,7 @@ describe('GameScreen AI lifecycle', () => {
 
     expect(useAppStore.getState().controllers).toEqual(['human', 'human']);
     const firstNode = screen.getByRole('button', {
-      name: /node G4, empty interior node; ada may place here/i,
+      name: /node A10, empty interior node; ada may place here/i,
     });
     await user.click(firstNode);
     expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]);
@@ -673,9 +673,9 @@ describe('GameScreen AI lifecycle', () => {
     expect(within(panel).getByText('12,345')).toBeInTheDocument();
     await user.click(within(panel).getByRole('button', { name: /^Search candidates/ }));
     const candidates = within(within(panel).getByRole('table', { name: 'Search candidates' })).getAllByRole('row').slice(1);
-    expect(candidates[0]).toHaveTextContent('E4');
-    expect(candidates[1]).toHaveTextContent('E5');
-    expect(candidates[2]).toHaveTextContent('G4');
+    expect(candidates[0]).toHaveTextContent('B10');
+    expect(candidates[1]).toHaveTextContent('C10');
+    expect(candidates[2]).toHaveTextContent('A10');
     expect((await axe(container)).violations).toEqual([]);
   });
 
@@ -711,7 +711,7 @@ describe('GameScreen AI lifecycle', () => {
     expect(within(grace).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['7.5', '1.5', '1.8', '20.0%']);
     expect(within(panel).getByText(/official final counts/)).toBeInTheDocument();
     expect(within(panel).getByText('Grace · next reply')).toBeInTheDocument();
-    expect(within(panel).getByText('E5 · 25.0%')).toBeInTheDocument();
+    expect(within(panel).getByText('C10 · 25.0%')).toBeInTheDocument();
     await user.click(within(panel).getByRole('button', { name: /^Search and model details/ }));
     expect(within(panel).getByText('Search input value')).toBeInTheDocument();
     expect((await axe(container)).violations).toEqual([]);
@@ -932,7 +932,7 @@ describe('GameScreen position-scoped engine inspection', () => {
     flight.resolve(makeDecision(request));
     const panel = await completedEstimate();
     expect(useAppStore.getState().log).toBe(before);
-    expect(within(panel).getByText(/Suggested move/)).toHaveTextContent('G4');
+    expect(within(panel).getByText(/Suggested move/)).toHaveTextContent('A10');
     expect(within(panel).queryByText(/Earlier position/)).not.toBeInTheDocument();
     expect(screen.getByRole('group', { name: /0 of 50 nodes occupied/ })).toBeInTheDocument();
   });
@@ -945,7 +945,7 @@ describe('GameScreen position-scoped engine inspection', () => {
     render(<GameScreen />);
     await user.click(screen.getByRole('button', { name: 'Analyze position' }));
     const [request, options] = vi.mocked(requestLocalAiDecision).mock.calls[0];
-    await user.click(screen.getByRole('button', { name: /^Node E4, empty/ }));
+    await user.click(screen.getByRole('button', { name: /^Node B10, empty/ }));
     expect(options?.signal?.aborted).toBe(true);
     await act(async () => { flight.resolve(makeDecision(request)); await flight.promise; });
     expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 1 }]);
@@ -1092,7 +1092,7 @@ describe('GameScreen move review', () => {
     expect(within(panel).getByText('Live position')).toBeInTheDocument();
 
     await user.click(
-      within(panel).getByRole('button', { name: 'Go to move 2: Grace at E4' }),
+      within(panel).getByRole('button', { name: 'Go to move 2: Grace at B10' }),
     );
 
     // The board becomes a read-only snapshot of the position after move 2.
@@ -1146,7 +1146,7 @@ describe('GameScreen move review', () => {
 
     const panel = screen.getByRole('region', { name: 'Move history' });
     await user.click(
-      within(panel).getByRole('button', { name: 'Go to move 2: Grace at E4' }),
+      within(panel).getByRole('button', { name: 'Go to move 2: Grace at B10' }),
     );
     await user.click(
       within(panel).getByRole('button', { name: 'Play from here' }),
@@ -1174,7 +1174,7 @@ describe('GameScreen move review', () => {
 
     const panel = screen.getByRole('region', { name: 'Move history' });
     await user.click(
-      within(panel).getByRole('button', { name: 'Go to move 2: Grace at E4' }),
+      within(panel).getByRole('button', { name: 'Go to move 2: Grace at B10' }),
     );
     await user.click(screen.getByRole('button', { name: 'Undo' }));
 
@@ -1417,7 +1417,7 @@ describe('GameScreen score guidance', () => {
     const board = getBoard(4);
     resetPlayingStore({
       controllers: ['human', 'human'],
-      log: ['E4', 'I1', 'G1'].map((label) => ({
+      log: ['B10', 'A40', 'A41'].map((label) => ({
         type: 'place' as const,
         node: parseLabel(board, label),
       })),
@@ -1432,7 +1432,7 @@ describe('GameScreen score guidance', () => {
     ).toHaveLength(0);
     expect(
       screen.getByRole('button', {
-        name: /node E4, ada stone.*not currently part of a living network/i,
+        name: /node B10, ada stone.*not currently part of a living network/i,
       }),
     ).toBeInTheDocument();
   });
@@ -1440,10 +1440,10 @@ describe('GameScreen score guidance', () => {
   it('removes and restores a provably dead marker through undo and redo', async () => {
     const user = userEvent.setup();
     const board = getBoard(4);
-    const dead = parseLabel(board, 'E1');
+    const dead = parseLabel(board, 'A43');
     resetPlayingStore({
       controllers: ['human', 'human'],
-      log: ['E1', 'F1', 'E2', 'D8', 'E9', 'D2', 'C1'].map(
+      log: ['A43', 'A42', 'A32', 'C42', 'C43', 'B30', 'B40'].map(
         (label) => ({
           type: 'place' as const,
           node: parseLabel(board, label),

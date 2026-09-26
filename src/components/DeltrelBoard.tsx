@@ -14,6 +14,7 @@ import {
 } from 'react';
 import type { Board } from '@/lib/deltrel/board';
 import { EMPTY } from '@/lib/deltrel/scoring';
+import { COORDINATE_ARMS } from '@/lib/deltrel/notation';
 import { PLAYER_COLORS } from './theme';
 import {
   BOARD_SCALE as S,
@@ -508,8 +509,8 @@ export const DeltrelBoard = memo(function DeltrelBoard({
         {proofDescription
           ? `${proofDescription} This proof board is read-only.`
           : boardInteractive
-          ? 'Hover or focus a point to see its coordinate. On a touchscreen, press and hold to inspect without placing; a quick tap places a stone. Use arrow keys to move between nodes, Enter or Space to place, and Escape to hide the coordinate. Curved channels connect nodes; crossings are not playable junctions.'
-          : 'A read-only game board. Hover or press and hold a point to inspect its coordinate.'}
+          ? 'Coordinates use arms A through E clockwise from the lower right, then a ring digit and clockwise step digit; ring 10 is written 0. Hover or focus a point to see its coordinate. On a touchscreen, press and hold to inspect without placing; a quick tap places a stone. Use arrow keys to move between nodes, Enter or Space to place, and Escape to hide the coordinate. Curved channels connect nodes; crossings are not playable junctions.'
+          : 'A read-only game board. Coordinates use arms A through E, ring, and clockwise steps; ring 10 is written 0. Hover or press and hold a point to inspect its coordinate.'}
       </desc>
       <defs>
         <radialGradient id={`${svgId}-water`} cx="32%" cy="20%" r="96%">
@@ -1054,6 +1055,22 @@ export const DeltrelBoard = memo(function DeltrelBoard({
           </g>
         );
       })}
+      <g aria-hidden pointerEvents="none" data-coordinate-arms>
+        {COORDINATE_ARMS.map((arm, sector) => {
+          const cape = board.idx(sector, board.rings, 0);
+          const x = board.xs[cape] * S;
+          const y = board.ys[cape] * S;
+          return (
+            <g key={arm} data-coordinate-arm={arm}>
+              <line x1={x * 1.045} y1={y * 1.045} x2={x * 1.14} y2={y * 1.14} stroke="#143f45" strokeWidth=".6" />
+              <circle cx={x * 1.22} cy={y * 1.22} r="6" fill="#143f45" stroke="#f0d6a9" strokeWidth=".5" />
+              <text x={x * 1.22} y={y * 1.22} className={styles.coordinateArm} textAnchor="middle" dominantBaseline="central">
+                {arm}
+              </text>
+            </g>
+          );
+        })}
+      </g>
       {selectedNode >= 0 && (
         <g
           aria-hidden

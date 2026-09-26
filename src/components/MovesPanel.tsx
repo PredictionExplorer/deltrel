@@ -24,6 +24,8 @@ interface MovesPanelProps {
   /** Seek the review position; `ply >= total` returns to live. */
   onSeek: (ply: number) => void;
   onRewind: () => void;
+  /** Read-only archives use a saved/final position instead of a live one. */
+  finalLabel?: string;
 }
 
 function TurnRow({
@@ -99,6 +101,7 @@ export function MovesPanel({
   canRewind,
   onSeek,
   onRewind,
+  finalLabel = 'Live position',
 }: MovesPanelProps) {
   const listRef = useRef<HTMLOListElement>(null);
   const live = currentPly >= total;
@@ -168,7 +171,7 @@ export function MovesPanel({
           </button>
           <button
             type="button"
-            aria-label="Jump to the live position"
+            aria-label={finalLabel === 'Live position' ? 'Jump to the live position' : 'Jump to the saved position'}
             disabled={live}
             onClick={() => onSeek(total)}
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-ink transition-colors enabled:hover:border-sand/50 disabled:opacity-30"
@@ -207,7 +210,7 @@ export function MovesPanel({
                 aria-hidden
                 className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-sand align-middle"
               />
-              Live position
+              {finalLabel}
             </>
           ) : currentPly === 0 ? (
             'Viewing the start'

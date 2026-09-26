@@ -14,19 +14,27 @@ keyboard accessible, with screen-reader labels and stable placement targets.
 
 ## Coordinates
 
-Letters identify columns from left to right; numbers identify ranks from bottom
-to top. For example, `G4` names the marked point inside column G and rank 4.
-Coordinates appear only when you hover or keyboard-focus a point. On touchscreens,
-press and hold to inspect without playing; a quick tap still places a stone.
-There are no permanent axis labels or grid guides. The curved coast
-leaves some cells empty; only marked points are playable.
+Each point has a three-symbol polar address: **arm, ring, clockwise steps**.
+The five arms are A–E, clockwise from the lower-right cape. Rings count outward
+from the center. The last digit counts steps clockwise from the named arm,
+starting at 0 on the arm itself. For example, `A32` is ring 3, two steps clockwise
+from arm A; `D40` is on arm D at ring 4.
 
-| Board | Columns | Ranks |
+This follows the [original published notation](https://gamepuzzles.com/starbook-final.pdf#page=20),
+with the sector names replaced by A–E. As in that notation, ring 10 is written `0`,
+so the Full board's five capes are `A00`, `B00`, `C00`, `D00`, and `E00`.
+All addresses are exactly three symbols and remain the same on every board size.
+
+| Board | Rings | Cape addresses |
 | --- | --- | --- |
-| Mini | A–K | 1–10 |
-| Small | A–O | 1–15 |
-| Medium | A–U | 1–19 |
-| Full | A–Y | 1–24 |
+| Mini | 1–4 | A40–E40 |
+| Small | 1–6 | A60–E60 |
+| Medium | 1–8 | A80–E80 |
+| Full | 1–9, then 0 | A00–E00 |
+
+The arm letters stay visible around the board. Hover or keyboard-focus any point
+to see its address. On touchscreens, press and hold to inspect without playing;
+a quick tap places a stone. The rules dialog includes a coordinate guide.
 
 Display notation has its own version. Numeric move IDs, saved games, AI models,
 and the rules fingerprint remain unchanged when labels change.
@@ -44,7 +52,31 @@ and the rules fingerprint remain unchanged when labels change.
 - **Complete games**: placement is mandatory until the board is full, with undo/redo,
   pie even games, Full-board handicap openings of up to nine stones, influence overlays, and a
   final score reveal.
-- Games persist in `localStorage`, so a refresh resumes play.
+- Games persist in `localStorage`, so a refresh resumes play. Each match also
+  gets its own automatic local archive, including unfinished and resigned games.
+
+## Sharing and reviewing games
+
+Open **Games** from setup or during play to search your local game library,
+import a friend's game, or review a previous match. **Share** opens a copyable
+record of the current match, with a `.dgn` download option. No account is needed.
+Records include player names, human/browser/cloud controller types, AI settings
+at save time, board size, variant, opening rules, timestamps, moves, and result.
+See the [Deltrel Game Notation specification](docs/game-record-format.md).
+
+Unfinished games use `*`; wins use `1-0` or `0-1`. The termination separately
+identifies a full board, resignation, or a mathematically verified clinch.
+Import replays and validates the entire record, including claimed clinches.
+
+Saved-game review is read-only, with a move list, first/previous/next/last
+controls, a position slider, automatic playback, and arrow/Home/End shortcuts.
+Opening the library pauses the live AI. Reviewing or importing never replaces
+the live match, and undo preserves the original line as a separate saved game.
+
+The archive belongs to this browser and site origin; it is not cloud storage.
+Export games to transfer them between devices or keep backups. Storage failures
+show a visible warning and retain unsaved records in memory for copying or retry.
+Corrupt entries are isolated without deleting other games.
 
 ## Deltrel AI
 
@@ -217,7 +249,7 @@ and a container smoke. CUDA, NCCL, and soak tests are separate hardware tiers; s
 
 The rules engine lives in `src/lib/deltrel/`:
 
-- `board.ts` — pentagonal mesh generation, spatial letter/number coordinates (letters across, numbers upward), CSR adjacency, layout
+- `board.ts` — pentagonal mesh generation, polar arm/ring/step coordinates, CSR adjacency, layout
 - `scoring.ts` — the scoring engine (see the file header for the exact rule semantics)
 - `game.ts` — turn protocol for both modes, handicap openings, the pie swap, and the
   replayable action log with retained placement history

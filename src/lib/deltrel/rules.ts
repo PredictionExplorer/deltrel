@@ -58,7 +58,7 @@ export const DELTREL_RULES_CONTRACT = {
     edgeOrder:
       'iterate nodes in node-id order; attempt cycle, radial, diagonal, corner-cross edges in that order; then ring-1 K5 pairs in lexicographic arm order; keep first undirected insertion',
     csrOrder: 'neighbors retain undirected edge insertion order',
-    labels: 'display notation is versioned independently by deltrel.board-notation.v2',
+    labels: 'display notation is versioned independently by deltrel.board-notation.v3',
   },
   scoring: {
     emptyValue: -1,

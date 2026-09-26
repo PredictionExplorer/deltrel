@@ -8,12 +8,6 @@ from functools import lru_cache
 import torch
 from torch import Tensor
 
-from .contracts import (
-    BOARD_NOTATION_CELL,
-    BOARD_NOTATION_VERTEX_X,
-    BOARD_NOTATION_VERTEX_Y_UP,
-)
-
 SUPPORTED_RINGS = (4, 6, 8, 10)
 MIN_RINGS = SUPPORTED_RINGS[0]
 MAX_RINGS = SUPPORTED_RINGS[-1]
@@ -125,18 +119,11 @@ class DeltrelTopology:
         return permutation
 
 
-def _rounded_cell(value: int) -> int:
-    """Signed round-half-away-from-zero without floating-point drift."""
-    magnitude = (abs(value) + BOARD_NOTATION_CELL // 2) // BOARD_NOTATION_CELL
-    return -magnitude if value < 0 else magnitude
-
-
 def coordinate_label(node_id: int, rings: int) -> str:
-    """Spatial file/rank coordinate for a stable dense node id on this board.
+    """Sector, ring, and clockwise offset for a stable dense node id.
 
-    Files run left to right and ranks run bottom to top. The fixed-point lattice
-    only assigns names; physical rendering positions and model geometry stay
-    unchanged. The same node id can have different labels on different sizes.
+    The three-symbol address is independent of board size. Ring ten is written 0.
+    Display labels never change physical geometry or model features.
     """
     count = node_count(rings)
     if (
@@ -149,18 +136,7 @@ def coordinate_label(node_id: int, rings: int) -> str:
     while ring_start(ring + 1) <= node_id:
         ring += 1
     sector, position = divmod(node_id - ring_start(ring), ring)
-    successor = (sector + 1) % 5
-    x = (ring - position) * BOARD_NOTATION_VERTEX_X[
-        sector
-    ] + position * BOARD_NOTATION_VERTEX_X[successor]
-    y_up = (ring - position) * BOARD_NOTATION_VERTEX_Y_UP[
-        sector
-    ] + position * BOARD_NOTATION_VERTEX_Y_UP[successor]
-    minimum_column = _rounded_cell(-951_056_516 * rings)
-    minimum_row = _rounded_cell(-809_016_994 * rings)
-    file_index = _rounded_cell(x) - minimum_column
-    rank = _rounded_cell(y_up) - minimum_row + 1
-    return f"{chr(65 + file_index)}{rank}"
+    return f"{chr(65 + sector)}{ring % 10}{position}"
 
 
 @lru_cache(maxsize=len(SUPPORTED_RINGS))

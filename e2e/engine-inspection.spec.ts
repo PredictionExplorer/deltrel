@@ -32,7 +32,7 @@ test('all network outputs are inspectable without playing a move', async ({ page
   await expect(chooser.locator('option')).toHaveCount(11);
   await chooser.selectOption('ownership');
   await expect(panel.getByRole('table', { name: 'Ownership at every point' })).toBeVisible();
-  await panel.getByLabel('Find a point or value').fill('G4');
+  await panel.getByLabel('Find a point or value').fill('A10');
   await expect(panel.getByRole('table', { name: 'Ownership at every point' }).getByRole('row')).toHaveCount(2);
   await panel.getByLabel('Show raw logits').check();
   await expect(panel.getByText('logit +0.00000')).toHaveCount(3);

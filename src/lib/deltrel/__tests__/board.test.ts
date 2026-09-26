@@ -55,39 +55,34 @@ describe('board construction', () => {
     }
   });
 
-  it.each([
-    [4, 11, 10, ['I1', 'C1', 'A7', 'F10', 'K7']],
-    [6, 15, 15, ['L1', 'D1', 'A9', 'H15', 'O9']],
-    [8, 21, 19, ['Q1', 'E1', 'A12', 'K19', 'U12']],
-    [10, 25, 24, ['T1', 'F1', 'A15', 'M24', 'Y15']],
-  ] as const)('uses spatial files/ranks on the %i-ring board', (rings, files, ranks, capes) => {
+  it.each(SUPPORTED_RINGS)('uses unique polar addresses on the %i-ring board', (rings) => {
+    const board = getBoard(rings);
+    const ringDigit = rings % 10;
+    const capes = ['A', 'B', 'C', 'D', 'E'].map((arm) => `${arm}${ringDigit}0`);
+    expect(capes.map((label) => parseLabel(board, label))).toEqual(
+      [0, 1, 2, 3, 4].map((sector) => board.idx(sector, rings, 0)),
+    );
+    expect(new Set(board.labels).size).toBe(board.n);
+    for (let node = 0; node < board.n; node++) {
+      expect(board.labels[node]).toMatch(/^[A-E][0-9]{2}$/);
+      expect(parseLabel(board, board.labels[node])).toBe(node);
+      expect(parseLabel(board, ` ${board.labels[node].toLowerCase()} `)).toBe(node);
+      expect(coordinateLabel(node, rings)).toBe(board.labels[node]);
+      expect(Number(board.labels[node][1]) || 10).toBe(board.ringOf[node]);
+      expect(Number(board.labels[node][2])).toBe(board.posOf[node]);
+    }
+    for (const invalid of ['A1', 'A0', 'A11', 'A', 'F10', 'A100', 'A 10']) {
+      expect(() => parseLabel(board, invalid)).toThrow('unknown node label');
+    }
+  });
+
+  it('keeps each address unchanged when outer rings are added', () => {
+    const full = getBoard(10);
+    for (const rings of SUPPORTED_RINGS) {
       const board = getBoard(rings);
-      const grid = board.coordinateGrid;
-      expect(grid.columns).toHaveLength(files);
-      expect(grid.ranks).toHaveLength(ranks);
-      expect(capes.map((label) => parseLabel(board, label))).toEqual(
-        [0, 1, 2, 3, 4].map((sector) => board.idx(sector, rings, 0)),
-      );
-      expect(new Set(board.labels).size).toBe(board.n);
-      for (let node = 0; node < board.n; node++) {
-        expect(board.labels[node]).toMatch(/^[A-Z][1-9]\d?$/);
-        expect(parseLabel(board, board.labels[node])).toBe(node);
-        expect(parseLabel(board, ` ${board.labels[node].toLowerCase()} `)).toBe(node);
-        expect(coordinateLabel(node, rings)).toBe(board.labels[node]);
-        // Each physical node must lie inside the cell named by its two axes.
-        const column = grid.columns[board.columnOf[node]];
-        const rank = grid.ranks[board.rankOf[node] - 1];
-        expect(Math.abs(board.xs[node] - column.x)).toBeLessThanOrEqual(grid.step / 2 + 1e-8);
-        expect(Math.abs(board.ys[node] - rank.y)).toBeLessThanOrEqual(grid.step / 2 + 1e-8);
-      }
-      const byX = Array.from({ length: board.n }, (_, node) => node).sort((a, b) => board.xs[a] - board.xs[b]);
-      const byHeight = Array.from({ length: board.n }, (_, node) => node).sort((a, b) => board.ys[b] - board.ys[a]);
-      expect(byX.every((node, i) => i === 0 || board.columnOf[node] >= board.columnOf[byX[i - 1]])).toBe(true);
-      expect(byHeight.every((node, i) => i === 0 || board.rankOf[node] >= board.rankOf[byHeight[i - 1]])).toBe(true);
-      // A1 is outside the pentagonal playable area, even though both axes exist.
-      for (const invalid of ['A1', 'A0', 'A01', 'A', 'ZZZ', 'F 10']) {
-        expect(() => parseLabel(board, invalid)).toThrow('unknown node label');
-      }
+      expect(board.labels).toEqual(full.labels.slice(0, board.n));
+      if (rings < 10) expect(() => parseLabel(board, 'A00')).toThrow('unknown node label');
+    }
   });
 
   it('rejects invalid ids rather than inventing coordinates', () => {
@@ -107,25 +102,25 @@ describe('board construction', () => {
       return false;
     };
     // ring cycle + sector wrap
-    expect(adj('I1', 'G1')).toBe(true);
-    expect(adj('E1', 'C1')).toBe(true);
-    expect(adj('I2', 'I1')).toBe(true);
+    expect(adj('A40', 'A41')).toBe(true);
+    expect(adj('A43', 'B40')).toBe(true);
+    expect(adj('E43', 'A40')).toBe(true);
     // radial / diagonal
-    expect(adj('I1', 'H2')).toBe(true);
-    expect(adj('E1', 'E2')).toBe(true);
-    expect(adj('C2', 'D2')).toBe(true);
+    expect(adj('A40', 'A30')).toBe(true);
+    expect(adj('A43', 'A32')).toBe(true);
+    expect(adj('B41', 'B30')).toBe(true);
     // corner cross
-    expect(adj('F3', 'E4')).toBe(true);
-    expect(adj('E1', 'D2')).toBe(true);
-    expect(adj('B5', 'B6')).toBe(true);
+    expect(adj('A21', 'B10')).toBe(true);
+    expect(adj('A43', 'B30')).toBe(true);
+    expect(adj('B43', 'C30')).toBe(true);
     // bridge K5 (non-neighboring arms too)
-    expect(adj('G4', 'E4')).toBe(true);
-    expect(adj('G4', 'E5')).toBe(true);
-    expect(adj('E4', 'F6')).toBe(true);
+    expect(adj('A10', 'B10')).toBe(true);
+    expect(adj('A10', 'C10')).toBe(true);
+    expect(adj('B10', 'D10')).toBe(true);
     // non-edges
-    expect(adj('I1', 'F1')).toBe(false);
-    expect(adj('I1', 'C1')).toBe(false);
-    expect(adj('G4', 'H2')).toBe(false);
+    expect(adj('A40', 'A42')).toBe(false);
+    expect(adj('A40', 'B40')).toBe(false);
+    expect(adj('A10', 'A30')).toBe(false);
   });
 
   it('lays out the perimeter on the unit circumcircle pentagon', () => {

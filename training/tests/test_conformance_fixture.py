@@ -128,8 +128,8 @@ def test_all_supported_topologies_follow_canonical_node_and_d5_layout() -> None:
         assert topology.n == 5 * rings * (rings + 1) // 2
         assert topology.n <= MAX_NODES
         assert topology.shore_count == 5 * rings
-        assert topology.labels[0] == {4: "G4", 6: "I6", 8: "L8", 10: "N10"}[rings]
-        assert topology.labels[-1] == {4: "I2", 6: "M2", 8: "Q2", 10: "U2"}[rings]
+        assert topology.labels[0] == "A10"
+        assert topology.labels[-1] == f"E{rings % 10}{rings - 1}"
         for index in range(10):
             transform = D5Transform.from_index(index)
             mapping = topology.d5_permutation(transform.rotation, transform.reflected)

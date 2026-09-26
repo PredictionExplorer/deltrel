@@ -61,14 +61,27 @@ export function RulesDialog({ open, onClose }: RulesDialogProps) {
           <p>
             Every node on the boundary is a <strong className="text-sand">shore point</strong>,
             worth one point. Five special shore points are marked as{' '}
-            <strong className="text-sand">capes</strong>. Coordinates work like a map:
-            letters run left to right and numbers run bottom to top. Point to a node
-            or focus it with the keyboard to see its coordinate. On a touchscreen,
-            press and hold to inspect a point without placing a stone; a quick tap
-            still makes a move.
-            Only the marked nodes are playable; some grid cells fall outside the coast
-            or between nodes.
+            <strong className="text-sand">capes</strong>.
           </p>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted">
+              Reading coordinates
+            </h3>
+            <p>
+              The five arms are <strong className="text-sand">A, B, C, D, E</strong>,
+              clockwise from the lower right. Every point has a three-symbol address:
+              its arm, its ring counting outward from the center, and its steps clockwise
+              along that ring. <strong className="font-mono text-sand">A32</strong> means
+              arm A, ring 3, two steps clockwise. A final 0 means the point lies on the arm.
+              Ring 10 is written 0, so <strong className="font-mono text-sand">A00</strong>
+              {' '}is the Full board&apos;s A cape.
+            </p>
+            <p className="mt-2">
+              Hover or keyboard-focus a point to see its address. On a touchscreen,
+              press and hold to inspect without playing; a quick tap places a stone.
+              Only marked nodes are playable.
+            </p>
+          </div>
           <p>
             A connected group of your stones that directly occupies at least two shore points is a{' '}
             <strong className="text-sand">living network</strong>. The shore points can be anywhere

@@ -28,14 +28,14 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('projected territory does not cross out rescuable stones', async ({ page }) => {
-  await place(page, 'E4');
-  await place(page, 'I1');
-  await place(page, 'G1');
+  await place(page, 'B10');
+  await place(page, 'A40');
+  await place(page, 'A41');
 
   await expect(page.locator('[data-provably-dead-stone]')).toHaveCount(0);
   await expect(
     page.getByRole('button', {
-      name: /Node E4, Player 1 stone.*not currently part of a living network/i,
+      name: /Node B10, Player 1 stone.*not currently part of a living network/i,
     }),
   ).toBeVisible();
   await expect(page.locator('[data-stone-node="1"]')).toHaveAttribute(
@@ -54,18 +54,18 @@ test('projected territory does not cross out rescuable stones', async ({ page })
 test('a walled group is crossed only once rescue becomes impossible', async ({
   page,
 }) => {
-  await place(page, 'E1');
-  await place(page, 'F1');
-  await place(page, 'E2');
-  await place(page, 'D8');
-  await place(page, 'E9');
-  await place(page, 'D2');
+  await place(page, 'A43');
+  await place(page, 'A42');
+  await place(page, 'A32');
+  await place(page, 'C42');
+  await place(page, 'C43');
+  await place(page, 'B30');
 
   await expect(page.locator('[data-provably-dead-stone="33"]')).toHaveCount(0);
-  await place(page, 'C1');
+  await place(page, 'B40');
   await expect(page.locator('[data-provably-dead-stone="33"]')).toBeVisible();
   await expect(
-    page.getByRole('button', { name: /Node E1.*provably dead/i }),
+    page.getByRole('button', { name: /Node A43.*provably dead/i }),
   ).toBeVisible();
 
   await page.getByRole('button', { name: 'Undo' }).click();

@@ -4,24 +4,10 @@ use std::fmt;
 
 use crate::{BitBoard, NodeId, SUPPORTED_RINGS};
 
-/// Schema for presentation-only spatial file/rank coordinates.
-pub const BOARD_NOTATION_SCHEMA: &str = "deltrel.board-notation.v2";
+/// Schema for presentation-only sector/ring/clockwise-offset coordinates.
+pub const BOARD_NOTATION_SCHEMA: &str = "deltrel.board-notation.v3";
 /// Current presentation-only notation version.
-pub const BOARD_NOTATION_VERSION: u8 = 2;
-const NOTATION_CELL: i64 = 800_000_000;
-const VERTEX_X: [i64; 5] = [587_785_252, -587_785_252, -951_056_516, 0, 951_056_516];
-const VERTEX_Y_UP: [i64; 5] = [
-    -809_016_994,
-    -809_016_994,
-    309_016_994,
-    1_000_000_000,
-    309_016_994,
-];
-
-fn rounded_cell(value: i64) -> i64 {
-    let magnitude = (value.abs() + NOTATION_CELL / 2) / NOTATION_CELL;
-    if value < 0 { -magnitude } else { magnitude }
-}
+pub const BOARD_NOTATION_VERSION: u8 = 3;
 
 // JavaScript String.trim whitespace, including BOM and excluding NEL.
 fn coordinate_whitespace(value: char) -> bool {
@@ -31,9 +17,8 @@ fn coordinate_whitespace(value: char) -> bool {
         '\u{205f}' | '\u{3000}' | '\u{feff}')
 }
 
-/// Spatial file/rank coordinate, with files left-to-right and ranks bottom-to-top.
-/// This fixed-point projection changes names only; node ids and geometry remain
-/// unchanged. Labels are specific to the selected board size.
+/// Three-symbol sector/ring/clockwise-offset address, with 0 denoting ring ten.
+/// Labels stay the same across board sizes; node ids and geometry are unchanged.
 pub fn coordinate_label(node: NodeId, rings: u8) -> Result<String, BoardError> {
     if !SUPPORTED_RINGS.contains(&rings) {
         return Err(BoardError::InvalidRingCount(rings));
@@ -46,17 +31,13 @@ pub fn coordinate_label(node: NodeId, rings: u8) -> Result<String, BoardError> {
         ring += 1;
     }
     let offset = node - ring_start(ring);
-    let sector = usize::from(offset / u16::from(ring));
-    let position = i64::from(offset % u16::from(ring));
-    let successor = (sector + 1) % 5;
-    let x = (i64::from(ring) - position) * VERTEX_X[sector] + position * VERTEX_X[successor];
-    let y_up =
-        (i64::from(ring) - position) * VERTEX_Y_UP[sector] + position * VERTEX_Y_UP[successor];
-    let minimum_column = rounded_cell(-951_056_516 * i64::from(rings));
-    let minimum_row = rounded_cell(-809_016_994 * i64::from(rings));
-    let file_index = rounded_cell(x) - minimum_column;
-    let rank = rounded_cell(y_up) - minimum_row + 1;
-    Ok(format!("{}{rank}", char::from(b'A' + file_index as u8)))
+    let sector = (offset / u16::from(ring)) as u8;
+    let position = offset % u16::from(ring);
+    Ok(format!(
+        "{}{}{position}",
+        char::from(b'A' + sector),
+        ring % 10
+    ))
 }
 
 /// Errors returned while constructing or addressing a board.

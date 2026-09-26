@@ -301,6 +301,9 @@ describe('persisted app-state validation', () => {
     );
     expect(migrated).toEqual({
       phase: 'setup',
+      gameId: null,
+      gameCreatedAt: null,
+      gameUpdatedAt: null,
       config: {
         rings: 8,
         mode: 'double',

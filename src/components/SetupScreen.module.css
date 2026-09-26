@@ -5,7 +5,7 @@
 .wordmark { font-family: var(--font-fraunces), Georgia, serif; font-size: 57px; letter-spacing: -.065em; line-height: .92; font-weight: 500; }
 .wordmark span { color: var(--sand); }
 .brandCaption { margin-top: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .23em; font-size: 9px; }
-.headerAside { display: flex; align-items: center; gap: 43px; }
+.headerAside { display: flex; align-items: center; gap: 10px; }
 .headerAside p { font-size: 12px; line-height: 1.8; color: var(--ink); }
 .headerAside p span { color: var(--muted); }
 .rulesButton { min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border: 1px solid var(--hairline-strong); border-radius: 30px; color: var(--ink); font-size: 12px; background: rgba(6, 46, 50, .4); transition: background .2s, border-color .2s; }

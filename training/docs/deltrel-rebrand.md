@@ -1,9 +1,10 @@
 # Deltrel identity and model migration
 
 Deltrel retains every node id, edge, turn rule, scoring calculation, symmetry,
-feature position, action slot, and numeric feature value. Display coordinates use an independent spatial notation contract: letters run
-left to right and numbers bottom to top, with the full board spanning A–Y and
-ranks 1–24. The rules-v3 canonical bytes retain their historical label clause
+feature position, action slot, and numeric feature value. Display coordinates use
+an independent polar notation contract: arms A–E clockwise from the lower right,
+then an outward ring digit and a clockwise step digit. Ring 10 is written 0,
+so Full-board capes are A00–E00. The rules-v3 canonical bytes retain their historical label clause
 only for compatibility; it is not the current display notation. Label updates
 do not require model migration or restarting a serving champion.
 Shoreline nodes, capes, and established waterway networks replace the earlier

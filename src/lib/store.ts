@@ -37,6 +37,8 @@ import {
 } from './deltrel/game';
 import { normalizeNewGameConfig } from './deltrel/new-game-policy';
 import { DELTREL_MAX_HANDICAP } from './deltrel/rules';
+import { hasConflictingSavedGame, saveGameRecord } from './game-library';
+import type { GameRecord } from './deltrel/game-record';
 
 export type Phase = 'setup' | 'playing';
 export type AiRuntime = Exclude<ControllerType, 'human'>;
@@ -65,6 +67,9 @@ export interface AppState {
   selfPlayAccessReady: boolean;
   setSelfPlayAccess: (allowed: boolean) => void;
   phase: Phase;
+  gameId: string | null;
+  gameCreatedAt: string | null;
+  gameUpdatedAt: string | null;
   config: GameConfig;
   controllers: PlayerControllers;
   /** Stays true for any match that has included a human playing against AI. */
@@ -100,6 +105,9 @@ export interface AppState {
 
 export interface PersistedAppState {
   phase: Phase;
+  gameId: string | null;
+  gameCreatedAt: string | null;
+  gameUpdatedAt: string | null;
   config: GameConfig;
   controllers: PlayerControllers;
   aiInsightsHidden: boolean;
@@ -124,7 +132,58 @@ export const DEFAULT_AI_SEARCH_SETTINGS: AiSearchSettings = {
   server: { simulations: 544, maxConsidered: 16 },
   local: { simulations: 544, maxConsidered: 16 },
 };
-export const APP_STORE_VERSION = 9;
+export const APP_STORE_VERSION = 10;
+
+function newGameIdentity(): Pick<AppState, 'gameId' | 'gameCreatedAt' | 'gameUpdatedAt'> {
+  const now = new Date().toISOString();
+  return {
+    gameId: globalThis.crypto?.randomUUID?.() ??
+      `game-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+    gameCreatedAt: now,
+    gameUpdatedAt: now,
+  };
+}
+
+function gameIdentity(value: Record<string, unknown>): ReturnType<typeof newGameIdentity> {
+  if (
+    typeof value.gameId === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(value.gameId) &&
+    typeof value.gameCreatedAt === 'string' && Number.isFinite(Date.parse(value.gameCreatedAt)) &&
+    typeof value.gameUpdatedAt === 'string' && Number.isFinite(Date.parse(value.gameUpdatedAt)) &&
+    Date.parse(value.gameUpdatedAt) >= Date.parse(value.gameCreatedAt)
+  ) {
+    return {
+      gameId: value.gameId,
+      gameCreatedAt: new Date(value.gameCreatedAt).toISOString(),
+      gameUpdatedAt: new Date(value.gameUpdatedAt).toISOString(),
+    };
+  }
+  return newGameIdentity();
+}
+
+/** A detached snapshot for sharing; reviewing it never changes the live match. */
+export function currentGameRecord(state: AppState): GameRecord | null {
+  if (state.phase !== 'playing' || !state.gameId || !state.gameCreatedAt || !state.gameUpdatedAt) {
+    return null;
+  }
+  return {
+    id: state.gameId,
+    createdAt: state.gameCreatedAt,
+    updatedAt: state.gameUpdatedAt,
+    config: { ...state.config, playerNames: [...state.config.playerNames] },
+    controllers: [...state.controllers],
+    aiSearchSettings: {
+      server: { ...state.aiSearchSettings.server },
+      local: { ...state.aiSearchSettings.local },
+    },
+    log: state.log.map((action) => ({ ...action })),
+    earlyOutcome: state.earlyOutcome ? { ...state.earlyOutcome } : null,
+  };
+}
+
+function archiveState(state: AppState): void {
+  const record = currentGameRecord(state);
+  if (record) saveGameRecord(record);
+}
 
 const AI_SEARCH_LIMITS: Record<AiRuntime, DeltrelAiSearchBudget> = {
   server: {
@@ -331,6 +390,9 @@ function setupSnapshot(
 ): PersistedAppState {
   return {
     phase: 'setup',
+    gameId: null,
+    gameCreatedAt: null,
+    gameUpdatedAt: null,
     config: { ...config, playerNames: [...config.playerNames] },
     controllers: normalizeControllers(config, controllers),
     aiInsightsHidden: false,
@@ -422,6 +484,7 @@ export function sanitizePersistedState(value: unknown): PersistedAppState {
 
   return {
     phase: 'playing',
+    ...gameIdentity(value),
     config,
     controllers,
     // A stale or missing preference must never expose an active human-AI game.
@@ -453,7 +516,45 @@ export function migratePersistedState(
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set, get) => ({
+    (setState, get) => {
+      // Only game data changes write the archive. Pausing AI or moving focus
+      // must not rewrite a record or alter its last-played timestamp.
+      const set = (change: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => {
+        const previous = get();
+        const patch = typeof change === 'function' ? change(previous) : change;
+        if (patch === previous) return;
+        const next = { ...previous, ...patch };
+        const changed = next.phase === 'playing' && (
+          previous.phase !== 'playing' ||
+          next.gameId !== previous.gameId ||
+          next.config !== previous.config ||
+          next.controllers !== previous.controllers ||
+          next.aiSearchSettings !== previous.aiSearchSettings ||
+          next.log !== previous.log ||
+          next.earlyOutcome !== previous.earlyOutcome
+        );
+        const previousRecord = currentGameRecord(previous);
+        const conflict = (changed || next.phase !== previous.phase) && previousRecord !== null &&
+          hasConflictingSavedGame(previousRecord);
+        if (changed) {
+          if (!next.gameId || (conflict && next.gameId === previous.gameId)) {
+            Object.assign(patch, newGameIdentity());
+          }
+          patch.gameUpdatedAt = new Date(Math.max(
+            Date.now(), Date.parse(patch.gameCreatedAt ?? next.gameCreatedAt ?? '') || 0,
+            patch.gameId && patch.gameId !== previous.gameId
+              ? 0 : Date.parse(previous.gameUpdatedAt ?? '') || 0,
+          )).toISOString();
+        }
+        if (previous.phase === 'playing' && (
+          next.phase !== 'playing' || next.gameId !== previous.gameId
+        )) {
+          archiveState(conflict ? { ...previous, ...newGameIdentity() } : previous);
+        }
+        setState(patch);
+        if (changed) archiveState(get());
+      };
+      return ({
       selfPlayAllowed: false,
       selfPlayAccessReady: false,
       setSelfPlayAccess: (allowed) => set((state) => {
@@ -468,6 +569,9 @@ export const useAppStore = create<AppState>()(
         };
       }),
       phase: 'setup',
+      gameId: null,
+      gameCreatedAt: null,
+      gameUpdatedAt: null,
       config: DEFAULT_CONFIG,
       controllers: DEFAULT_CONTROLLERS,
       aiInsightsHidden: false,
@@ -488,6 +592,7 @@ export const useAppStore = create<AppState>()(
         const validControllers = restrictSelfPlay(normalizeControllers(validConfig, controllers), get().selfPlayAllowed);
         set({
           phase: 'playing',
+          ...newGameIdentity(),
           config: validConfig,
           controllers: validControllers,
           aiInsightsHidden: isHumanVsAi(validControllers),
@@ -523,6 +628,8 @@ export const useAppStore = create<AppState>()(
           s.log.length === 0
             ? s
             : {
+                // The original line and its result remain available in My games.
+                ...(s.redoStack.length === 0 || s.earlyOutcome ? newGameIdentity() : {}),
                 log: s.log.slice(0, -1),
                 redoStack: [...s.redoStack, s.log[s.log.length - 1]],
                 aiPaused: true,
@@ -548,6 +655,7 @@ export const useAppStore = create<AppState>()(
             return s;
           }
           return {
+            ...(s.redoStack.length === 0 || s.earlyOutcome ? newGameIdentity() : {}),
             log: s.log.slice(0, ply),
             // Same order repeated undo would produce: redo pops the earliest
             // rewound action first.
@@ -560,6 +668,7 @@ export const useAppStore = create<AppState>()(
       rematch: () =>
         set((state) => ({
           phase: 'playing',
+          ...newGameIdentity(),
           config: normalizeNewGameConfig(state.config),
           aiInsightsHidden: isHumanVsAi(state.controllers),
           log: [],
@@ -572,6 +681,9 @@ export const useAppStore = create<AppState>()(
       toSetup: () =>
         set({
           phase: 'setup',
+          gameId: null,
+          gameCreatedAt: null,
+          gameUpdatedAt: null,
           aiInsightsHidden: false,
           log: [],
           redoStack: [],
@@ -671,7 +783,8 @@ export const useAppStore = create<AppState>()(
             reviewing: false,
           };
         }),
-    }),
+      });
+    },
     {
       name: GAME_STORAGE_KEY,
       storage: createJSONStorage(() => {
@@ -681,6 +794,13 @@ export const useAppStore = create<AppState>()(
       }),
       version: APP_STORE_VERSION,
       migrate: migratePersistedState,
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        const record = currentGameRecord(state);
+        // Opening a stale tab must not replace a newer saved continuation.
+        // The first live change will fork through the normal conflict path.
+        if (record && !hasConflictingSavedGame(record)) saveGameRecord(record);
+      },
       merge: (persisted, current) => {
         const valid = sanitizePersistedState(persisted);
         if (current.selfPlayAccessReady) {
@@ -699,6 +819,9 @@ export const useAppStore = create<AppState>()(
       },
       partialize: (s) => ({
         phase: s.phase,
+        gameId: s.gameId,
+        gameCreatedAt: s.gameCreatedAt,
+        gameUpdatedAt: s.gameUpdatedAt,
         config: s.config,
         controllers: s.controllers,
         aiInsightsHidden: s.aiInsightsHidden,

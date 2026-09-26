@@ -27,7 +27,7 @@
  */
 
 import { DELTREL_RULES_CONTRACT } from './rules';
-import { coordinateAt, createCoordinateGrid, type CoordinateGrid } from './notation';
+import { coordinateAt } from './notation';
 export { coordinateLabel } from './notation';
 
 export const SUPPORTED_RINGS = DELTREL_RULES_CONTRACT.board.supportedRings;
@@ -54,13 +54,8 @@ export interface Board {
   posOf: Int8Array;
   isShore: Uint8Array;
   isCape: Uint8Array;
-  /** Spatial file/rank coordinate, such as A7 or F10. */
+  /** Sector, ring, clockwise offset: A10, C32, or E09 (ring 10). */
   labels: string[];
-  coordinateGrid: CoordinateGrid;
-  /** Zero-based file index, increasing left to right. */
-  columnOf: Uint8Array;
-  /** One-based rank, increasing bottom to top. */
-  rankOf: Uint8Array;
   /** CSR adjacency: neighbors of u are adj[adjOff[u] .. adjOff[u+1]-1]. */
   adjOff: Int32Array;
   adj: Int32Array;
@@ -108,9 +103,6 @@ function buildBoard(rings: number): Board {
   const isCape = new Uint8Array(n);
   const labels = new Array<string>(n);
   const labelToId = new Map<string, number>();
-  const coordinateGrid = createCoordinateGrid(rings);
-  const columnOf = new Uint8Array(n);
-  const rankOf = new Uint8Array(n);
 
   for (let x = 1; x <= rings; x++) {
     for (let s = 0; s < 5; s++) {
@@ -123,11 +115,9 @@ function buildBoard(rings: number): Board {
           isShore[u] = 1;
           if (y === 0) isCape[u] = 1;
         }
-        const { label, column, rank } = coordinateAt(coordinateGrid, s, x, y);
+        const label = coordinateAt(rings, s, x, y);
         if (labelToId.has(label)) throw new Error(`duplicate board coordinate: ${label}`);
         labels[u] = label;
-        columnOf[u] = column;
-        rankOf[u] = rank;
         labelToId.set(label, u);
       }
     }
@@ -233,9 +223,6 @@ function buildBoard(rings: number): Board {
     isShore,
     isCape,
     labels,
-    coordinateGrid,
-    columnOf,
-    rankOf,
     adjOff,
     adj,
     xs,
@@ -247,7 +234,7 @@ function buildBoard(rings: number): Board {
   };
 }
 
-/** Resolve a spatial coordinate; letter case and surrounding whitespace are optional. */
+/** Resolve a polar coordinate; letter case and surrounding whitespace are optional. */
 export function parseLabel(board: Board, label: string): number {
   const id = board.labelToId.get(label.trim().toUpperCase());
   if (id === undefined) throw new Error(`unknown node label: ${label}`);

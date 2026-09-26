@@ -19,7 +19,7 @@ test('serves Deltrel identity, marine assets, and a matching installation manife
   expect(await page.content()).not.toMatch(new RegExp(`\\b${retired}(?:\\b|board|field|train|serve)`, 'i'));
 });
 
-test('uses spatial file/rank coordinates throughout the board and persisted history', async ({ page }) => {
+test('uses polar coordinates throughout the board and persisted history', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Full, 10 rings' }).click();
   await page.getByRole('button', { name: 'Begin the game' }).click();
@@ -27,23 +27,23 @@ test('uses spatial file/rank coordinates throughout the board and persisted hist
   const nodes = board.getByRole('button');
   await expect(nodes).toHaveCount(275);
   const labels = await nodes.evaluateAll((elements) => elements.map((element) =>
-    element.getAttribute('aria-label')?.match(/^Node ([A-Z][1-9]\d?),/)?.[1]));
+    element.getAttribute('aria-label')?.match(/^Node ([A-E]\d{2}),/)?.[1]));
   expect(labels.every(Boolean)).toBe(true);
   expect(new Set(labels).size).toBe(275);
-  expect(labels.slice(0, 3)).toEqual(['N10', 'L10', 'L11']);
-  expect(labels.at(-1)).toBe('U2');
-  await expect(board.locator('[data-coordinate-axes]')).toHaveCount(0);
+  expect(labels.slice(0, 3)).toEqual(['A10', 'B10', 'C10']);
+  expect(labels.at(-1)).toBe('E09');
+  await expect(board.locator('[data-coordinate-arm]')).toHaveCount(5);
   await expect(board.locator('[data-coordinate-guides]')).toHaveCount(0);
   await expect(board.locator('[data-coordinate-tooltip]')).toHaveCount(0);
   await nodes.first().press('End');
-  await expect(board.locator('[data-coordinate-tooltip="U2"]')).toBeVisible();
+  await expect(board.locator('[data-coordinate-tooltip="E09"]')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(board.locator('[data-coordinate-tooltip]')).toHaveCount(0);
   await page.keyboard.press('Enter');
-  await expect(page.getByRole('region', { name: 'Move history' })).toContainText('U2');
+  await expect(page.getByRole('region', { name: 'Move history' })).toContainText('E09');
   await page.reload();
-  await expect(page.getByRole('button', { name: /^Node U2, Player 1 stone/ })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Move history' })).toContainText('U2');
+  await expect(page.getByRole('button', { name: /^Node E09, Player 1 stone/ })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Move history' })).toContainText('E09');
 });
 
 test.describe('touch coordinate inspection', () => {
@@ -53,7 +53,7 @@ test.describe('touch coordinate inspection', () => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Mini, 4 rings' }).click();
     await page.getByRole('button', { name: 'Begin the game' }).click();
-    await page.getByRole('button', { name: /^Node G4,/ }).tap();
+    await page.getByRole('button', { name: /^Node A10,/ }).tap();
     await expect(page.getByRole('group', { name: /1 of 50 nodes occupied/ })).toBeVisible();
     await expect(page.locator('[data-coordinate-tooltip]')).toHaveCount(0);
   });
@@ -63,14 +63,14 @@ test.describe('touch coordinate inspection', () => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Mini, 4 rings' }).click();
     await page.getByRole('button', { name: 'Begin the game' }).click();
-    const node = page.getByRole('button', { name: /^Node G4,/ });
+    const node = page.getByRole('button', { name: /^Node A10,/ });
     const box = await node.boundingBox();
     expect(box).not.toBeNull();
     const touch = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
     const session = await context.newCDPSession(page);
     try {
       await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [touch] });
-      await expect(page.locator('[data-coordinate-tooltip="G4"]')).toBeVisible();
+      await expect(page.locator('[data-coordinate-tooltip="A10"]')).toBeVisible();
       await expect(page.getByRole('group', { name: /0 of 50 nodes occupied/ })).toBeVisible();
       await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
       await expect(page.locator('[data-coordinate-tooltip]')).toHaveCount(0);
