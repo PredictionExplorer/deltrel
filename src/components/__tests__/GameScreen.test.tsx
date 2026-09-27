@@ -140,6 +140,7 @@ function makeDecision(
 function resetPlayingStore(overrides: Partial<AppState> = {}) {
   useAppStore.setState({
     phase: 'playing',
+    aiGameSeed: 123,
     config: { ...config, playerNames: [...config.playerNames] },
     controllers: ['local', 'human'],
     aiInsightsHidden: false,
@@ -238,6 +239,7 @@ describe('GameScreen AI lifecycle', () => {
     render(<GameScreen />);
     await waitFor(() => expect(engine).toHaveBeenCalledOnce());
     const [, options] = engine.mock.calls[0];
+    expect(engine.mock.calls[0][0].searchSeed).toBe(123);
     act(() => options!.onSearchProgress!({ completedSimulations: 272, totalSimulations: 544 }));
     expect(screen.getByText('50%')).toBeVisible();
     act(() => {
@@ -247,12 +249,48 @@ describe('GameScreen AI lifecycle', () => {
     expect(screen.queryByRole('progressbar', { name: progressName })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Resume AI' }));
     await waitFor(() => expect(engine).toHaveBeenCalledTimes(2));
+    expect(engine.mock.calls[1][0].searchSeed).toBe(123);
     act(() => options!.onSearchProgress!({ completedSimulations: 544, totalSimulations: 544 }));
     expect(screen.getByRole('progressbar', { name: progressName })).toHaveAttribute('value', '0');
     const [, resumedOptions] = engine.mock.calls[1];
     act(() => resumedOptions!.onSearchProgress!({ completedSimulations: 68, totalSimulations: 544 }));
     expect(screen.getByText('12%')).toBeVisible();
     expect(useAppStore.getState().log).toEqual([]);
+  });
+
+  it.each(['local', 'server'] as const)('starts a fresh %s search for a rematch and rejects the previous game\'s late move', async (runtime) => {
+    resetPlayingStore({
+      config: { ...config, playerNames: [...config.playerNames], pieRule: true, handicap: 1 },
+      controllers: [runtime, 'human'],
+      aiGameSeed: 0,
+    });
+    const first = deferred<DeltrelAiDecision>();
+    const next = deferred<DeltrelAiDecision>();
+    const engine = vi.mocked(runtime === 'server' ? requestServerAiDecision : requestLocalAiDecision);
+    engine.mockReturnValue(next.promise).mockReturnValueOnce(first.promise);
+    render(<StrictMode><GameScreen /></StrictMode>);
+    await waitFor(() => expect(engine).toHaveBeenCalledOnce());
+    const [oldRequest, oldOptions] = engine.mock.calls[0];
+    expect(oldRequest.searchSeed).toBe(0);
+
+    await act(async () => {
+      // Resolve before the effect cleanup to cover the rematch/response race.
+      useAppStore.getState().rematch();
+      first.resolve(makeDecision(oldRequest));
+      await first.promise;
+    });
+    await waitFor(() => expect(engine).toHaveBeenCalledTimes(2));
+    const [newRequest] = engine.mock.calls[1];
+    expect(newRequest.stateHash).toBe(oldRequest.stateHash);
+    expect(newRequest.searchSeed).toBe(useAppStore.getState().aiGameSeed);
+    expect(newRequest.searchSeed).not.toBe(oldRequest.searchSeed);
+    expect(useAppStore.getState().log).toEqual([]);
+    // A completed obsolete request may settle before cancellation; neither
+    // its result nor any subsequent progress is allowed into the new game.
+    act(() => oldOptions!.onSearchProgress!({ completedSimulations: 544, totalSimulations: 544 }));
+    expect(screen.getByRole('progressbar')).toHaveAttribute('value', '0');
+    await act(async () => next.resolve(makeDecision(newRequest, { type: 'place', node: 1 })));
+    expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 1 }]);
   });
 
   it.each(['classic', 'double'] as const)('finishes all nine opening stones before alternating AI turns in %s', async (mode) => {
@@ -387,6 +425,7 @@ describe('GameScreen AI lifecycle', () => {
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(requestServerAiDecision).toHaveBeenCalledTimes(2));
     expect(vi.mocked(requestServerAiDecision).mock.calls[1][1]?.search).toEqual({ simulations: 4096, maxConsidered: 64 });
+    expect(vi.mocked(requestServerAiDecision).mock.calls.map(([request]) => request.searchSeed)).toEqual([123, 123]);
     await act(async () => next.resolve(makeDecision(vi.mocked(requestServerAiDecision).mock.calls[1][0])));
     expect(useAppStore.getState().log).toHaveLength(1);
     expect(useAppStore.getState().controllers).toEqual(['server', 'human']);
@@ -461,6 +500,7 @@ describe('GameScreen AI lifecycle', () => {
     await user.click(screen.getByRole('button', { name: 'Analyze position' }));
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
     const [request] = vi.mocked(requestLocalAiDecision).mock.calls[0];
+    expect(request.searchSeed).toBe(123);
     await act(async () => flight.resolve(makeDecision(request)));
     expect(useAppStore.getState().log).toEqual([]);
     expect(await completedEstimate()).toHaveTextContent('AI');
@@ -544,6 +584,8 @@ describe('GameScreen AI lifecycle', () => {
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledTimes(2));
     const [retryRequest] = vi.mocked(requestLocalAiDecision).mock.calls[1];
+    expect(retryRequest.searchSeed).toBe(request.searchSeed);
+    expect(retryRequest.searchSeed).toBe(123);
     await act(async () => retryFlight.resolve(makeDecision(retryRequest)));
     expect(useAppStore.getState().log).toEqual([{ type: 'place', node: 0 }]);
   });

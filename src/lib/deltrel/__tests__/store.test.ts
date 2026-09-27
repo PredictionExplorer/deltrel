@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fc from 'fast-check';
 import {
   APP_STORE_VERSION,
@@ -14,6 +14,7 @@ import {
 } from '../../store';
 import { replay, type GameAction, type GameConfig } from '../game';
 import { canShowAiInsights, type PlayerControllers } from '../ai/controllers';
+import * as searchSeed from '../ai/search-seed';
 
 const double: GameConfig = {
   rings: 6,
@@ -38,6 +39,7 @@ beforeEach(() => {
 afterEach(() => {
   useAppStore.setState({
     phase: 'setup',
+    aiGameSeed: null,
     selfPlayAllowed: false,
     selfPlayAccessReady: false,
     config: DEFAULT_CONFIG,
@@ -57,6 +59,26 @@ afterEach(() => {
 });
 
 describe('persisted app-state validation', () => {
+  it.each([undefined, null, -1, 0.5, '17', Number.MAX_SAFE_INTEGER + 1, NaN, Infinity])(
+    'repairs invalid active-game seeds (%s) once while preserving the saved line', (aiGameSeed) => {
+      const saved = {
+        phase: 'playing', config: mini, controllers: ['human', 'local'], aiGameSeed,
+        aiPaused: true, log: [{ type: 'place', node: 0 }], redoStack: [{ type: 'place', node: 1 }],
+      };
+      const restored = sanitizePersistedState(saved);
+      expect(Number.isSafeInteger(restored.aiGameSeed)).toBe(true);
+      expect(restored.aiGameSeed).toBeGreaterThanOrEqual(0);
+      expect(restored).toMatchObject({ log: saved.log, redoStack: saved.redoStack, aiPaused: true });
+      expect(sanitizePersistedState(restored).aiGameSeed).toBe(restored.aiGameSeed);
+    },
+  );
+
+  it.each([0, 17, Number.MAX_SAFE_INTEGER])('preserves a valid saved AI seed %s, but clears setup seeds', (aiGameSeed) => {
+    const saved = { phase: 'playing', config: mini, controllers: ['human', 'local'], aiGameSeed, log: [], redoStack: [] };
+    expect(migratePersistedState(saved, 10).aiGameSeed).toBe(aiGameSeed);
+    expect(sanitizePersistedState({ ...saved, phase: 'setup' }).aiGameSeed).toBeNull();
+  });
+
   it.each([
     { controllers: ['human', 'local'], local: { simulations: 8, maxConsidered: 4 }, expected: { simulations: 544, maxConsidered: 16 } },
     { controllers: ['server', 'human'], local: { simulations: 8, maxConsidered: 4 }, expected: { simulations: 544, maxConsidered: 16 } },
@@ -301,6 +323,7 @@ describe('persisted app-state validation', () => {
     );
     expect(migrated).toEqual({
       phase: 'setup',
+      aiGameSeed: null,
       gameId: null,
       gameCreatedAt: null,
       gameUpdatedAt: null,
@@ -467,6 +490,36 @@ describe('persisted app-state validation', () => {
     state.setAiSearchBudget('server', { simulations: 16385, maxConsidered: 32 });
     expect(useAppStore.getState().aiSearchSettings.server).toEqual({ simulations: 2048, maxConsidered: 32 });
   });
+});
+
+it('mints a new AI seed only for a new match and keeps it throughout a review branch', () => {
+  const createSeed = vi.spyOn(searchSeed, 'createGameSearchSeed')
+    .mockReturnValueOnce(0).mockReturnValueOnce(Number.MAX_SAFE_INTEGER).mockReturnValueOnce(73);
+  try {
+    useAppStore.getState().startGame(double, ['human', 'local']);
+    expect(useAppStore.getState().aiGameSeed).toBe(0);
+    useAppStore.getState().act({ type: 'place', node: 0 });
+    useAppStore.getState().act({ type: 'place', node: 1 });
+    useAppStore.getState().pauseAi();
+    useAppStore.getState().resumeAi();
+    useAppStore.getState().setPlayerController(1, 'server');
+    useAppStore.getState().setAiSearchBudget('server', { simulations: 4096, maxConsidered: 64 });
+    useAppStore.getState().undo();
+    useAppStore.getState().redo();
+    useAppStore.getState().rewindTo(0);
+    useAppStore.getState().act({ type: 'place', node: 2 });
+    expect(useAppStore.getState().aiGameSeed).toBe(0);
+    expect(createSeed).toHaveBeenCalledTimes(1);
+    useAppStore.getState().rematch();
+    expect(useAppStore.getState().aiGameSeed).toBe(Number.MAX_SAFE_INTEGER);
+    useAppStore.getState().startGame(mini, ['human', 'human']);
+    expect(useAppStore.getState().aiGameSeed).toBe(73);
+    useAppStore.getState().toSetup();
+    expect(useAppStore.getState().aiGameSeed).toBeNull();
+    expect(createSeed).toHaveBeenCalledTimes(3);
+  } finally {
+    createSeed.mockRestore();
+  }
 });
 
 describe('human versus AI insight privacy', () => {

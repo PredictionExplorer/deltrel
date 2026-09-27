@@ -248,6 +248,20 @@ describe('deltrelserve v3 adapter', () => {
     }
   });
 
+  it.each([0, Number.MAX_SAFE_INTEGER])('sends explicit search seed %s exactly across request identities', (seed) => {
+    const first = toAnalyzeRequest(buildAiRequest(config, [], 'first-request', seed));
+    const retried = toAnalyzeRequest(buildAiRequest(config, [], 'retried-request', seed));
+    expect(first.search.seed).toBe(seed);
+    expect(retried).toEqual(first);
+    expect(JSON.parse(JSON.stringify(first)).search.seed).toBe(seed);
+  });
+
+  it.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1, NaN, Infinity, null, '7', true])(
+    'rejects invalid wire search seed %j', (seed) => {
+      expect(() => toAnalyzeRequest({ ...request, searchSeed: seed as number })).toThrow(/search seed/);
+    },
+  );
+
   it('converts semantic state to strict snake_case with the variant and history', () => {
     const wire = toAnalyzeRequest(request, {
       simulations: 4,

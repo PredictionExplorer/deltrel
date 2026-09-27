@@ -20,6 +20,7 @@ import {
 } from './deltrel/ai/controllers';
 import type { DeltrelAiSearchBudget } from './deltrel/ai/decision';
 import { normalizeBrowserStrengthBudget } from './deltrel/ai/browser-strength';
+import { createGameSearchSeed, isSearchSeed } from './deltrel/ai/search-seed';
 import {
   MAX_BROWSER_AI_MAX_CONSIDERED,
   MAX_BROWSER_AI_SIMULATIONS,
@@ -70,6 +71,8 @@ export interface AppState {
   gameId: string | null;
   gameCreatedAt: string | null;
   gameUpdatedAt: string | null;
+  /** Stable for this match, including review branches and archive identity changes. */
+  aiGameSeed: number | null;
   config: GameConfig;
   controllers: PlayerControllers;
   /** Stays true for any match that has included a human playing against AI. */
@@ -108,6 +111,7 @@ export interface PersistedAppState {
   gameId: string | null;
   gameCreatedAt: string | null;
   gameUpdatedAt: string | null;
+  aiGameSeed: number | null;
   config: GameConfig;
   controllers: PlayerControllers;
   aiInsightsHidden: boolean;
@@ -132,7 +136,7 @@ export const DEFAULT_AI_SEARCH_SETTINGS: AiSearchSettings = {
   server: { simulations: 544, maxConsidered: 16 },
   local: { simulations: 544, maxConsidered: 16 },
 };
-export const APP_STORE_VERSION = 10;
+export const APP_STORE_VERSION = 11;
 
 function newGameIdentity(): Pick<AppState, 'gameId' | 'gameCreatedAt' | 'gameUpdatedAt'> {
   const now = new Date().toISOString();
@@ -169,6 +173,7 @@ export function currentGameRecord(state: AppState): GameRecord | null {
     id: state.gameId,
     createdAt: state.gameCreatedAt,
     updatedAt: state.gameUpdatedAt,
+    ...(isSearchSeed(state.aiGameSeed) ? { aiGameSeed: state.aiGameSeed } : {}),
     config: { ...state.config, playerNames: [...state.config.playerNames] },
     controllers: [...state.controllers],
     aiSearchSettings: {
@@ -393,6 +398,7 @@ function setupSnapshot(
     gameId: null,
     gameCreatedAt: null,
     gameUpdatedAt: null,
+    aiGameSeed: null,
     config: { ...config, playerNames: [...config.playerNames] },
     controllers: normalizeControllers(config, controllers),
     aiInsightsHidden: false,
@@ -485,6 +491,7 @@ export function sanitizePersistedState(value: unknown): PersistedAppState {
   return {
     phase: 'playing',
     ...gameIdentity(value),
+    aiGameSeed: isSearchSeed(value.aiGameSeed) ? value.aiGameSeed : createGameSearchSeed(),
     config,
     controllers,
     // A stale or missing preference must never expose an active human-AI game.
@@ -514,9 +521,15 @@ export function migratePersistedState(
   return setupSnapshot(config, controllers, aiSearchSettings);
 }
 
+// Zustand writes version migrations, but not repairs to current-version saves.
+// Persist a repaired seed after hydration so repeated reloads keep its stream.
+let hydratedSeedWasRepaired = false;
+let persistHydratedSeed: (() => void) | undefined;
+
 export const useAppStore = create<AppState>()(
   persist(
     (setState, get) => {
+      persistHydratedSeed = () => setState({});
       // Only game data changes write the archive. Pausing AI or moving focus
       // must not rewrite a record or alter its last-played timestamp.
       const set = (change: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => {
@@ -572,6 +585,7 @@ export const useAppStore = create<AppState>()(
       gameId: null,
       gameCreatedAt: null,
       gameUpdatedAt: null,
+      aiGameSeed: null,
       config: DEFAULT_CONFIG,
       controllers: DEFAULT_CONTROLLERS,
       aiInsightsHidden: false,
@@ -593,6 +607,7 @@ export const useAppStore = create<AppState>()(
         set({
           phase: 'playing',
           ...newGameIdentity(),
+          aiGameSeed: createGameSearchSeed(),
           config: validConfig,
           controllers: validControllers,
           aiInsightsHidden: isHumanVsAi(validControllers),
@@ -669,6 +684,7 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           phase: 'playing',
           ...newGameIdentity(),
+          aiGameSeed: createGameSearchSeed(),
           config: normalizeNewGameConfig(state.config),
           aiInsightsHidden: isHumanVsAi(state.controllers),
           log: [],
@@ -684,6 +700,7 @@ export const useAppStore = create<AppState>()(
           gameId: null,
           gameCreatedAt: null,
           gameUpdatedAt: null,
+          aiGameSeed: null,
           aiInsightsHidden: false,
           log: [],
           redoStack: [],
@@ -796,6 +813,10 @@ export const useAppStore = create<AppState>()(
       migrate: migratePersistedState,
       onRehydrateStorage: () => (state) => {
         if (!state) return;
+        if (hydratedSeedWasRepaired) {
+          hydratedSeedWasRepaired = false;
+          persistHydratedSeed?.();
+        }
         const record = currentGameRecord(state);
         // Opening a stale tab must not replace a newer saved continuation.
         // The first live change will fork through the normal conflict path.
@@ -803,6 +824,8 @@ export const useAppStore = create<AppState>()(
       },
       merge: (persisted, current) => {
         const valid = sanitizePersistedState(persisted);
+        hydratedSeedWasRepaired = valid.phase === 'playing' &&
+          isRecord(persisted) && !isSearchSeed(persisted.aiGameSeed);
         if (current.selfPlayAccessReady) {
           const controllers = restrictSelfPlay(valid.controllers, current.selfPlayAllowed);
           if (controllers !== valid.controllers) {
@@ -822,6 +845,7 @@ export const useAppStore = create<AppState>()(
         gameId: s.gameId,
         gameCreatedAt: s.gameCreatedAt,
         gameUpdatedAt: s.gameUpdatedAt,
+        aiGameSeed: s.aiGameSeed,
         config: s.config,
         controllers: s.controllers,
         aiInsightsHidden: s.aiInsightsHidden,

@@ -14,6 +14,7 @@ import {
 } from './decision';
 import { DeltrelAiError, asDeltrelAiError, type DeltrelAiErrorCode } from './errors';
 import type { LocalAiProgress, LocalAiReadyInfo } from './local-ai-status';
+import { isSearchSeed } from './search-seed';
 import {
   MAX_BROWSER_AI_MAX_CONSIDERED,
   MAX_BROWSER_AI_SIMULATIONS,
@@ -208,10 +209,12 @@ function parseRequest(value: unknown): DeltrelAiRequest {
       'state',
       'actionLog',
       'legalActions',
+      ...('searchSeed' in value ? ['searchSeed'] : []),
     ]) ||
     value.schema !== DELTREL_AI_PROTOCOL_SCHEMA_ID ||
     value.version !== DELTREL_AI_PROTOCOL_VERSION ||
     !isTaskId(value.requestId) ||
+    ('searchSeed' in value && !isSearchSeed(value.searchSeed)) ||
     value.rulesSchema !== DELTREL_RULES_SCHEMA_ID ||
     value.rulesHash !== DELTREL_RULES_HASH ||
     value.featureSchema !== DELTREL_FEATURE_SCHEMA_ID ||
@@ -250,6 +253,7 @@ function parseRequest(value: unknown): DeltrelAiRequest {
     schema: DELTREL_AI_PROTOCOL_SCHEMA_ID,
     version: DELTREL_AI_PROTOCOL_VERSION,
     requestId: value.requestId,
+    ...(isSearchSeed(value.searchSeed) ? { searchSeed: value.searchSeed } : {}),
     rulesSchema: DELTREL_RULES_SCHEMA_ID,
     rulesHash: DELTREL_RULES_HASH,
     featureSchema: DELTREL_FEATURE_SCHEMA_ID,

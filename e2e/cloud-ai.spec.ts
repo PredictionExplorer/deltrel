@@ -64,6 +64,9 @@ test('cloud play preserves an interrupted position, retries explicitly, and neve
   await expect(page.getByRole('main').getByRole('alert')).toContainText('Cloud AI is offline.');
   expect(searches).toHaveLength(1);
   expect(searches[0].search).toMatchObject({ simulations: 777, max_considered: 21 });
+  const gameSeed = searches[0].search.seed;
+  expect(Number.isSafeInteger(gameSeed)).toBe(true);
+  expect(gameSeed).toBeGreaterThanOrEqual(0);
   await expect(page.locator('[data-move-chip]')).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Engine estimate' })).toHaveCount(0);
   online = true;
@@ -73,6 +76,7 @@ test('cloud play preserves an interrupted position, retries explicitly, and neve
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.locator('[data-move-chip]')).toHaveCount(1);
   expect(searches).toHaveLength(2);
+  expect(searches[1].search.seed).toBe(gameSeed);
   await page.reload();
   await expect(page.locator('[data-move-chip]')).toHaveCount(1);
   await expect(page.getByText('Cloud AI is ready')).toBeVisible();
@@ -80,6 +84,15 @@ test('cloud play preserves an interrupted position, retries explicitly, and neve
   await expect(page.getByRole('region', { name: 'Engine estimate' })).toHaveCount(0);
   expect(localAssets).toEqual([]);
   expect(searches).toHaveLength(2);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('deltrel-v1')!).state.aiGameSeed)).toBe(gameSeed);
+
+  await page.getByRole('button', { name: 'New game', exact: true }).click();
+  await page.getByRole('button', { name: 'Begin the game', exact: true }).click();
+  await expect(page.locator('[data-move-chip]')).toHaveCount(1);
+  expect(searches).toHaveLength(3);
+  expect(searches[2].stones).toEqual(searches[0].stones);
+  expect(searches[2].search.seed).not.toBe(gameSeed);
+  expect(localAssets).toEqual([]);
 });
 
 test('offline cloud availability leaves human play available', async ({ page }) => {

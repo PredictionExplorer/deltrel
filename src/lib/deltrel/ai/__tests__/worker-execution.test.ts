@@ -90,6 +90,7 @@ function fixture(auxiliary = false, precision: 'float16' | 'float32' = 'float16'
   class FakeSession {
     root: ReturnType<typeof state>;
     budget: number;
+    seed: bigint;
     finished = false;
     token = BigInt(100);
     inherited = 0;
@@ -97,13 +98,13 @@ function fixture(auxiliary = false, precision: 'float16' | 'float32' = 'float16'
     restarts = vi.fn();
     submissions = vi.fn();
     pendingStates: Array<ReturnType<typeof state>> = [];
-    constructor(root: ReturnType<typeof state>, simulations: number) {
-      this.root = root; this.budget = simulations; sessions.push(this);
+    constructor(root: ReturnType<typeof state>, simulations: number, ...options: [number, number, number, bigint, ...unknown[]]) {
+      this.root = root; this.budget = simulations; this.seed = options[3]; sessions.push(this);
     }
-    restart(root: ReturnType<typeof state>, simulations: number) {
+    restart(root: ReturnType<typeof state>, simulations: number, ...options: [number, number, number, bigint, ...unknown[]]) {
       this.restarts(root, simulations);
       this.inherited = this.root.hash64() !== root.hash64() ? 3 : 0;
-      this.root = root; this.budget = simulations; this.finished = false; this.token += BigInt(10);
+      this.root = root; this.budget = simulations; this.seed = options[3]; this.finished = false; this.token += BigInt(10);
     }
     root_actions = () => this.root.legal_actions();
     root_token = () => this.token;
@@ -150,6 +151,7 @@ function fixture(auxiliary = false, precision: 'float16' | 'float32' = 'float16'
   };
   const search = (root: DeltrelAiRequest, check = () => {}, onProgress?: (progress: LocalAiSearchProgress) => void) => worker.runSessionSearch(
     runtime as never, state(root), root.state, { simulations: 2, maxConsidered: 2 }, check, async () => {}, onProgress,
+    root.searchSeed,
   );
   return { runtime, run, forwards, tensors, outputDisposals, sessions, search };
 }
@@ -298,6 +300,45 @@ describe('completed browser session ownership', () => {
     await f.search(nextRequest(request(), 1));
     expect(f.runtime.completedSearch).toBeUndefined();
     expect(f.sessions[2].free).toHaveBeenCalledOnce();
+  });
+
+  it('reuses trees within one game seed and retains predictions when a new game changes the seed', async () => {
+    const f = fixture();
+    const firstRequest = { ...request(), searchSeed: 0 };
+    const first = await f.search(firstRequest);
+    const firstSession = f.sessions[0];
+    expect(firstSession.seed).toBe(worker.rootSearchSeed(f.runtime as never, state(firstRequest), 0));
+    const next = { ...nextRequest(firstRequest, first.actionCode), searchSeed: 0 };
+    const continued = await f.search(next);
+    expect(f.sessions).toHaveLength(1);
+    expect(continued.reusedVisits).toBe(3);
+    expect(firstSession.seed).toBe(worker.rootSearchSeed(f.runtime as never, state(next), 0));
+
+    const calls = f.run.mock.calls.length;
+    const anotherGame = { ...next, searchSeed: 1 };
+    const changed = await f.search(anotherGame);
+    expect(firstSession.free).toHaveBeenCalledOnce();
+    expect(firstSession.restarts).toHaveBeenCalledOnce();
+    expect(f.sessions).toHaveLength(2);
+    expect(changed.reusedVisits).toBe(0);
+    expect(changed.inheritedVisits.every(visits => visits === 0)).toBe(true);
+    expect(f.sessions[1].seed).toBe(worker.rootSearchSeed(f.runtime as never, state(anotherGame), 1));
+    expect(f.run).toHaveBeenCalledTimes(calls); // Predictions depend on position, not search randomness.
+    f.runtime.completedSearch!.session.free();
+  });
+
+  it('distinguishes an explicit zero game seed from an unseeded legacy session', async () => {
+    const f = fixture();
+    const root = request();
+    await f.search(root);
+    const legacy = f.sessions[0];
+    await f.search({ ...root, searchSeed: 0 });
+    expect(legacy.free).toHaveBeenCalledOnce();
+    expect(legacy.restarts).not.toHaveBeenCalled();
+    expect(f.sessions).toHaveLength(2);
+    expect(f.sessions[1].seed).not.toBe(legacy.seed);
+    expect(f.run).toHaveBeenCalledTimes(2);
+    f.runtime.completedSearch!.session.free();
   });
 
   it('frees a detached reused session on cancellation and a fresh one on inference failure', async () => {

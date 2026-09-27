@@ -10,6 +10,7 @@ import { browserStrengthOptions } from '../browser-strength';
 import { buildAiRequest, type AtomicGameAction, type DeltrelAiRequest } from '../protocol';
 import { parseWorkerCommand, parseWorkerEvent, type LocalAiSearchProgress } from '../worker-protocol';
 import { validateNetworkOutputState } from '../network-output';
+import { deriveRootSearchSeed, resolveSearchSeed } from '../search-seed';
 import { getBoard } from '../../board';
 
 let worker: typeof import('@/workers/deltrel-ai.worker');
@@ -26,7 +27,7 @@ beforeAll(async () => {
 });
 
 /** Real exported WASM and production worker; deterministic tensors isolate search mechanics. */
-function fixture(predictionCapacity = 1_024) {
+function fixture(predictionCapacity = 1_024, searchOptions: Partial<typeof manifest.search> = {}) {
   const run = vi.fn(async (feeds: Record<string, ort.Tensor>) => {
     const batch = feeds.node_features.dims[0];
     const nodes = feeds.node_features.dims[1];
@@ -40,9 +41,13 @@ function fixture(predictionCapacity = 1_024) {
       final_capes_logits: head([batch, 2, 6]),
     };
   });
-  const runtime = { manifest, wasm, ort, session: { run }, predictions: new worker.PredictionCache(predictionCapacity) };
+  const runtime = {
+    manifest: { ...manifest, search: { ...manifest.search, ...searchOptions } },
+    wasm, ort, session: { run }, predictions: new worker.PredictionCache(predictionCapacity),
+    completedSearch: undefined as { session: import('@/workers/deltrel-ai.worker').WasmSearchSession; context: string } | undefined,
+  };
   const search = async (request: DeltrelAiRequest, simulations: number, maxConsidered: number) => {
-    const budget = worker.resolveBrowserSearchBudget(manifest, { simulations, maxConsidered });
+    const budget = worker.resolveBrowserSearchBudget(runtime.manifest, { simulations, maxConsidered });
     // Exercise the worker boundary too: handicap openings have more than two moves left.
     parseWorkerCommand({ type: 'choose', taskId: request.requestId, request, search: budget });
     const root = worker.replayAndVerify(request, wasm);
@@ -52,7 +57,7 @@ function fixture(predictionCapacity = 1_024) {
         budget, () => {}, async () => {}, completed => {
           parseWorkerEvent({ type: 'search-progress', taskId: request.requestId, progress: completed });
           progress.push(completed);
-        });
+        }, request.searchSeed);
       expect(progress).toEqual(Array.from({ length: simulations }, (_, index) => ({
         completedSimulations: index + 1, totalSimulations: simulations,
       })));
@@ -65,6 +70,14 @@ function fixture(predictionCapacity = 1_024) {
     } finally { root.free?.(); }
   };
   return { run, runtime, search };
+}
+
+async function sessionSearch(f: ReturnType<typeof fixture>, request: DeltrelAiRequest) {
+  const root = worker.replayAndVerify(request, wasm);
+  try {
+    return await worker.runSessionSearch(f.runtime as never, root, request.state,
+      { simulations: 16, maxConsidered: 8 }, () => {}, async () => {}, undefined, request.searchSeed);
+  } finally { root.free?.(); }
 }
 
 describe('published browser WASM search', () => {
@@ -86,6 +99,86 @@ describe('published browser WASM search', () => {
     const result = await f.search(request, 16, 8);
     expect(result.actionCode).toBe(selected);
     expect(result.rootVisits.flatMap((count, node) => count ? [[node, count]] : [])).toEqual(visited);
+  });
+
+  it('varies equal-valued opening choices across game seeds and exactly repeats each cached search', async () => {
+    const f = fixture();
+    const base = buildAiRequest({ rings: 4, mode: 'double', pieRule: false, playerNames: ['A', 'B'] }, []);
+    // Recorded independently using the native Python SearchBatch, 16 visits,
+    // 8 considered moves, and zero policy/value evaluations on the empty board.
+    const cases = [
+      { seed: 0, rootSeed: '45bcb7af407ec761', selected: 24 },
+      { seed: 1, rootSeed: 'a14c66da57551921', selected: 30 },
+      { seed: 2, rootSeed: 'e6b323a172f1c7e3', selected: 16 },
+      { seed: 3, rootSeed: 'e1e99ba056bbb4b3', selected: 11 },
+      { seed: 4, rootSeed: '3babdab5a0159d50', selected: 36 },
+      { seed: 5, rootSeed: '4777fddde0e05a38', selected: 3 },
+      { seed: 42, rootSeed: 'b1d4cfee2735977b', selected: 38 },
+      { seed: Number.MAX_SAFE_INTEGER, rootSeed: '9ba1330cb78e2b09', selected: 9 },
+    ];
+    const actions: number[] = [];
+    for (const { seed, rootSeed, selected } of cases) {
+      const request = { ...base, searchSeed: seed };
+      const root = worker.replayAndVerify(request, wasm);
+      try {
+        const cloudNonce = resolveSearchSeed(request.stateHash, request.searchSeed);
+        const expected = BigInt(`0x${rootSeed}`);
+        expect(cloudNonce).toBe(seed);
+        expect(wasm.derive_root_seed!(BigInt(cloudNonce), root.hash64(), 0)).toBe(expected);
+        expect(worker.rootSearchSeed(f.runtime as never, root, seed)).toBe(expected);
+        expect(deriveRootSearchSeed(seed, root.hash64())).toBe(expected);
+      } finally { root.free?.(); }
+      const first = await f.search(request, 16, 8);
+      expect(first.actionCode).toBe(selected);
+      const forwards = f.run.mock.calls.length;
+      const repeated = await f.search(request, 16, 8);
+      expect(repeated).toEqual(first);
+      expect(f.run).toHaveBeenCalledTimes(forwards);
+      actions.push(first.actionCode);
+    }
+    expect(new Set(actions).size).toBe(8);
+  });
+
+  it.each([1, 4])('preserves seeded decisions and prediction caches in sessions with batch size %i', async firstVisitBatchSize => {
+    const f = fixture(1_024, { firstVisitBatchSize, subtreeReuse: true });
+    const base = buildAiRequest({ rings: 4, mode: 'double', pieRule: false, playerNames: ['A', 'B'] }, []);
+    const actions: number[] = [];
+    try {
+      for (const searchSeed of [0, 42, Number.MAX_SAFE_INTEGER]) {
+        const request = { ...base, searchSeed };
+        const standard = await f.search(request, 16, 8);
+        const session = await sessionSearch(f, request);
+        for (const field of ['actionCode', 'swapRecommended', 'rootValue', 'rootActions', 'rootQ', 'rootPolicy', 'rootVisits'] as const) {
+          expect(session[field]).toEqual(standard[field]);
+        }
+        expect(session.reusedVisits).toBe(0);
+        const forwards = f.run.mock.calls.length;
+        expect(await sessionSearch(f, request)).toEqual(session);
+        expect(f.run).toHaveBeenCalledTimes(forwards);
+        actions.push(session.actionCode);
+      }
+      expect(new Set(actions).size).toBe(3);
+    } finally { f.runtime.completedSearch?.session.free?.(); }
+  });
+
+  it('retains an actual descendant tree within a game and starts fresh when its game seed changes', async () => {
+    const f = fixture(1_024, { firstVisitBatchSize: 4, subtreeReuse: true });
+    const config = { rings: 4, mode: 'double' as const, pieRule: false, playerNames: ['A', 'B'] as [string, string] };
+    try {
+      const first = await sessionSearch(f, { ...buildAiRequest(config, []), searchSeed: 0 });
+      const actions: AtomicGameAction[] = [{ type: 'place', node: first.actionCode }];
+      const sameGame = await sessionSearch(f, { ...buildAiRequest(config, actions), searchSeed: 0 });
+      expect(sameGame.reusedVisits).toBeGreaterThan(0);
+      actions.push({ type: 'place', node: sameGame.actionCode });
+      const changedSeed = { ...buildAiRequest(config, actions), searchSeed: 1 };
+      const baseline = await f.search(changedSeed, 16, 8);
+      const otherGame = await sessionSearch(f, changedSeed);
+      expect(otherGame.reusedVisits).toBe(0);
+      expect(otherGame.reusedNodes).toBe(0);
+      expect(otherGame.inheritedVisits.every(visits => visits === 0)).toBe(true);
+      expect(otherGame.rootVisits).toEqual(baseline.rootVisits);
+      expect(otherGame.actionCode).toBe(baseline.actionCode);
+    } finally { f.runtime.completedSearch?.session.free?.(); }
   });
 
   it('executes custom search above the release presets and previous client limits', async () => {

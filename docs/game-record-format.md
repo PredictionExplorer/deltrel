@@ -54,7 +54,8 @@ part of its grammar.
 
 ## Headers
 
-Every header shown above is required exactly once. Header order is flexible.
+Every header shown above is required exactly once. `AiGameSeed` is an optional
+additional header, such as `[AiGameSeed "4503599627370496"]`. Header order is flexible.
 Names and fixed values are case-sensitive. Values are JSON strings, so quotes,
 backslashes, and control characters use their JSON escapes. For example,
 `[Player1 "Alice \"Ace\""]` preserves a nickname containing quotes.
@@ -72,6 +73,7 @@ backslashes, and control characters use their JSON escapes. For example,
 | `Handicap` | Number of consecutive opening placements, from 1 through 9. |
 | `LocalAI`, `CloudAI` | `standard`, `deep`, or `custom`. |
 | `LocalSearch`, `CloudSearch` | Exact `simulations/maxConsidered` search budgets. Standard is `544/16`; Deep is `4096/64`; every other budget is Custom. Both fields are retained even in human-only games. |
+| `AiGameSeed` | Optional nonnegative integer from `0` through `9007199254740991`. Identifies this match's AI random stream; preserved when sharing or reviewing a game. Older records may omit it. |
 | `Result` | `*` (unfinished), `1-0` (Player 1 won), or `0-1` (Player 2 won). |
 | `Termination` | `unfinished`, `board-full`, `clinch`, or `resignation`. |
 
@@ -79,6 +81,12 @@ Controller types and AI settings describe the settings **at save time**. Version
 1 does not record controller takeovers or search-setting changes at individual
 moves. Import preserves exact budgets for historical review; starting an engine
 is separately subject to that engine's current limits.
+
+New matches and rematches receive fresh AI seeds. Pausing, retrying, changing
+controllers, and reviewing or branching the same match preserve its seed.
+The seed supports repeatable search with the same position, model, and settings;
+it does not identify or embed the model weights. Import preserves an existing
+seed and does not invent one for older records.
 
 The local archive ID is deliberately absent from shared text. Each import gets
 a fresh local ID, so a shared game cannot overwrite an existing archived game.

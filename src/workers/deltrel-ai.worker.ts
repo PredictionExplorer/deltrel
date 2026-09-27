@@ -10,6 +10,7 @@ import { downloadBrowserModel } from '@/lib/deltrel/ai/model-download';
 import type { LocalAiProgress, LocalAiReadyInfo } from '@/lib/deltrel/ai/local-ai-status';
 import { predictionsFromNetworkOutput } from '@/lib/deltrel/ai/predictions';
 import { DELTREL_ORT_ASSET_PREFIX } from '@/lib/deltrel/ai/runtime-assets';
+import { deriveRootSearchSeed, resolveSearchSeed } from '@/lib/deltrel/ai/search-seed';
 import {
   DELTREL_SCORE_MARGIN_MIN,
   parseDeltrelAiDecision,
@@ -743,14 +744,16 @@ export function scoreUtility(value: number, expectedMargin: number, weight: numb
   return Math.max(-1, Math.min(1, value + weight * expectedMargin / 151));
 }
 
-/** Native serving masks the request seed to 53 bits, then derives each root in Rust. */
-export function rootSearchSeed(runtime: LocalRuntime, root: WasmState): bigint {
+/** Share native serving's game nonce and position mixing, including legacy requests. */
+export function rootSearchSeed(runtime: LocalRuntime, root: WasmState, searchSeed?: number): bigint {
   const hash = root.hash64();
-  if (!runtime.manifest.search.seedContract) return hash;
+  if (!runtime.manifest.search.seedContract && searchSeed === undefined) return hash;
+  const nonce = resolveSearchSeed(`zobrist64:${hash.toString(16).padStart(16, '0')}`, searchSeed);
+  if (!runtime.manifest.search.seedContract) return deriveRootSearchSeed(nonce, hash);
   if (!runtime.wasm.derive_root_seed) {
     throw new DeltrelAiError('unavailable', 'The browser engine lacks the champion search seed contract.');
   }
-  return runtime.wasm.derive_root_seed(hash & BigInt(Number.MAX_SAFE_INTEGER), hash, 0);
+  return runtime.wasm.derive_root_seed(BigInt(nonce), hash, 0);
 }
 
 function predictionKey(runtime: LocalRuntime, semantic: DeltrelAiSemanticState, legalActions: Int32Array): string {
@@ -1149,6 +1152,7 @@ export async function runSessionSearch(
   search: DeltrelAiSearchBudget, checkCancelled: () => void,
   yieldControl: () => Promise<void>,
   onProgress: (progress: LocalAiSearchProgress) => void = () => {},
+  searchSeed?: number,
 ) {
   const previous = runtime.completedSearch;
   delete runtime.completedSearch;
@@ -1165,18 +1169,19 @@ export async function runSessionSearch(
       runtime.manifest.model.sha256, runtime.manifest.featureSchemaHash,
       DELTREL_LOCAL_SEARCH_ALGORITHM_ID, runtime.manifest.model.precision,
       options.scoreUtilityWeight ?? 0, options.seedContract ?? 'legacy-hash', 0, options.cVisit, options.cScale,
+      searchSeed ?? null,
     ]);
     // Retained visits share the native counter with new work. Start fresh if reusing
     // this tree could overflow, while preserving the exact requested new budget.
     if (owned && options.subtreeReuse && previous?.context === context && owned.done() &&
         owned.total_visits().reduce((sum, visits) => sum + visits, 0) + search.simulations <= 0xffff_fffe) {
       owned.restart(root, search.simulations, search.maxConsidered, options.cVisit,
-        options.cScale, rootSearchSeed(runtime, root), batchSize, true, maxNodes);
+        options.cScale, rootSearchSeed(runtime, root, searchSeed), batchSize, true, maxNodes);
     } else {
       owned?.free?.();
       owned = null;
       owned = new runtime.wasm.WasmSearchSession(root, search.simulations, search.maxConsidered,
-        options.cVisit, options.cScale, rootSearchSeed(runtime, root), batchSize);
+        options.cVisit, options.cScale, rootSearchSeed(runtime, root, searchSeed), batchSize);
     }
     const rootActions = owned.root_actions();
     if (!arraysEqual(rootActions, root.legal_actions())) {
@@ -1284,6 +1289,7 @@ export async function runTreeSearch(
   search: DeltrelAiSearchBudget, checkCancelled: () => void,
   yieldControl: () => Promise<void>,
   onProgress: (progress: LocalAiSearchProgress) => void = () => {},
+  searchSeed?: number,
 ) {
   let tree: WasmSearchTree | null = null;
   let scheduler: WasmGumbel | null = null;
@@ -1313,7 +1319,7 @@ export async function runTreeSearch(
       search.maxConsidered,
       runtime.manifest.search.cVisit,
       runtime.manifest.search.cScale,
-      rootSearchSeed(runtime, root),
+      rootSearchSeed(runtime, root, searchSeed),
     );
     let simulations = 0;
     const actions = tree.actions();
@@ -1406,7 +1412,7 @@ async function chooseAction(
   try {
     if (usesExperimentalSearch(runtime.manifest)) {
       const result = await runSessionSearch(runtime, root, request.state, search,
-        checkCancelled, () => yieldToCancellation(taskId), onProgress);
+        checkCancelled, () => yieldToCancellation(taskId), onProgress, request.searchSeed);
       return { ...result, outcome: result.rootEvaluation.outcome,
         modelValue: result.rootEvaluation.value, searchValue: result.rootEvaluation.searchValue,
         expectedMargin: result.rootEvaluation.expectedMargin, modelVersion: runtime.manifest.modelVersion,
@@ -1415,7 +1421,7 @@ async function chooseAction(
         timingMs: { modelLoad, inferenceSearch: nowMs() - searchStarted } };
     }
     const result = await runTreeSearch(runtime, root, request.state, search,
-      checkCancelled, () => yieldToCancellation(taskId), onProgress);
+      checkCancelled, () => yieldToCancellation(taskId), onProgress, request.searchSeed);
     const { rootEvaluation } = result;
     return {
       ...result,

@@ -199,8 +199,26 @@ describe('local worker runtime contract', () => {
     const current = { manifest: { search: { seedContract: 'native-search-batch-v1' } }, wasm: { derive_root_seed: derive } };
     expect(runtime.rootSearchSeed(current as never, root)).toBe(BigInt(123));
     expect(derive).toHaveBeenCalledWith(hash & BigInt(Number.MAX_SAFE_INTEGER), hash, 0);
+    for (const seed of [0, 42, Number.MAX_SAFE_INTEGER]) {
+      expect(runtime.rootSearchSeed(current as never, root, seed)).toBe(BigInt(123));
+      expect(derive).toHaveBeenLastCalledWith(BigInt(seed), hash, 0);
+    }
     expect(runtime.rootSearchSeed({ manifest: { search: {} } } as never, root)).toBe(hash);
     expect(() => runtime.rootSearchSeed({ ...current, wasm: {} } as never, root)).toThrow(/seed contract/);
+  });
+
+  it('supports game seeds on legacy WASM without requiring a seed export', () => {
+    const hash = BigInt('0x0136f61de356a509');
+    const root = { hash64: () => hash } as WasmState;
+    const legacy = { manifest: { search: {} }, wasm: {} };
+    expect(runtime.rootSearchSeed(legacy as never, root)).toBe(hash);
+    expect(runtime.rootSearchSeed(legacy as never, root, 0)).toBe(BigInt('0x45bcb7af407ec761'));
+    expect(runtime.rootSearchSeed(legacy as never, root, 42)).toBe(BigInt('0xb1d4cfee2735977b'));
+    expect(runtime.rootSearchSeed(legacy as never, root, Number.MAX_SAFE_INTEGER))
+      .toBe(BigInt('0x9ba1330cb78e2b09'));
+    expect(runtime.rootSearchSeed(legacy as never, { hash64: () => hash + BigInt(1) } as WasmState, 42))
+      .not.toBe(runtime.rootSearchSeed(legacy as never, root, 42));
+    expect(() => runtime.rootSearchSeed(legacy as never, root, -1)).toThrow(/search seed/);
   });
 
   it('replays and verifies semantic identity before local search', () => {

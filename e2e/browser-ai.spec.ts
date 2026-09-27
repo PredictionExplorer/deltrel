@@ -203,6 +203,9 @@ test('preserves Standard strength through preparation, plays two real Mini searc
 
   // Reload with Standard unchanged and verify the next real search uses it too.
   await expect(page.locator('[data-move-chip]')).toHaveCount(pausedPly);
+  const gameSeed = await page.evaluate(() => JSON.parse(localStorage.getItem('deltrel-v1')!).state.aiGameSeed);
+  expect(Number.isSafeInteger(gameSeed)).toBe(true);
+  expect(gameSeed).toBeGreaterThanOrEqual(0);
   blockModelDownload = true;
   await page.reload();
   const cacheAfterReload = await page.evaluate(inspectModelCache);
@@ -213,6 +216,7 @@ test('preserves Standard strength through preparation, plays two real Mini searc
     entry.bytes === expectedModel.bytes && entry.sha256 === expectedModel.sha256);
   if (browserName !== 'webkit') expect(cachePersisted).toBe(true);
   await expect(page.locator('[data-move-chip]')).toHaveCount(pausedPly);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('deltrel-v1')!).state.aiGameSeed)).toBe(gameSeed);
   const preparationProgress = page.getByRole('progressbar', { name: 'AI preparation' });
   const browserPreparation = page.getByRole('region', { name: 'AI on this device', exact: true });
   let expectedModelGets = 1;

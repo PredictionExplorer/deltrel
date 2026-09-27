@@ -49,7 +49,13 @@ export function hasConflictingSavedGame(value: GameRecord): boolean {
     if (raw === null) return false;
     const saved = parseStoredRecord(raw, key);
     const expected = validateGameRecord(value);
-    return saved !== null && expected !== null && JSON.stringify(saved) !== JSON.stringify(expected);
+    if (saved === null || expected === null) return false;
+    // Hydrating an old active game adds its first seed. That metadata upgrade
+    // must not look like another tab played a different continuation.
+    const comparableSaved = saved.aiGameSeed === undefined && expected.aiGameSeed !== undefined
+      ? { ...saved, aiGameSeed: expected.aiGameSeed }
+      : saved;
+    return JSON.stringify(comparableSaved) !== JSON.stringify(expected);
   } catch {
     // Saving will report unavailable storage through the regular failure path.
     return false;

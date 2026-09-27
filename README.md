@@ -162,6 +162,13 @@ FP32 export avoids half-precision conversion; numerical rounding across inferenc
 backends can still change close decisions. See the
 [release evidence](docs/browser-champion-566428-release.md).
 
+Each new game and rematch gets a fresh random seed for the existing Gumbel search,
+giving both browser and cloud AI varied play. The seed survives reloads, retries,
+pauses, undo, and controller changes, and is included in saved and shared game
+records. A fixed seed, position, model, search settings, and execution backend
+keep searches reproducible. Strongly preferred or forced moves can still repeat.
+This affects gameplay only; training exploration and model weights are unchanged.
+
 All board sizes, both variants, pie swaps, handicap games, and AI-versus-AI play
 are supported. Progress reports actual completed simulations. Slow searches can
 continue beyond 90 seconds while progressing; 90 seconds without progress stops

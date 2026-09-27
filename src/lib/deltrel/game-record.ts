@@ -1,6 +1,7 @@
 import type { AiSearchSettings, EarlyGameOutcome } from '../store';
 import { isControllerType, type PlayerControllers } from './ai/controllers';
 import type { DeltrelAiSearchBudget } from './ai/decision';
+import { isSearchSeed } from './ai/search-seed';
 import { isSupportedRings } from './board';
 import { scoreCompletionBounds } from './completion-bounds';
 import {
@@ -27,6 +28,8 @@ export interface GameRecord {
   config: GameConfig;
   controllers: PlayerControllers;
   aiSearchSettings: AiSearchSettings;
+  /** Optional for records saved before match-specific AI randomness. */
+  aiGameSeed?: number;
   log: GameAction[];
   earlyOutcome: EarlyGameOutcome | null;
 }
@@ -37,11 +40,12 @@ export interface GameRecordResult {
   winner: 0 | 1 | null;
 }
 
-const HEADER_NAMES = [
+const REQUIRED_HEADER_NAMES = [
   'DGN', 'Rules', 'Date', 'Updated', 'Player1', 'Player2',
   'Player1Type', 'Player2Type', 'Rings', 'Mode', 'PieRule', 'Handicap',
   'LocalAI', 'LocalSearch', 'CloudAI', 'CloudSearch', 'Result', 'Termination',
 ] as const;
+const HEADER_NAMES = [...REQUIRED_HEADER_NAMES, 'AiGameSeed'] as const;
 type HeaderName = (typeof HEADER_NAMES)[number];
 
 function fail(message: string): never {
@@ -145,7 +149,11 @@ function resultFor(game: GameState, earlyOutcome: EarlyGameOutcome | null): Game
 function readRecord(value: unknown): { record: GameRecord; result: GameRecordResult } {
   if (!object(value) || !exactKeys(value, [
     'id', 'createdAt', 'updatedAt', 'config', 'controllers', 'aiSearchSettings', 'log', 'earlyOutcome',
+    ...('aiGameSeed' in value ? ['aiGameSeed'] : []),
   ])) fail('The saved game has missing or unexpected fields.');
+  if ('aiGameSeed' in value && !isSearchSeed(value.aiGameSeed)) {
+    fail('AiGameSeed must be a nonnegative safe integer.');
+  }
   if (typeof value.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value.id)) {
     fail('The saved game ID is invalid.');
   }
@@ -188,6 +196,7 @@ function readRecord(value: unknown): { record: GameRecord; result: GameRecordRes
       id: value.id, createdAt, updatedAt, config,
       controllers: [value.controllers[0], value.controllers[1]],
       aiSearchSettings, log, earlyOutcome,
+      ...(isSearchSeed(value.aiGameSeed) ? { aiGameSeed: value.aiGameSeed } : {}),
     },
     result,
   };
@@ -211,7 +220,7 @@ export function serializeGameRecord(value: GameRecord): string {
   const { record, result } = readRecord(value);
   const { config, aiSearchSettings } = record;
   const searchText = (search: DeltrelAiSearchBudget) => `${search.simulations}/${search.maxConsidered}`;
-  const headers: Record<HeaderName, string> = {
+  const headers: Partial<Record<HeaderName, string>> = {
     DGN: String(DGN_VERSION), Rules: DELTREL_RULES_SCHEMA_ID,
     Date: record.createdAt, Updated: record.updatedAt,
     Player1: config.playerNames[0], Player2: config.playerNames[1],
@@ -221,6 +230,7 @@ export function serializeGameRecord(value: GameRecord): string {
     LocalAI: effort(aiSearchSettings.local), LocalSearch: searchText(aiSearchSettings.local),
     CloudAI: effort(aiSearchSettings.server), CloudSearch: searchText(aiSearchSettings.server),
     Result: result.result, Termination: result.termination,
+    ...(record.aiGameSeed === undefined ? {} : { AiGameSeed: String(record.aiGameSeed) }),
   };
   const turns = buildTimeline(config, record.log).turns.map((turn) =>
     `${turn.turnNumber + 1}. ${turn.entries.map(({ action }) =>
@@ -230,7 +240,7 @@ export function serializeGameRecord(value: GameRecord): string {
   const moveLines = [];
   for (let index = 0; index < turns.length; index += 2) moveLines.push(turns.slice(index, index + 2).join(' '));
   moveLines.push(result.result);
-  const text = `${HEADER_NAMES.map((name) => `[${name} ${JSON.stringify(headers[name])}]`).join('\n')}\n\n${moveLines.join('\n')}\n`;
+  const text = `${HEADER_NAMES.filter((name) => headers[name] !== undefined).map((name) => `[${name} ${JSON.stringify(headers[name])}]`).join('\n')}\n\n${moveLines.join('\n')}\n`;
   if (text.length > MAX_GAME_RECORD_TEXT_LENGTH) {
     fail('This game has unusually long player names and exceeds the 65,536-character sharing limit.');
   }
@@ -279,8 +289,16 @@ export function parseGameRecord(text: string): GameRecord {
       moves.push(line);
     }
   }
-  for (const name of HEADER_NAMES) if (!headers.has(name)) fail(`Missing header: ${name}.`);
+  for (const name of REQUIRED_HEADER_NAMES) if (!headers.has(name)) fail(`Missing header: ${name}.`);
   const header = (name: HeaderName): string => headers.get(name)!;
+  let aiGameSeed: number | undefined;
+  if (headers.has('AiGameSeed')) {
+    const text = header('AiGameSeed');
+    aiGameSeed = Number(text);
+    if (!/^(0|[1-9]\d{0,15})$/.test(text) || !isSearchSeed(aiGameSeed)) {
+      fail('AiGameSeed must be a nonnegative safe integer.');
+    }
+  }
   if (header('DGN') !== String(DGN_VERSION)) fail(`Unsupported DGN version: ${header('DGN')}. This app reads DGN 1.`);
   if (header('Rules') !== DELTREL_RULES_SCHEMA_ID) fail('The game uses an unsupported rules version.');
   if (!['true', 'false'].includes(header('PieRule'))) fail('PieRule must be true or false.');
@@ -342,5 +360,6 @@ export function parseGameRecord(text: string): GameRecord {
   return readRecord({
     id: crypto.randomUUID(), createdAt: header('Date'), updatedAt: header('Updated'), config,
     controllers: [header('Player1Type'), header('Player2Type')], aiSearchSettings, log, earlyOutcome,
+    ...(aiGameSeed === undefined ? {} : { aiGameSeed }),
   }).record;
 }

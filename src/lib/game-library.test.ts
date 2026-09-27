@@ -32,6 +32,19 @@ afterEach(() => {
 });
 
 describe('local game library', () => {
+  it.each([0, Number.MAX_SAFE_INTEGER])('allows adding seed %s to an otherwise unchanged legacy archive', (aiGameSeed) => {
+    const legacy = record();
+    library.saveGameRecord(legacy);
+    expect(library.hasConflictingSavedGame({ ...legacy, aiGameSeed })).toBe(false);
+    expect(library.hasConflictingSavedGame({
+      ...legacy, aiGameSeed, log: [...legacy.log, { type: 'place', node: 1 }],
+    })).toBe(true);
+    library.saveGameRecord({ ...legacy, aiGameSeed });
+    expect(library.hasConflictingSavedGame({ ...legacy, aiGameSeed })).toBe(false);
+    expect(library.hasConflictingSavedGame({ ...legacy, aiGameSeed: aiGameSeed === 0 ? 1 : 0 })).toBe(true);
+    expect(library.hasConflictingSavedGame(legacy)).toBe(true);
+  });
+
   it('writes only the changed game and retains independently saved games', () => {
     library.saveGameRecord(record('older'));
     const previous = window.localStorage.getItem(`${library.GAME_LIBRARY_PREFIX}older`);

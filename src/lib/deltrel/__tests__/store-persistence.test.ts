@@ -19,12 +19,14 @@ afterEach(() => {
 it('archives every played game, current settings, and results through rematches and setup', () => {
   useAppStore.getState().startGame(DEFAULT_CONFIG, ['human', 'human']);
   const firstId = useAppStore.getState().gameId;
+  const firstSeed = useAppStore.getState().aiGameSeed;
   useAppStore.getState().act({ type: 'place', node: 0 });
   useAppStore.getState().setPlayerController(1, 'server');
   useAppStore.getState().setAiSearchBudget('server', { simulations: 4096, maxConsidered: 64 });
   useAppStore.getState().resign(0);
   const original = listGameRecords().find((game) => game.id === firstId);
   expect(original).toMatchObject({
+    aiGameSeed: firstSeed,
     controllers: ['human', 'server'],
     aiSearchSettings: { server: { simulations: 4096, maxConsidered: 64 } },
     log: [{ type: 'place', node: 0 }],
@@ -36,6 +38,7 @@ it('archives every played game, current settings, and results through rematches 
   useAppStore.getState().act({ type: 'place', node: 1 });
   useAppStore.getState().toSetup();
   expect(useAppStore.getState().gameId).toBeNull();
+  expect(useAppStore.getState().aiGameSeed).toBeNull();
   expect(listGameRecords()).toHaveLength(2);
   expect(listGameRecords().find((game) => game.id === firstId)).toEqual(original);
   expect(listGameRecords().find((game) => game.id === secondId)?.log).toEqual([{ type: 'place', node: 1 }]);
@@ -50,12 +53,14 @@ it('preserves the original result when undoing into a separate variation', () =>
   useAppStore.getState().undo();
   const variationId = useAppStore.getState().gameId;
   expect(variationId).not.toBe(original.id);
+  expect(useAppStore.getState().aiGameSeed).toBe(original.aiGameSeed);
   useAppStore.getState().undo();
   expect(useAppStore.getState().gameId).toBe(variationId);
   useAppStore.getState().redo();
   useAppStore.getState().act({ type: 'place', node: 2 });
   expect(listGameRecords().find((game) => game.id === original.id)).toEqual(original);
   expect(listGameRecords().find((game) => game.id === variationId)).toMatchObject({
+    aiGameSeed: original.aiGameSeed,
     log: [{ type: 'place', node: 0 }, { type: 'place', node: 2 }],
     earlyOutcome: null,
   });
@@ -69,6 +74,7 @@ it('preserves a completed full board when rewinding and leaves sharing snapshots
   expect(useAppStore.getState().config.playerNames[0]).toBe('Player 1');
   useAppStore.getState().rewindTo(45);
   expect(useAppStore.getState().gameId).not.toBe(original.id);
+  expect(useAppStore.getState().aiGameSeed).toBe(original.aiGameSeed);
   expect(listGameRecords().find((game) => game.id === original.id)?.log).toHaveLength(50);
   expect(currentGameRecord(useAppStore.getState())?.log).toHaveLength(45);
 });
@@ -84,11 +90,64 @@ it('migrates the existing active game into the library once with a stable persis
   await useAppStore.persist.rehydrate();
   const first = currentGameRecord(useAppStore.getState())!;
   expect(first.id).toBeTruthy();
+  expect(Number.isSafeInteger(first.aiGameSeed)).toBe(true);
   expect(listGameRecords()).toEqual([first]);
   expect(JSON.parse(window.localStorage.getItem(GAME_STORAGE_KEY)!).state.gameId).toBe(first.id);
+  expect(JSON.parse(window.localStorage.getItem(GAME_STORAGE_KEY)!).state.aiGameSeed).toBe(first.aiGameSeed);
   await useAppStore.persist.rehydrate();
   expect(currentGameRecord(useAppStore.getState())).toEqual(first);
   expect(listGameRecords()).toEqual([first]);
+});
+
+it('upgrades an active legacy archive in place and keeps its identity on the next move', async () => {
+  useAppStore.getState().startGame(DEFAULT_CONFIG, ['human', 'human']);
+  useAppStore.getState().act({ type: 'place', node: 0 });
+  const legacy = currentGameRecord(useAppStore.getState())!;
+  delete legacy.aiGameSeed;
+  saveGameRecord(legacy);
+  const persisted = JSON.parse(window.localStorage.getItem(GAME_STORAGE_KEY)!);
+  delete persisted.state.aiGameSeed;
+  persisted.version = 10;
+  window.localStorage.setItem(GAME_STORAGE_KEY, JSON.stringify(persisted));
+
+  await useAppStore.persist.rehydrate();
+  const upgraded = currentGameRecord(useAppStore.getState())!;
+  expect(upgraded.id).toBe(legacy.id);
+  expect(Number.isSafeInteger(upgraded.aiGameSeed)).toBe(true);
+  expect(listGameRecords()).toEqual([upgraded]);
+  useAppStore.getState().act({ type: 'place', node: 1 });
+  expect(useAppStore.getState().gameId).toBe(legacy.id);
+  expect(listGameRecords()).toEqual([currentGameRecord(useAppStore.getState())]);
+});
+
+it.each([10, APP_STORE_VERSION].flatMap((version) =>
+  [undefined, null, -1, Number.MAX_SAFE_INTEGER + 1].map((aiGameSeed) => ({ version, aiGameSeed })),
+))('persists a repaired active seed ($aiGameSeed) from version $version across reloads', async ({ version, aiGameSeed }) => {
+  window.localStorage.setItem(GAME_STORAGE_KEY, JSON.stringify({
+    version,
+    state: {
+      phase: 'playing', config: DEFAULT_CONFIG, controllers: ['human', 'local'], aiGameSeed,
+      log: [{ type: 'place', node: 0 }], redoStack: [], earlyOutcome: null,
+    },
+  }));
+  await useAppStore.persist.rehydrate();
+  const seed = useAppStore.getState().aiGameSeed;
+  expect(Number.isSafeInteger(seed)).toBe(true);
+  expect(seed).toBeGreaterThanOrEqual(0);
+  const saved = JSON.parse(window.localStorage.getItem(GAME_STORAGE_KEY)!);
+  expect(saved.version).toBe(APP_STORE_VERSION);
+  expect(saved.state.aiGameSeed).toBe(seed);
+  await useAppStore.persist.rehydrate();
+  expect(useAppStore.getState().aiGameSeed).toBe(seed);
+});
+
+it('keeps a persisted zero seed across reloads and sharing snapshots', async () => {
+  useAppStore.getState().startGame(DEFAULT_CONFIG, ['human', 'local']);
+  useAppStore.setState({ aiGameSeed: 0 });
+  await useAppStore.persist.rehydrate();
+  expect(useAppStore.getState().aiGameSeed).toBe(0);
+  expect(currentGameRecord(useAppStore.getState())?.aiGameSeed).toBe(0);
+  expect(JSON.parse(window.localStorage.getItem(GAME_STORAGE_KEY)!).state.aiGameSeed).toBe(0);
 });
 
 it('forks simultaneous tab changes instead of overwriting the other saved continuation', () => {
@@ -99,6 +158,7 @@ it('forks simultaneous tab changes instead of overwriting the other saved contin
   saveGameRecord(otherTab);
   useAppStore.getState().act({ type: 'place', node: 2 });
   expect(useAppStore.getState().gameId).not.toBe(previous.id);
+  expect(useAppStore.getState().aiGameSeed).toBe(previous.aiGameSeed);
   expect(listGameRecords().find((game) => game.id === previous.id)).toEqual(otherTab);
   expect(listGameRecords().find((game) => game.id === useAppStore.getState().gameId)?.log).toEqual([
     { type: 'place', node: 0 }, { type: 'place', node: 2 },

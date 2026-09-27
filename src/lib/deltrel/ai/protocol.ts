@@ -17,6 +17,7 @@ import {
   DELTREL_RULES_SCHEMA_ID,
 } from '../rules';
 import { DeltrelAiError } from './errors';
+import { isSearchSeed } from './search-seed';
 
 export const DELTREL_AI_PROTOCOL_SCHEMA_ID = 'deltrel.ai.atomic.v3' as const;
 export const DELTREL_AI_PROTOCOL_VERSION = 3 as const;
@@ -85,6 +86,8 @@ export interface DeltrelAiRequest {
   schema: typeof DELTREL_AI_PROTOCOL_SCHEMA_ID;
   version: typeof DELTREL_AI_PROTOCOL_VERSION;
   requestId: string;
+  /** Stable game seed; omitted for reproducible legacy position-based search. */
+  searchSeed?: number;
   rulesSchema: typeof DELTREL_RULES_SCHEMA_ID;
   rulesHash: typeof DELTREL_RULES_HASH;
   featureSchema: typeof DELTREL_FEATURE_SCHEMA_ID;
@@ -265,7 +268,11 @@ export function buildAiRequest(
   config: GameConfig,
   log: readonly GameAction[],
   requestId = newAiRequestId(),
+  searchSeed?: number,
 ): DeltrelAiRequest {
+  if (searchSeed !== undefined && !isSearchSeed(searchSeed)) {
+    throw new DeltrelAiError('protocol', 'AI search seed must be a nonnegative safe integer.');
+  }
   validateAiConfig(config);
   const game = replay(config, [...log]);
   if (game.over) {
@@ -284,6 +291,7 @@ export function buildAiRequest(
     schema: DELTREL_AI_PROTOCOL_SCHEMA_ID,
     version: DELTREL_AI_PROTOCOL_VERSION,
     requestId,
+    ...(searchSeed !== undefined ? { searchSeed } : {}),
     rulesSchema: DELTREL_RULES_SCHEMA_ID,
     rulesHash: DELTREL_RULES_HASH,
     featureSchema: DELTREL_FEATURE_SCHEMA_ID,

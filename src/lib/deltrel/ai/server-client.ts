@@ -1,4 +1,5 @@
 import { DeltrelAiError } from './errors';
+import { resolveSearchSeed } from './search-seed';
 import { parseServerPredictions } from './predictions';
 import { parseServerNetworkOutput } from './network-output';
 import {
@@ -152,9 +153,7 @@ export function resolveServerSearchBudget(
 }
 
 export function deterministicServerSeed(stateHash: string): number {
-  const match = /^zobrist64:([0-9a-f]{16})$/.exec(stateHash);
-  if (!match) throw new DeltrelAiError('protocol', 'AI state hash cannot seed server search.');
-  return Number(BigInt(`0x${match[1]}`) & BigInt(Number.MAX_SAFE_INTEGER));
+  return resolveSearchSeed(stateHash);
 }
 
 export function toAnalyzeRequest(
@@ -204,7 +203,7 @@ export function toAnalyzeRequest(
     search: {
       simulations,
       max_considered: maxConsidered,
-      seed: deterministicServerSeed(request.stateHash),
+      seed: resolveSearchSeed(request.stateHash, request.searchSeed),
     },
   };
 }

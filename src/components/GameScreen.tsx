@@ -103,6 +103,7 @@ function reducedSearchBudget(
 
 export function GameScreen() {
   const storedConfig = useAppStore((state) => state.config);
+  const aiGameSeed = useAppStore((state) => state.aiGameSeed);
   const storedControllers = useAppStore((state) => state.controllers);
   const aiInsightsVisible = useAppStore((state) => canShowAiInsights(state.controllers, state.aiInsightsHidden));
   const controllers = useMemo(() => normalizeControllers(storedConfig, storedControllers), [storedConfig, storedControllers]);
@@ -168,8 +169,9 @@ export function GameScreen() {
   useEffect(() => () => { inspectionRef.current?.abort(); }, []);
 
   useEffect(() => useAppStore.subscribe((current, previous) => {
-    if (!canShowAiInsights(current.controllers, current.aiInsightsHidden) &&
-        canShowAiInsights(previous.controllers, previous.aiInsightsHidden)) {
+    if (current.aiGameSeed !== previous.aiGameSeed ||
+        (!canShowAiInsights(current.controllers, current.aiInsightsHidden) &&
+          canShowAiInsights(previous.controllers, previous.aiInsightsHidden))) {
       cancelInspection();
       setAnalysisHistory([]);
     }
@@ -270,8 +272,8 @@ export function GameScreen() {
     const controller = controllers[game.toMove];
     if (controller === 'human') return null;
     if (typeof BigInt !== 'function') return `${controller}:bigint-unavailable`;
-    return `${controller}:${semanticStateHash(semanticStateFromGame(game))}`;
-  }, [controllers, game, uiBlocksPlay]);
+    return `${controller}:${aiGameSeed ?? 'legacy'}:${semanticStateHash(semanticStateFromGame(game))}`;
+  }, [aiGameSeed, controllers, game, uiBlocksPlay]);
 
   const cancelActiveAi = useCallback(() => {
     cancelInspection();
@@ -332,7 +334,7 @@ export function GameScreen() {
 
     let request: DeltrelAiRequest;
     try {
-      request = buildAiRequest(config, log);
+      request = buildAiRequest(config, log, undefined, aiGameSeed ?? undefined);
     } catch (error) {
       const aiError = asDeltrelAiError(error);
       queueMicrotask(() => {
@@ -374,7 +376,7 @@ export function GameScreen() {
         if (flight.cancelled || flight.settled || flightRef.current !== flight) return;
         const current = useAppStore.getState();
         if (current.phase !== 'playing' || current.aiPaused || current.earlyOutcome ||
-            current.config !== positionConfig || current.log !== log ||
+            current.config !== positionConfig || current.log !== log || current.aiGameSeed !== aiGameSeed ||
             normalizeControllers(current.config, current.controllers)[request.state.toMove] !== controller) return;
         setAiStatus({
           kind: 'thinking', controller, positionKey: aiPositionKey,
@@ -390,7 +392,7 @@ export function GameScreen() {
       .then((decision) => {
         if (flight.cancelled || flightRef.current !== flight) return;
         const current = useAppStore.getState();
-        if (current.phase !== 'playing' || current.aiPaused) {
+        if (current.phase !== 'playing' || current.aiPaused || current.aiGameSeed !== aiGameSeed) {
           flight.settled = true;
           setAiStatus({ kind: 'idle' });
           return;
@@ -430,6 +432,7 @@ export function GameScreen() {
       })
       .catch((error) => {
         if (flight.cancelled || flightRef.current !== flight) return;
+        if (useAppStore.getState().aiGameSeed !== aiGameSeed) return;
         flight.settled = true;
         const aiError = asDeltrelAiError(error);
         failedRequestKey.current = key;
@@ -450,6 +453,7 @@ export function GameScreen() {
 
     return () => scheduleCancellation(flight);
   }, [
+    aiGameSeed,
     aiPaused,
     aiPositionKey,
     autoplayReady,
@@ -617,7 +621,7 @@ export function GameScreen() {
     cancelInspection();
     const prefix = log.slice(0, currentPly);
     let request: DeltrelAiRequest;
-    try { request = buildAiRequest(config, prefix); }
+    try { request = buildAiRequest(config, prefix, undefined, aiGameSeed ?? undefined); }
     catch (error) {
       setInspectionStatus({ kind: 'error', stateHash: shownPositionHash ?? '', message: asDeltrelAiError(error).message });
       return;
@@ -635,7 +639,7 @@ export function GameScreen() {
     void pending.then((decision) => {
       if (inspectionRef.current !== abortController || abortController.signal.aborted) return;
       const current = useAppStore.getState();
-      if (!canShowAiInsights(current.controllers, current.aiInsightsHidden)) return;
+      if (current.aiGameSeed !== aiGameSeed || !canShowAiInsights(current.controllers, current.aiInsightsHidden)) return;
       const accepted = acceptAiResponse(request, decision.response, config, prefix);
       if (!accepted.ok || decision.analysis.stateHash !== request.stateHash ||
           decision.analysis.perspective !== request.state.toMove) {
@@ -657,7 +661,7 @@ export function GameScreen() {
     }).finally(() => {
       if (inspectionRef.current === abortController) inspectionRef.current = null;
     });
-  }, [aiPaused, inspectionSearch, inspectionRuntime, cancelInspection, config, currentController, currentPly,
+  }, [aiGameSeed, aiPaused, inspectionSearch, inspectionRuntime, cancelInspection, config, currentController, currentPly,
     effectiveOver, inspectionRuntimeReady, localInspectionNeedsPause, log, shownGame, shownPositionHash, validProofMode, viewingHistory]);
 
   // Arrow keys step through the move history whenever no dialog needs them.

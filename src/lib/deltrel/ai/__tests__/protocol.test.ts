@@ -42,6 +42,25 @@ function expectAiError(
 }
 
 describe('atomic AI protocol v3', () => {
+  it.each([0, Number.MAX_SAFE_INTEGER])('carries game seed %s independently of request identity', (seed) => {
+    const first = buildAiRequest(config, [], 'first-request', seed);
+    const retried = buildAiRequest(config, [], 'retried-request', seed);
+    const unseeded = buildAiRequest(config, [], 'legacy-request');
+    expect(first.searchSeed).toBe(seed);
+    expect(retried.searchSeed).toBe(seed);
+    expect(first.stateHash).toBe(unseeded.stateHash);
+    expect(first.state).toEqual(unseeded.state);
+    expect(retried).toEqual({ ...first, requestId: 'retried-request' });
+    expect(unseeded).not.toHaveProperty('searchSeed');
+    expect(JSON.parse(JSON.stringify(first))).toEqual(first);
+  });
+
+  it.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1, NaN, Infinity, null, '7', true])(
+    'rejects invalid game seed %j before building a request', (seed) => {
+      expect(() => buildAiRequest(config, [], 'bad-seed', seed as number)).toThrow(/search seed/);
+    },
+  );
+
   it('builds the exact opening semantic request', () => {
     const request = buildAiRequest(config, [], 'opening');
     expect(request).toMatchObject({

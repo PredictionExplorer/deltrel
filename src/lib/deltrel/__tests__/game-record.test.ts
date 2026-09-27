@@ -39,6 +39,39 @@ function replaceResult(text: string, value: string): string {
 }
 
 describe('Deltrel Game Notation', () => {
+  it.each([0, 17, Number.MAX_SAFE_INTEGER])('round trips the optional AI seed %s through archives and DGN', (aiGameSeed) => {
+    const original = record({ aiGameSeed });
+    expect(validateGameRecord(original)?.aiGameSeed).toBe(aiGameSeed);
+    const text = serializeGameRecord(original);
+    expect(text).toContain(`[AiGameSeed "${aiGameSeed}"]`);
+    expect(parseGameRecord(text).aiGameSeed).toBe(aiGameSeed);
+    expect(serializeGameRecord(parseGameRecord(text))).toBe(text);
+  });
+
+  it('keeps old archives and DGN without an AI seed readable without inventing one', () => {
+    const original = record();
+    expect(validateGameRecord(original)).not.toHaveProperty('aiGameSeed');
+    const text = serializeGameRecord(original);
+    expect(text).not.toContain('AiGameSeed');
+    expect(parseGameRecord(text)).not.toHaveProperty('aiGameSeed');
+  });
+
+  it.each([undefined, null, -1, 1.5, '17', Number.MAX_SAFE_INTEGER + 1, Infinity, NaN])(
+    'rejects an invalid optional archive seed (%s)', (aiGameSeed) => {
+      expect(validateGameRecord({ ...record(), aiGameSeed })).toBeNull();
+    },
+  );
+
+  it.each(['-1', '1.5', '9007199254740992', '1e3', '', ' 17', '01', '+1', 'NaN', 'Infinity'])(
+    'rejects an invalid optional DGN seed (%s)', (aiGameSeed) => {
+      expect(() => parseGameRecord(header(serializeGameRecord(record({ aiGameSeed: 17 })), 'AiGameSeed', aiGameSeed))).toThrow(/AiGameSeed/);
+    },
+  );
+
+  it('rejects duplicate optional AI seed headers', () => {
+    expect(() => parseGameRecord(`[AiGameSeed "17"]\n${serializeGameRecord(record({ aiGameSeed: 17 }))}`)).toThrow(/Duplicate header: AiGameSeed/);
+  });
+
   it('exports readable turn groups and gives an import its own local identity', () => {
     const original = record();
     const text = serializeGameRecord(original);

@@ -172,6 +172,26 @@ const manifest = {
 };
 
 describe('local worker protocol', () => {
+  it.each([0, Number.MAX_SAFE_INTEGER])('round-trips explicit search seed %s without changing the state', (seed) => {
+    const command = { type: 'choose', taskId: request.requestId,
+      request: { ...request, searchSeed: seed }, search: null };
+    expect(parseWorkerCommand(command)).toEqual(command);
+    const legacy = { ...command, request };
+    expect(parseWorkerCommand(legacy)).toEqual(legacy);
+  });
+
+  it.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1, NaN, Infinity, null, undefined, '7', true])(
+    'rejects a present but invalid search seed %j', (seed) => {
+      expect(() => parseWorkerCommand({ type: 'choose', taskId: request.requestId,
+        request: { ...request, searchSeed: seed }, search: null })).toThrow(/incompatible AI request/);
+    },
+  );
+
+  it('does not relax the request shape beyond the optional search seed', () => {
+    expect(() => parseWorkerCommand({ type: 'choose', taskId: request.requestId,
+      request: { ...request, searchSeed: 0, randomize: true }, search: null })).toThrow(/incompatible AI request/);
+  });
+
   it('accepts only bounded, completed simulation progress with no arbitrary heartbeat fields', () => {
     const event = { type: 'search-progress', taskId: request.requestId,
       progress: { completedSimulations: 1, totalSimulations: 64 } };
