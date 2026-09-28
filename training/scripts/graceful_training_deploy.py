@@ -1290,6 +1290,36 @@ class Deployment:
                 )
 
                 ensure_auxiliary_gate(self.source, recovery_source)
+        # Once a full-state reuse clock has been checkpointed, a compatible
+        # rollback preserves its reference even when restoring the old ratio.
+        # Removing the clock would jump LR age and reject the stored EMA decay.
+        reuse_reference = candidate_payload.get("learner", {}).get(
+            "reuse_clock_reference_target"
+        )
+        if reuse_reference is not None:
+            recovery_payload = yaml.safe_load(recovery_source.read_text())
+            if (
+                recovery_payload.get("learner", {}).get("reuse_clock_reference_target")
+                is None
+            ):
+                recovery_payload["learner"]["reuse_clock_reference_target"] = (
+                    reuse_reference
+                )
+                clock_source = self.base / "reuse-compatible-recovery.yaml"
+                contents = yaml.safe_dump(recovery_payload, sort_keys=False)
+                if clock_source.exists():
+                    require(
+                        clock_source.read_text() == contents,
+                        "reuse recovery profile changed",
+                    )
+                else:
+                    clock_source.write_text(contents)
+                from scripts.prepare_training_recovery_profile import (
+                    prepare_recovery_gate,
+                )
+
+                prepare_recovery_gate(recovery_source, clock_source)
+                recovery_source = clock_source
         recovery_path = self.base / "recovery-intent.json"
         recovery_policy = "original_or_compatible_profile"
         if profile != self.source:

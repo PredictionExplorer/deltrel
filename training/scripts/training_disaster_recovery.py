@@ -1532,6 +1532,8 @@ def _allocation_gate_references(
             references.append(
                 (payload["efficiency_scheduling_transition"], "status-json")
             )
+        if "training_recovery_transition" in payload:
+            references.append((payload["training_recovery_transition"], "status-json"))
         result = []
         for reference, kind in references:
             if not isinstance(reference, dict) or set(reference) != {"path", "sha256"}:
@@ -1586,13 +1588,24 @@ def _allocation_gate_dependency_closure(
     allow_promotion_transition: bool = True,
     allow_auxiliary_transition: bool = True,
     allow_scheduling_transition: bool = True,
+    allow_recovery_transition: bool = True,
+    _recovery_depth: int = 0,
 ) -> list[tuple[str, str, str]]:
-    """Resolve finite original -> policy -> promotion -> auxiliary -> scheduling.
+    """Resolve the finite original-to-scheduling chain and bounded recovery trials.
 
     The supplied reader must verify the expected digest before returning JSON.
     Snapshot capture reads copied immutable objects; offline verification reads
     only its catalog, so neither depends on the continued existence of a run.
     """
+    from deltreltrain.search_allocation_gate import MAX_RECOVERY_TRANSITIONS
+
+    recovery_transition = "training_recovery_transition" in payload
+    if recovery_transition and (
+        not allow_recovery_transition or _recovery_depth >= MAX_RECOVERY_TRANSITIONS
+    ):
+        raise DisasterRecoveryError(
+            "training recovery transitions exceed their bounded chain"
+        )
     if "training_policy_transition" in payload and not allow_policy_transition:
         raise DisasterRecoveryError("allocation policy transitions cannot be chained")
     if "promotion_allocation_transition" in payload and not allow_promotion_transition:
@@ -1617,7 +1630,9 @@ def _allocation_gate_dependency_closure(
     auxiliary_transition = "auxiliary_prediction_transition" in payload
     promotion_transition = "promotion_allocation_transition" in payload
     transition_key = (
-        "efficiency_scheduling_transition"
+        "training_recovery_transition"
+        if recovery_transition
+        else "efficiency_scheduling_transition"
         if scheduling_transition
         else "auxiliary_prediction_transition"
         if auxiliary_transition
@@ -1642,10 +1657,19 @@ def _allocation_gate_dependency_closure(
         SCHEDULING_TRANSITION_CLASS,
         SCHEDULING_TRANSITION_FORMAT,
         SCHEDULING_TRANSITION_SCOPE,
+        RECOVERY_TRANSITION_CLASS,
+        RECOVERY_TRANSITION_FORMAT,
+        RECOVERY_TRANSITION_SCOPE,
     )
 
     expected_format, expected_class, expected_scope = (
         (
+            RECOVERY_TRANSITION_FORMAT,
+            RECOVERY_TRANSITION_CLASS,
+            RECOVERY_TRANSITION_SCOPE,
+        )
+        if recovery_transition
+        else (
             SCHEDULING_TRANSITION_FORMAT,
             SCHEDULING_TRANSITION_CLASS,
             SCHEDULING_TRANSITION_SCOPE,
@@ -1672,18 +1696,21 @@ def _allocation_gate_dependency_closure(
     receipt = load_json(transition["path"], transition["sha256"])
     if (
         set(receipt)
-        != {
-            "format",
-            "schema_version",
-            "classification",
-            "run_id",
-            "source_profile",
-            "source_gate",
-            "source_config_sha256",
-            "target_config_sha256",
-            "measurement_scope",
-            "new_objective_performance_qualified",
-        }
+        != (
+            {
+                "format",
+                "schema_version",
+                "classification",
+                "run_id",
+                "source_profile",
+                "source_gate",
+                "source_config_sha256",
+                "target_config_sha256",
+                "measurement_scope",
+                "new_objective_performance_qualified",
+            }
+            | ({"treatment"} if recovery_transition else set())
+        )
         or receipt.get("format") != expected_format
         or type(receipt.get("schema_version")) is not int
         or receipt["schema_version"] != 1
@@ -1692,6 +1719,10 @@ def _allocation_gate_dependency_closure(
         or receipt.get("new_objective_performance_qualified") is not False
         or receipt.get("run_id") != payload.get("run_id")
         or receipt.get("target_config_sha256") != payload.get("target_config_sha256")
+        or (
+            recovery_transition
+            and receipt.get("treatment") not in ("protected_champion", "reuse_clock")
+        )
     ):
         raise DisasterRecoveryError("invalid allocation policy transition receipt")
     for name, kind in (("source_profile", "profile"), ("source_gate", "status-json")):
@@ -1717,15 +1748,22 @@ def _allocation_gate_dependency_closure(
         )
     source = load_json(source_reference["path"], source_reference["sha256"])
     if (
-        "efficiency_scheduling_transition" in source
-        or (not scheduling_transition and "auxiliary_prediction_transition" in source)
+        (not recovery_transition and "training_recovery_transition" in source)
+        or (not recovery_transition and "efficiency_scheduling_transition" in source)
         or (
-            not scheduling_transition
+            not recovery_transition
+            and not scheduling_transition
+            and "auxiliary_prediction_transition" in source
+        )
+        or (
+            not recovery_transition
+            and not scheduling_transition
             and not auxiliary_transition
             and "promotion_allocation_transition" in source
         )
         or (
-            not scheduling_transition
+            not recovery_transition
+            and not scheduling_transition
             and not auxiliary_transition
             and not promotion_transition
             and "training_policy_transition" in source
@@ -1746,12 +1784,17 @@ def _allocation_gate_dependency_closure(
         _allocation_gate_dependency_closure(
             source,
             load_json,
-            allow_policy_transition=scheduling_transition
+            allow_policy_transition=recovery_transition
+            or scheduling_transition
             or auxiliary_transition
             or promotion_transition,
-            allow_promotion_transition=scheduling_transition or auxiliary_transition,
-            allow_auxiliary_transition=scheduling_transition,
-            allow_scheduling_transition=False,
+            allow_promotion_transition=recovery_transition
+            or scheduling_transition
+            or auxiliary_transition,
+            allow_auxiliary_transition=recovery_transition or scheduling_transition,
+            allow_scheduling_transition=recovery_transition,
+            allow_recovery_transition=recovery_transition,
+            _recovery_depth=_recovery_depth + int(recovery_transition),
         )
     )
     return list(dict.fromkeys(references))

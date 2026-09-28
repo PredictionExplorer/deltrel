@@ -83,6 +83,12 @@ def initialize_publication_tables(connection: sqlite3.Connection) -> None:
             connection.execute(
                 "ALTER TABLE shards ADD COLUMN fresh_sample_count INTEGER CHECK(fresh_sample_count >= 0 AND fresh_sample_count <= sample_count)"
             )
+        # Unknown historical origins remain NULL. A later revision must never
+        # turn old positions into newly generated protected replay.
+        if "first_published_ns" not in shard_columns:
+            connection.execute(
+                "ALTER TABLE shards ADD COLUMN first_published_ns INTEGER"
+            )
         connection.execute("""CREATE TABLE IF NOT EXISTS game_publications (
             game_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, generation_family TEXT NOT NULL,
             latest_shard_id INTEGER NOT NULL, revision INTEGER NOT NULL CHECK(revision > 0),
@@ -94,6 +100,18 @@ def initialize_publication_tables(connection: sqlite3.Connection) -> None:
         )""")
         connection.execute(
             "CREATE INDEX IF NOT EXISTS game_publications_run ON game_publications(run_id, generation_family)"
+        )
+        publication_columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(game_publications)")
+        }
+        if "first_published_ns" not in publication_columns:
+            connection.execute(
+                "ALTER TABLE game_publications ADD COLUMN first_published_ns INTEGER"
+            )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS shards_protected_champion "
+            "ON shards(run_id, generation_family, model_identity, model_step, first_published_ns, id)"
         )
         connection.execute("COMMIT")
     except BaseException:
@@ -469,6 +487,7 @@ def append_revision(
             revision = int(old["revision"]) + 1
         else:
             old_count, revision = 0, 1
+        first_published_ns = created_ns if old is None else old["first_published_ns"]
         new_samples = len(batch) - old_count
         enriched = old_count if finalized else 0
         store.connection.execute(
@@ -480,8 +499,8 @@ def append_revision(
             relative_path, created_ns, sample_count, ring, phase_min, phase_max,
             model_version, model_step, model_identity, run_id, generation_family,
             actor_id, generation, game_count, rules_hash, feature_schema_hash,
-            checksum_sha256, variant, segment, fresh_sample_count
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            checksum_sha256, variant, segment, fresh_sample_count, first_published_ns
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 path.relative_to(store.root).as_posix(),
                 created_ns,
@@ -503,6 +522,7 @@ def append_revision(
                 first.variant_label,
                 first.segment,
                 new_samples,
+                first_published_ns,
             ),
         )
         if cursor.lastrowid is None:
@@ -555,8 +575,8 @@ def append_revision(
         store.connection.execute(
             """INSERT INTO game_publications(
             game_id,run_id,generation_family,latest_shard_id,revision,sample_count,
-            policy_digest,payload_digest,context_digest,finalized,enriched_samples,record_json,updated_ns
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(game_id) DO UPDATE SET
+            policy_digest,payload_digest,context_digest,finalized,enriched_samples,record_json,updated_ns,first_published_ns
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(game_id) DO UPDATE SET
             latest_shard_id=excluded.latest_shard_id, revision=excluded.revision,
             sample_count=excluded.sample_count, policy_digest=excluded.policy_digest,
             payload_digest=excluded.payload_digest, finalized=excluded.finalized,
@@ -576,6 +596,7 @@ def append_revision(
                 enriched,
                 _record_json(record, store),
                 time.time_ns(),
+                first_published_ns,
             ),
         )
         updated = store.connection.execute(
@@ -680,6 +701,25 @@ def validate_publications(
         }
         shard_info = tuple(connection.execute("PRAGMA table_info(shards)"))
         shard_columns = {row[1] for row in shard_info}
+        publication_info = tuple(
+            connection.execute("PRAGMA table_info(game_publications)")
+        )
+        origin_columns = (
+            "first_published_ns" in shard_columns,
+            "first_published_ns" in {row[1] for row in publication_info},
+        )
+        if any(origin_columns) and not all(origin_columns):
+            raise ValueError("replay publication origin columns are incomplete")
+        origin_invalid_sql = "0"
+        if all(origin_columns):
+            origin_invalid_sql = (
+                "CASE WHEN "
+                "(p.first_published_ns IS NOT NULL AND "
+                "(typeof(p.first_published_ns) != 'integer' "
+                "OR p.first_published_ns <= 0 OR p.first_published_ns > p.updated_ns)) "
+                "OR (s.id IS NOT NULL AND (p.first_published_ns IS NOT s.first_published_ns "
+                "OR s.first_published_ns > s.created_ns)) THEN 1 ELSE 0 END"
+            )
         if (
             not {"replay_revision", "enriched_rows", "history_complete"}
             <= counter_columns
@@ -701,7 +741,7 @@ def validate_publications(
                 "game_publications",
                 "game_id",
                 "TEXT",
-                tuple(connection.execute("PRAGMA table_info(game_publications)")),
+                publication_info,
             ),
         ):
             primary = [
@@ -770,6 +810,7 @@ def validate_publications(
                     *(f"g.{column}" for column in game_columns),
                     "s.id",
                     *(f"s.{column}" for column in shard_columns_for_validation),
+                    origin_invalid_sql,
                 )
             )
             + (
@@ -793,7 +834,11 @@ def validate_publications(
         game_offset = len(publication_columns) + 1
         shard_offset = game_offset + len(game_columns)
         for joined in connection.execute(query, parameters):
-            row = tuple(joined)
+            # Check optional origin metadata during the existing single ledger
+            # scan, including its run filters and GC-retired head handling.
+            if joined[-1]:
+                raise ValueError("replay publication origin metadata is inconsistent")
+            row = tuple(joined[:-1])
             (
                 game_id,
                 run,

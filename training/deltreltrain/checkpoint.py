@@ -462,6 +462,14 @@ def load_checkpoint(
         "config": payload["config"],
         "extra": payload["extra"],
         "optimizer_routing": payload.get("optimizer_routing"),
+        "scheduler_step": (
+            payload["scheduler"].get("last_epoch")
+            if isinstance(payload["scheduler"], Mapping)
+            else None
+        ),
+        "ema_decay": ema_payload.get("decay")
+        if isinstance(ema_payload, Mapping)
+        else None,
     }
     clipping_state = payload.get("gradient_clipping")
     saved_train = payload["config"].get("train", {})
@@ -756,6 +764,14 @@ def inspect_checkpoint(
         "epoch": int(payload["epoch"]),
         "config": payload["config"],
         "extra": payload["extra"],
+        "scheduler_step": (
+            payload["scheduler"].get("last_epoch")
+            if isinstance(payload["scheduler"], Mapping)
+            else None
+        ),
+        "ema_decay": (
+            payload["ema"].get("decay") if isinstance(payload["ema"], Mapping) else None
+        ),
         "has_optimizer": payload["optimizer"] is not None,
         "has_scheduler": payload["scheduler"] is not None,
         "has_ema": payload["ema"] is not None,

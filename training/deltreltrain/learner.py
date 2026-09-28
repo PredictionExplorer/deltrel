@@ -70,6 +70,13 @@ from .lr_governor import (
     reduced_multiplier,
 )
 from .model import MODEL_SCHEMA_VERSION, GraphResTNet
+from .plateau_evidence import (
+    PlateauVerdictStore,
+    receipt_for_recovery,
+    receipts_from_checkpoint_extra,
+    scope_identity,
+    verdict_identity,
+)
 from .optim import OptimizerRoutingMetadata, build_optimizer, optimizer_routing_metadata
 from .replay import (
     DecodedReplayShard,
@@ -80,6 +87,7 @@ from .replay import (
     decode_replay_shard,
 )
 from .replay_store import ReplaySelection, ReplaySpan, ReplayStore
+from .protected_replay import ProtectedChampionReplay
 from .runtime import RunIdentity, append_jsonl, atomic_json
 from .symmetry import deterministic_transform
 from .variant_training import training_segment_quotas, training_variant_allowed
@@ -626,6 +634,10 @@ def replay_selection_diagnostics(
     modes: dict[str, int] = defaultdict(int)
     cells: dict[str, int] = defaultdict(int)
     ages: dict[int, int] = defaultdict(int)
+    sources: dict[str, int] = defaultdict(int)
+    protected_rows: dict[int, int] = defaultdict(int)
+    protected_cells: dict[str, int] = defaultdict(int)
+    protected_shards = set(selection.protected_champion_shard_ids)
     for span in selection.spans:
         ring, count = span.record.ring, span.sample_count
         rows[ring] += count
@@ -639,6 +651,10 @@ def replay_selection_diagnostics(
         )
         modes[mode] += count
         cells[f"r{ring}/{mode}"] += count
+        sources[getattr(span.record, "model_identity", "unknown")] += count
+        if span.record.shard_id in protected_shards:
+            protected_rows[ring] += count
+            protected_cells[f"r{ring}/{mode}"] += count
         model_step = getattr(span.record, "model_step", None)
         if type(model_step) is int:
             ages[current_model_step - model_step] += count
@@ -652,7 +668,7 @@ def replay_selection_diagnostics(
                 return age
         return None
 
-    return {
+    result: dict[str, object] = {
         "sampler": "selected-span-packing-v2",
         "selected_rows_by_ring": {str(r): n for r, n in sorted(rows.items())},
         "batch_capacity_by_ring": {
@@ -665,6 +681,7 @@ def replay_selection_diagnostics(
         "short_span_rows_by_ring": {str(r): n for r, n in sorted(short_rows.items())},
         "selected_rows_by_six_mode": dict(sorted(modes.items())),
         "selected_rows_by_ring_and_six_mode": dict(sorted(cells.items())),
+        "selected_rows_by_model_identity": dict(sorted(sources.items())),
         "selected_model_age": {
             "known_rows": total_aged,
             "mean": sum(age * count for age, count in ages.items()) / total_aged
@@ -676,6 +693,35 @@ def replay_selection_diagnostics(
             "p90": quantile(0.9),
         },
     }
+    protection = selection.protected_champion
+    selected_protected = sum(protected_rows.values())
+    total = sum(rows.values())
+    result["protected_champion_replay"] = {
+        "enabled": protection is not None,
+        "scope": "selected_replay_window_not_consumed_updates",
+        "model_identity": protection.model_identity if protection else None,
+        "model_step": protection.model_step if protection else None,
+        "max_fraction": protection.max_fraction if protection else None,
+        "selected_rows": selected_protected,
+        "ordinary_selected_rows": total - selected_protected,
+        "selected_fraction": selected_protected / total if total else 0.0,
+        "selected_rows_by_ring": {str(r): n for r, n in sorted(protected_rows.items())},
+        "selected_rows_by_ring_and_six_mode": dict(sorted(protected_cells.items())),
+        "selected_fraction_by_ring_and_six_mode": {
+            cell: protected_cells.get(cell, 0) / count
+            for cell, count in sorted(cells.items())
+            if count
+        },
+        "cap_respected": (
+            all(
+                count <= protection.quota(cells[cell])
+                for cell, count in protected_cells.items()
+            )
+            if protection is not None
+            else not selected_protected
+        ),
+    }
+    return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -950,6 +996,10 @@ class TrainingObjectiveOptions(TypedDict, total=False):
 
 class RingSegmentQuotaOptions(TypedDict, total=False):
     ring_segment_quotas: dict[int, dict[str, float]]
+
+
+class ProtectedChampionReplayOptions(TypedDict, total=False):
+    protected_champion: ProtectedChampionReplay
 
 
 @dataclass(frozen=True, slots=True)
@@ -1409,6 +1459,9 @@ class LearnerLoop:
         self._control_manifest_cache = ControlManifestCache()
         self.rank = rank
         self.world_size = world_size
+        from .reuse_clock import ReuseClock
+
+        self._reuse_clock: ReuseClock | None = None
         self.store.register_run(run_identity)
         output_root = Path(output_directory)
         self.utd_segment_path = output_root / UTD_SEGMENT_FILENAME
@@ -1471,6 +1524,7 @@ class LearnerLoop:
             )
         else:
             self.compiled_model = compiled_model
+        self._configure_reuse_clock({"step": 0})
 
     @classmethod
     def from_experiment(
@@ -1574,6 +1628,7 @@ class LearnerLoop:
         self._resume_utd_target = resume_utd_target
         self._resume_utd_segment_state = resume_utd_segment
         self._last_recovery_step = self.step
+        self._configure_reuse_clock(metadata)
         self._adopt_checkpoint_governor(metadata.get("extra"))
         extra = metadata.get("extra", {})
         if isinstance(extra, Mapping) and isinstance(
@@ -1600,6 +1655,7 @@ class LearnerLoop:
         as the reference, so resuming them never changes the effective rate.
         """
 
+        self._plateau_verdict_receipts = receipts_from_checkpoint_extra(extra)
         self._lr_governor = governor_from_checkpoint_extra(extra, self.scheduler)
         apply_governor(self.optimizer, self.scheduler, self._lr_governor)
         if self.rank == 0 and self._lr_governor.legacy_reference:
@@ -1620,6 +1676,12 @@ class LearnerLoop:
         extra: dict[str, object] = {
             LEARNING_RATE_GOVERNOR_KEY: self._lr_governor.as_dict()
         }
+        receipts = getattr(self, "_plateau_verdict_receipts", None)
+        if receipts is not None:
+            extra["plateau_verdict_receipts"] = receipts
+        clock = getattr(self, "_reuse_clock", None)
+        if clock is not None:
+            extra["reuse_clock"] = clock.as_dict()
         upgrade = getattr(self, "_auxiliary_upgrade", None)
         if upgrade is not None:
             extra["auxiliary_upgrade"] = upgrade
@@ -1639,7 +1701,18 @@ class LearnerLoop:
                 self._auxiliary_supervision.setdefault(name, self.step)
 
     def _learning_rate_metrics(self) -> dict[str, object]:
+        clock = getattr(self, "_reuse_clock", None)
         return {
+            **(
+                {
+                    "reuse_clock": clock.as_dict(),
+                    "scheduler_reference_age": clock.reference_age(
+                        int(self.scheduler.last_epoch)
+                    ),
+                }
+                if clock is not None
+                else {}
+            ),
             "learning_rate_multiplier": self._lr_governor.multiplier,
             "reference_learning_rates": list(self._lr_governor.reference_base_lrs),
             "learning_rate_scaled_champion_identity": (
@@ -1648,6 +1721,13 @@ class LearnerLoop:
         }
 
     def _validate_resume_metadata(self, metadata: Mapping[str, object]) -> None:
+        from .reuse_clock import checkpoint_clock
+
+        saved_clock = checkpoint_clock(metadata)
+        # Validate the entire prospective transition before load_checkpoint
+        # mutates model/optimizer/EMA state. Configuration mismatches must not
+        # leave a partially resumed learner behind.
+        self._prospective_reuse_clock(metadata)
         examples_consumed = self._resume_examples_consumed(metadata)
         self._checkpoint_segment_baseline(
             metadata,
@@ -1673,6 +1753,100 @@ class LearnerLoop:
             raise ValueError(
                 "checkpoint examples_consumed precedes its UTD segment baseline"
             )
+        if self.learner_config.reuse_clock_reference_target is not None:
+            # load_checkpoint validates against the saved averaging horizon;
+            # only future updates use the newly configured horizon.
+            self.ema.decay = (
+                saved_clock.ema_decay
+                if saved_clock is not None
+                else self.train_config.resolved_ema_decay(self.world_size)
+            )
+
+    def _prospective_reuse_clock(self, metadata: Mapping[str, object]):
+        from .reuse_clock import (
+            checkpoint_clock,
+            continuation_clock,
+        )
+
+        saved_clock = checkpoint_clock(metadata)
+        reference = self.learner_config.reuse_clock_reference_target
+        if reference is None:
+            if saved_clock is not None:
+                raise ValueError("resuming a reuse clock requires its explicit profile")
+            return None
+        if not isinstance(self.scheduler, torch.optim.lr_scheduler.LambdaLR):
+            raise ValueError("reuse clock requires the configured LambdaLR scheduler")
+        target = self.learner_config.target_updates_per_new_sample
+        assert target is not None
+        saved_config = metadata.get("config")
+        saved_train = (
+            saved_config.get("train") if isinstance(saved_config, Mapping) else None
+        )
+        if isinstance(saved_config, Mapping):
+            current_train = self.serialized_config["train"]
+            if (
+                not isinstance(saved_train, Mapping)
+                or not isinstance(current_train, Mapping)
+                or any(
+                    saved_train.get(name) != current_train.get(name)
+                    for name in (
+                        "scheduler",
+                        "ema_decay",
+                        "ema_half_life_examples",
+                        "per_rank_batch_size",
+                    )
+                )
+            ):
+                raise ValueError(
+                    "reuse continuation must preserve LR/EMA/batch settings"
+                )
+            if self._checkpoint_utd_target(metadata) is None:
+                raise ValueError("reuse continuation requires the saved reuse target")
+            scheduler_step = metadata.get("scheduler_step")
+            if type(scheduler_step) is not int or scheduler_step < 0:
+                raise ValueError("reuse continuation requires the saved scheduler step")
+            expected_decay = (
+                saved_clock.ema_decay
+                if saved_clock is not None
+                else self.train_config.resolved_ema_decay(self.world_size)
+            )
+            saved_decay = metadata.get("ema_decay")
+            if (
+                isinstance(saved_decay, bool)
+                or not isinstance(saved_decay, (int, float))
+                or not math.isclose(
+                    saved_decay, expected_decay, rel_tol=1e-12, abs_tol=1e-12
+                )
+            ):
+                raise ValueError(
+                    "checkpoint EMA decay differs from the reuse reference"
+                )
+        else:
+            scheduler_step = int(self.scheduler.last_epoch)
+        step = metadata.get("step")
+        if type(step) is not int or step < 0:
+            raise ValueError("reuse continuation requires a valid checkpoint step")
+        return continuation_clock(
+            previous=saved_clock,
+            previous_target=self._checkpoint_utd_target(metadata),
+            reference_target=reference,
+            target=target,
+            step=step,
+            scheduler_step=scheduler_step,
+            reference_ema_decay=self.train_config.resolved_ema_decay(self.world_size),
+        )
+
+    def _configure_reuse_clock(self, metadata: Mapping[str, object]) -> None:
+        from .reuse_clock import clocked_multiplier
+
+        clock = self._prospective_reuse_clock(metadata)
+        if clock is None:
+            return
+        assert isinstance(self.scheduler, torch.optim.lr_scheduler.LambdaLR)
+        factor = clocked_multiplier(clock, self.train_config.scheduler)
+        self.scheduler.lr_lambdas = [factor for _ in self.scheduler.base_lrs]
+        self._reuse_clock = clock
+        self.ema.decay = clock.ema_decay
 
     @staticmethod
     def _checkpoint_segment_baseline(
@@ -3584,12 +3758,44 @@ class LearnerLoop:
             return {"handicap": 0.5, "pie": 0.5}
         return None
 
+    def _protected_champion_replay(self) -> ProtectedChampionReplay | None:
+        configured = self.learner_config
+        if configured.protected_champion_fraction == 0:
+            return None
+        after = configured.protected_champion_after_ns
+        assert after is not None
+        now = time.time_ns()
+        if now < after or not self.publisher.champion_path.is_file():
+            return None
+        champion = self._control_model_manifest(self.publisher.champion_path)
+        if (
+            champion.run_id != self.run_identity.run_id
+            or champion.generation_family != self.run_identity.generation_family
+            or champion.role != "champion"
+        ):
+            raise ValueError("protected champion does not belong to the active run")
+        if champion.model_step >= max(0, self.step - configured.max_replay_lag_steps):
+            return None
+        return ProtectedChampionReplay(
+            model_identity=champion.model_identity,
+            model_step=champion.model_step,
+            minimum_first_published_ns=max(
+                after, now - int(configured.protected_champion_max_age_seconds * 1e9)
+            ),
+            maximum_first_published_ns=now,
+            max_fraction=configured.protected_champion_fraction,
+        )
+
     def _rank_zero_select_replay_spans(
         self, *, gc_watermark_name: str | None = None
     ) -> ReplaySelection:
         rings = self.ring_mixture_config.rings
         if self.learner_config.use_ring_mixture_curriculum:
             rings = self._active_replay_rings(self._eligible_replay_counts())
+        protection_kwargs: ProtectedChampionReplayOptions = {}
+        protection = self._protected_champion_replay()
+        if protection is not None:
+            protection_kwargs["protected_champion"] = protection
         return self.store.select_recent_spans(
             rings=rings,
             per_ring_quota=self.learner_config.recent_samples_per_ring,
@@ -3604,6 +3810,7 @@ class LearnerLoop:
             within_segment_classic_shares=self._within_segment_classic_shares(),
             **self._training_objective_kwargs(),
             **self._ring_segment_quota_kwargs(rings),
+            **protection_kwargs,
             **(
                 {"gc_watermark_name": gc_watermark_name}
                 if gc_watermark_name is not None
@@ -3612,6 +3819,10 @@ class LearnerLoop:
         )
 
     def _eligible_replay_counts(self) -> dict[int, int]:
+        protection_kwargs: ProtectedChampionReplayOptions = {}
+        protection = self._protected_champion_replay()
+        if protection is not None:
+            protection_kwargs["protected_champion"] = protection
         return self.store.eligible_sample_counts(
             self.ring_mixture_config.rings,
             run_id=self.run_identity.run_id,
@@ -3623,6 +3834,7 @@ class LearnerLoop:
             minimum_shard_id_exclusive=(
                 self.learner_config.minimum_replay_shard_id_exclusive
             ),
+            **protection_kwargs,
         )
 
     def _active_replay_rings(self, counts: Mapping[int, int]) -> tuple[int, ...]:
@@ -4480,6 +4692,16 @@ class LearnerLoop:
             if kind == "recover":
                 previous_step = self.step
                 previous_examples = getattr(self, "examples_consumed", None)
+                evidence = action.get("plateau_evidence")
+                if isinstance(evidence, Mapping):
+                    # Persist this receipt in the recovery checkpoint together
+                    # with the new multiplier. A crash before publication loses
+                    # both; a restart after publication restores both.
+                    self._plateau_verdict_receipts = receipt_for_recovery(
+                        getattr(self, "_plateau_verdict_receipts", None),
+                        evidence,
+                        learner_step=self.step,
+                    )
                 if reduce_learning_rate:
                     self._scale_learning_rates(
                         configured.reset_learning_rate_scale,
@@ -4503,15 +4725,23 @@ class LearnerLoop:
                         raise RuntimeError(
                             "plateau recovery did not create a recovery checkpoint"
                         )
+                    # A durable verdict recovery changes rates, not model
+                    # history. Leave in-progress evaluations and their status
+                    # intact; the checkpoint receipt replaces the old cutover
+                    # and status-reset acknowledgement protocol.
                     cutover_created_ns = time.time_ns()
-                    write_resume_cutover(
-                        self.publisher.root,
-                        manifest=recovery,
-                        run_id=self.run_identity.run_id,
-                        generation_family=self.run_identity.generation_family,
-                        created_ns=cutover_created_ns,
-                    )
-                    if self.promotion_status_path is not None:
+                    if not isinstance(evidence, Mapping):
+                        write_resume_cutover(
+                            self.publisher.root,
+                            manifest=recovery,
+                            run_id=self.run_identity.run_id,
+                            generation_family=self.run_identity.generation_family,
+                            created_ns=cutover_created_ns,
+                        )
+                    if (
+                        not isinstance(evidence, Mapping)
+                        and self.promotion_status_path is not None
+                    ):
                         atomic_json(
                             self.promotion_status_path,
                             {
@@ -4545,6 +4775,11 @@ class LearnerLoop:
                                 configured.reset_learning_rate_scale
                             ),
                             "learning_rate_reduced": reduce_learning_rate,
+                            **(
+                                {"plateau_verdict_ids": evidence["verdict_ids"]}
+                                if isinstance(evidence, Mapping)
+                                else {}
+                            ),
                             **self._learning_rate_metrics(),
                             "optimizer_state_cleared": (
                                 reduce_learning_rate
@@ -4760,6 +4995,10 @@ class LearnerLoop:
         retention = self._retention_config()
         if not retention.enabled or self.epoch % retention.gc_interval_windows != 0:
             return
+        protection_kwargs: ProtectedChampionReplayOptions = {}
+        protection = self._protected_champion_replay()
+        if protection is not None:
+            protection_kwargs["protected_champion"] = protection
         metrics = self.store.collect_garbage(
             run_id=self.run_identity.run_id,
             generation_family=self.run_identity.generation_family,
@@ -4773,6 +5012,7 @@ class LearnerLoop:
             within_segment_classic_shares=self._within_segment_classic_shares(),
             **self._training_objective_kwargs(),
             **self._ring_segment_quota_kwargs(self.ring_mixture_config.rings),
+            **protection_kwargs,
         )
         self.metrics.append(
             {
@@ -4911,6 +5151,48 @@ class LearnerLoop:
         keep_weights = configured.action == "reduce_lr_keep_weights"
         if not keep_weights and lag < configured.max_learner_champion_lag_steps:
             return {"kind": "proceed"}
+        if keep_weights and not self._learning_rate_at_floor(configured):
+            store = getattr(self, "_plateau_verdict_store", None)
+            if store is None and self.promotion_status_path is not None:
+                store = self._plateau_verdict_store = PlateauVerdictStore(
+                    self.promotion_status_path.parent
+                )
+            if store is not None:
+                evidence = store.pending_recovery(
+                    champion_identity=champion.model_identity,
+                    champion_step=champion.model_step,
+                    contract_identity=getattr(
+                        self, "expected_promotion_contract_identity", None
+                    ),
+                    learner_step=self.step,
+                    receipts=getattr(self, "_plateau_verdict_receipts", None),
+                    required_rejections=configured.consecutive_terminal_rejections,
+                    count_inconclusive=configured.count_inconclusive_rejections,
+                    poll_seconds=configured.poll_seconds,
+                )
+                if evidence is not None:
+                    return {
+                        "kind": "recover",
+                        "reset_reason": "terminal_rejection_streak",
+                        "champion_identity": champion.model_identity,
+                        "champion_step": champion.model_step,
+                        "candidate_identity": evidence["candidate_identity"],
+                        "candidate_step": evidence["candidate_step"],
+                        "plateau_evidence": evidence,
+                    }
+                contract = getattr(self, "expected_promotion_contract_identity", None)
+                receipts = getattr(self, "_plateau_verdict_receipts", None)
+                recorded = receipts_from_checkpoint_extra(
+                    {"plateau_verdict_receipts": receipts}
+                )["scopes"]
+                if (
+                    store.has_scope(champion.model_identity, contract)
+                    or scope_identity(champion.model_identity, contract) in recorded
+                ):
+                    # A mutable status streak includes pre-recovery candidates.
+                    # Once durable evidence exists, only fresh verdicts may
+                    # earn another cut; never fall back to that stale counter.
+                    return {"kind": "proceed"}
         candidate = (
             self._control_model_manifest(self.publisher.candidate_path)
             if self.publisher.candidate_path.is_file()
@@ -4939,6 +5221,8 @@ class LearnerLoop:
         status_matches = (
             candidate is not None
             and status.get("candidate_identity") == candidate.model_identity
+            and status.get("champion_identity", champion.model_identity)
+            == champion.model_identity
         )
         terminal_rejection, streak = self._promotion_status_rejection(
             status,
@@ -4980,6 +5264,23 @@ class LearnerLoop:
                 "champion_step": champion.model_step,
                 "candidate_identity": candidate.model_identity,
                 "candidate_step": candidate.model_step,
+                **(
+                    {
+                        "plateau_evidence": {
+                            "champion_identity": champion.model_identity,
+                            "evaluation_contract_identity": expected_contract,
+                            "verdict_ids": [
+                                verdict_identity(
+                                    champion.model_identity,
+                                    expected_contract,
+                                    candidate.model_identity,
+                                )
+                            ],
+                        }
+                    }
+                    if keep_weights
+                    else {}
+                ),
                 **(
                     {
                         "checkpoint": str(champion.checkpoint),

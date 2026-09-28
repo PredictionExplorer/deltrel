@@ -256,6 +256,9 @@ class LearnerConfig:
     minimum_unique_samples_per_ring: int = 1
     use_ring_mixture_curriculum: bool = False
     max_replay_lag_steps: int = 50_000
+    protected_champion_fraction: float = 0.0
+    protected_champion_max_age_seconds: float = 21_600.0
+    protected_champion_after_ns: int | None = None
     minimum_replay_shard_id_exclusive: int | None = None
     steps_per_window: int = 100
     candidate_interval: int = 1_000
@@ -265,6 +268,7 @@ class LearnerConfig:
     selfplay_snapshot_warmup_interval_examples: int | None = None
     recovery_interval_steps: int | None = None
     target_updates_per_new_sample: float | None = None
+    reuse_clock_reference_target: float | None = None
     metrics_interval: int = 10
     replay_poll_seconds: float = 2.0
     replay_refresh_seconds: float = 300.0
@@ -288,6 +292,32 @@ class LearnerConfig:
             raise ConfigError("replay_refresh_seconds must be finite and positive")
         if type(self.use_ring_mixture_curriculum) is not bool:
             raise ConfigError("use_ring_mixture_curriculum must be boolean")
+        if (
+            isinstance(self.protected_champion_fraction, bool)
+            or not isinstance(self.protected_champion_fraction, int | float)
+            or not math.isfinite(self.protected_champion_fraction)
+            or not 0 <= self.protected_champion_fraction <= 0.5
+        ):
+            raise ConfigError("protected_champion_fraction must be in [0, 0.5]")
+        if (
+            isinstance(self.protected_champion_max_age_seconds, bool)
+            or not isinstance(self.protected_champion_max_age_seconds, int | float)
+            or not math.isfinite(self.protected_champion_max_age_seconds)
+            or self.protected_champion_max_age_seconds <= 0
+        ):
+            raise ConfigError("protected_champion_max_age_seconds must be positive")
+        if self.protected_champion_after_ns is not None and (
+            type(self.protected_champion_after_ns) is not int
+            or self.protected_champion_after_ns <= 0
+        ):
+            raise ConfigError("protected_champion_after_ns must be a positive integer")
+        if (
+            self.protected_champion_fraction
+            and self.protected_champion_after_ns is None
+        ):
+            raise ConfigError(
+                "protected champion replay requires an activation timestamp"
+            )
         if self.segment_quotas is not None:
             if not isinstance(self.segment_quotas, dict) or not self.segment_quotas:
                 raise ConfigError("segment_quotas must be a non-empty mapping")
@@ -403,6 +433,16 @@ class LearnerConfig:
             )
         if self.replay_poll_seconds <= 0 or self.replay_wait_timeout_seconds < 0:
             raise ConfigError("learner replay wait settings are invalid")
+        if self.reuse_clock_reference_target is not None and (
+            isinstance(self.reuse_clock_reference_target, bool)
+            or not isinstance(self.reuse_clock_reference_target, (int, float))
+            or not math.isfinite(self.reuse_clock_reference_target)
+            or self.reuse_clock_reference_target <= 0
+            or self.target_updates_per_new_sample is None
+        ):
+            raise ConfigError(
+                "reuse clock requires finite positive reference and target"
+            )
         if not self.device:
             raise ConfigError("learner device must be non-empty")
 
@@ -2132,6 +2172,15 @@ class ExperimentConfig:
         # release, avoiding a new compatibility-hash dimension on old runs.
         # Enabled/nondefault values remain explicit and authoritative.
         result = without_efficiency_program_defaults(asdict(self))
+        if self.learner.reuse_clock_reference_target is None:
+            del result["learner"]["reuse_clock_reference_target"]
+        for name, default in (
+            ("protected_champion_fraction", 0.0),
+            ("protected_champion_max_age_seconds", 21_600.0),
+            ("protected_champion_after_ns", None),
+        ):
+            if getattr(self.learner, name) == default:
+                del result["learner"][name]
         # Preserve the exact serialized authority of pre-auxiliary profiles.
         # Enabled heads and nonzero weights always remain in the fingerprint.
         if self.model.auxiliary_predictions is False:

@@ -872,6 +872,68 @@ def test_recovery_after_completed_inverse_migration_does_not_migrate_twice(
     ] == str(rollback)
 
 
+def test_reuse_rollback_preserves_reference_clock_and_latest_checkpoint(
+    deployment, monkeypatch
+):
+    from dataclasses import replace
+    from deltreltrain.config import load_config
+    from deltreltrain.training_recovery_policy import reuse_config
+
+    source = load_config(deployment.source)
+    source = replace(
+        source,
+        learner=replace(source.learner, target_updates_per_new_sample=1.5),
+    )
+    candidate = reuse_config(source, target=2.0)
+    deployment.source.write_text(yaml.safe_dump(source.as_dict()))
+    deployment.candidate.write_text(yaml.safe_dump(candidate.as_dict()))
+    plan = {
+        **deployment.plan,
+        "source_profile_sha256": deploy.digest(deployment.source),
+        "candidate_profile_sha256": deploy.digest(deployment.candidate),
+    }
+    write(deployment.test_plan_path, plan)
+    subject = deploy.Deployment(deployment.test_plan_path)
+    subject.test_plan_path = deployment.test_plan_path
+    subject, checkpoint, _ = activate_source_only_target(subject)
+    mock_stop(subject, monkeypatch)
+    seen = []
+
+    def migrate(active, recovery_source, name, commit, **options):
+        assert active == subject.target
+        assert commit == subject.plan["target_commit"]
+        assert options == {"recovery": True}
+        recovered = load_config(recovery_source)
+        assert recovered == replace(
+            source,
+            learner=replace(source.learner, reuse_clock_reference_target=1.5),
+        )
+        path = subject.root / name
+        path.write_bytes(recovery_source.read_bytes())
+        seen.append(("migrate", path))
+
+    monkeypatch.setattr(subject, "migrate", migrate)
+    monkeypatch.setattr(
+        subject, "install_units", lambda path: seen.append(("install", path))
+    )
+    monkeypatch.setattr(
+        subject,
+        "start",
+        lambda profile, saved: (
+            seen.append(("start", profile, saved)) or {"ready": True}
+        ),
+    )
+    monkeypatch.setattr(subject, "restore_support", lambda: None)
+    subject.recover()
+    recovered_path = seen[0][1]
+    assert seen == [
+        ("migrate", recovered_path),
+        ("install", recovered_path),
+        ("start", recovered_path, checkpoint),
+    ]
+    assert load_config(recovered_path).learner.reuse_clock_reference_target == 1.5
+
+
 def activate_source_only_target(deployment, *, formatting_only=False):
     if formatting_only:
         payload = yaml.safe_load(deployment.source.read_text())

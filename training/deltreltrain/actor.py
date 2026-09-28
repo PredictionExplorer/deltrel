@@ -43,6 +43,7 @@ from .device import (
 from .inference import GraphInferenceAdapter, InferenceConfig
 from .inference_batching import CohortInferenceAdapter
 from .history_horizon import HistoryHorizon, HistoryHorizonTracker
+from .protected_replay import replay_commit_eligibility_metrics
 from .model import GraphResTNet
 from .replay_store import ReplayStore, ReplayStoreCancelled
 from .runtime import HeartbeatReporter, RunIdentity, append_jsonl
@@ -1183,10 +1184,32 @@ class ActorSupervisor:
                         fallback_step=candidate.model_step
                     )
                     model_lag_at_commit = completion_step - evaluator.model_step
-                    replay_eligible_at_commit = (
+                    ordinary_replay_eligible_at_commit = (
                         0
                         <= model_lag_at_commit
                         <= self.experiment.learner.max_replay_lag_steps
+                    )
+                    protected_candidate = False
+                    protection = self.experiment.learner
+                    if (
+                        not ordinary_replay_eligible_at_commit
+                        and model_lag_at_commit >= 0
+                        and protection.protected_champion_fraction > 0
+                        and protection.protected_champion_after_ns is not None
+                        and batch_completed_ns >= protection.protected_champion_after_ns
+                    ):
+                        retained = self._read_champion()
+                        protected_candidate = (
+                            retained.model_identity == evaluator.model_identity
+                            and retained.model_step == evaluator.model_step
+                            and retained.run_id == self.run_identity.run_id
+                            and retained.generation_family
+                            == self.run_identity.generation_family
+                        )
+                    replay_commit_metrics = replay_commit_eligibility_metrics(
+                        ordinary_eligible=ordinary_replay_eligible_at_commit,
+                        protected_candidate=protected_candidate,
+                        samples=samples,
                     )
                     cumulative_games += len(summaries)
                     cumulative_samples += samples
@@ -1382,13 +1405,7 @@ class ActorSupervisor:
                             "model_identity": evaluator.model_identity,
                             "model_step": evaluator.model_step,
                             "model_lag_at_commit": model_lag_at_commit,
-                            "replay_eligible_at_commit": replay_eligible_at_commit,
-                            "eligible_samples_at_commit": (
-                                samples if replay_eligible_at_commit else 0
-                            ),
-                            "ineligible_samples_at_commit": (
-                                0 if replay_eligible_at_commit else samples
-                            ),
+                            **replay_commit_metrics,
                             **(
                                 work_lease.metadata.get("history_metrics", {})
                                 if work_lease is not None
@@ -2166,7 +2183,16 @@ class ActorSupervisor:
         train on.
         """
 
-        window = self.experiment.learner.max_replay_lag_steps
+        learner = self.experiment.learner
+        if (
+            learner.protected_champion_fraction > 0
+            and learner.protected_champion_after_ns is not None
+            and time.time_ns() >= learner.protected_champion_after_ns
+        ):
+            # Selection keeps the original identity/step and admits only a
+            # bounded share of newly published games from this champion.
+            return False
+        window = learner.max_replay_lag_steps
         return learner_step - champion_step >= window
 
     def _read_learner_scheduling_step(self, *, fallback_step: int) -> tuple[int, str]:

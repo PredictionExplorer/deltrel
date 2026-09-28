@@ -64,6 +64,7 @@ from .model import GraphResTNet
 from .balanced_evaluation import completed_counts_by_ring
 from .native import load_deltrel_native
 from .orchestration import gpu_pause_ack_path
+from .plateau_evidence import PlateauVerdict, record_verdict
 from .runtime import (
     HeartbeatReporter,
     RunIdentity,
@@ -2527,6 +2528,8 @@ class PromotionSupervisor:
         champion: ModelManifest,
     ) -> None:
         result["result_kind"] = "promotion"
+        result["candidate_step"] = candidate.model_step
+        result["champion_step"] = champion.model_step
         result["candidate_manifest"] = str(
             (candidate.artifact_manifest or candidate.path).resolve()
         )
@@ -2822,7 +2825,7 @@ class PromotionSupervisor:
         if self.experiment.arena.balanced_cells:
             from .balanced_evaluation import evaluation_contract
 
-            contract_identity = evaluation_contract(self.experiment.arena)["identity"]
+            contract_identity = str(evaluation_contract(self.experiment.arena)["identity"])
         if prior.get("evaluation_contract_identity") != contract_identity:
             # A different objective/budget starts a new rejection streak even
             # for the same candidate; an old verdict is not a duplicate of it.
@@ -2854,6 +2857,21 @@ class PromotionSupervisor:
             streak += 1
             if conclusive:
                 conclusive_streak += 1
+        if terminal and rejection:
+            # The status below is replaced when the next arena job starts.
+            # Persist the verdict first so learner polling cannot miss it.
+            record_verdict(
+                self.status_path.parent,
+                PlateauVerdict(
+                    candidate_identity=candidate.model_identity,
+                    candidate_step=candidate.model_step,
+                    champion_identity=champion.model_identity,
+                    champion_step=champion.model_step,
+                    evaluation_contract_identity=contract_identity,
+                    decision=decision,
+                    completed_ns=time.time_ns(),
+                ),
+            )
         atomic_json(
             self.status_path,
             {

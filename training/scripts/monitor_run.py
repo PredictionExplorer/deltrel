@@ -1888,6 +1888,23 @@ def collect_snapshot(
         ),
         {},
     )
+    replay_selection_metric = next(
+        (
+            row
+            for row in reversed(learner_records)
+            if isinstance(row.get("replay_selection"), dict)
+        ),
+        {},
+    )
+    replay_selection = _mapping(replay_selection_metric.get("replay_selection"))
+    protected_replay = _mapping(replay_selection.get("protected_champion_replay"))
+    if protected_replay.get("cap_respected") is False:
+        _add_warning(
+            warnings,
+            "ERROR",
+            "protected_champion_replay_cap",
+            "selected protected champion replay exceeds its configured per-cell cap",
+        )
     loader_pool_metric = next(
         (
             row
@@ -2145,6 +2162,10 @@ def collect_snapshot(
         "learning_rates": learner_metric.get("learning_rates"),
         "replay_samples_by_ring": learner_metric.get("replay_samples_by_ring"),
         "replay_samples_by_segment": learner_metric.get("replay_samples_by_segment"),
+        "replay_selection": replay_selection,
+        "replay_selection_age_seconds": _age_seconds(
+            replay_selection_metric.get("timestamp_ns"), now
+        ),
         "replay_segment_quotas": learner_metric.get("replay_segment_quotas"),
         "ring_batch_weights": learner_metric.get("ring_batch_weights"),
         "active_rings": learner_heartbeat.get("active_rings"),
@@ -2457,6 +2478,17 @@ def collect_snapshot(
                 "batch": row.get("batch"),
                 "model_role": row.get("model_role"),
                 "model_step": row.get("model_step"),
+                "replay_eligible_at_commit": row.get("replay_eligible_at_commit"),
+                "ordinary_replay_eligible_at_commit": row.get(
+                    "ordinary_replay_eligible_at_commit"
+                ),
+                "protected_champion_candidate_at_commit": row.get(
+                    "protected_champion_candidate_at_commit"
+                ),
+                "replay_eligibility_status": row.get("replay_eligibility_status"),
+                "protected_pending_selection_samples": row.get(
+                    "protected_pending_selection_samples"
+                ),
                 "games_per_second": row.get("games_per_second"),
                 "samples_per_second": row.get("samples_per_second"),
                 "evaluator_rows_per_second": row.get("evaluator_rows_per_second"),
