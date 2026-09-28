@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from fractions import Fraction
 from pathlib import Path
-from typing import Callable, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 from .contracts import (
     FEATURE_SCHEMA_HASH,
@@ -26,6 +26,7 @@ from .contracts import (
     SEGMENTS,
 )
 from .replay import ReplaySample, read_replay_shard, write_replay_shard
+from .protected_replay import ProtectedChampionReplay, replay_eligibility_clause
 from .runtime import RunIdentity, atomic_json, validate_identifier
 from .topology import SUPPORTED_RINGS, get_topology
 
@@ -364,6 +365,8 @@ class ReplaySelection:
     publication_revision: int = 0
     enriched_samples: int = 0
     committed_samples: int | None = None
+    protected_champion: ProtectedChampionReplay | None = None
+    protected_champion_shard_ids: tuple[int, ...] = ()
 
     def __post_init__(self) -> None:
         _validated_optional_shard_id(
@@ -1194,6 +1197,7 @@ class ReplayStore:
         within_segment_classic_shares: Mapping[str, float] | None = None,
         training_objective: str | None = None,
         ring_segment_quotas: Mapping[int, Mapping[str, float]] | None = None,
+        protected_champion: ProtectedChampionReplay | None = None,
     ) -> dict[str, int]:
         if retain_shards_per_ring <= 0:
             raise ValueError("retain_shards_per_ring must be positive")
@@ -1226,6 +1230,7 @@ class ReplayStore:
                 ring_segment_quotas=ring_segment_quotas,
                 training_objective=training_objective,
                 within_segment_classic_shares=classic_shares or None,
+                protected_champion=protected_champion,
             )
             sample_floor_ids = {span.record.shard_id for span in selection.spans}
             sample_floor_rows = sum(span.sample_count for span in selection.spans)
@@ -1495,8 +1500,8 @@ class ReplayStore:
                     model_identity, run_id, generation_family, actor_id,
                     generation, game_count,
                     rules_hash, feature_schema_hash, checksum_sha256,
-                    variant, segment
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    variant, segment, first_published_ns
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(destination.relative_to(self.root)),
@@ -1518,6 +1523,7 @@ class ReplayStore:
                     checksum,
                     variant,
                     segment,
+                    created_ns,
                 ),
             )
             if cursor.lastrowid is None:
@@ -1603,6 +1609,8 @@ class ReplayStore:
         minimum_shard_id_exclusive: int | None = None,
         maximum_shard_id: int | None = None,
         training_objective: str | None = None,
+        protected_champion: ProtectedChampionReplay | None = None,
+        protected_only: bool = False,
     ) -> list[ShardRecord]:
         if sample_window <= 0:
             raise ValueError("sample_window must be positive")
@@ -1641,7 +1649,18 @@ class ReplayStore:
             # labels are the bare mode. Handicap severity remains unrestricted.
             clauses.append("(variant = ? OR variant LIKE ?)")
             parameters.extend((variant_mode, f"%-{variant_mode}"))
-        if max_model_lag_steps is not None:
+        if protected_champion is not None or protected_only:
+            if current_model_step is None or max_model_lag_steps is None:
+                raise ValueError("protected replay requires a bounded ordinary lag")
+            clause, values = replay_eligibility_clause(
+                current_model_step,
+                max_model_lag_steps,
+                protected_champion,
+                protected_only=protected_only,
+            )
+            clauses.append(clause)
+            parameters.extend(values)
+        elif max_model_lag_steps is not None:
             if current_model_step is None or max_model_lag_steps < 0:
                 raise ValueError(
                     "bounded lag requires current step and non-negative lag"
@@ -1941,6 +1960,7 @@ class ReplayStore:
         minimum_shard_id_exclusive: int | None = None,
         training_objective: str | None = None,
         ring_segment_quotas: Mapping[int, Mapping[str, float]] | None = None,
+        protected_champion: ProtectedChampionReplay | None = None,
     ) -> dict[int, int]:
         requested = _validated_rings(rings)
         minimum_shard_id_exclusive = _validated_optional_shard_id(
@@ -1966,48 +1986,73 @@ class ReplayStore:
                 for ring, quotas in ring_segment_quotas.items()
             }
         grouping = "ring, segment, variant" if strict_fractions is not None else "ring"
+        eligibility, eligibility_values = replay_eligibility_clause(
+            current_model_step, max_model_lag_steps, protected_champion
+        )
+        projection = grouping
+        if protected_champion is not None:
+            projection += ", model_step < ? AS protected"
+            grouping += ", protected"
         rows = self._eligible_count_rows(
             f"""
-            SELECT {grouping}, COALESCE(SUM(sample_count), 0) AS samples
+            SELECT {projection}, COALESCE(SUM(sample_count), 0) AS samples
             FROM shards
             WHERE rules_hash = ?
               AND feature_schema_hash = ?
               AND state = 'ready'
               AND run_id = ?
               AND generation_family = ?
-              AND model_step BETWEEN ? AND ?
+              AND {eligibility}
               {cutoff_clause}
               AND ring IN ({placeholders})
               AND {training_replay_clause(training_objective)}
             GROUP BY {grouping}
             """,
             (
+                *((lower,) if protected_champion is not None else ()),
                 f"{RULES_HASH:016x}",
                 f"{FEATURE_SCHEMA_HASH:016x}",
                 validate_identifier("run_id", run_id),
                 validate_identifier("generation_family", generation_family),
-                lower,
-                current_model_step,
+                *eligibility_values,
                 *cutoff_parameters,
                 *requested,
             ),
         )
         counts = {ring: 0 for ring in requested}
         if strict_fractions is None:
+            sources = {ring: [0, 0] for ring in requested}
             for row in rows:
-                counts[int(row["ring"])] = int(row["samples"])
+                sources[int(row["ring"])][
+                    int(row["protected"]) if protected_champion is not None else 0
+                ] += int(row["samples"])
+            for ring, (ordinary, protected) in sources.items():
+                counts[ring] = (
+                    protected_champion.capacity(ordinary, protected)
+                    if protected_champion is not None
+                    else ordinary
+                )
             return counts
         capacities: dict[int, dict[str, dict[str, int]]] = {
             ring: {} for ring in requested
         }
+        source_counts: dict[tuple[int, str, str], list[int]] = {}
         for row in rows:
             ring, segment, mode = (
                 int(row["ring"]),
                 str(row["segment"]),
                 str(row["variant"]).rsplit("-", 1)[-1],
             )
+            source_counts.setdefault((ring, segment, mode), [0, 0])[
+                int(row["protected"]) if protected_champion is not None else 0
+            ] += int(row["samples"])
+        for (ring, segment, mode), (ordinary, protected) in source_counts.items():
             modes = capacities[ring].setdefault(segment, {})
-            modes[mode] = modes.get(mode, 0) + int(row["samples"])
+            modes[mode] = (
+                protected_champion.capacity(ordinary, protected)
+                if protected_champion is not None
+                else ordinary
+            )
         for ring in requested:
             total = sum(
                 count for modes in capacities[ring].values() for count in modes.values()
@@ -2094,6 +2139,7 @@ class ReplayStore:
         gc_watermark_name: str | None = None,
         training_objective: str | None = None,
         ring_segment_quotas: Mapping[int, Mapping[str, float]] | None = None,
+        protected_champion: ProtectedChampionReplay | None = None,
     ) -> ReplaySelection:
         """Pin counters and selected immutable revisions to one read snapshot."""
 
@@ -2125,6 +2171,7 @@ class ReplayStore:
                 ring_segment_quotas=ring_segment_quotas,
                 training_objective=training_objective,
                 within_segment_classic_shares=within_segment_classic_shares,
+                protected_champion=protected_champion,
             )
             selected = replace(
                 selection,
@@ -2155,6 +2202,7 @@ class ReplayStore:
         within_segment_classic_shares: Mapping[str, float] | None = None,
         training_objective: str | None = None,
         ring_segment_quotas: Mapping[int, Mapping[str, float]] | None = None,
+        protected_champion: ProtectedChampionReplay | None = None,
     ) -> ReplaySelection:
         """Select the most recent samples per ring, optionally stratified by segment.
 
@@ -2209,21 +2257,23 @@ class ReplayStore:
             if minimum_shard_id_exclusive is not None
             else ()
         )
+        eligibility, eligibility_values = replay_eligibility_clause(
+            current_model_step, max_model_lag_steps, protected_champion
+        )
         row = self.connection.execute(
             f"""
             SELECT COALESCE(MAX(id), 0) AS max_id FROM shards
             WHERE state = 'ready'
               AND run_id = ?
               AND generation_family = ?
-              AND model_step BETWEEN ? AND ?
+              AND {eligibility}
               {cutoff_clause}
               AND {training_replay_clause(training_objective)}
             """,
             (
                 run_id,
                 generation_family,
-                max(0, current_model_step - max_model_lag_steps),
-                current_model_step,
+                *eligibility_values,
                 *cutoff_parameters,
             ),
         ).fetchone()
@@ -2240,7 +2290,7 @@ class ReplayStore:
         ) -> list[ReplaySpan]:
             if quota <= 0:
                 return []
-            records = self.recent_shards(
+            options: dict[str, Any] = dict(
                 sample_window=quota,
                 run_id=run_id,
                 generation_family=generation_family,
@@ -2253,22 +2303,48 @@ class ReplayStore:
                 minimum_shard_id_exclusive=minimum_shard_id_exclusive,
                 maximum_shard_id=maximum_shard_id,
             )
-            remaining = quota
-            selected: list[ReplaySpan] = []
-            for record in reversed(records):
-                take = min(record.sample_count, remaining)
-                if take <= 0:
-                    break
-                selected.append(
-                    ReplaySpan(
-                        record=record,
-                        sample_start=record.sample_count - take,
-                        sample_count=take,
+            ordinary = self.recent_shards(**options)
+
+            def take_rows(
+                records: list[ShardRecord], remaining: int
+            ) -> list[ReplaySpan]:
+                selected: list[ReplaySpan] = []
+                for record in reversed(records):
+                    take = min(record.sample_count, remaining)
+                    if take <= 0:
+                        break
+                    selected.append(
+                        ReplaySpan(
+                            record=record,
+                            sample_start=record.sample_count - take,
+                            sample_count=take,
+                        )
                     )
-                )
-                remaining -= take
-            selected.reverse()
-            return selected
+                    remaining -= take
+                selected.reverse()
+                return selected
+
+            if protected_champion is None:
+                return take_rows(ordinary, quota)
+            protected_quota = protected_champion.quota(quota)
+            if protected_quota == 0:
+                return take_rows(ordinary, quota)
+            protected = self.recent_shards(
+                **{**options, "sample_window": protected_quota},
+                protected_champion=protected_champion,
+                protected_only=True,
+            )
+            ordinary_count = sum(record.sample_count for record in ordinary)
+            protected_count = sum(record.sample_count for record in protected)
+            protected_take = min(
+                protected_quota,
+                protected_count,
+                protected_champion.capacity(ordinary_count, protected_count)
+                - ordinary_count,
+            )
+            return take_rows(ordinary, quota - protected_take) + take_rows(
+                protected, protected_take
+            )
 
         for ring in requested:
             active_fractions = ring_fractions.get(ring, fractions)
@@ -2276,31 +2352,42 @@ class ReplayStore:
                 selected = take_recent(ring, per_ring_quota, None)
             else:
                 rows = self.connection.execute(
-                    f"""SELECT segment, variant, SUM(sample_count) AS samples FROM shards
+                    f"""SELECT segment, variant, model_step < ? AS protected,
+                      SUM(sample_count) AS samples FROM shards
                     WHERE state = 'ready' AND run_id = ? AND generation_family = ?
                       AND rules_hash = ? AND feature_schema_hash = ?
-                      AND ring = ? AND model_step BETWEEN ? AND ? AND id <= ?
+                      AND ring = ? AND {eligibility} AND id <= ?
                       {cutoff_clause}
                       AND {training_replay_clause(training_objective)}
-                    GROUP BY segment, variant""",
+                    GROUP BY segment, variant, protected""",
                     (
+                        max(0, current_model_step - max_model_lag_steps),
                         run_id,
                         generation_family,
                         f"{RULES_HASH:016x}",
                         f"{FEATURE_SCHEMA_HASH:016x}",
                         ring,
-                        max(0, current_model_step - max_model_lag_steps),
-                        current_model_step,
+                        *eligibility_values,
                         maximum_shard_id,
                         *cutoff_parameters,
                     ),
                 )
                 capacities: dict[str, int] = {}
                 mode_capacities: dict[str, dict[str, int]] = {}
+                source_counts: dict[tuple[str, str], list[int]] = {}
                 for row in rows:
                     segment, count = str(row["segment"]), int(row["samples"])
-                    capacities[segment] = capacities.get(segment, 0) + count
                     mode = str(row["variant"]).rsplit("-", 1)[-1]
+                    source_counts.setdefault((segment, mode), [0, 0])[
+                        int(row["protected"])
+                    ] += count
+                for (segment, mode), (ordinary, protected) in source_counts.items():
+                    count = (
+                        protected_champion.capacity(ordinary, protected)
+                        if protected_champion is not None
+                        else ordinary
+                    )
+                    capacities[segment] = capacities.get(segment, 0) + count
                     modes = mode_capacities.setdefault(segment, {})
                     modes[mode] = modes.get(mode, 0) + count
                 if training_objective == "ring10_pie":
@@ -2344,6 +2431,16 @@ class ReplayStore:
             maximum_shard_id,
             minimum_shard_id_exclusive,
             samples_by_segment=segment_counts,
+            protected_champion=protected_champion,
+            protected_champion_shard_ids=tuple(
+                span.record.shard_id
+                for span in spans
+                if protected_champion is not None
+                and span.record.model_identity == protected_champion.model_identity
+                and span.record.model_step == protected_champion.model_step
+                and span.record.model_step
+                < max(0, current_model_step - max_model_lag_steps)
+            ),
         )
 
     def load_recent_samples(

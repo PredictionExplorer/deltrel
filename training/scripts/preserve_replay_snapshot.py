@@ -378,6 +378,7 @@ def preserve_stopped_snapshot(run_root: Path, destination: Path) -> dict[str, An
             _path(root, "learner"),
             _path(root, "learner/selfplay"),
             _path(root, "arena"),
+            _path(root, "arena/plateau-verdicts"),
         ):
             if folder.exists():
                 for source in sorted(folder.iterdir()):

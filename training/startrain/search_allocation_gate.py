@@ -41,6 +41,12 @@ AUXILIARY_TRANSITION_SCOPE = POLICY_TRANSITION_SCOPE
 SCHEDULING_TRANSITION_FORMAT = "startrain.search-allocation-scheduling-transition"
 SCHEDULING_TRANSITION_CLASS = "unchanged-search-execution-scheduling-transition"
 SCHEDULING_TRANSITION_SCOPE = POLICY_TRANSITION_SCOPE
+RECOVERY_TRANSITION_FORMAT = (
+    "startrain.search-allocation-training-recovery-transition"
+)
+RECOVERY_TRANSITION_CLASS = "unchanged-search-execution-training-recovery-transition"
+RECOVERY_TRANSITION_SCOPE = POLICY_TRANSITION_SCOPE
+MAX_RECOVERY_TRANSITIONS = 8
 FULL_PROBABILITY_FLOOR = 0.35
 MAX_INCREMENTAL_REGRET_UPPER95 = 0.02
 TIMING_SETUP_COUNTERS = (
@@ -609,6 +615,7 @@ def _validate_policy_transition_gate(
         or "promotion_allocation_transition" in source_gate
         or "auxiliary_prediction_transition" in source_gate
         or "efficiency_scheduling_transition" in source_gate
+        or "training_recovery_transition" in source_gate
     ):
         _fail("policy transition receipts cannot be chained")
     expected = dict(source_gate)
@@ -685,6 +692,7 @@ def _validate_promotion_transition_gate(
         "promotion_allocation_transition" in original
         or "auxiliary_prediction_transition" in original
         or "efficiency_scheduling_transition" in original
+        or "training_recovery_transition" in original
     ):
         _fail("promotion transition receipts cannot be chained")
     expected = dict(original)
@@ -759,6 +767,7 @@ def _validate_auxiliary_transition_gate(
     if (
         "auxiliary_prediction_transition" in original
         or "efficiency_scheduling_transition" in original
+        or "training_recovery_transition" in original
     ):
         _fail("auxiliary transition receipts cannot be chained")
     expected = dict(original)
@@ -827,7 +836,10 @@ def _validate_scheduling_transition_gate(
     if source_gate_path != allocation_gate_path(source):
         _fail("scheduling transition must pin the source configuration's original gate")
     original = _json(source_contents)
-    if "efficiency_scheduling_transition" in original:
+    if (
+        "efficiency_scheduling_transition" in original
+        or "training_recovery_transition" in original
+    ):
         _fail("scheduling transition receipts cannot be chained")
     expected = dict(original)
     expected["target_config_sha256"] = canonical_config_sha256(target)
@@ -846,6 +858,90 @@ def _validate_scheduling_transition_gate(
         verified[path] = signature
 
 
+def _validate_training_recovery_transition_gate(
+    root: Path,
+    gate: dict[str, Any],
+    target: ExperimentConfig,
+    verified: dict[str, tuple[int, ...]],
+    *,
+    _recovery_depth: int = 0,
+) -> None:
+    """Keep measured search authority across bounded, exact training treatments.
+
+    A new receipt replaces only the outer recovery reference. Its source gate
+    preserves every prior receipt, so retries do not discard original evidence
+    or turn a training change into a new search-quality qualification.
+    """
+    from .training_recovery_policy import validate_training_recovery_transition
+
+    if _recovery_depth >= MAX_RECOVERY_TRANSITIONS:
+        _fail("training recovery transition chain exceeds its bounded depth")
+    reference = gate["training_recovery_transition"]
+    _, contents = _read_ref(root, reference, verified)
+    receipt = _json(contents)
+    if (
+        set(receipt)
+        != {
+            "format",
+            "schema_version",
+            "classification",
+            "run_id",
+            "source_profile",
+            "source_gate",
+            "source_config_sha256",
+            "target_config_sha256",
+            "measurement_scope",
+            "new_objective_performance_qualified",
+            "treatment",
+        }
+        or receipt.get("format") != RECOVERY_TRANSITION_FORMAT
+        or type(receipt.get("schema_version")) is not int
+        or receipt["schema_version"] != 1
+        or receipt.get("classification") != RECOVERY_TRANSITION_CLASS
+        or receipt.get("run_id") != target.orchestration.run_id
+        or receipt.get("target_config_sha256") != canonical_config_sha256(target)
+        or receipt.get("measurement_scope") != RECOVERY_TRANSITION_SCOPE
+        or receipt.get("new_objective_performance_qualified") is not False
+    ):
+        _fail(
+            "training recovery transition receipt identity or evidence scope is invalid"
+        )
+    source_path, _ = _read_ref(root, receipt["source_profile"], verified)
+    source = load_config(source_path)
+    if receipt["source_config_sha256"] != canonical_config_sha256(source):
+        _fail("training recovery transition source configuration hash differs")
+    treatment = validate_training_recovery_transition(source, target)
+    if receipt["treatment"] != treatment:
+        _fail("training recovery transition treatment differs from its exact change")
+    source_gate_path, source_contents = _read_ref(
+        root, receipt["source_gate"], verified
+    )
+    if source_gate_path != allocation_gate_path(source):
+        _fail(
+            "training recovery transition must pin the source configuration's original gate"
+        )
+    original = _json(source_contents)
+    expected = dict(original)
+    expected["target_config_sha256"] = canonical_config_sha256(target)
+    expected["training_recovery_transition"] = reference
+    if gate != expected:
+        _fail(
+            "training recovery transition must preserve the complete source gate and reports"
+        )
+    validate_production_ring_allocations(
+        source, _fresh=True, _recovery_depth=_recovery_depth + 1
+    )
+    inherited = _VERIFIED_GATES.get(str(source_gate_path))
+    if inherited is None:
+        _fail("training recovery transition source has no verified allocation evidence")
+    for path, signature in inherited.items():
+        if path in verified and verified[path] != signature:
+            _fail(
+                "source evidence changed while inheriting training recovery admission"
+            )
+        verified[path] = signature
+
+
 def _cache_verified_gate(
     root: Path, key: str, verified: dict[str, tuple[int, ...]]
 ) -> None:
@@ -857,7 +953,7 @@ def _cache_verified_gate(
 
 
 def validate_production_ring_allocations(
-    config: ExperimentConfig, *, _fresh: bool = False
+    config: ExperimentConfig, *, _fresh: bool = False, _recovery_depth: int = 0
 ) -> None:
     allocations = config.selfplay.ring_search_allocations
     for allocation in allocations:
@@ -883,6 +979,8 @@ def validate_production_ring_allocations(
             or config.orchestration.historical_evaluation.measurement_service_fraction
             > 0
             or config.orchestration.model_refresh.history_horizon_enabled
+            or config.learner.protected_champion_fraction > 0
+            or config.learner.reuse_clock_reference_target is not None
         )
         if cached is not None and not fresh and _unchanged(root, cached):
             _VERIFIED_GATES.move_to_end(cache_key)
@@ -902,6 +1000,7 @@ def validate_production_ring_allocations(
                 "promotion_allocation_transition",
                 "auxiliary_prediction_transition",
                 "efficiency_scheduling_transition",
+                "training_recovery_transition",
             }
             != {
                 "format",
@@ -918,6 +1017,12 @@ def validate_production_ring_allocations(
             or gate.get("target_config_sha256") != canonical_config_sha256(config)
         ):
             _fail("gate identity/configuration fields are invalid")
+        if "training_recovery_transition" in gate:
+            _validate_training_recovery_transition_gate(
+                root, gate, config, verified, _recovery_depth=_recovery_depth
+            )
+            _cache_verified_gate(root, cache_key, verified)
+            return
         if "efficiency_scheduling_transition" in gate:
             _validate_scheduling_transition_gate(root, gate, config, verified)
             _cache_verified_gate(root, cache_key, verified)

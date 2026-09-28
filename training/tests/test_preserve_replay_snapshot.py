@@ -125,6 +125,20 @@ def test_preservation_links_payloads_copies_database_and_survives_source_gc(tmp_
         preservation.preserve_stopped_snapshot(root, target)
 
 
+def test_preservation_retains_unconsumed_plateau_verdicts_after_arena_gc(tmp_path):
+    from startrain.plateau_evidence import PlateauVerdict, record_verdict
+
+    root, target = fixture(tmp_path)
+    verdict = PlateauVerdict("candidate", 20, "champion", 10, "contract", "reject", 100)
+    record_verdict(root / "arena", verdict)
+    logical = f"arena/plateau-verdicts/{verdict.identity}.json"
+    contents = (root / logical).read_bytes()
+    preservation.preserve_stopped_snapshot(root, target)
+    shutil.rmtree(root / "arena")
+    assert (target / logical).read_bytes() == contents
+    assert preservation.verify_snapshot(target)["status"] == "verified"
+
+
 def measurement_fixture(tmp_path, *, terminal=True):
     from startrain.measurement_scheduling import MeasurementServiceLedger
     from startrain.runtime import append_jsonl, load_run_identity

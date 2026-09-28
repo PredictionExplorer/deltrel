@@ -81,6 +81,10 @@ _ALLOWED_PROFILE_PATHS = {
     # the durable boundary, and the cadence intervals must scale with the target
     # so publications stay constant per newly generated replay sample.
     ("learner", "target_updates_per_new_sample"),
+    ("learner", "reuse_clock_reference_target"),
+    ("learner", "protected_champion_fraction"),
+    ("learner", "protected_champion_max_age_seconds"),
+    ("learner", "protected_champion_after_ns"),
     ("learner", "candidate_interval_examples"),
     ("learner", "selfplay_snapshot_interval_examples"),
     ("learner", "selfplay_snapshot_warmup_interval_examples"),
@@ -697,6 +701,23 @@ def _validate_profile_pair(
         raise MigrationError(
             "profile changes immutable or unsupported fields: " + ", ".join(disallowed)
         )
+    reference = new.learner.reuse_clock_reference_target
+    old_reference = old.learner.reuse_clock_reference_target
+    if old_reference is not None and reference != old_reference:
+        raise MigrationError("reuse clock reference cannot be removed or changed")
+    if reference is not None:
+        old_target = old.learner.target_updates_per_new_sample
+        new_target = new.learner.target_updates_per_new_sample
+        if old_reference is None and reference != old_target:
+            raise MigrationError("reuse clock must reference the source reuse target")
+        assert old_target is not None and new_target is not None
+        scale = new_target / old_target
+        for name in ("max_replay_lag_steps",):
+            before, after = getattr(old.learner, name), getattr(new.learner, name)
+            if abs(after - before * scale) > 1:
+                raise MigrationError(f"learner.{name} must preserve its fresh-data age")
+        if old.train != new.train:
+            raise MigrationError("reuse clock migration must preserve training settings")
     return tuple(
         (".".join(path), _json_value(before), _json_value(after))
         for path, before, after in differences

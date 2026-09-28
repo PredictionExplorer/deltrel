@@ -92,6 +92,13 @@ def test_empty_group_preserves_canonical_authority_and_nonempty_never_disappears
 ):
     base = load_config(PROFILE)
     old_payload = asdict(base)
+    for name in (
+        "reuse_clock_reference_target",
+        "protected_champion_fraction",
+        "protected_champion_max_age_seconds",
+        "protected_champion_after_ns",
+    ):
+        del old_payload["learner"][name]
     for section, names in (
         (
             "historical_evaluation",
