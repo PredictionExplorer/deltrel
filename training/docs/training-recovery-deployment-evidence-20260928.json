@@ -1,0 +1,703 @@
+{
+  "schema_version": 1,
+  "status": "deployed-canary-and-disaster-backup-verified",
+  "main_implementation_commit": "78868b6fe5b906616b17b9272bfd7ff90a6fd6ce",
+  "production_commit": "659430fc856bb44f005a0898c96f5e0cfd981c15",
+  "server_evidence_root": "/home/ubuntu/edgeconnect-rollouts/training-recovery-20260928",
+  "qualification": {
+    "status": "qualified",
+    "commit": "659430fc856bb44f005a0898c96f5e0cfd981c15",
+    "main_commit": "78868b6fe5b906616b17b9272bfd7ff90a6fd6ce",
+    "archive_sha256": "b232a4630b0c02efde84dff2e8840f6764bc0468b5d470af4bd0ed94fbbbae04",
+    "native_sha256": "d023eb194523ae6f7239fd9ee7f9661059baf47aa8ccb3e00e2e7de8f2fada33",
+    "release": "/home/ubuntu/edgeconnect-releases/variant-training-recovery-20260928",
+    "candidate_profile": "/home/ubuntu/edgeconnect-rollouts/training-recovery-20260928/profile-source-validation.yaml",
+    "completed_ns": 1790640582281819560
+  },
+  "target_host_regressions": {
+    "status": "passed",
+    "selected": 4166,
+    "reported": 4166,
+    "groups": [
+      {
+        "group": 0,
+        "selected": 1042,
+        "exit_code": 0
+      },
+      {
+        "group": 1,
+        "selected": 1042,
+        "exit_code": 0
+      },
+      {
+        "group": 2,
+        "selected": 1041,
+        "exit_code": 0
+      },
+      {
+        "group": 3,
+        "selected": 1041,
+        "exit_code": 0
+      }
+    ],
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "started_ns": 1790639911596195170,
+    "completed_ns": 1790640519594595166
+  },
+  "controller": {
+    "completed_ns": 1790643579503320867,
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-training-recovery-20260928.yaml",
+    "readiness": {
+      "actual_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-f72fa1cb31f8f2c8c9c47797528b43b7deffc36e3a046ae8f10474b228b331ff.pt",
+      "expected_resume": "recovery:/home/ubuntu/edgeconnect-runs/variant-network/learner/recovery/sha256-f72fa1cb31f8f2c8c9c47797528b43b7deffc36e3a046ae8f10474b228b331ff.pt",
+      "observed_ns": 1790643579393579990,
+      "ready": true,
+      "step": 744023
+    },
+    "source_commit": "659430fc856bb44f005a0898c96f5e0cfd981c15",
+    "status": "complete"
+  },
+  "preserved_archive_verification": {
+    "status": "verified",
+    "destination": "/home/ubuntu/edgeconnect-preserved/variant-network/training-recovery-cutover-20260928",
+    "files": 53876,
+    "replay_shards": 53091,
+    "checkpoint_step": 743910,
+    "checkpoint_sha256": "f72fa1cb31f8f2c8c9c47797528b43b7deffc36e3a046ae8f10474b228b331ff",
+    "stopped_boundary_matches": true,
+    "all_archived_file_checksums_verified": true,
+    "replay_ledger_verified": true,
+    "elapsed_seconds": 32.998686084058136,
+    "verified_ns": 1790642515865547155
+  },
+  "canary": {
+    "schema_version": 1,
+    "status": "passed",
+    "observed_ns": 1790643672454797643,
+    "source_commit": "659430fc856bb44f005a0898c96f5e0cfd981c15",
+    "release": "/home/ubuntu/edgeconnect-releases/variant-training-recovery-20260928",
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/profile-training-recovery-20260928.yaml",
+    "profile_sha256": "bb435a9d2fbb1e875109ba4c86ed87bfd8b4b8d1f65551b2683dc8f0a5155742",
+    "profile_settings_changed": true,
+    "strength_epoch_unchanged": true,
+    "utd_segment_unchanged": true,
+    "checkpoint": {
+      "checkpoint": "recovery/sha256-f72fa1cb31f8f2c8c9c47797528b43b7deffc36e3a046ae8f10474b228b331ff.pt",
+      "checkpoint_bytes": 213775175,
+      "checkpoint_sha256": "f72fa1cb31f8f2c8c9c47797528b43b7deffc36e3a046ae8f10474b228b331ff",
+      "epoch": 24508,
+      "examples_consumed": 380881920,
+      "format": "startrain.recovery-pointer",
+      "generation_family": "variant-network-a",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "step": 743910,
+      "updated_ns": 1790642252847169548
+    },
+    "learner_step": 744033,
+    "examples_consumed": 380944896,
+    "worker_count": 10,
+    "worker_restarts": 0,
+    "workers": {
+      "actor-cpu-ring4": {
+        "pid": 1982438,
+        "state": "running",
+        "heartbeat_age_seconds": 2.850753219
+      },
+      "actor-gpu-1": {
+        "pid": 1982431,
+        "state": "running",
+        "heartbeat_age_seconds": 0.23187036
+      },
+      "actor-gpu-2": {
+        "pid": 1982432,
+        "state": "running",
+        "heartbeat_age_seconds": 0.071035172
+      },
+      "actor-gpu-3": {
+        "pid": 1982433,
+        "state": "running",
+        "heartbeat_age_seconds": 0.232408618
+      },
+      "actor-gpu-4": {
+        "pid": 1982434,
+        "state": "running",
+        "heartbeat_age_seconds": 0.265900888
+      },
+      "actor-gpu-5": {
+        "pid": 1982435,
+        "state": "running",
+        "heartbeat_age_seconds": 0.229120268
+      },
+      "actor-gpu-6": {
+        "pid": 1982436,
+        "state": "running",
+        "heartbeat_age_seconds": 0.948818646
+      },
+      "actor-gpu-7": {
+        "pid": 1982437,
+        "state": "paused",
+        "heartbeat_age_seconds": 2.083932342
+      },
+      "arena-promotion": {
+        "pid": 1982439,
+        "state": "running",
+        "heartbeat_age_seconds": 2.286791149
+      },
+      "learner": {
+        "pid": 1982430,
+        "state": "running",
+        "heartbeat_age_seconds": 0.880756566
+      }
+    },
+    "gpu_health_observed_ns": 1790643660108366126,
+    "migration": {
+      "champion_manifest_sha256": "83c0555e5d3c507022e81d650e21f1b41e6f704ef543350a5b0d1ea3f0946dec",
+      "champion_model_identity": "sha256-876b5a7bf3efe843d0c3ae26b5ea14a358980759d73a1f9f7ed2c490c03478be",
+      "champion_model_step": 566428,
+      "champion_pointer_sha256": "f3f7f49d4f32b923fa39c26b1a2aa2af1343214213cac2695987ad337f29d459",
+      "changes": [
+        {
+          "from": "<missing>",
+          "path": "learner.protected_champion_after_ns",
+          "to": 1790640622947140279
+        },
+        {
+          "from": "<missing>",
+          "path": "learner.protected_champion_fraction",
+          "to": 0.25
+        }
+      ],
+      "committed_replay_samples": 260668359,
+      "discarded_uncheckpointed_steps": 0,
+      "examples_consumed": 380881920,
+      "from_config_sha256": "5ebd9304cee027e78431a42e4e2dc872d2c0966dddc22240816725788a35f5f0",
+      "from_profile": "profile-elo-efficiency-runtime-20260923.yaml",
+      "from_profile_sha256": "d811d2246dd0364a5fcc9eba5dad7778ad7fb0600734f26014c6ae420da474b3",
+      "from_source_commit": "1ad289502b0a7aa6428b4f2750b81b58054fc68a",
+      "generation_family": "variant-network-a",
+      "heartbeat_examples_consumed": 380881920,
+      "heartbeat_step": 743910,
+      "kind": "profile",
+      "learner_step": 743910,
+      "reason": "Repair durable plateau verdict consumption and protect bounded fresh champion replay; preserve model, rules, optimizer resume and ongoing evaluation evidence",
+      "recovery_checkpoint_bytes": 213775175,
+      "recovery_checkpoint_sha256": "f72fa1cb31f8f2c8c9c47797528b43b7deffc36e3a046ae8f10474b228b331ff",
+      "recovery_pointer_sha256": "2923e2068f3650f36f7b78097bcb4063cf11ab542183ad2f40d50fb7efda8ac7",
+      "replay_counter_updated_ns": 1790642370707954625,
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "timestamp_ns": 1790642726548032350,
+      "to_config_sha256": "bc223dda5dd270afff76517b9f30ea89087e93eec6bdc005d9d0a99507052ea9",
+      "to_profile": "profile-training-recovery-20260928.yaml",
+      "to_profile_sha256": "bb435a9d2fbb1e875109ba4c86ed87bfd8b4b8d1f65551b2683dc8f0a5155742",
+      "to_source_commit": "659430fc856bb44f005a0898c96f5e0cfd981c15"
+    },
+    "measurement_ledger": {
+      "accounting_complete": true,
+      "applied_restore_receipts": [],
+      "baseline_manifest": "/home/ubuntu/edgeconnect-runs/variant-network/learner/manifests/manifest-babc31c58508136c4662a5e32739a137109e7296526934953754f0944acb1966.json",
+      "candidate_manifest": "/home/ubuntu/edgeconnect-runs/variant-network/learner/manifests/manifest-83c0555e5d3c507022e81d650e21f1b41e6f704ef543350a5b0d1ea3f0946dec.json",
+      "debt_ns": 45733374655,
+      "generation_family": "variant-network-a",
+      "journal_offset": 6355725,
+      "journal_witness": "4e3061c90f26d750249870a53bdf49ffd9085c1ecf0c193f63fbdd798eda3b73",
+      "last_measurement_ready_ns": 1790639236355060381,
+      "leases": {
+        "371645caf10841fca521dc241923ae6b": {
+          "fraction": 0.2,
+          "kind": "measurement",
+          "owner_pid": 1982439,
+          "ready_ns": null
+        }
+      },
+      "measurement_gpu_ns": 39990154407217,
+      "pending_since_ns": 1790639236355060381,
+      "pinned_job": {
+        "baseline": "sha256-c07f575085e985346328b51e4fdbf5e9a9755a8995baa0a875416a66fa35762c",
+        "candidate": "sha256-876b5a7bf3efe843d0c3ae26b5ea14a358980759d73a1f9f7ed2c490c03478be"
+      },
+      "promotion_gpu_ns": 160189284502139,
+      "run_id": "variant-network",
+      "schema_version": 1
+    },
+    "stopped_settled_service": {
+      "measurement_gpu_ns": 39990154407217,
+      "promotion_gpu_ns": 160189284502139,
+      "debt_ns": 45733374655
+    },
+    "completed_pin_evidence": [],
+    "support_states": {
+      "edgeconnect-startrain-variant-network.service": "active",
+      "edgeconnect-startrain-variant-network-monitor.service": "active",
+      "edgeconnect-startrain-variant-network-report.timer": "active",
+      "edgeconnect-startrain-variant-network-backup.timer": "active",
+      "edgeconnect-startrain-variant-network-disaster-backup.timer": "active"
+    },
+    "learning_rate_multiplier": 0.5,
+    "protected_champion_replay": {
+      "cap_respected": true,
+      "enabled": true,
+      "max_fraction": 0.25,
+      "model_identity": "sha256-876b5a7bf3efe843d0c3ae26b5ea14a358980759d73a1f9f7ed2c490c03478be",
+      "model_step": 566428,
+      "ordinary_selected_rows": 2274312,
+      "scope": "selected_replay_window_not_consumed_updates",
+      "selected_fraction": 0.0015733817522836863,
+      "selected_fraction_by_ring_and_six_mode": {
+        "r10/handicap-classic": 0.0,
+        "r10/handicap-double": 0.0,
+        "r10/pie-classic": 0.003481603713710628,
+        "r10/pie-double": 0.004642138284947504,
+        "r4/pie-classic": 0.0,
+        "r4/pie-double": 0.0,
+        "r6/pie-classic": 0.0,
+        "r6/pie-double": 0.0,
+        "r8/pie-classic": 0.0,
+        "r8/pie-double": 0.0
+      },
+      "selected_rows": 3584,
+      "selected_rows_by_ring": {
+        "10": 3584
+      },
+      "selected_rows_by_ring_and_six_mode": {
+        "r10/pie-classic": 1536,
+        "r10/pie-double": 2048
+      }
+    },
+    "nonfinite_loss_count": 0,
+    "nonfinite_gradient_count": 0,
+    "reuse_target": 1.5,
+    "strength_improvement_established": false
+  },
+  "averaging_diagnostic": {
+    "arms": {
+      "ema": {
+        "completed_pairs": 0,
+        "per_cell": {},
+        "terminal": false
+      },
+      "raw": {
+        "completed_pairs": 0,
+        "per_cell": {},
+        "terminal": false
+      }
+    },
+    "interpretation": "Diagnostic only. Both raw and EMA from the same checkpoint play the same frozen champion EMA, openings, seats, and search budget. No promotion, checkpoint publication, or learner/replay changes.",
+    "matched_comparison": {
+      "r10/classic-handicap": {
+        "interpretation": "Descriptive paired difference; positive favors raw. No significance claim.",
+        "matched_pairs": 0,
+        "raw_minus_ema_score": null
+      },
+      "r10/classic-pie": {
+        "interpretation": "Descriptive paired difference; positive favors raw. No significance claim.",
+        "matched_pairs": 0,
+        "raw_minus_ema_score": null
+      },
+      "r10/double-handicap": {
+        "interpretation": "Descriptive paired difference; positive favors raw. No significance claim.",
+        "matched_pairs": 0,
+        "raw_minus_ema_score": null
+      },
+      "r10/double-pie": {
+        "interpretation": "Descriptive paired difference; positive favors raw. No significance claim.",
+        "matched_pairs": 0,
+        "raw_minus_ema_score": null
+      }
+    },
+    "plan_sha256": "cf90851c66701204a78be04fac709b26fe2c6f30581e817a0e8e51c781042558",
+    "result_kind": "checkpoint_averaging_diagnostic",
+    "terminal": false
+  },
+  "reuse_trial": {
+    "prepared": true,
+    "active": false,
+    "profile": "/home/ubuntu/edgeconnect-runs/variant-network/status/training-recovery-20260928/reuse-2-profile.yaml",
+    "target": 2.0,
+    "production_target": 1.5
+  },
+  "strength_improvement_established": false,
+  "postdeployment_disaster_backup": {
+    "artifact_written_ns": 1790646177094858135,
+    "commit_marker": {
+      "path": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1790645110636000035-9828b3ff53b5989875e11be104e2ffd539a04c5fe0a79758c9ee9032029556a9.json.commit",
+      "verified": true
+    },
+    "deployment_completed_ns": 1790643579503320867,
+    "latest_pointer_at_selection": {
+      "bytes": 10062592,
+      "created_ns": 1790645110636000035,
+      "generation_family": "variant-network-a",
+      "path": "1790645110636000035-9828b3ff53b5989875e11be104e2ffd539a04c5fe0a79758c9ee9032029556a9.json",
+      "report": "startrain-disaster-recovery-latest",
+      "run_id": "variant-network",
+      "schema_version": 1,
+      "sha256": "9828b3ff53b5989875e11be104e2ffd539a04c5fe0a79758c9ee9032029556a9"
+    },
+    "plateau_verdicts": {
+      "count": 18,
+      "files": [
+        {
+          "completed_ns": 1789522926586450669,
+          "decision": "reject_max_pairs",
+          "path": "arena/plateau-verdicts/0cb42d3628a1d6624e22125b2d3ea42139541caf448deddfe88077f5f135a0a6.json",
+          "sha256": "75670f0bfbfe54a1e204a794a5caf4c9318330d2a75a138e58841b9da09743f8"
+        },
+        {
+          "completed_ns": 1790309347521017044,
+          "decision": "reject_max_pairs",
+          "path": "arena/plateau-verdicts/0d5b85df230860b57819c2f7c67807a34980c61f97b9abb10c5584e33fb26bf5.json",
+          "sha256": "87b34984f18c4d1212b733acae440bab05756eeeee06290854f654f73a029bf1"
+        },
+        {
+          "completed_ns": 1790608502027134429,
+          "decision": "reject",
+          "path": "arena/plateau-verdicts/29e843cf3b5604808d1a3bfe6823a503e2661a3b1b8afcc651dd191e7b776cc0.json",
+          "sha256": "86686ef6291a2491a266040a02ae85188103090b54c7e0f4165d51ba948371a8"
+        },
+        {
+          "completed_ns": 1788564784292009737,
+          "decision": "reject",
+          "path": "arena/plateau-verdicts/394d1a6aa0f13a3b451b39fa7af0c6a2d987cb64980dfcd9b7b600d85a7db9a6.json",
+          "sha256": "42e13b992b16daa3e41fccf8648da97617fb16170a530320126d34db7e7004eb"
+        },
+        {
+          "completed_ns": 1790475971310271530,
+          "decision": "reject_max_pairs",
+          "path": "arena/plateau-verdicts/42b3577d04ad033e5503fc21823fa824fff5c9de6b4b1774703d083a74663232.json",
+          "sha256": "2144661e40138e28b694d4304ad197c6696a50e40b07f5eae94fe43d70e4fcb8"
+        },
+        {
+          "completed_ns": 1790513907223053637,
+          "decision": "reject",
+          "path": "arena/plateau-verdicts/46d3621b93d60df6c5b96444f8c152959d7be1c4e4ef73954f4372b5b2fbad73.json",
+          "sha256": "fcf714caf055b9a7c0110a0a4b55f9d17c703dfb48d7b09c392ac3b4a076b5a4"
+        },
+        {
+          "completed_ns": 1790191000727092986,
+          "decision": "reject_max_pairs",
+          "path": "arena/plateau-verdicts/810c6aa2f1750e985171999d05ca92178f94a05c281df2fea74dd20ff663f233.json",
+          "sha256": "563f2562b0f8ae89f6819534768d8ebfd2a6d5188b32d4d5c216fc94dd030a4f"
+        },
+        {
+          "completed_ns": 1789097083081504311,
+          "decision": "reject",
+          "path": "arena/plateau-verdicts/82ac33ef08b9f1f46593d96a0e0ab6d63840e2f5f1ad5a966339492ae200453e.json",
+          "sha256": "76398faa8a11a9456da759ed42b364e6724f8c0fe15cc3d5ed5d8c29a8d6eb1a"
+        },
+        {
+          "completed_ns": 1790091202359365298,
+          "decision": "reject_max_pairs",
+          "path": "arena/plateau-verdicts/94ed1375348a77f8feb5f340815952c80c2f03c2ed2c2d0fd87bf91083f4aa4d.json",
+          "sha256": "94b6a03e0321de65153b818d8f545749f8c4693b35461f61d8e72da6dea3bae0"
+        },
+        {
+          "completed_ns": 1789810036092144265,
+          "decision": "reject_max_pairs",
+          "path": "arena/plateau-verdicts/97cef1a9e8560738b5be1c3ae52705769d904bd3cd95f12c9a0aa2af4b971c8f.json",
+          "sha256": "34bb736c8398eb82bc63fb9a917bc202877fdad7b2982755d67200ff90f2ce08"
+        },
+        {
+          "completed_ns": 1790009793183145174,
+          "decision": "reject_max_pairs",
+          "path": "arena/plateau-verdicts/a6bdc4713a58e83f59cc678378a86120c0addcc393d1e43a7b0b506a589b75e5.json",
+          "sha256": "a35abc29d1adf218b67e12154c2c7394dc5f1e60eadf65e4abedaa8a17da2d47"
+        },
+        {
+          "completed_ns": 1789269493917208150,
+          "decision": "reject",
+          "path": "arena/plateau-verdicts/b7cfb9d5ad52284b0b692d27f6d3ed01d66723ad6b13cd0f15452e3a4fdfee38.json",
+          "sha256": "99c3a4f937682870bdcf15455b8b2263a0f0d97b6ba9b106ea1fa22a9514b87b"
+        },
+        {
+          "completed_ns": 1790559625717030935,
+          "decision": "reject",
+          "path": "arena/plateau-verdicts/bc2d792892c10413708e37827ee806c5846e7b5f2ae8831fe769be6c62dcbc21.json",
+          "sha256": "a304cd78472c92d59297343a42c08acb418872a7092da9166656bd7dd5df4e89"
+        },
+        {
+          "completed_ns": 1790392895068636940,
+          "decision": "reject_max_pairs",
+          "path": "arena/plateau-verdicts/becd396917b03491be4a8ed845dd9eb9354047654ff734758e6b305e67136e73.json",
+          "sha256": "d5983bbab40d3980e554f3275800035bc8b1149287acc31b4e8e73b6ba83aa6d"
+        },
+        {
+          "completed_ns": 1789614566836995671,
+          "decision": "reject_max_pairs",
+          "path": "arena/plateau-verdicts/c800f772465162fe17aa2a9b5c3333364af36e3dd524671c061679bb9bea37e0.json",
+          "sha256": "5906fb85e50486f3bec3591041058108ba141fd801936a9566301e5095a2d3d6"
+        },
+        {
+          "completed_ns": 1789919336546313649,
+          "decision": "reject_max_pairs",
+          "path": "arena/plateau-verdicts/da94aac8a610eebda8afe1d9064def0c86a1a633eb09e8f8acc403e9b4099ff7.json",
+          "sha256": "8b578b6889822d226b3ec8f9db7596d3926c29f5682c0bf374107f71d940657b"
+        },
+        {
+          "completed_ns": 1789666759060870539,
+          "decision": "reject_max_pairs",
+          "path": "arena/plateau-verdicts/e6de9ef59758699952974965c97e4ee8707a218537b9662ec8c293c17753947a.json",
+          "sha256": "6f68b1cbba109b6f1f6c25c9fba194d2d360c22f370514c69294b85790baef35"
+        },
+        {
+          "completed_ns": 1789720299616004460,
+          "decision": "reject_max_pairs",
+          "path": "arena/plateau-verdicts/f833cae4bf83852dae3026a634b15d1080c91c52086371081aa364e4c08004b4.json",
+          "sha256": "2f0d33a03579e7a68748e6194b5b901385c461e83110d47a55ea735d8930aeee"
+        }
+      ]
+    },
+    "profile": {
+      "logical_path": "profile-training-recovery-20260928.yaml",
+      "protected_champion_after_ns": 1790640622947140279,
+      "protected_champion_fraction": 0.25,
+      "reuse_clock_reference_target": null,
+      "sha256": "bb435a9d2fbb1e875109ba4c86ed87bfd8b4b8d1f65551b2683dc8f0a5155742",
+      "target_updates_per_new_sample": 1.5
+    },
+    "protected_admission": {
+      "active_gate": {
+        "path": "status/search-allocation-gates/bc223dda5dd270afff76517b9f30ea89087e93eec6bdc005d9d0a99507052ea9.json",
+        "sha256": "7daf6ba1489ba03dc28a6ba0ddf025367d98dc7ba7def0ee9fc5656f4248f39b"
+      },
+      "complete_dependency_closure": [
+        {
+          "kind": "profile",
+          "path": "profile-live-replay-20260911.yaml",
+          "sha256": "e7f6420f08d1b5efdad9490d1ee0521041840a717936c25ffbc61556109458da"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/measurement-20260911-916cbfd/actor-report.json",
+          "sha256": "65408451d0da3c26fd14aca1c801a9dc1be61df505832de74c95941d3f526342"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/measurement-20260911-916cbfd/actor-selection.json",
+          "sha256": "44147ef424541015042a3b6b17fecdb77eff497798be2077c410a08e35389c40"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/measurement-20260911-916cbfd/actor-model-manifest.json",
+          "sha256": "0189c4ef322ec5b545ee98ffef70fe5226994e9e4381d74685e8f4cced30a879"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/measurement-20260911-916cbfd/actor-preliminary-selection.json",
+          "sha256": "da84d7f5e43cb7e5a2f5ff5b0d22e6ce5a163fc6a0b2b4ca9949f38fffc1f081"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/measurement-20260911-916cbfd/champion-preliminary-selection.json",
+          "sha256": "8154fd5f1933d4125eed3f5a841316c403f49b8080b5eff7f0fba18d0a3bcda9"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/measurement-20260911-916cbfd/champion-report.json",
+          "sha256": "4afcd99d0e6473334be217913a6e718ff2a3850308f78113e33ca11184c7d110"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/measurement-20260911-916cbfd/champion-selection.json",
+          "sha256": "b66e85c5372d8c93f8cbeb35787382036c552361416e18a631e204c67e363f5c"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/measurement-20260911-916cbfd/champion-model-manifest.json",
+          "sha256": "bcb46d2369d47384f2338b73105dfb448d42a461ec3d252e174eb0e070956dcb"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/graph-cache-controlled-activation-20260912/graph-actor.json",
+          "sha256": "94c58d6d587e1f60de947d03ff890bef11875b3beebe7d36b26c77ee4734033b"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/graph-cache-controlled-activation-20260912/graph-champion.json",
+          "sha256": "fac10850f1e9c7c0071bb97dd9e1d3b24a4d200110363efbfb07acad5cb8158f"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/graph-cache-controlled-activation-20260912/controlled-activation.json",
+          "sha256": "4923b5a2584cf7a62bcc904cfd8a8d44fe52f3bc00ce639bc68603f619216576"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/93931ec33c73902d3a606bacd44a887e7525ae46e2bad7b6c700016837c9ed85.policy-transition.json",
+          "sha256": "23ec8483b610183f626cb22e24b9f5af97c501984df26cf4d64d502374317492"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af.promotion-transition.json",
+          "sha256": "4ca57eea29b26aa5fe5b8a486659c2ef11bcc29242663106838f14bbb69cf8ae"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/2c71ea67dd3e9bfa35647840a27c54d7a483b8bfec29c167cfc15edd309b90bb.auxiliary-transition.json",
+          "sha256": "49431646dc7cfb252d415fb8c573a0ad70df7866ca62239b7403dd72c8f01cc9"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/5ebd9304cee027e78431a42e4e2dc872d2c0966dddc22240816725788a35f5f0.scheduling-transition.json",
+          "sha256": "819fa7f8471d001a584d13bda5a241ed633140b210db5935109aad289201617b"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/bc223dda5dd270afff76517b9f30ea89087e93eec6bdc005d9d0a99507052ea9.recovery-transition.json",
+          "sha256": "b723189a9161155801d9dc427cdefc7058fa7d00c5b56e9bcb054eb005686a6f"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/graph-cache-controlled-activation-20260912/live-workload.json",
+          "sha256": "d95c7caf235c8954dc461e763eb41662e3a6167bb9e29b4564c8d9a34e9c2793"
+        },
+        {
+          "kind": "profile",
+          "path": "profile-elo-efficiency-runtime-20260923.yaml",
+          "sha256": "d811d2246dd0364a5fcc9eba5dad7778ad7fb0600734f26014c6ae420da474b3"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/5ebd9304cee027e78431a42e4e2dc872d2c0966dddc22240816725788a35f5f0.json",
+          "sha256": "08a9c7513f2ce69ba05405ac77e4a3cfc7a7da7341d1bcae055953e13b140c4b"
+        },
+        {
+          "kind": "profile",
+          "path": "profile-auxiliary-predictions-20260918.yaml",
+          "sha256": "4de5716c57cbcaeff6c7d1f28dc34fecdba2cf2ae50b7739672aaf39736c6b37"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/2c71ea67dd3e9bfa35647840a27c54d7a483b8bfec29c167cfc15edd309b90bb.json",
+          "sha256": "a0ef43a8bdde61009edb9cf2e2b48f79baed6cb675eace70f35f45321ed8dd1f"
+        },
+        {
+          "kind": "profile",
+          "path": "profile-adaptive-promotion-20260914-v3.yaml",
+          "sha256": "9eefd9dcad3c9ba35a956d383e1ca24ef7b711e54108a81caa81bea687e1660a"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/3ff79db5189916c5d65a6225c8ef22e8ba742c8a60d6da9545e5add8894600af.json",
+          "sha256": "eb263ee0d41d34afbe150ae2943526e09dbfbc84b4061aba9782a27f190ae6b8"
+        },
+        {
+          "kind": "profile",
+          "path": "profile-pie-even-20260913.yaml",
+          "sha256": "1717a724307c5e90d59631bad51961800646003d76e838b6bef989aba38df277"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/93931ec33c73902d3a606bacd44a887e7525ae46e2bad7b6c700016837c9ed85.json",
+          "sha256": "78b6508be523b642c50a94f8c4c0896bfd30b94935d46e2d5f2ac848a623b4ed"
+        },
+        {
+          "kind": "profile",
+          "path": "profile-cpu-efficiency-20260912.yaml",
+          "sha256": "a3c41d7b92b10b0eb66e17a09979f07c5371b5e3b254c08f2dd3fa8040e9527a"
+        },
+        {
+          "kind": "status-json",
+          "path": "status/search-allocation-gates/7f6617e3e1c31ad3f89cb63cc91e9b587333b2907bf6bee95d8599beb942f3e3.json",
+          "sha256": "1133b04604a8f6a93804064aece054450c1764f32c09cbad824e031d1a8569b3"
+        }
+      ],
+      "recovery_treatments": [
+        {
+          "measurement_scope": "original-frozen-six-variant-workload",
+          "new_objective_performance_qualified": false,
+          "receipt": {
+            "path": "status/search-allocation-gates/bc223dda5dd270afff76517b9f30ea89087e93eec6bdc005d9d0a99507052ea9.recovery-transition.json",
+            "sha256": "b723189a9161155801d9dc427cdefc7058fa7d00c5b56e9bcb054eb005686a6f"
+          },
+          "source_config_sha256": "5ebd9304cee027e78431a42e4e2dc872d2c0966dddc22240816725788a35f5f0",
+          "source_gate": {
+            "path": "status/search-allocation-gates/5ebd9304cee027e78431a42e4e2dc872d2c0966dddc22240816725788a35f5f0.json",
+            "sha256": "08a9c7513f2ce69ba05405ac77e4a3cfc7a7da7341d1bcae055953e13b140c4b"
+          },
+          "source_profile": {
+            "path": "profile-elo-efficiency-runtime-20260923.yaml",
+            "sha256": "d811d2246dd0364a5fcc9eba5dad7778ad7fb0600734f26014c6ae420da474b3"
+          },
+          "target_config_sha256": "bc223dda5dd270afff76517b9f30ea89087e93eec6bdc005d9d0a99507052ea9",
+          "treatment": "protected_champion"
+        }
+      ]
+    },
+    "schema_version": 1,
+    "scope": {
+      "backup_services_modified": false,
+      "cpu_only": true,
+      "explicit_immutable_catalog": true,
+      "full_payload_verified": true,
+      "historical_latest_pointer_scan": false,
+      "live_training_state_modified": false,
+      "restore_executed": false
+    },
+    "snapshot": {
+      "catalog_bytes": 22433003785,
+      "catalog_files": 51793,
+      "created_ns": 1790645110636000035,
+      "generation_family": "variant-network-a",
+      "objects": 51791,
+      "run_id": "variant-network",
+      "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1790645110636000035-9828b3ff53b5989875e11be104e2ffd539a04c5fe0a79758c9ee9032029556a9.json",
+      "snapshot_bytes": 10062592,
+      "snapshot_sha256": "9828b3ff53b5989875e11be104e2ffd539a04c5fe0a79758c9ee9032029556a9",
+      "status": "ok"
+    },
+    "source_cutoff": {
+      "replay_backup_created_ns": 1790643764613406083,
+      "replay_capture_cutoff_started_ns": 1790643584688660611,
+      "snapshot_created_ns": 1790645110636000035
+    },
+    "status": "passed",
+    "subsequent_writer_at_verification_start": {
+      "ActiveState": "activating",
+      "ExecMainExitTimestamp": "",
+      "ExecMainStartTimestamp": "Tue 2026-09-29 01:29:40 UTC",
+      "ExecMainStatus": "0",
+      "InvocationID": "e03911cb9c244fefb15224ad412f6e8f",
+      "MainPID": "1990559",
+      "Result": "success",
+      "SubState": "start"
+    },
+    "verification_completed_ns": 1790646177076156304,
+    "verification_started_ns": 1790645955892715269,
+    "writer_completion": {
+      "invocation_id": "45b4aad3977c44fbb8fed0c7a3617395",
+      "journal_events": [
+        {
+          "INVOCATION_ID": "45b4aad3977c44fbb8fed0c7a3617395",
+          "MESSAGE": "edgeconnect-startrain-variant-network-disaster-backup.service: Deactivated successfully.",
+          "__CURSOR": "s=0baadf45eabd4beaa15bf94ab052c192;i=505d97;b=7651f2eb5e3f427f96489619672d576c;m=3605c2c0f25;t=65c951dd8a047;x=6b6e0bc8d67470e4",
+          "__REALTIME_TIMESTAMP": "1790645380882503"
+        },
+        {
+          "INVOCATION_ID": "45b4aad3977c44fbb8fed0c7a3617395",
+          "JOB_RESULT": "done",
+          "MESSAGE": "Finished edgeconnect-startrain-variant-network-disaster-backup.service - EdgeConnect StarTrain disaster-recovery snapshot (variant-network).",
+          "__CURSOR": "s=0baadf45eabd4beaa15bf94ab052c192;i=505d98;b=7651f2eb5e3f427f96489619672d576c;m=3605c2c1176;t=65c951dd8a299;x=cf4883ceca12d0da",
+          "__REALTIME_TIMESTAMP": "1790645380883097"
+        }
+      ],
+      "pid": 1984543,
+      "pid_reaped": true,
+      "writer_report": {
+        "catalog_bytes": 22433003785,
+        "catalog_files": 51793,
+        "created_ns": 1790645110636000035,
+        "generation_family": "variant-network-a",
+        "objects": 51791,
+        "run_id": "variant-network",
+        "snapshot": "/lambda/nfs/texas-north-fs/edgeconnect-dr/variant-network/snapshots/variant-network/1790645110636000035-9828b3ff53b5989875e11be104e2ffd539a04c5fe0a79758c9ee9032029556a9.json",
+        "snapshot_bytes": 10062592,
+        "snapshot_sha256": "9828b3ff53b5989875e11be104e2ffd539a04c5fe0a79758c9ee9032029556a9",
+        "status": "ok"
+      }
+    }
+  }
+}

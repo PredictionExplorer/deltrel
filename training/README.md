@@ -1,5 +1,10 @@
 # Double Deltrel AI operator guide
 
+The [September 28 training recovery deployment](docs/training-recovery-deployment-20260928.md)
+repairs missed plateau learning-rate reductions and admits bounded fresh champion
+replay. It also provides separate frozen raw/EMA and full-state reuse experiments;
+the production model size and game-type objective remain unchanged.
+
 For existing model artifacts, follow the explicit [Deltrel identity migration](docs/deltrel-rebrand.md) before deploying this release.
 
 This directory contains the implemented training, arena, serving and browser-export
