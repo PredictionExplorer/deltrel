@@ -1,0 +1,70 @@
+name: Layout baseline proposal
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/layout-baseline-proposal.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: layout-baseline-proposal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  propose:
+    name: Propose Linux Chromium screenshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - id: layout
+        run: npx playwright test --project=layout-chromium --update-snapshots=all --workers=2
+      - name: Record proposal provenance
+        if: always()
+        env:
+          LAYOUT_RUN_OUTCOME: ${{ steps.layout.outcome }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process';
+          import { createHash } from 'node:crypto';
+          import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+          import { createRequire } from 'node:module';
+          const require = createRequire(import.meta.url);
+          const directory = 'e2e/__screenshots__/layout.spec.ts/linux';
+          const files = existsSync(directory) ? readdirSync(directory).filter(name => name.endsWith('.png')).sort() : [];
+          writeFileSync('layout-baseline-proposal.json', JSON.stringify({
+            schemaVersion: 1,
+            commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+            pullRequestHead: process.env.PR_HEAD_SHA || null,
+            platform: process.platform,
+            architecture: process.arch,
+            node: process.version,
+            playwright: require('@playwright/test/package.json').version,
+            layoutOutcome: process.env.LAYOUT_RUN_OUTCOME,
+            requiresVisualReview: true,
+            images: files.map(name => ({
+              path: `${directory}/${name}`,
+              sha256: createHash('sha256').update(readFileSync(`${directory}/${name}`)).digest('hex'),
+            })),
+          }, null, 2) + '\n');
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: layout-baseline-proposal-linux
+          path: |
+            e2e/__screenshots__/layout.spec.ts/linux/
+            layout-baseline-proposal.json
+            playwright-report/
+          if-no-files-found: error
