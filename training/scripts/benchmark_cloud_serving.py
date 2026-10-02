@@ -39,14 +39,25 @@ def position_request(index: int, rings: int, simulations: int) -> dict[str, Any]
         **{
             name: getattr(position, name)
             for name in (
-                "to_move", "moves_left", "opening", "terminal", "mode",
-                "handicap", "pie", "swap_available", "swapped", "pda",
+                "to_move",
+                "moves_left",
+                "opening",
+                "terminal",
+                "mode",
+                "handicap",
+                "pie",
+                "swap_available",
+                "swapped",
+                "pda",
             )
         },
         "history": {
             name: getattr(position, name).nonzero().flatten().tolist()
             for name in (
-                "current_turn", "previous_turn", "own_previous_turn", "handicap_stones"
+                "current_turn",
+                "previous_turn",
+                "own_previous_turn",
+                "handicap_stones",
             )
         },
         "search": {
@@ -59,7 +70,9 @@ def position_request(index: int, rings: int, simulations: int) -> dict[str, Any]
     return AnalyzeRequest.model_validate(payload).model_dump()
 
 
-def run_request(url: str, token: str, index: int, payload: dict[str, Any]) -> dict[str, Any]:
+def run_request(
+    url: str, token: str, index: int, payload: dict[str, Any]
+) -> dict[str, Any]:
     request_id = f"cloud-benchmark-{time.time_ns()}-{index}"
     request = urllib.request.Request(
         url.rstrip("/") + "/v2/move",
@@ -118,13 +131,18 @@ def main() -> None:
             for index, payload in enumerate(payloads)
         ]
         results = [future.result() for future in futures]
-    print(json.dumps({
-        "concurrency": args.concurrency,
-        "rings": args.rings,
-        "simulations": args.simulations,
-        "wall_seconds": round(time.perf_counter() - started, 3),
-        "results": results,
-    }), flush=True)
+    print(
+        json.dumps(
+            {
+                "concurrency": args.concurrency,
+                "rings": args.rings,
+                "simulations": args.simulations,
+                "wall_seconds": round(time.perf_counter() - started, 3),
+                "results": results,
+            }
+        ),
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

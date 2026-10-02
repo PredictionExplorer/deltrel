@@ -14,7 +14,12 @@ from deltreltrain.learner import (
     replay_selection_diagnostics,
 )
 from deltreltrain.replay import collate_replay_samples
-from deltreltrain.replay_store import ReplaySelection, ReplaySpan, ReplayStore, ShardRecord
+from deltreltrain.replay_store import (
+    ReplaySelection,
+    ReplaySpan,
+    ReplayStore,
+    ShardRecord,
+)
 from deltreltrain.runtime import RunIdentity
 from deltreltrain.selfplay import SelfPlayActor, SelfPlayConfig, SelfPlayIdentity
 

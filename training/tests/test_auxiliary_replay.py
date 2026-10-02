@@ -144,7 +144,12 @@ def test_replay_capability_roundtrip_d5_padding_and_cached_components(tmp_path):
     restored = read_replay_shard(path)
     assert decode_replay_shard(path).metadata["auxiliary_targets_version"] == 1
     for a, b in zip(rows, restored, strict=True):
-        for name in ("opponent_reply", "second_stone", "final_shores", "final_networks"):
+        for name in (
+            "opponent_reply",
+            "second_stone",
+            "final_shores",
+            "final_networks",
+        ):
             np.testing.assert_array_equal(getattr(a, name), getattr(b, name))
     misses = _final_components.cache_info().misses
     augmented = augment_sample(restored[0], D5Transform(1, True))
@@ -334,7 +339,9 @@ def test_clinch_official_completion_counts_and_no_unobserved_future():
         for player in (0, 1):
             assert row.final_scores[player] == row.final_shores[player] + int(
                 row.final_capes[player] >= 3
-            ) + 2 * (int(row.final_networks[1 - player]) - int(row.final_networks[player]))
+            ) + 2 * (
+                int(row.final_networks[1 - player]) - int(row.final_networks[player])
+            )
     for game in {s.game_id for s in sink.samples}:
         last = max((s for s in sink.samples if s.game_id == game), key=lambda s: s.ply)
         assert last.opponent_reply is None and last.second_stone is None

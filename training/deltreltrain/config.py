@@ -316,9 +316,8 @@ class LearnerConfig:
         ):
             raise ConfigError("protected_champion_after_ns must be a positive integer")
         if (
-            (self.protected_champion_fraction or self.champion_only_replay_freshness)
-            and self.protected_champion_after_ns is None
-        ):
+            self.protected_champion_fraction or self.champion_only_replay_freshness
+        ) and self.protected_champion_after_ns is None:
             raise ConfigError(
                 "protected champion replay requires an activation timestamp"
             )
@@ -2188,7 +2187,8 @@ class ExperimentConfig:
         result = without_efficiency_program_defaults(asdict(self))
         # Disabled target treatments preserve old checkpoint/profile authority.
         for name, default in (
-            ("policy_target_scale", 1.0), ("policy_target_max_kl", None),
+            ("policy_target_scale", 1.0),
+            ("policy_target_max_kl", None),
         ):
             if getattr(self.selfplay, name) == default:
                 del result["selfplay"][name]

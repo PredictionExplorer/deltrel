@@ -213,7 +213,9 @@ def test_distillation_smoke_emits_checksum_verified_browser_manifest(
     assert artifacts.final_losses["total"] >= 0
     wasm_source = tmp_path / "wasm-build"
     wasm_source.mkdir()
-    (wasm_source / "deltrel_wasm.js").write_text("export default async function init() {}")
+    (wasm_source / "deltrel_wasm.js").write_text(
+        "export default async function init() {}"
+    )
     (wasm_source / "deltrel_wasm_bg.wasm").write_bytes(b"\x00asm\x01\x00\x00\x00")
     replacements = []
     real_replace = os.replace
@@ -235,7 +237,12 @@ def test_distillation_smoke_emits_checksum_verified_browser_manifest(
     published_onnx = tmp_path / "public" / "models" / "deltrel" / artifacts.onnx.name
     assert sha256_file(published_onnx) == artifacts.onnx_sha256
     assert (
-        tmp_path / "public" / "models" / "deltrel" / WASM_ASSET_DIRECTORY / "deltrel_wasm.js"
+        tmp_path
+        / "public"
+        / "models"
+        / "deltrel"
+        / WASM_ASSET_DIRECTORY
+        / "deltrel_wasm.js"
     ).is_file()
     assert (
         (

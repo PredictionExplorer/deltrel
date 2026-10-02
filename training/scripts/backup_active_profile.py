@@ -17,7 +17,10 @@ else:
 
 
 def backup_active_profile(
-    run_root: Path, backup_root: Path, *, expected_backup_mount: Path,
+    run_root: Path,
+    backup_root: Path,
+    *,
+    expected_backup_mount: Path,
     replay_backup_retain: int = 3,
 ) -> Path:
     """Resolve per invocation; capture's state fence rejects a concurrent handoff.
@@ -28,7 +31,9 @@ def backup_active_profile(
     """
     selected = resolve_active_profile(run_root)
     return create_snapshot(
-        run_root, selected.path, backup_root,
+        run_root,
+        selected.path,
+        backup_root,
         expected_backup_mount=expected_backup_mount,
         replay_backup_retain=replay_backup_retain,
     )
@@ -43,7 +48,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         snapshot = backup_active_profile(
-            args.run_root, args.backup_root,
+            args.run_root,
+            args.backup_root,
             expected_backup_mount=args.expected_backup_mount,
             replay_backup_retain=args.replay_backup_retain,
         )

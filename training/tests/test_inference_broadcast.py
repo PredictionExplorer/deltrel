@@ -29,7 +29,8 @@ def broadcast_topology(batch: EncodedBatch) -> EncodedBatch:
 @pytest.fixture
 def feature_requests(monkeypatch):
     monkeypatch.setattr(
-        "deltreltrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
+        "deltreltrain.inference.encode_native_feature_data",
+        lambda data, **_: data.encoded,
     )
     return encoded_requests
 

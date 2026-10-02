@@ -151,7 +151,8 @@ def test_source_class_path_compiles_and_invalidates_adapter_prediction_cache(
         model_version="sha256-local-message-test",
     )
     monkeypatch.setattr(
-        "deltreltrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
+        "deltreltrain.inference.encode_native_feature_data",
+        lambda data, **_: data.encoded,
     )
     requests = encoded_requests(batch)
     adapter.evaluate(requests)

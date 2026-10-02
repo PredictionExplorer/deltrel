@@ -2049,9 +2049,12 @@ class SelfPlayActor:
                     or self.config.policy_target_max_kl is not None
                 ):
                     if priors.size != probabilities.size:
-                        raise RuntimeError("policy target constraints require native priors")
+                        raise RuntimeError(
+                            "policy target constraints require native priors"
+                        )
                     constrained = constrain_policy_target(
-                        probabilities[start:end], priors[start:end],
+                        probabilities[start:end],
+                        priors[start:end],
                         scale=self.config.policy_target_scale,
                         max_kl=self.config.policy_target_max_kl,
                     )

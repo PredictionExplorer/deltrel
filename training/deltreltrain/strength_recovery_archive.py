@@ -83,8 +83,10 @@ def validate_archive(
     Stat identities alone are never acceptable fingerprints for live files.
     """
     if PLAN_NAME not in available:
-        if PROVENANCE in available or CONTINUATION_PLAN in available or any(
-            path.startswith(SNAPSHOTS + "/") for path in available
+        if (
+            PROVENANCE in available
+            or CONTINUATION_PLAN in available
+            or any(path.startswith(SNAPSHOTS + "/") for path in available)
         ):
             raise ValueError("recovery artifacts lack their immutable plan")
         return {}
@@ -159,9 +161,7 @@ def validate_archive(
             or continuation.get("schema_version") != 1
             or continuation.get("recovery_plan_sha256") != plan["plan_sha256"]
             or continuation.get("plan_sha256")
-            != digest(
-                {k: v for k, v in continuation.items() if k != "plan_sha256"}
-            )
+            != digest({k: v for k, v in continuation.items() if k != "plan_sha256"})
         ):
             raise ValueError("continuation plan checksum or recovery identity differs")
         target = continuation.get("target_profile")
