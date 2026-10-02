@@ -3198,6 +3198,13 @@ def _verify_snapshot_document(
         validate_archive(
             read=reader.data,
             available=set(catalog),
+            # The object loop above enforces full_objects (or its explicitly
+            # requested metadata-only mode). Match inner pins to that catalog
+            # without loading multi-GiB provenance binaries into Python RAM.
+            fingerprint=lambda logical: (
+                catalog[logical].sha256,
+                catalog[logical].bytes,
+            ),
         )
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise DisasterRecoveryError(
