@@ -57,6 +57,55 @@ Update service units, filesystem paths, environment settings, and external model
 URLs together with the application release. A deployed service with an old rules
 fingerprint is incompatible until upgraded; strict compatibility checks remain.
 
+## Publishing a verified legacy champion
+
+`deltreltrain.champion_migration` builds a new, relocatable serving publication
+from a frozen StarTrain champion and a separately verified, conclusive promotion
+bundle. It accepts only the immediately preceding identities and the corrected
+adaptive v3 evaluation contract. Supply independently verified hashes explicitly:
+
+```sh
+OMP_NUM_THREADS=1 CUDA_VISIBLE_DEVICES='' python -m deltreltrain.champion_migration \
+  --champion /private/source/learner/champion.json \
+  --proof-bundle /private/source/promotion-proof \
+  --expected-pointer-sha256 VERIFIED_POINTER_SHA256 \
+  --expected-proof-manifest-sha256 VERIFIED_PROOF_MANIFEST_SHA256 \
+  --expected-contract-identity sha256-VERIFIED_CONTRACT_SHA256 \
+  --output /private/new-publication
+```
+
+The input keeps the original `learner/manifests`, `learner/checkpoints` and
+`../arena` pointer layout. The proof bundle is the frozen inventory containing
+the original result, allocation/resume records, manifests, published champion
+pointer, capture, conclusive assessment and hash-bound verification receipt.
+The command verifies that chain and recomputes allocation decisions and promotion
+statistics. Only diagnostic Elo transforms permit four ULPs of platform rounding;
+scores, confidence bounds, E-values, decisions and proof bytes remain exact.
+
+The output includes the untouched source checkpoint and proof under `provenance`,
+the migrated checkpoint and manifest, `profile-serving.yaml`, a hashed migration
+receipt, `publication.json`, and a new `champion.json`. Every checkpoint tensor
+and payload field is compared after the approved identity/head-name conversion;
+the EMA is loaded on CPU. The profile comes from the converted checkpoint with
+FP32 and compilation disabled. Its score-utility weight is retained and recorded
+explicitly; choose any serving-search change separately.
+
+The original proof continues to name the original model. The new pointer has no
+`promotion_result` or bootstrap claim: the receipt maps that proven champion to
+its losslessly renamed representation. Preserve the **whole publication** and
+pin the returned `publication_sha256` when moving it. Use its champion and
+profile directly in a separately validated server configuration. Running the
+older snapshot exporter over it would omit this provenance closure.
+
+Existing destinations are refused. Dependencies and directories are flushed
+before the champion pointer becomes visible. An interruption before publication
+removes only this invocation's incomplete output; a failure after the pointer
+is visible raises `PublicationDurabilityError` and retains the complete package.
+Verify every `publication.json` entry before using that retained output; never
+automatically delete or overwrite it. This command does not change a running
+server, export ONNX/WASM, or qualify a deployment. Those release checks remain
+separate from the original promotion evidence.
+
 ## Restoring an already running local engine
 
 A serving snapshot can live outside `training/runs`. Before selecting an archived
