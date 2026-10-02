@@ -3269,7 +3269,11 @@ class LearnerLoop:
         )
 
     def _publish(self) -> ModelManifest:
-        return self._publish_to(self.publisher)
+        manifest = self._publish_to(self.publisher)
+        from .strength_recovery import record_snapshot
+
+        record_snapshot(self.publisher.root.parent, manifest)
+        return manifest
 
     def _publish_to(self, publisher: ImmutableModelPublisher) -> ModelManifest:
         utd_segment = self._ensure_utd_segment_state()
@@ -3430,6 +3434,10 @@ class LearnerLoop:
         return steady
 
     def _candidate_due(self) -> bool:
+        from .strength_recovery import due_snapshot
+
+        if due_snapshot(self.publisher.root.parent) is not None:
+            return True
         interval_examples = self.learner_config.candidate_interval_examples
         if interval_examples is None:
             current_step = (
