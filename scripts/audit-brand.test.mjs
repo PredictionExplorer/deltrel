@@ -19,11 +19,17 @@ test('allows unrelated programming terms and ordinary English', () => {
 });
 
 test('preserves exact historical deployment identities without exempting other files or symbols', () => {
-  const evidence = 'training/docs/elo-efficiency-runtime-deployment-evidence-20260923.json';
-  assert.deepEqual(inspectBrand(evidence, `${prior}train.model-pointer`), []);
+  for (const evidence of [
+    'training/docs/elo-efficiency-runtime-deployment-evidence-20260923.json',
+    'training/docs/training-recovery-deployment-20260928.md',
+    'training/docs/training-recovery-deployment-evidence-20260928.json',
+    'training/docs/strength-recovery-deployment-20261002.md',
+  ]) {
+    assert.deepEqual(inspectBrand(evidence, `${prior}train.model-pointer`), []);
+    assert.ok(inspectBrand(evidence, String.fromCharCode(0x2605)).length);
+  }
   assert.ok(inspectBrand('training/docs/new-release.md', `${prior}train.model-pointer`).length);
   assert.ok(inspectBrand('src/app/page.tsx', `${prior}train.model-pointer`).length);
-  assert.ok(inspectBrand(evidence, String.fromCharCode(0x2605)).length);
 });
 
 test('detects retired coordinates and symbols without rejecting new coordinates', () => {

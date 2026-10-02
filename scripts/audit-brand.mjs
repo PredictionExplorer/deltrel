@@ -24,6 +24,9 @@ const historicalDeploymentEvidence = new Set([
   'training/docs/elo-efficiency-deployment-20260923.md',
   'training/docs/elo-efficiency-release-20260923.md',
   'training/docs/elo-efficiency-runtime-deployment-evidence-20260923.json',
+  'training/docs/training-recovery-deployment-20260928.md',
+  'training/docs/training-recovery-deployment-evidence-20260928.json',
+  'training/docs/strength-recovery-deployment-20261002.md',
 ]);
 
 export function inspectBrand(path, contents = '') {
