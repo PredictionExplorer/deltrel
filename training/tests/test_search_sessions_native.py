@@ -329,3 +329,63 @@ def test_budget_overrides_only_before_initialization_and_advance_is_atomic():
     with pytest.raises(ValueError, match="model_context"):
         search.advance(states, reuse_tree=True)
     assert fingerprint(search.results()) == fingerprint(result)
+
+
+@pytest.mark.native
+@pytest.mark.parametrize("mode", ["classic", "double"])
+@pytest.mark.parametrize("width", [1, 8])
+@pytest.mark.parametrize("responder", [False, True])
+def test_pie_search_uses_keep_values_without_relabeling_states(mode, width, responder):
+    native = pytest.importorskip("deltrel_native")
+    states = native.StateBatch(4, 1, mode=mode, pie=True)
+    if responder:
+        states.apply_many([0], [0])
+    original = states.data()
+    search = native.SearchBatch(
+        states, simulations=16, max_considered=16,
+        seeds_per_root=[17], first_visit_batch_size=width,
+    )
+    calls = 0
+    option_rows = 0
+
+    def oracle(requests):
+        nonlocal calls, option_rows
+        calls += len(requests)
+        data = requests.states
+        option_rows += sum(data.swap_available)
+        # Actual responder V includes a winning swap; every conditional keep
+        # continuation loses. A decision-point V must never enter keep backups.
+        values = [
+            0.8 if available else (-0.8 if player == 1 else 0.8)
+            for available, player in zip(data.swap_available, data.to_move, strict=True)
+        ]
+        return InferenceResponse(
+            tokens=list(requests.tokens), values=values,
+            policy_offsets=list(requests.legal_offsets),
+            policy_logits=[0.0] * len(requests.legal_actions),
+        )
+
+    roots = search.root_requests()
+    search.initialize_roots(*oracle(roots).submit_args())
+    first = True
+    while not search.is_done():
+        requests = search.next_requests()
+        if not len(requests):
+            continue
+        search.submit(*oracle(requests).submit_args())
+        if first and not responder:
+            assert search.completed_simulations == [0]
+            assert all(requests.states.swap_available)
+        first = False
+    result = search.results()
+    assert search.completed_simulations == [16]
+    assert sum(result.visits) == 16
+    assert all(abs(q + 0.8) < 1e-6 for q, count in zip(result.q_values, result.visits, strict=True) if count)
+    assert calls == (17 if responder else 33)
+    assert option_rows == (1 if responder else 16)
+    if responder:
+        assert result.q_values == pytest.approx([-0.8] * len(result.actions))
+        assert result.policy_target == pytest.approx([1 / len(result.actions)] * len(result.actions))
+    after = states.data()
+    for field in ("zero_bits", "one_bits", "to_move", "swap_available", "swapped", "moves_left"):
+        assert getattr(after, field) == getattr(original, field)

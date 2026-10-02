@@ -462,18 +462,21 @@ export class WasmSearchTree {
         return v1;
     }
     /**
-     * Supplies one pending leaf evaluation.
+     * Supplies a leaf evaluation; true means one simulation was completed.
+     * False requires resuming the same root action after policy-only expansion.
      * @param {bigint} token
      * @param {number} value
      * @param {Float32Array} policy_logits
+     * @returns {boolean}
      */
     finish(token, value, policy_logits) {
         const ptr0 = passArrayF32ToWasm0(policy_logits, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.wasmsearchtree_finish(this.__wbg_ptr, token, value, ptr0, len0);
-        if (ret[1]) {
-            throw takeFromExternrefTable0(ret[0]);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
         }
+        return ret[0] !== 0;
     }
     /**
      * Supplies initial root inference.

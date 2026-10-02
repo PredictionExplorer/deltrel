@@ -103,7 +103,7 @@ interface WasmSearchTree {
   pending_state(): WasmState;
   pending_actions(): Int32Array;
   pending_token(): bigint;
-  finish(token: bigint, value: number, policyLogits: Float32Array): void;
+  finish(token: bigint, value: number, policyLogits: Float32Array): boolean;
   actions(): Int32Array;
   visits(): Uint32Array;
   completed_q(): Float32Array;
@@ -180,7 +180,7 @@ export interface WasmSearchSession {
 }
 
 export const DELTREL_LOCAL_SEARCH_ALGORITHM_ID =
-  'gumbel-completed-q-v2-finite-noise-selected-keep';
+  'gumbel-completed-q-v3-conditional-keep';
 
 export function hasExpectedWasmSearch(wasm: Partial<DeltrelWasmModule>): boolean {
   try {
@@ -1331,6 +1331,7 @@ export async function runTreeSearch(
         throw new DeltrelAiError('protocol', 'WASM Gumbel scheduler returned an invalid edge.');
       }
       const needsEvaluation = tree.start(actions[candidate]);
+      let completed = !needsEvaluation;
       if (needsEvaluation) {
         const token = tree.pending_token();
         const leaf = tree.pending_state();
@@ -1342,10 +1343,14 @@ export async function runTreeSearch(
           if (tree.pending_token() !== token) {
             throw new DeltrelAiError('stale', 'WASM leaf evaluation token changed.');
           }
-          tree.finish(token, leafEvaluation.searchValue, leafEvaluation.logits);
+          completed = tree.finish(token, leafEvaluation.searchValue, leafEvaluation.logits);
         } finally {
           leaf.free?.();
         }
+      }
+      if (!completed) {
+        await yieldControl();
+        continue;
       }
       scheduler.record(candidate);
       simulations += 1;
