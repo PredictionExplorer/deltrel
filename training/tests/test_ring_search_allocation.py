@@ -112,6 +112,8 @@ def test_empty_group_preserves_canonical_authority_and_nonempty_never_disappears
         for name in names:
             del old_payload["orchestration"][section][name]
     del old_payload["selfplay"]["ring_search_allocations"]
+    del old_payload["selfplay"]["policy_target_scale"]
+    del old_payload["selfplay"]["policy_target_max_kl"]
     # Reproduce the pre-addition canonical representation. Typed, disabled
     # release defaults do not change authority for an existing run.
     del old_payload["selfplay"]["pie_even_training"]
