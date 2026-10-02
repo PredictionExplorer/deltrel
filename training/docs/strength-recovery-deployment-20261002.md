@@ -51,6 +51,55 @@ The inference batching/compile benchmark remains queued; no unmeasured speedup
 has been activated. These diagnostics support a coupled recovery experiment,
 not a causal claim that any single change raises Elo.
 
+## First elapsed-time endpoint
+
+The two-hour endpoint was retained at step 568263, after 1,835 fresh updates
+and 7,206.85 elapsed seconds. Its checkpoint SHA-256 is
+`520394a7be087f0c549c1d90bb38f0e908bad7dccf487a77bac476cf5c2573e6`.
+The checkpoint, manifest and snapshot receipt were independently hashed in the
+off-host backup. GPU 7 began the matched promotion evaluation automatically.
+The first completed block contained only 16 reversed-seat pairs: its weighted
+score was 0.3375, with an anytime confidence interval of [0, 0.83163]. The
+evaluation continued without promotion. This early block is unfavorable but
+does not establish the model's strength or an Elo change.
+At the next recorded observation, 12:41 UTC, the completed boundary had grown
+to 36 pairs / 72 games with weighted score 0.49832 and interval
+[0.18221, 0.85625]. The decision remained inconclusive. The change illustrates
+why the first small block should not be treated as a reliable strength estimate.
+
+Startup ring-10 batches initially had few outcome labels. By 12:41 UTC,
+sampled gradient-diagnostic batches had outcome/score targets for 80.78% of
+ring-10 positions over ten minutes and 83.59% over thirty minutes, versus
+19.18% in the ten-minute window at 10:33 UTC. These are sampled batch counts
+that include exact-clinch labels, not a census of finalized games. No batch
+in the latest ten-minute sample was entirely without outcome labels.
+
+A subsequent CPU diagnostic froze ten ordered-ply positions from each of the
+51 previously held-out zero-PDA games. All 510 positions received identical
+FP32 treatment for champion EMA, two-hour EMA and two-hour raw weights. The
+selection's SHA-256 is
+`98f71ad3df12ae92275beb346f18efcbdb76744c9a53b89f3ff2bfed15b53c7b`.
+Source integrity, calibration partition disjointness and exclusion from active
+replay were verified, including after scoring.
+
+| Loss on the frozen CPU probe | Champion EMA | Two-hour EMA | Two-hour raw |
+| --- | ---: | ---: | ---: |
+| Policy cross-entropy | 2.34219 | 2.32358 | 2.27259 |
+| Outcome cross-entropy | 0.62271 | 0.62151 | 0.64174 |
+| Score cross-entropy | 1.78403 | 1.78235 | 1.79195 |
+| Weighted composite | 4.36138 | 4.33912 | 4.30916 |
+
+The paired-game EMA composite improvement was 0.02226, with an exploratory,
+unadjusted 95% interval of [0.01356, 0.03069]. Its value-component improvement
+was only 0.00162, interval [-0.00294, 0.00570]. The raw value mean worsened by
+0.02101, but its interval included zero. These results support better policy
+fitting and do not provide evidence of an EMA value collapse. They do not
+justify switching to raw weights or changing rates. Absolute losses from this
+selected FP32 probe are not directly comparable to the earlier full-data BF16
+measurements. The diagnostic consumed 276.9 wall seconds, 1,047 CPU seconds
+and no GPU time; its driver, receipts and results are preserved in
+`training/runs/strength-recovery-20261002/evidence/two-hour-cpu-probe-01/`.
+
 ## Release and recovery evidence
 
 The immutable live release is
@@ -131,6 +180,29 @@ The new champion-only freshness mode is tested but not enabled in R3. Qualify an
 explicit transition before the learner is 120,000 steps ahead of its teacher;
 otherwise the old actor fallback would start using candidates. Do not solve
 this by falsifying checkpoint steps or silently weakening freshness bounds.
+
+A separate R4 release at production commit
+`7dca37252714bbe0c52d35a380ec175d743d1938` passed CPU/native qualification:
+4,362 tests, Ruff, Pyright, dependency audit and source/environment checks.
+The exact-node receipt retains 4,295 unchanged passing cases and records 67
+fresh passes after a historical-hash test fixture correction. Its native binary
+is identical to R3. R4 is inactive, lacks a CUDA qualification receipt and must
+not replace R3 until an explicit profile/controller transition is tested.
+The qualification receipt's file SHA-256 is
+`dae84288cefaefbbc811bc3e3a1bad44af61c590b66307e12c496d173a570d44`.
+
+Later repository validation changes are separate from both release pins.
+Python CI uses two test workers with bounded inner thread pools and combined
+coverage. Exhaustive browser tests are split into bounded cases without
+dropping coverage; platform-specific visual baselines retain provenance.
+Playwright 1.63 restores optimized Firefox WASM under its debugger, allowing
+the unchanged real-model Standard-move test to finish. Statistical evidence
+accumulation preserves scalar operation order, checked against the previous
+implementation. Historical profile enumeration now deduplicates convergent
+omission paths at each stage while preserving the exact ordered payloads and
+hashes; 395 parity, mutation-isolation and authority checks passed with branch
+coverage and two workers. None of these changes weakens promotion thresholds or changes
+the live training recipe. Final-head GitHub CI remains the merge gate.
 
 Detailed server receipts live under
 `/home/ubuntu/edgeconnect-rollouts/strength-recovery-20261002`. Durable local
