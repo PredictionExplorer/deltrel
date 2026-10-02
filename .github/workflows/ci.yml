@@ -72,6 +72,13 @@ jobs:
     name: Python and native pipeline
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      # Parallel test processes own CPU slots; inner math/native pools stay
+      # bounded so small model tests do not oversubscribe the shared runner.
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      RAYON_NUM_THREADS: "1"
     defaults:
       run:
         working-directory: training
@@ -94,7 +101,8 @@ jobs:
       - run: uv run ruff format --check deltreltrain deltrelserve tests scripts
       - run: uv run pyright
       - run: >-
-          uv run pytest --require-native
+          uv run pytest --require-native -n 2 --dist load --maxschedchunk=1
+          --maxfail=1 --durations=20
           -m "not cuda and not multi_gpu and not soak"
           --cov --cov-report=xml --cov-report=json:coverage.json
       - run: uv run python scripts/check_coverage.py coverage.json
