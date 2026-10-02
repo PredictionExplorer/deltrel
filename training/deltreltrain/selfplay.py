@@ -4,8 +4,9 @@ Every cohort plays one board size and one rule variant (mode, handicap, pie).
 Inside a cohort each game may carry a playout-doubling advantage for one seat:
 that seat searches with more simulations and both networks see the advantage
 as an input, so the network learns to evaluate positions under a strength
-asymmetry (the KataGo remedy for lopsided handicap games). In pie games the
-responder swaps exactly when its selected keep value is below a small dead zone.
+asymmetry (the KataGo remedy for lopsided handicap games). Pie games use equal
+seat budgets: only then can the swap shortcut negate the keep value. The
+responder swaps when its selected keep value is below a small dead zone.
 
 Streaming publishes complete games before their siblings finish. Optional
 rolling slots refill only after publication, within one finite, pinned-model
@@ -149,6 +150,8 @@ class VariantMixtureConfig:
     still produces informative outcomes. ``asymmetric_pda_fraction`` of the
     standard and classic games give one random seat a random advantage from
     ``pda_magnitudes`` so the network learns the input everywhere.
+    Pie games always use PDA zero because their swap shortcut requires symmetric
+    seat strength; the random advantage is restricted to non-pie even games.
     """
 
     enabled: bool = False
@@ -1370,12 +1373,15 @@ class SelfPlayActor:
         """Playout-doubling advantages ``(seat 0, seat 1)`` for every game.
 
         Handicap games hand the second player the configured advantage; a
-        configured fraction of other games hands a random seat a random
-        magnitude. The disadvantaged seat sees the negated value.
+        configured fraction of non-pie even games hands a random seat a random
+        magnitude. Pie games keep equal budgets so swapping and keeping have
+        opposite values. The disadvantaged seat sees the negated value.
         """
 
         variant = self.config.variant
         mixture = self.config.variants
+        if variant.pie:
+            return [(0, 0)] * cohort_size
         seats: list[tuple[int, int]] = []
         for row in range(cohort_size):
             if variant.handicap >= 2:
@@ -2123,6 +2129,7 @@ class SelfPlayActor:
                             if search_evidence_by_row is not None
                             else ""
                         )
+                        + (":pie_pda=symmetric-seats-v1" if self.config.pie else "")
                         + target_evidence
                         + (
                             f":reused_nodes={reused_nodes[row]}"
