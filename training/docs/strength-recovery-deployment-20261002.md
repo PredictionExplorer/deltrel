@@ -141,8 +141,8 @@ The [live canary](strength-recovery-canary-20261002.json) reached step 566870:
 442 fresh optimizer updates. Thirty consecutive recorded metric intervals had
 finite losses/gradients, the exact calibrated rates and EMA, the fresh replay
 threshold, the prospective credit baseline and no unknown policy provenance.
-All 24 GPU cohorts used the retained champion and all ten workers were healthy
-with zero worker restarts in the current coordinator attempt.
+All 24 GPU cohorts used the retained champion. The coordinator and its nine
+supervised workers were healthy, with zero worker restarts in that attempt.
 
 The new run's first disaster snapshot completed at 09:48 UTC and passed
 independent full verification at 09:53 UTC. Catalog SHA-256:
@@ -167,7 +167,7 @@ Also, an isolated fork inherited the parent's migration journal and source
 authority. The normalization operator archives the exact historical bytes and
 records the already-qualified source under a clean stop; it does not invent a
 migration or reset weights, replay, credit or experiment time.
-That repair completed under one clean stop: all ten workers exited zero, replay
+That repair completed under one clean stop: all workers exited zero, replay
 prefixes were flushed, and the same R3 release resumed with its original clock.
 The new assignments supplied the missing classic ring-6/ring-8 coverage.
 The normalization receipt hash is
@@ -220,6 +220,14 @@ resume cases fell from about 41 seconds to 13 seconds locally with the same
 coverage settings and unchanged 60-second limits. A further 1,794 tests in
 unaffected modules passed. None of these changes weakens promotion thresholds or changes
 the live training recipe. Final-head GitHub CI remains the merge gate.
+
+The complete CI run for runtime-code head
+`002cc0f51d9cc96cf5798f1b5e3b0bc2aea16d0d` passed all six jobs. It includes
+4,516 Python/native tests, all 28 coverage floors, 1,012 web tests and 107 browser
+end-to-end tests, with five existing browser-specific or opt-in skips. The
+Python suite took 1,138 seconds with two workers and branch coverage. CUDA,
+multi-GPU and soak tests remain separate qualifications. The evidence is
+[CI run 37013445481](https://github.com/PredictionExplorer/deltrel/actions/runs/37013445481).
 
 Detailed server receipts live under
 `/home/ubuntu/edgeconnect-rollouts/strength-recovery-20261002`. Durable local
