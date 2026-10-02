@@ -341,3 +341,50 @@ def test_convergent_epochs_are_not_deepcopied_through_later_stages(monkeypatch):
     actual = epochs.compatible_config_epoch_payloads(payload)
     assert tuple(map(_encode, actual)) == tuple(map(_encode, expected))
     assert calls < eager_calls / 2
+
+
+@pytest.mark.parametrize("value", [False, True, 0, 0.0, 1, 3600, 3600.0, "false", None])
+@pytest.mark.parametrize(
+    "section,name",
+    [
+        ("model_refresh", "history_horizon_enabled"),
+        ("model_refresh", "history_horizon_initial_seconds"),
+        ("historical_evaluation", "measurement_service_fraction"),
+        ("historical_evaluation", "measurement_max_wait_seconds"),
+    ],
+)
+def test_scheduling_noop_guard_matches_exact_public_adapter(value, section, name):
+    payload = {"orchestration": {section: {name: value}}}
+    adapted = epochs.without_efficiency_program_defaults(payload)
+    assert epochs._has_efficiency_program_defaults(payload) == (adapted != payload)
+    assert payload == {"orchestration": {section: {name: value}}}
+
+
+def test_absent_scheduling_defaults_do_not_copy_every_final_epoch(monkeypatch):
+    payload = epochs.without_efficiency_program_defaults(_default_payload())
+    actual_adapter = epochs.without_efficiency_program_defaults
+    expected = _parent_epoch_payloads(payload)
+
+    def reject_noop_copy(source):
+        assert actual_adapter(source) != source, "copied a provably unchanged epoch"
+        return actual_adapter(source)
+
+    monkeypatch.setattr(epochs, "without_efficiency_program_defaults", reject_noop_copy)
+    actual = epochs.compatible_config_epoch_payloads(payload)
+    assert tuple(map(_encode, actual)) == tuple(map(_encode, expected))
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"orchestration": None},
+        {"orchestration": {"model_refresh": [], "historical_evaluation": "future"}},
+        {"orchestration": {"model_refresh": {}, "historical_evaluation": {}}},
+    ],
+)
+def test_scheduling_noop_guard_preserves_missing_and_unknown_shapes(payload):
+    expected = deepcopy(payload)
+    assert epochs._has_efficiency_program_defaults(payload) is False
+    assert epochs.without_efficiency_program_defaults(payload) == expected
+    assert payload == expected

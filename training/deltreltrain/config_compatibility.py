@@ -15,6 +15,37 @@ from typing import Any
 from .search_options import SearchExecutionConfig
 from dataclasses import asdict
 
+_HISTORY_HORIZON_DEFAULTS = (
+    ("history_horizon_enabled", False),
+    ("history_horizon_initial_seconds", 3600.0),
+)
+_MEASUREMENT_SCHEDULER_DEFAULTS = (
+    ("measurement_service_fraction", 0.0),
+    ("measurement_max_wait_seconds", 3_600.0),
+)
+
+
+def _matches_typed_default(
+    parent: Mapping[str, Any], name: str, default: object
+) -> bool:
+    return type(parent.get(name)) is type(default) and parent[name] == default
+
+
+def _has_efficiency_program_defaults(payload: Mapping[str, Any]) -> bool:
+    orchestration = payload.get("orchestration")
+    if not isinstance(orchestration, dict):
+        return False
+    for section, defaults in (
+        ("model_refresh", _HISTORY_HORIZON_DEFAULTS),
+        ("historical_evaluation", _MEASUREMENT_SCHEDULER_DEFAULTS),
+    ):
+        parent = orchestration.get(section)
+        if isinstance(parent, dict) and any(
+            _matches_typed_default(parent, name, default) for name, default in defaults
+        ):
+            return True
+    return False
+
 
 def without_pause_strategy_default(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Represent releases whose actor pause strategy was always terminate."""
@@ -39,11 +70,8 @@ def without_history_horizon_defaults(payload: Mapping[str, Any]) -> dict[str, An
         orchestration.get("model_refresh") if isinstance(orchestration, dict) else None
     )
     if isinstance(refresh, dict):
-        for name, default in (
-            ("history_horizon_enabled", False),
-            ("history_horizon_initial_seconds", 3600.0),
-        ):
-            if type(refresh.get(name)) is type(default) and refresh[name] == default:
+        for name, default in _HISTORY_HORIZON_DEFAULTS:
+            if _matches_typed_default(refresh, name, default):
                 del refresh[name]
     return result
 
@@ -163,6 +191,10 @@ def compatible_config_epoch_payloads(
     # Both scheduling additions belong to one release, not two independently
     # shipped epochs. Preserve old hashes without another Cartesian dimension.
     for variant in tuple(variants):
+        # Canonical current profiles already omit these disabled defaults.
+        # Avoid two whole-tree copies when neither adapter can delete a key.
+        if not _has_efficiency_program_defaults(variant):
+            continue
         previous_scheduling = without_efficiency_program_defaults(variant)
         if previous_scheduling != variant:
             variants.append(previous_scheduling)
@@ -202,11 +234,8 @@ def without_measurement_scheduler_defaults(
         else None
     )
     if isinstance(parent, dict):
-        for name, default in (
-            ("measurement_service_fraction", 0.0),
-            ("measurement_max_wait_seconds", 3_600.0),
-        ):
-            if type(parent.get(name)) is type(default) and parent[name] == default:
+        for name, default in _MEASUREMENT_SCHEDULER_DEFAULTS:
+            if _matches_typed_default(parent, name, default):
                 del parent[name]
     return result
 
