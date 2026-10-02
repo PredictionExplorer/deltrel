@@ -40,7 +40,7 @@ python -m scripts.prepare_strength_recovery prepare \
   --destination /runs/strength-recovery \
   --output /experiments/strength-recovery-inputs \
   --muon-lr CALIBRATED_MUON_RATE --adamw-lr CALIBRATED_ADAMW_RATE \
-  --warmup-steps SELECTED_WARMUP
+  --warmup-steps SELECTED_WARMUP --source-commit VERIFIED_RELEASE_COMMIT
 python -m scripts.prepare_strength_recovery apply \
   --plan /experiments/strength-recovery-inputs/strength-recovery-plan.json
 ```
@@ -49,6 +49,13 @@ Application uses the existing isolated fork and champion-warm-start tools. If
 application fails after the fork has been copied, preserve that directory for
 inspection; the command does not overwrite or silently rebuild an existing
 fork. Qualification and backups of the new root precede starting it.
+
+Preparation archives inherited parent migration/source authority and identifies
+the already-qualified release explicitly. It never invents a historical child
+migration. The normalization receipt embeds the exact archived bytes, so the
+existing root-JSON backup catalog preserves them too. Older prepared forks can
+use `scripts.normalize_recovery_fork_authority` after a clean stop; it refuses
+different child history, unqualified source IDs or changed protected controls.
 
 The fork includes an independent copy of every pinned source, profile and
 implementation input under `strength-recovery-provenance/`. Its catalog is bound
