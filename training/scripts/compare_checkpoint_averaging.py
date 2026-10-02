@@ -86,7 +86,11 @@ def _exclusive_output(output: Path) -> Iterator[None]:
 
 
 def diagnostic_config(
-    *, pairs_per_cell: int = 8, simulations: int = 256, seed: int = 17
+    *,
+    pairs_per_cell: int = 8,
+    simulations: int = 256,
+    seed: int = 17,
+    max_considered: int = 16,
 ) -> ArenaConfig:
     if type(pairs_per_cell) is not int or pairs_per_cell < 4 or pairs_per_cell % 4:
         raise ValueError("pairs per cell must cover complete 2/4/6/9 handicap cycles")
@@ -98,7 +102,7 @@ def diagnostic_config(
         minimum_pairs_per_ring=pairs_per_cell,
         max_pairs_per_ring=pairs_per_cell,
         simulations=simulations,
-        max_considered=min(16, simulations),
+        max_considered=min(max_considered, simulations),
         seed=seed,
     )
 
@@ -130,6 +134,8 @@ def _implementation_hashes() -> dict[str, str]:
             "deltreltrain/arena.py",
             "deltreltrain/balanced_evaluation.py",
             "deltreltrain/checkpoint.py",
+            "deltreltrain/contracts.py",
+            "deltreltrain/native.py",
         )
     }
 
@@ -160,6 +166,7 @@ def freeze_plan(
         pairs_per_cell=config.pairs_per_ring,
         simulations=config.simulations,
         seed=config.seed,
+        max_considered=config.max_considered,
     )
     if config != expected or precision not in ("fp32", "bf16"):
         raise ValueError("diagnostic requires its fixed four-cell search contract")

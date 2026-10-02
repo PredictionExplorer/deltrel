@@ -1,0 +1,107 @@
+# Twelve-hour champion recovery screen
+
+This is a coupled recovery experiment, not a claim of improved Elo or a
+one-factor optimizer comparison. It restarts raw and EMA weights from the
+retained champion EMA, with fresh optimizer moments and an explicitly selected
+learning rate. It keeps the 17.5M model and the existing game objective.
+
+The profile uses champion-only self-play, reuse 1.5, a fresh shard watermark,
+and zero initial replay credit. Old rejected-branch positions cannot enter as
+the new branch catches up in step count. The conservative search allocation is
+65% fast / 35% full, 32/384 simulations at reference ring 6 (scaled to ring 10),
+without the old per-ring reduced-full-search waivers. This deliberately raises
+search quality and does not carry old qualification receipts into corrected pie
+search. The normal search-admission validator still runs.
+
+GPU 0 remains the learner, GPUs 1–6 generate games, and GPU 7 is a dedicated
+evaluator. Promotion keeps the same 256-simulation game/search/statistical
+contract. Independent measurements use 1024 simulations and a new epoch anchored
+at the starting champion. Old arenas and measurement queues are archived within
+the fork. No parent replay, checkpoint, profile or model pointer is modified.
+
+The learning-rate CLI parameters and warmup length are required. The scheduler
+stays at the selected rates after warmup, and automatic plateau resets are
+disabled for the fixed screen. Select rates from calibration; do not copy the
+old reference rates into a fresh scheduler.
+
+## Prepare after stopping the source
+
+Run these commands from the tested release's training directory. Preparation
+pins the exact source profile, replay database, champion pointer/manifest/bytes
+and implementation files. Output and destination must both be outside the
+source and outside each other. Existing output is never overwritten.
+
+```sh
+python -m scripts.prepare_strength_recovery prepare \
+  --source-profile /source/profile.yaml \
+  --destination /runs/strength-recovery \
+  --output /experiments/strength-recovery-inputs \
+  --muon-lr CALIBRATED_MUON_RATE --adamw-lr CALIBRATED_ADAMW_RATE \
+  --warmup-steps SELECTED_WARMUP
+python -m scripts.prepare_strength_recovery apply \
+  --plan /experiments/strength-recovery-inputs/strength-recovery-plan.json
+```
+
+Application uses the existing isolated fork and champion-warm-start tools. If
+application fails after the fork has been copied, preserve that directory for
+inspection; the command does not overwrite or silently rebuild an existing
+fork. Qualification and backups of the new root precede starting it.
+
+## Run and resume
+
+```sh
+python -m scripts.run_strength_recovery --run-root /runs/strength-recovery
+```
+
+Use an owned service or process group for this command. The proven ablation
+runner starts and stops its coordinator/process group, requests graceful
+checkpointing, and escalates within the configured teardown grace. Its
+twelve-hour wall clock includes startup and restart downtime. Teardown time and
+confirmed resource release are reported separately; they remain part of any
+provisioned-cost calculation. Budget completion cannot start another training
+attempt. Transient restarts retain the original deadline. A signal does not
+leave workers running.
+
+The learner publishes candidates at the first optimizer safe point after 2, 6,
+and 12 elapsed hours, independent of updates/hour. The ordinary example cadence
+is disabled by a distant threshold. Shutdown's final publication can capture
+the twelve-hour endpoint. Each captured manifest and checkpoint is hard-linked
+under `strength-recovery-snapshots/<scheduled-seconds>/`, preserving it against
+normal retention. The receipt records the actual capture time. If a restart
+misses multiple endpoints, only the latest elapsed endpoint is captured and
+earlier endpoints are explicitly reported missing. The tools never label one
+late checkpoint as multiple historical snapshots.
+
+## Independently evaluate a frozen endpoint
+
+Use this after training stops or after reserving a separate idle GPU for the
+whole evaluation session. GPU 7 is owned by promotion while training runs; an
+external diagnostic must not overlap that owner. The tool requires one full
+GPU UUID and checks that no compute processes own the device before loading.
+
+```sh
+python -m scripts.evaluate_strength_recovery prepare \
+  --run-root /runs/strength-recovery --snapshot-seconds 43200 \
+  --output /experiments/recovery-12h-256 \
+  --simulations 256 --pairs-per-cell 16 --wall-budget-hours 8
+CUDA_VISIBLE_DEVICES=GPU-FULL-UUID \
+python -m scripts.evaluate_strength_recovery run \
+  --output /experiments/recovery-12h-256 --exclusive-device \
+  --device cuda:0 --session-seconds 300
+```
+
+Repeat the `run` command to resume unfinished games. A plan pins its checkpoints,
+search settings, implementations and original champion; subsequent champion
+promotion cannot redirect it. It uses the production 64 considered actions,
+complete reversed-seat pairs, and four game categories. No promotion pointer
+is written. A new 1024-simulation plan uses the same endpoint and anchor but
+separate results. Four pairs per cell is a 32-game pilot; sixteen is 128 games.
+Match both budgets and anchors when comparing a control.
+
+The endpoint wall budget starts on first execution, persists separately from
+session state, and includes downtime between sessions. Budget exhaustion returns
+incomplete evidence and cannot be mistaken for a strength verdict. It does not
+grant a fresh budget on retry. A session ends at a safe search boundary, so
+model loading and an in-flight search may overrun its requested slice. Run the
+session under the host's owned service timeout if a hard external kill bound is
+required; already persisted action histories remain resumable.
