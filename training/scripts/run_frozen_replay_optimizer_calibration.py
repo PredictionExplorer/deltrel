@@ -14,7 +14,7 @@ import sys
 import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import torch
@@ -33,7 +33,12 @@ from deltreltrain.checkpoint import (
     verify_file,
 )
 from deltreltrain.config import ExperimentConfig, load_config
-from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, RULES_HASH_WIRE
+from deltreltrain.contracts import (
+    FEATURE_SCHEMA_HASH,
+    RULES_HASH,
+    RULES_HASH_WIRE,
+    TARGET_OUTCOME,
+)
 from deltreltrain.device import (
     enable_fast_math,
     resolve_device_string,
@@ -93,6 +98,18 @@ MAX_H100_HOURS_PER_ARM = 2.0
 CONTROL_ARM = "ring10-optimizer-runtime-effective-control"
 FOLLOW_ON_ARM = "ring10-optimizer-0.5x-effective-lr"
 PREIMPORT_CACHE_BOOTSTRAP_ENV = "DELTRELTRAIN_COMPILE_CACHE_BOOTSTRAP"
+RECOVERY_ARMS = (
+    "recovery-effective-control",
+    "recovery-effective-moderate",
+    "recovery-effective-high",
+)
+RECOVERY_CELLS = {
+    "pie-classic": 0.45,
+    "pie-double": 0.45,
+    "handicap-classic": 0.05,
+    "handicap-double": 0.05,
+}
+RECOVERY_PARTITION = "bounded-finalized-ring10-pie-cell-game-disjoint-v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +131,11 @@ class CalibrationSettings:
     checkpoint_interval: int = 100
     stop_after_steps: int | None = None
     dry_run: bool = False
+    effective_muon_lr: float | None = None
+    effective_adamw_lr: float | None = None
+    replay_model_identity: str | None = None
+    minimum_replay_shard_id_exclusive: int = 0
+    gradient_diagnostic_rows: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,10 +225,13 @@ class FrozenReplay:
     holdout_sha256: str
     partition_sha256: str
     decoded: Mapping[int, DecodedReplayShard]
+    game_cells: Mapping[str, str] | None = None
 
     def partition_dict(self) -> dict[str, object]:
         return {
-            "method": PARTITION_METHOD,
+            "method": RECOVERY_PARTITION
+            if self.game_cells is not None
+            else PARTITION_METHOD,
             "train_samples": len(self.train),
             "holdout_samples": len(self.holdout),
             "train_sha256": self.train_sha256,
@@ -218,6 +243,11 @@ class FrozenReplay:
             "holdout_games": len({row.game_identity for row in self.holdout}),
             "train_game_ids": sorted({row.game_identity for row in self.train}),
             "holdout_game_ids": sorted({row.game_identity for row in self.holdout}),
+            **(
+                {"game_cells": dict(self.game_cells), "cell_weights": RECOVERY_CELLS}
+                if self.game_cells is not None
+                else {}
+            ),
         }
 
 
@@ -231,7 +261,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--arm",
         required=True,
-        choices=RING10_OPTIMIZER_CALIBRATION_TREATMENTS,
+        choices=(*RING10_OPTIMIZER_CALIBRATION_TREATMENTS, *RECOVERY_ARMS),
     )
     parser.add_argument("--steps", required=True, type=int)
     parser.add_argument("--batch-size", type=int)
@@ -254,6 +284,13 @@ def _parser() -> argparse.ArgumentParser:
         help="operational pause after this many new steps; the arm remains resumable",
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--effective-muon-lr", type=float)
+    parser.add_argument("--effective-adamw-lr", type=float)
+    parser.add_argument(
+        "--replay-model-identity", help="Optional exact frozen teacher identity"
+    )
+    parser.add_argument("--minimum-replay-shard-id-exclusive", type=int, default=0)
+    parser.add_argument("--gradient-diagnostic-rows", type=int, default=0)
     return parser
 
 
@@ -276,6 +313,11 @@ def _settings(arguments: argparse.Namespace) -> CalibrationSettings:
         checkpoint_interval=arguments.checkpoint_interval,
         stop_after_steps=arguments.stop_after_steps,
         dry_run=arguments.dry_run,
+        effective_muon_lr=arguments.effective_muon_lr,
+        effective_adamw_lr=arguments.effective_adamw_lr,
+        replay_model_identity=arguments.replay_model_identity,
+        minimum_replay_shard_id_exclusive=arguments.minimum_replay_shard_id_exclusive,
+        gradient_diagnostic_rows=arguments.gradient_diagnostic_rows,
     )
 
 
@@ -364,8 +406,26 @@ def _inside(path: Path, root: Path) -> bool:
 
 
 def validate_settings(settings: CalibrationSettings) -> None:
-    if settings.arm not in RING10_OPTIMIZER_CALIBRATION_TREATMENTS:
+    if settings.arm not in (*RING10_OPTIMIZER_CALIBRATION_TREATMENTS, *RECOVERY_ARMS):
         raise ValueError("arm is not in the frozen optimizer calibration suite")
+    recovery = settings.arm in RECOVERY_ARMS
+    for rate in (settings.effective_muon_lr, settings.effective_adamw_lr):
+        if recovery and (rate is None or not math.isfinite(rate) or rate <= 0):
+            raise ValueError(
+                "recovery arms require both explicit positive effective rates"
+            )
+        if not recovery and rate is not None:
+            raise ValueError("effective-rate overrides require a recovery arm")
+    if not 0 <= settings.minimum_replay_shard_id_exclusive < settings.replay_cutoff:
+        raise ValueError("minimum replay shard must precede the frozen cutoff")
+    if not 0 <= settings.gradient_diagnostic_rows <= 32:
+        raise ValueError("gradient diagnostic rows must be in 0..32")
+    if not recovery and (
+        settings.replay_model_identity is not None
+        or settings.minimum_replay_shard_id_exclusive
+        or settings.gradient_diagnostic_rows
+    ):
+        raise ValueError("recovery diagnostics/filter settings require a recovery arm")
     for name, path in (
         ("config", settings.config),
         ("champion", settings.champion),
@@ -408,12 +468,19 @@ def validate_settings(settings: CalibrationSettings) -> None:
 
 
 def _validate_calibration_config(config: ExperimentConfig, arm: str) -> None:
-    if config.orchestration.training_objective != "ring10_only":
+    if arm in RECOVERY_ARMS:
+        if config.orchestration.training_objective != "ring10_pie":
+            raise ValueError("recovery calibration requires the ring10_pie objective")
+        if config.train.gradient_clipping.mode != "global":
+            raise ValueError("recovery calibration currently requires global clipping")
+    elif config.orchestration.training_objective != "ring10_only":
         raise ValueError("optimizer calibration requires a ring10_only profile")
     if config.optimizer.kind != "muon_adamw":
         raise ValueError("optimizer calibration excludes AdamW-only profiles")
     if config.model.dropout != 0.0:
         raise ValueError("deterministic optimizer calibration requires zero dropout")
+    if arm in RECOVERY_ARMS:
+        return
     expected_clip = {
         "ring10-optimizer-runtime-effective-control": 1.0,
         "ring10-optimizer-clip-norm-2": 2.0,
@@ -422,6 +489,51 @@ def _validate_calibration_config(config: ExperimentConfig, arm: str) -> None:
     }[arm]
     if config.train.gradient_clip_norm != expected_clip:
         raise ValueError(f"{arm} has the wrong gradient clip norm")
+
+
+def _effective_config(
+    config: ExperimentConfig, settings: CalibrationSettings
+) -> ExperimentConfig:
+    """Recovery rates are absolute: no inherited warmup, cosine, or governor."""
+    if settings.arm not in RECOVERY_ARMS:
+        return config
+    assert settings.effective_muon_lr is not None
+    assert settings.effective_adamw_lr is not None
+    return replace(
+        config,
+        optimizer=replace(
+            config.optimizer,
+            muon_lr=settings.effective_muon_lr,
+            adamw_lr=settings.effective_adamw_lr,
+        ),
+        train=replace(
+            config.train,
+            seed=settings.seed,
+            scheduler=replace(
+                config.train.scheduler,
+                warmup_steps=0,
+                total_steps=max(1, settings.steps),
+                min_lr_ratio=1.0,
+            ),
+        ),
+    )
+
+
+def _recovery_implementation() -> dict[str, object]:
+    package = Path(__file__).resolve().parents[1] / "deltreltrain"
+    sources = [
+        *package.glob("*.py"),
+        Path(__file__).resolve(),
+        Path(__file__).with_name("frozen_gradient_diagnostics.py"),
+    ]
+    return {
+        "torch_version": str(torch.__version__),
+        "python_version": sys.version,
+        "source_sha256": {
+            f"{path.parent.name}/{path.name}": sha256_file(path)
+            for path in sorted(sources)
+        },
+    }
 
 
 def _champion_pin(path: Path, config: ExperimentConfig) -> ChampionPin:
@@ -476,7 +588,9 @@ def open_replay_read_only(replay_root: Path) -> Iterator[sqlite3.Connection]:
         connection.close()
 
 
-def _replay_metadata(connection: sqlite3.Connection) -> dict[str, str]:
+def _replay_metadata(
+    connection: sqlite3.Connection, *, validate_publications: bool = True
+) -> dict[str, str]:
     rows = connection.execute(
         """
         SELECT key, value
@@ -502,7 +616,8 @@ def _replay_metadata(connection: sqlite3.Connection) -> dict[str, str]:
         != expected
     ):
         raise ValueError("source replay metadata is incompatible")
-    validate_game_publications(connection)
+    if validate_publications:
+        validate_game_publications(connection)
     return metadata
 
 
@@ -569,6 +684,53 @@ def _partition_hash(references: Sequence[ReplayReference]) -> str:
     return _digest([reference.as_hash_record() for reference in references])
 
 
+def _recovery_cell(mode: int, handicap: int, pie: bool) -> str | None:
+    if mode not in (0, 1):
+        return None
+    suffix = "classic" if mode == 0 else "double"
+    if handicap == 1 and pie:
+        return f"pie-{suffix}"
+    if 2 <= handicap <= 9 and not pie:
+        return f"handicap-{suffix}"
+    return None
+
+
+def _cell_quotas(max_samples: int) -> dict[str, int]:
+    quotas = {
+        cell: int(max_samples * weight) for cell, weight in RECOVERY_CELLS.items()
+    }
+    if min(quotas.values()) < 2:
+        raise ValueError(
+            "recovery max-samples must permit two games in every cell (>=40)"
+        )
+    for cell in sorted(
+        quotas, key=lambda cell: -(max_samples * RECOVERY_CELLS[cell] - quotas[cell])
+    )[: max_samples - sum(quotas.values())]:
+        quotas[cell] += 1
+    return quotas
+
+
+def _holdout_games(
+    groups: Mapping[str, Sequence[ReplayReference]], *, seed: int, fraction: float
+) -> set[str]:
+    if len(groups) < 2:
+        raise ValueError(
+            "game-disjoint calibration requires at least two games in every selected cell"
+        )
+    ordered = sorted(
+        groups,
+        key=lambda game: hashlib.sha256(
+            f"holdout-game-v2:{seed}:{game}".encode()
+        ).hexdigest(),
+    )
+    target = sum(map(len, groups.values())) * fraction
+    count, boundaries = 0, []
+    for index, game in enumerate(ordered[:-1], start=1):
+        count += len(groups[game])
+        boundaries.append((abs(count - target), index))
+    return set(ordered[: min(boundaries)[1]])
+
+
 def freeze_replay(
     settings: CalibrationSettings,
     champion: ChampionPin,
@@ -576,8 +738,12 @@ def freeze_replay(
     decode: bool,
 ) -> FrozenReplay:
     root = settings.replay_root.resolve()
+    recovery = settings.arm in RECOVERY_ARMS
+    quotas = _cell_quotas(settings.max_samples) if recovery else {}
     with open_replay_read_only(root) as connection:
-        metadata = _replay_metadata(connection)
+        # Recovery uses bounded immutable shard evidence. Scanning millions of
+        # unrelated live publication rows is neither necessary nor bounded.
+        metadata = _replay_metadata(connection, validate_publications=not recovery)
         rows = connection.execute(
             """
             SELECT id, relative_path, sample_count, checksum_sha256,
@@ -585,23 +751,28 @@ def freeze_replay(
             FROM shards
             WHERE state = 'ready'
               AND id <= ?
+              AND id > ?
               AND ring = 10
               AND run_id = ?
               AND generation_family = ?
               AND rules_hash = ?
               AND feature_schema_hash = ?
+              AND (? IS NULL OR model_identity = ?)
             ORDER BY id ASC
             """,
             (
                 settings.replay_cutoff,
+                settings.minimum_replay_shard_id_exclusive,
                 champion.run_id,
                 champion.generation_family,
                 f"{RULES_HASH:016x}",
                 f"{FEATURE_SCHEMA_HASH:016x}",
+                settings.replay_model_identity,
+                settings.replay_model_identity,
             ),
         ).fetchall()
     shards = tuple(_frozen_shard(root, row) for row in rows)
-    if not shards or shards[-1].shard_id != settings.replay_cutoff:
+    if not shards or (not recovery and shards[-1].shard_id != settings.replay_cutoff):
         raise ValueError(
             "replay cutoff must identify the latest eligible ready ring-10 shard"
         )
@@ -618,6 +789,8 @@ def freeze_replay(
     decoded: dict[int, DecodedReplayShard] = {}
     logical_positions: dict[str, ReplayReference] = {}
     game_contexts: dict[str, tuple[str, int, int, bool]] = {}
+    game_cells: dict[str, str] = {}
+    cell_counts = dict.fromkeys(RECOVERY_CELLS, 0)
     for shard in reversed(shards):
         if not shard.path.is_file() or shard.path.is_symlink():
             raise ValueError(f"source replay shard is unsafe: {shard.path}")
@@ -646,6 +819,16 @@ def freeze_replay(
                 int(arrays["handicap"][sample_index]),
                 bool(arrays["pie"][sample_index]),
             )
+            if recovery:
+                cell = _recovery_cell(*context[1:])
+                if (
+                    cell is None
+                    or not int(arrays["target_mask"][sample_index]) & TARGET_OUTCOME
+                ):
+                    continue
+                if cell_counts[cell] >= quotas[cell]:
+                    continue
+                game_cells[game_identity] = cell
             if game_contexts.setdefault(game_identity, context) != context:
                 raise ValueError("immutable replay game model/variant context changed")
             reference = _stable_reference(
@@ -658,6 +841,8 @@ def freeze_replay(
             if reference.stable_id not in logical_positions:
                 logical_positions[reference.stable_id] = reference
                 contributed = True
+                if recovery:
+                    cell_counts[game_cells[game_identity]] += 1
         if decode and contributed:
             decoded[shard.shard_id] = materialized
         if len(logical_positions) >= settings.max_samples:
@@ -667,27 +852,34 @@ def freeze_replay(
         key=lambda reference: (reference.order_sha256, reference.stable_id),
     )
     selected = references[: settings.max_samples]
+    if recovery and cell_counts != quotas:
+        raise ValueError(
+            f"frozen replay lacks complete requested cell coverage: {cell_counts}, need {quotas}"
+        )
     if len(selected) < 3:
         raise ValueError("frozen replay has fewer than three eligible samples")
     groups: dict[str, list[ReplayReference]] = {}
     for reference in selected:
         groups.setdefault(reference.game_identity, []).append(reference)
-    if len(groups) < 2:
-        raise ValueError("game-disjoint calibration requires at least two games")
-    ordered_games = sorted(
-        groups,
-        key=lambda game: hashlib.sha256(
-            f"holdout-game-v2:{settings.seed}:{game}".encode()
-        ).hexdigest(),
-    )
-    target_count = len(selected) * settings.holdout_fraction
-    count = 0
-    boundaries = []
-    for index, game in enumerate(ordered_games[:-1], start=1):
-        count += len(groups[game])
-        boundaries.append((abs(count - target_count), index))
-    _, holdout_game_count = min(boundaries)
-    holdout_games = set(ordered_games[:holdout_game_count])
+    if recovery:
+        holdout_games = set().union(
+            *(
+                _holdout_games(
+                    {
+                        game: rows
+                        for game, rows in groups.items()
+                        if game_cells[game] == cell
+                    },
+                    seed=settings.seed,
+                    fraction=settings.holdout_fraction,
+                )
+                for cell in RECOVERY_CELLS
+            )
+        )
+    else:
+        holdout_games = _holdout_games(
+            groups, seed=settings.seed, fraction=settings.holdout_fraction
+        )
     train = tuple(row for row in selected if row.game_identity not in holdout_games)
     holdout = tuple(row for row in selected if row.game_identity in holdout_games)
     if {row.game_identity for row in train} & holdout_games:
@@ -701,7 +893,7 @@ def freeze_replay(
     holdout_sha256 = _partition_hash(holdout)
     partition_sha256 = _digest(
         {
-            "method": PARTITION_METHOD,
+            "method": RECOVERY_PARTITION if recovery else PARTITION_METHOD,
             "train_sha256": train_sha256,
             "holdout_sha256": holdout_sha256,
             "cutoff_sha256": cutoff_sha256,
@@ -724,6 +916,7 @@ def freeze_replay(
         holdout_sha256=holdout_sha256,
         partition_sha256=partition_sha256,
         decoded=decoded,
+        game_cells={game: game_cells[game] for game in groups} if recovery else None,
     )
 
 
@@ -859,7 +1052,7 @@ def _run_contract(
         "format": FORMAT,
         "schema_version": SCHEMA_VERSION,
         "arm": settings.arm,
-        "label": RING10_OPTIMIZER_CALIBRATION_LABELS[settings.arm],
+        "label": RING10_OPTIMIZER_CALIBRATION_LABELS.get(settings.arm, settings.arm),
         "phase": "follow_on" if settings.arm == FOLLOW_ON_ARM else "primary",
         "config": config_pin.as_dict(),
         "config_contract": _config_contract(config),
@@ -896,6 +1089,16 @@ def _run_contract(
             "fresh_optimizer": True,
             "fresh_scheduler": True,
             "initial_weights": "champion_ema",
+            **(
+                {
+                    "effective_rate_contract": "explicit-constant-no-governor-v1",
+                    "effective_muon_lr": settings.effective_muon_lr,
+                    "effective_adamw_lr": settings.effective_adamw_lr,
+                    "gradient_diagnostic_rows": settings.gradient_diagnostic_rows,
+                }
+                if settings.arm in RECOVERY_ARMS
+                else {}
+            ),
             "compile_cache": (
                 compile_cache.as_dict() if compile_cache is not None else None
             ),
@@ -910,7 +1113,27 @@ def _run_contract(
             "observation_unit": OBSERVATION_UNIT,
             "component_normalization": COMPONENT_NORMALIZATION,
             "aggregation": HOLDOUT_AGGREGATION,
+            **(
+                {"cell_weights": RECOVERY_CELLS, "weights_evaluated": ["raw", "ema"]}
+                if settings.arm in RECOVERY_ARMS
+                else {}
+            ),
         },
+        **(
+            {
+                "recovery": {
+                    "implementation": _recovery_implementation(),
+                    "training_objective": config.orchestration.training_objective,
+                    "source_selfplay_contract": config.as_dict()["selfplay"],
+                    "replay_model_identity": settings.replay_model_identity,
+                    "minimum_replay_shard_id_exclusive": settings.minimum_replay_shard_id_exclusive,
+                    "finalized_targets_required": True,
+                    "publication_validation": "selected-shard-hashes-and-logical-game-context",
+                }
+            }
+            if settings.arm in RECOVERY_ARMS
+            else {}
+        ),
     }
 
 
@@ -1290,6 +1513,7 @@ def _evaluate_holdout(
     device: torch.device,
     precision: str,
     batch_size: int,
+    use_ema: bool = True,
 ) -> dict[str, object]:
     serialized = config.as_dict()
     reference = GraphResTNet(config.model).to(device)
@@ -1306,7 +1530,8 @@ def _evaluate_holdout(
     )
     candidate = GraphResTNet(config.model).to(device)
     candidate.load_state_dict(model.state_dict())
-    ema.copy_to(candidate)
+    if use_ema:
+        ema.copy_to(candidate)
     reference.eval()
     candidate.eval()
 
@@ -1352,6 +1577,11 @@ def _evaluate_holdout(
             {
                 "index": len(observations),
                 "game_identity": game_identity,
+                **(
+                    {"cell": replay.game_cells[game_identity]}
+                    if replay.game_cells is not None
+                    else {}
+                ),
                 "samples": len(references),
                 "reference": components["reference"],
                 "candidate": components["candidate"],
@@ -1406,7 +1636,7 @@ def _evaluate_holdout(
         component: weighted("candidate", component)
         for component in ("policy", "value", "composite")
     }
-    return {
+    result = {
         "finite": True,
         "samples": total_samples,
         "batches": evaluated_batches,
@@ -1419,6 +1649,45 @@ def _evaluate_holdout(
         ),
         "observations": observations,
     }
+    if replay.game_cells is not None:
+        cells = {}
+        for cell, weight in RECOVERY_CELLS.items():
+            rows = [row for row in observations if row["cell"] == cell]
+            if not rows:
+                raise ValueError(
+                    f"heldout cell has no complete game observations: {cell}"
+                )
+            count = sum(observation_samples(row) for row in rows)
+            aggregates = {
+                side: {
+                    key: sum(
+                        observation_samples(row) * observation_component(row, side, key)
+                        for row in rows
+                    )
+                    / count
+                    for key in ("policy", "value", "composite")
+                }
+                for side in ("reference", "candidate")
+            }
+            cells[cell] = {
+                "weight": weight,
+                "games": len(rows),
+                "samples": count,
+                **aggregates,
+            }
+        result["cells"] = cells
+        result["macro"] = {
+            side: {
+                key: sum(
+                    RECOVERY_CELLS[cell] * cells[cell][side][key]
+                    for cell in RECOVERY_CELLS
+                )
+                for key in ("policy", "value", "composite")
+            }
+            for side in ("reference", "candidate")
+        }
+        result["weights_evaluated"] = "ema" if use_ema else "raw"
+    return result
 
 
 def cast_mapping(value: object) -> Mapping[str, object]:
@@ -1493,6 +1762,7 @@ def _run_calibration(
     config = load_config(settings.config)
     _verify_pin(config_pin)
     _validate_calibration_config(config, settings.arm)
+    config = _effective_config(config, settings)
     batch_size = settings.batch_size or config.train.per_rank_batch_size
     champion = _champion_pin(settings.champion, config)
     replay = freeze_replay(settings, champion, decode=not settings.dry_run)
@@ -1714,6 +1984,50 @@ def _run_calibration(
         precision=precision,
         batch_size=settings.evaluation_batch_size,
     )
+    recovery_diagnostics: dict[str, object] = {}
+    if settings.arm in RECOVERY_ARMS:
+        recovery_diagnostics["raw_heldout"] = _evaluate_holdout(
+            config=config,
+            champion=champion,
+            replay=replay,
+            model=model,
+            ema=ema,
+            device=device,
+            precision=precision,
+            batch_size=settings.evaluation_batch_size,
+            use_ema=False,
+        )
+        if settings.gradient_diagnostic_rows:
+            from scripts.frozen_gradient_diagnostics import per_head_gradient_conflicts
+
+            count = min(settings.gradient_diagnostic_rows, len(replay.train))
+            diagnostic_batch = _materialize(
+                replay,
+                replay.train,
+                start=0,
+                batch_size=count,
+                seed=settings.seed,
+                augment=False,
+            )
+            recovery_diagnostics["gradient_conflicts"] = per_head_gradient_conflicts(
+                model,
+                diagnostic_batch,
+                config,
+                device=device,
+                precision=precision,
+            )
+        expected_rates = [float(group["lr"]) for group in optimizer.param_groups]
+        if any(
+            rate
+            != (
+                settings.effective_muon_lr
+                if group["algorithm"] == "muon"
+                else settings.effective_adamw_lr
+            )
+            for rate, group in zip(expected_rates, optimizer.param_groups, strict=True)
+        ):
+            raise ValueError("recovery effective rates changed unexpectedly")
+        recovery_diagnostics["actual_final_learning_rates"] = expected_rates
     state["elapsed_seconds"] = wall_elapsed_seconds()
     if float(state["elapsed_seconds"]) > budget_seconds:
         state["status"] = "budget_exhausted"
@@ -1730,6 +2044,12 @@ def _run_calibration(
         }
     _verify_sources(settings, champion, replay)
     _verify_pin(config_pin)
+    if (
+        settings.arm in RECOVERY_ARMS
+        and cast_mapping(contract["recovery"])["implementation"]
+        != _recovery_implementation()
+    ):
+        raise ValueError("recovery calibration implementation changed during the arm")
     mean_losses = {name: total / completed for name, total in sorted(loss_sums.items())}
     training_finite = (
         nonfinite_loss == 0
@@ -1773,6 +2093,11 @@ def _run_calibration(
         },
         "heldout": heldout,
         "candidate_checkpoint": checkpoint_pin.as_dict(),
+        **(
+            {"recovery_diagnostics": recovery_diagnostics}
+            if recovery_diagnostics
+            else {}
+        ),
     }
     normalized = json.loads(_canonical(result))
     if not isinstance(normalized, dict):
