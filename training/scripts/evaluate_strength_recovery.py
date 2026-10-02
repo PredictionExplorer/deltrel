@@ -47,7 +47,9 @@ def freeze(
         raise ValueError("snapshot belongs to a different recovery experiment")
     for pin in snapshot["artifacts"].values():
         verify_artifact(pin)
-    source = load_config(root / "profile-elo-ablation.yaml")
+    installed_profile = root / "profile-elo-ablation.yaml"
+    verify_artifact({**plan["profile"], "path": str(installed_profile)})
+    source = load_config(installed_profile)
     if source.train.precision not in ("fp32", "bf16"):
         raise ValueError("endpoint precision must be explicit, not auto")
     # Anchor the immutable starting champion even if promotion has since moved

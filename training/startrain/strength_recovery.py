@@ -81,7 +81,7 @@ def recovery_config(
             inter_wave_cooldown_seconds=0.0,
             session_seconds=3600.0,
             final_drain_timeout_seconds=300.0,
-            finish_inflight_candidate=False,
+            finish_inflight_candidate=True,
         ),
         historical_evaluation=replace(
             source.orchestration.historical_evaluation,
@@ -239,3 +239,4 @@ def record_snapshot(
             "interpretation": "First publication at or after the wall-clock endpoint; no strength claim.",
         },
     )
+    (destination / "snapshot.json").chmod(0o444)

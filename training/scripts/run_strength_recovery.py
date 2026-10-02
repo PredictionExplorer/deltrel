@@ -12,6 +12,7 @@ from scripts.run_elo_ablation import run_elo_ablation
 from startrain.config import load_config
 from startrain.search_allocation_gate import validate_production_ring_allocations
 from startrain.strength_recovery import load_plan
+from startrain.strength_recovery_archive import backup_files
 
 
 def run(
@@ -21,10 +22,15 @@ def run(
     plan = load_plan(root)
     if plan is None:
         raise ValueError("run has no frozen recovery plan")
+    backup_files(root)
     profile = root / "profile-elo-ablation.yaml"
     verify_artifact({**plan["profile"], "path": str(profile)})
+    implementation_root = Path(__file__).resolve().parents[1]
     for pin in plan["implementation_pins"]:
-        verify_artifact(pin)
+        relative = Path(pin["relative_path"])
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("recovery implementation path is unsafe")
+        verify_artifact({**pin, "path": str(implementation_root / relative)})
     config = load_config(profile)
     validate_production_ring_allocations(config, _fresh=True)
     metadata = json.loads((root / "ablation.json").read_text())

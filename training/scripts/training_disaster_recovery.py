@@ -130,6 +130,7 @@ _ALLOWED_KINDS = {
     "run-metadata",
     "source-commit",
     "status-json",
+    "strength-recovery",
 }
 
 
@@ -2005,6 +2006,12 @@ def _collect_payloads(
                         generation_family=identity.generation_family,
                     )
 
+    from startrain.strength_recovery_archive import backup_files
+
+    for logical, checksum in backup_files(run_root).items():
+        builder.add_run_file(
+            run_root / logical, "strength-recovery", expected_sha256=checksum
+        )
     _capture_measurement_service(builder, identity)
     _add_json_tree(
         builder,
@@ -3185,6 +3192,18 @@ def _verify_snapshot_document(
                             )
                         referenced_manifests.add(manifest)
 
+    from startrain.strength_recovery_archive import validate_archive
+
+    try:
+        validate_archive(
+            read=reader.data,
+            available=set(catalog),
+        )
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise DisasterRecoveryError(
+            f"invalid strength recovery closure: {error}"
+        ) from error
+
     durable_examples = max(
         (
             value
@@ -4084,6 +4103,14 @@ def restore_snapshot(
     if not isinstance(source, dict):
         raise DisasterRecoveryError("snapshot source information is invalid")
     legacy_missing = bool(source["legacy_initialized_missing"])
+    if (
+        "strength-recovery-plan.json" in verified.catalog
+        and str(target) != source["run_root"]
+    ):
+        raise DisasterRecoveryError(
+            "recovery experiment plan is pinned to its original run root; "
+            "restore there instead of relocating its hashed wall-clock and input authority"
+        )
     profile_entry = verified.catalog[str(source["profile_logical_path"])]
     if (
         relocate_profile

@@ -18,6 +18,7 @@ from startrain.checkpoint import (
 from startrain.config import load_config
 from startrain.contracts import SEARCH_ALGORITHM_ID
 from startrain.learner import ImmutableModelPublisher
+from startrain.orchestration import RunDirectories, build_worker_specs
 from startrain.model import GraphResTNet
 from startrain.optim import build_optimizer
 from startrain.replay_store import ReplayStore
@@ -61,12 +62,23 @@ def test_recovery_preserves_objective_but_declares_quality_and_topology_changes(
     assert {gpu.gpu_id for gpu in target.orchestration.gpus} == set(range(7))
     assert target.orchestration.promotion.gpu_id == 7
     assert target.orchestration.promotion.pause_sharing_mode is False
-    assert target.orchestration.promotion.finish_inflight_candidate is False
+    assert target.orchestration.promotion.finish_inflight_candidate is True
     assert target.orchestration.plateau.enabled is False
     assert target.selfplay.ring_search_allocations == ()
     assert target.selfplay.full_probability == 0.35
     assert target.train.scheduler.min_lr_ratio == 1
     assert target.optimizer.muon_lr == 0.0005
+    workers = build_worker_specs(
+        target,
+        config_path=tmp_path / "profile.yaml",
+        directories=RunDirectories.from_experiment(target),
+        base_environment={},
+    )
+    assert {gpu for worker in workers for gpu in worker.gpu_ids} == set(range(8))
+    arena = next(worker for worker in workers if worker.role == "arena")
+    assert arena.gpu_ids == (7,)
+    assert arena.environment["CUDA_VISIBLE_DEVICES"] == "7"
+    assert all(7 not in worker.gpu_ids for worker in workers if worker.role == "actor")
 
 
 @pytest.mark.parametrize("rate", [0, -1, float("nan"), float("inf"), True])
@@ -284,6 +296,7 @@ def test_runner_terminal_retry_never_restarts_workers(monkeypatch, tmp_path):
 @pytest.fixture
 def frozen_endpoint(source, tmp_path):
     plan = schedule(source.root)
+    plan["profile"] = prepare_module.artifact(source.profile)
     plan["anchor_identity"] = source.champion.model_identity
     plan["anchor_manifest_name"] = source.champion.artifact_manifest.name
     plan["plan_sha256"] = digest({k: v for k, v in plan.items() if k != "plan_sha256"})
@@ -312,6 +325,25 @@ def test_endpoint_preserves_broad_production_search_and_frozen_original_anchor(
     assert receipt["anchor_identity"] == source.champion.model_identity
     (source.root / "learner/champion.json").write_text("moving pointer")
     assert endpoint.diagnostic.verify_plan(output)[0] == diagnostic_plan
+
+
+def test_endpoint_rejects_profile_changed_after_snapshot(frozen_endpoint, tmp_path):
+    source, _, _ = frozen_endpoint
+    installed = source.root / "profile-elo-ablation.yaml"
+    changed = yaml.safe_load(installed.read_text())
+    changed["arena"]["seed"] += 1
+    installed.write_text(yaml.safe_dump(changed))
+    destination = tmp_path / "tampered-endpoint"
+    with pytest.raises(ValueError):
+        endpoint.freeze(
+            root=source.root,
+            snapshot_seconds=21600,
+            output=destination,
+            simulations=256,
+            pairs_per_cell=4,
+            wall_budget_hours=2,
+        )
+    assert not destination.exists()
 
 
 def test_endpoint_budget_expiry_does_not_start_inference(frozen_endpoint, monkeypatch):
