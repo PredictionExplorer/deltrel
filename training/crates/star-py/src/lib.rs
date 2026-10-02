@@ -2203,15 +2203,17 @@ impl PySearchBatch {
                     let Some((row, response)) = slot else {
                         return;
                     };
-                    let root_edge = tree
+                    let completed = tree
                         .finish_simulation(response)
                         .expect("parallel response was prevalidated");
-                    debug_assert_eq!(root_edge, row.candidate);
-                    scheduler
-                        .as_mut()
-                        .expect("pending tree has a scheduler")
-                        .record_simulation(root_edge)
-                        .expect("scheduler candidate was selected by this tree");
+                    if let Some(root_edge) = completed {
+                        debug_assert_eq!(root_edge, row.candidate);
+                        scheduler
+                            .as_mut()
+                            .expect("pending tree has a scheduler")
+                            .record_simulation(root_edge)
+                            .expect("scheduler candidate was selected by this tree");
+                    }
                 });
             self.pending.clear();
             Ok(())

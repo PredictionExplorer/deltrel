@@ -50,6 +50,7 @@ from .native import (
     trajectory_rows_from_native,
 )
 from .replay import ReplaySample
+from .policy_targets import constrain_policy_target, validate_policy_target_settings
 from .runtime import validate_identifier
 from .search_options import (
     SearchExecutionConfig,
@@ -379,6 +380,9 @@ class SelfPlayConfig:
     ring_search_allocations: tuple[RingSearchAllocation, ...] = ()
     policy_surprise_weight: float = 0.0
     policy_surprise_max_weight: float = 4.0
+    # Target-only convex mixture with the root prior; search actions are unchanged.
+    policy_target_scale: float = 1.0
+    policy_target_max_kl: float | None = None
     c_visit: float = 50.0
     c_scale: float = 1.0
     score_utility_weight: float = 0.0
@@ -465,6 +469,9 @@ class SelfPlayConfig:
             raise ValueError("record_fast_policy_targets must be boolean")
         if not 0 <= self.fast_policy_weight <= 1:
             raise ValueError("fast_policy_weight must be in [0, 1]")
+        validate_policy_target_settings(
+            self.policy_target_scale, self.policy_target_max_kl
+        )
         if (
             not 0 <= self.policy_surprise_weight <= 1
             or not math.isfinite(self.policy_surprise_max_weight)
@@ -2005,6 +2012,7 @@ class SelfPlayActor:
             policy = None
             policy_entropy = None
             policy_surprise = 0.0
+            target_evidence = ""
             row_full_search = (
                 full_search_by_row[row]
                 if full_search_by_row is not None
@@ -2030,6 +2038,25 @@ class SelfPlayActor:
                 if mass <= 0:
                     raise RuntimeError("completed-Q policy has no mass")
                 policy /= mass
+                if (
+                    self.config.policy_target_scale != 1.0
+                    or self.config.policy_target_max_kl is not None
+                ):
+                    if priors.size != probabilities.size:
+                        raise RuntimeError("policy target constraints require native priors")
+                    constrained = constrain_policy_target(
+                        probabilities[start:end], priors[start:end],
+                        scale=self.config.policy_target_scale,
+                        max_kl=self.config.policy_target_max_kl,
+                    )
+                    policy.fill(0)
+                    policy[np.asarray(actions[start:end], dtype=np.int64)] = (
+                        constrained.probabilities
+                    )
+                    target_evidence = (
+                        f":target_mix_v1={constrained.applied_scale:.9g}"
+                        f":target_kl={constrained.kl_nats:.9g}"
+                    )
                 positive = policy[policy > 0]
                 policy_entropy = max(
                     0.0,
@@ -2096,6 +2123,7 @@ class SelfPlayActor:
                             if search_evidence_by_row is not None
                             else ""
                         )
+                        + target_evidence
                         + (
                             f":reused_nodes={reused_nodes[row]}"
                             f":reused_simulations={reused_simulations[row]}"

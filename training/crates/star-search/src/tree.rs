@@ -43,6 +43,13 @@ pub enum SearchError {
     ValueOutOfRange(f32),
     /// A root edge index is invalid.
     InvalidRootEdge(usize),
+    /// A policy-only expansion must resume its original forced root edge.
+    ContinuationRootMismatch {
+        /// Edge retained by the unfinished simulation.
+        expected: usize,
+        /// Different edge requested by the caller.
+        actual: usize,
+    },
     /// Gumbel constants are not finite and strictly positive.
     InvalidGumbelParameters,
     /// Applying a generated legal action failed.
@@ -68,6 +75,12 @@ impl fmt::Display for SearchError {
                 write!(f, "value {value} is outside the [-1, 1] contract")
             }
             Self::InvalidRootEdge(edge) => write!(f, "invalid root edge index {edge}"),
+            Self::ContinuationRootMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "resume root edge {expected} before starting edge {actual}"
+                )
+            }
             Self::InvalidGumbelParameters => {
                 f.write_str("c_visit and c_scale must be finite and strictly positive")
             }
@@ -174,6 +187,22 @@ impl Node {
             edges: Vec::new(),
         }
     }
+
+    fn mixed_value(&self, total_visits: u32, visited_estimate: f64) -> f32 {
+        if self.state.swap_available() {
+            // Replay trains the actual game's outcome, including a possible
+            // swap. Placement search instead estimates keeping. Its unvisited
+            // actions must never inherit that swap-inclusive network value.
+            if total_visits == 0 {
+                0.0
+            } else {
+                visited_estimate as f32
+            }
+        } else {
+            ((f64::from(self.evaluation_value) + f64::from(total_visits) * visited_estimate)
+                / f64::from(total_visits + 1)) as f32
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -196,6 +225,7 @@ pub struct SearchTree {
     nodes: Vec<Node>,
     transpositions: HashMap<StateKey, usize>,
     pending: Option<PendingSimulation>,
+    continuation_root_edge: Option<usize>,
     root_token: u64,
     pie_root_transform: bool,
     selection_scratch: Vec<f64>,
@@ -213,6 +243,7 @@ impl SearchTree {
             nodes: vec![Node::new(root)],
             transpositions,
             pending: None,
+            continuation_root_edge: None,
             root_token: fresh_evaluation_token(),
             pie_root_transform,
             selection_scratch: Vec::new(),
@@ -341,6 +372,7 @@ impl SearchTree {
     #[must_use]
     pub fn can_reuse_root(&self, target: &GameState) -> bool {
         self.pending.is_none()
+            && self.continuation_root_edge.is_none()
             && !target.is_terminal()
             && self
                 .transpositions
@@ -363,7 +395,7 @@ impl SearchTree {
         target: GameState,
         max_nodes: usize,
     ) -> Result<Option<ReuseStats>, SearchError> {
-        if self.pending.is_some() {
+        if self.pending.is_some() || self.continuation_root_edge.is_some() {
             return Err(SearchError::PendingEvaluation);
         }
         if max_nodes == 0 || !self.can_reuse_root(&target) {
@@ -416,6 +448,7 @@ impl SearchTree {
         self.nodes = nodes;
         self.transpositions = transpositions;
         self.root_token = root_token;
+        self.continuation_root_edge = None;
         self.selection_scratch = Vec::new();
         Ok(Some(stats))
     }
@@ -436,6 +469,9 @@ impl SearchTree {
     /// Request fresh root predictions while retaining existing search statistics.
     pub fn root_refresh_request(&self) -> Result<EvaluationRequest, SearchError> {
         self.validate_refreshable_root()?;
+        if self.continuation_root_edge.is_some() {
+            return Err(SearchError::PendingEvaluation);
+        }
         Ok(EvaluationRequest {
             token: self.root_token,
             state: self.nodes[0].state.clone(),
@@ -446,6 +482,9 @@ impl SearchTree {
     /// Validate a root refresh without changing predictions or statistics.
     pub fn validate_root_refresh(&self, evaluation: &Evaluation) -> Result<(), SearchError> {
         self.validate_refreshable_root()?;
+        if self.continuation_root_edge.is_some() {
+            return Err(SearchError::PendingEvaluation);
+        }
         self.validate_token(self.root_token, evaluation.token)?;
         self.validate_evaluation(0, evaluation)
     }
@@ -526,6 +565,12 @@ impl SearchTree {
         {
             return Err(SearchError::InvalidRootEdge(edge));
         }
+        if let (Some(expected), Some(actual)) = (self.continuation_root_edge, forced_root_edge)
+            && expected != actual
+        {
+            return Err(SearchError::ContinuationRootMismatch { expected, actual });
+        }
+        let forced_root_edge = self.continuation_root_edge.or(forced_root_edge);
 
         let mut node_path = vec![0_usize];
         let mut edge_path = Vec::new();
@@ -536,6 +581,7 @@ impl SearchTree {
             if let Some(value) = self.nodes[node_id].terminal_value {
                 let leaf_player = self.nodes[node_id].state.to_move();
                 self.backup(&node_path, &edge_path, leaf_player, value);
+                self.continuation_root_edge = None;
                 return Ok(SimulationStart::Terminal {
                     root_edge: root_edge.expect("a nonterminal root has a first edge"),
                 });
@@ -586,8 +632,16 @@ impl SearchTree {
         self.validate_evaluation(leaf_id, evaluation)
     }
 
-    /// Completes the outstanding leaf and returns its root edge.
-    pub fn finish_simulation(&mut self, evaluation: Evaluation) -> Result<usize, SearchError> {
+    /// Expands the outstanding leaf, returning a root edge only after a backup.
+    ///
+    /// A swap-available leaf supplies policy only: its network value includes
+    /// the swap option, while this tree searches conditional keep placements.
+    /// `None` means resume the same root edge through a placement before
+    /// recording a simulation. No visit or value sum changes at that boundary.
+    pub fn finish_simulation(
+        &mut self,
+        evaluation: Evaluation,
+    ) -> Result<Option<usize>, SearchError> {
         self.validate_pending_evaluation(&evaluation)?;
         let pending = self
             .pending
@@ -600,13 +654,19 @@ impl SearchTree {
         let leaf_player = self.nodes[leaf_id].state.to_move();
         let value = evaluation.value;
         self.expand_node_unchecked(leaf_id, evaluation);
+        if self.nodes[leaf_id].state.swap_available() {
+            self.continuation_root_edge = Some(pending.root_edge);
+            return Ok(None);
+        }
         self.backup(&pending.node_path, &pending.edge_path, leaf_player, value);
-        Ok(pending.root_edge)
+        self.continuation_root_edge = None;
+        Ok(Some(pending.root_edge))
     }
 
     /// Drops an outstanding simulation without changing statistics.
     pub fn cancel_pending(&mut self) {
         self.pending = None;
+        self.continuation_root_edge = None;
     }
 
     /// Root edge index for an action.
@@ -719,12 +779,18 @@ impl SearchTree {
         }
         let visited_estimate = if visited_prior > 0.0 {
             prior_weighted_q / visited_prior
+        } else if node.state.swap_available() {
+            // Legal logits can give all visited actions zero FP32 prior mass.
+            // Keep completion still cannot fall back to swap-inclusive V.
+            if total_visits == 0 {
+                0.0
+            } else {
+                node.edges.iter().map(|edge| edge.value_sum).sum::<f64>() / f64::from(total_visits)
+            }
         } else {
             f64::from(node.evaluation_value)
         };
-        let mixed = ((f64::from(node.evaluation_value)
-            + f64::from(total_visits) * visited_estimate)
-            / f64::from(total_visits + 1)) as f32;
+        let mixed = node.mixed_value(total_visits, visited_estimate);
         let scale = parameters.sigma_scale(max_visits);
         let weights = &mut self.selection_scratch[..node.edges.len()];
         let mut max_logit = f32::NEG_INFINITY;
@@ -799,12 +865,18 @@ impl SearchTree {
             });
         let visited_estimate = if visited_prior > 0.0 {
             prior_weighted_q / visited_prior
+        } else if node.state.swap_available() {
+            // Legal logits can give all visited actions zero FP32 prior mass.
+            // Keep completion still cannot fall back to swap-inclusive V.
+            if total_visits == 0 {
+                0.0
+            } else {
+                node.edges.iter().map(|edge| edge.value_sum).sum::<f64>() / f64::from(total_visits)
+            }
         } else {
             f64::from(node.evaluation_value)
         };
-        let mixed = ((f64::from(node.evaluation_value)
-            + f64::from(total_visits) * visited_estimate)
-            / f64::from(total_visits + 1)) as f32;
+        let mixed = node.mixed_value(total_visits, visited_estimate);
         node.edges
             .iter()
             .map(|edge| {
@@ -961,7 +1033,18 @@ mod tests {
             SimulationStart::NeedsEvaluation(request) => request,
             SimulationStart::Terminal { .. } => panic!("expected a nonterminal leaf"),
         };
-        tree.finish_simulation(evaluation(&request, value)).unwrap();
+        let mut completed = tree.finish_simulation(evaluation(&request, value)).unwrap();
+        while completed.is_none() {
+            let SimulationStart::NeedsEvaluation(continuation) = tree
+                .start_simulation(Some(edge), GumbelParameters::PAPER)
+                .unwrap()
+            else {
+                panic!("expected a nonterminal continuation")
+            };
+            completed = tree
+                .finish_simulation(evaluation(&continuation, value))
+                .unwrap();
+        }
         request
     }
 
@@ -1292,8 +1375,6 @@ mod tests {
             (Mode::Double, 4, false, 0),
             (Mode::Classic, 4, false, 3),
             (Mode::Double, 4, false, 3),
-            (Mode::Classic, 1, true, 0),
-            (Mode::Double, 1, true, 0),
         ] {
             let mut root = GameState::with_variant(
                 Arc::new(Board::new(4).unwrap()),
@@ -1450,7 +1531,8 @@ mod tests {
         assert_eq!(tree.selection_scratch.as_ptr(), pointer);
     }
 
-    /// Frozen allocation-based selection math from before scratch reuse.
+    /// Allocation-based reference with conditional-keep completion, independent
+    /// of the scratch-buffer implementation.
     fn legacy_selection(
         node: &Node,
         transform: bool,
@@ -1472,12 +1554,27 @@ mod tests {
         );
         let visited_estimate = if visited_prior > 0.0 {
             weighted_q / visited_prior
+        } else if node.state.swap_available() {
+            // Legal logits can give all visited actions zero FP32 prior mass.
+            // Keep completion still cannot fall back to swap-inclusive V.
+            if total_visits == 0 {
+                0.0
+            } else {
+                node.edges.iter().map(|edge| edge.value_sum).sum::<f64>() / f64::from(total_visits)
+            }
         } else {
             f64::from(node.evaluation_value)
         };
-        let mixed = ((f64::from(node.evaluation_value)
-            + f64::from(total_visits) * visited_estimate)
-            / f64::from(total_visits + 1)) as f32;
+        let mixed = if node.state.swap_available() {
+            if total_visits == 0 {
+                0.0
+            } else {
+                visited_estimate as f32
+            }
+        } else {
+            ((f64::from(node.evaluation_value) + f64::from(total_visits) * visited_estimate)
+                / f64::from(total_visits + 1)) as f32
+        };
         let completed_q: Vec<_> = node
             .edges
             .iter()
@@ -1810,59 +1907,264 @@ mod tests {
     }
 
     #[test]
-    fn pie_pending_root_reports_the_optimal_swap_payoff() {
-        let board = Arc::new(Board::new(4).unwrap());
-        let pie = Variant::new(Mode::Double, 1, true).unwrap();
-        let root = GameState::with_variant(Arc::clone(&board), pie);
-        assert!(root.is_pie_pending());
-        let mut tree = SearchTree::new(root);
-        assert!(tree.uses_pie_root_transform());
-        assert_eq!(tree.root_value(), None);
-        initialize_uniform(&mut tree, -0.1);
-
-        // Opening 0 looks great for the opener (+0.8 for the responder means
-        // -0.8 for the opener before the swap); opening 1 is balanced.
-        for (node, responder_value) in [(0_u16, -0.8_f32), (1, 0.05)] {
-            let edge = tree.root_edge(Action::Place(node)).unwrap();
-            let request = match tree
-                .start_simulation(Some(edge), GumbelParameters::PAPER)
-                .unwrap()
-            {
-                SimulationStart::NeedsEvaluation(request) => request,
-                SimulationStart::Terminal { .. } => panic!("unexpected terminal"),
-            };
-            assert_eq!(request.state.to_move(), Player::One);
-            assert!(request.state.swap_available());
-            tree.finish_simulation(evaluation(&request, responder_value))
-                .unwrap();
+    fn pie_opening_uses_only_conditional_keep_values_before_absolute_transform() {
+        for mode in [Mode::Classic, Mode::Double] {
+            let board = Arc::new(Board::new(4).unwrap());
+            let mut tree = SearchTree::new(GameState::with_variant(
+                board,
+                Variant::new(mode, 1, true).unwrap(),
+            ));
+            initialize_uniform(&mut tree, -0.1);
+            let root_key = tree.root_state().key();
+            // The option-inclusive responder value is +|keep|, even when
+            // every keep continuation loses. It must never cancel a later
+            // negative keep value in the opening edge's average.
+            for (node, keep_value) in [(0, -0.8_f32), (1, 0.05)] {
+                let edge = tree.root_edge(Action::Place(node)).unwrap();
+                let SimulationStart::NeedsEvaluation(option) = tree
+                    .start_simulation(Some(edge), GumbelParameters::PAPER)
+                    .unwrap()
+                else {
+                    panic!("expected responder policy request")
+                };
+                assert!(option.state.swap_available());
+                assert_eq!(option.state.to_move(), Player::One);
+                let visits = tree.root_visits();
+                assert_eq!(
+                    tree.finish_simulation(evaluation(&option, keep_value.abs()))
+                        .unwrap(),
+                    None
+                );
+                assert_eq!(tree.root_visits(), visits);
+                assert_eq!(tree.root_state().key(), root_key);
+                assert!(!tree.can_reuse_root(&option.state));
+                assert!(matches!(
+                    tree.root_refresh_request(),
+                    Err(SearchError::PendingEvaluation)
+                ));
+                assert!(matches!(
+                    tree.start_simulation(Some((edge + 1) % visits.len()), GumbelParameters::PAPER),
+                    Err(SearchError::ContinuationRootMismatch { .. })
+                ));
+                let SimulationStart::NeedsEvaluation(keep) = tree
+                    .start_simulation(Some(edge), GumbelParameters::PAPER)
+                    .unwrap()
+                else {
+                    panic!("expected forced keep continuation")
+                };
+                assert!(!keep.state.swap_available());
+                assert_eq!(keep.state.stones_placed(), 2);
+                assert_ne!(option.token, keep.token);
+                let value = if keep.state.to_move() == Player::One {
+                    keep_value
+                } else {
+                    -keep_value
+                };
+                assert!(matches!(
+                    tree.finish_simulation(evaluation(&option, value)),
+                    Err(SearchError::TokenMismatch { .. })
+                ));
+                assert_eq!(
+                    tree.finish_simulation(evaluation(&keep, value)).unwrap(),
+                    Some(edge)
+                );
+                assert!((tree.root_stats()[edge].q + keep_value.abs()).abs() < 1e-6);
+                assert_eq!(tree.root_stats()[edge].visits, 1);
+            }
+            assert_eq!(tree.simulations(), 2);
+            let stats = tree.root_stats();
+            let strong = tree.root_edge(Action::Place(0)).unwrap();
+            let balanced = tree.root_edge(Action::Place(1)).unwrap();
+            assert!(stats[balanced].q > stats[strong].q);
+            assert!((tree.root_value().unwrap() + 0.425).abs() < 1e-6);
+            let target = tree.completed_q_target(GumbelParameters::PAPER);
+            assert!(target[balanced].1 > target[strong].1);
+            let unvisited = stats.iter().position(|edge| edge.visits == 0).unwrap();
+            let mixed = (-0.1 + 2.0 * (-0.8 + -0.05) / 2.0) / 3.0;
+            assert!((stats[unvisited].q - mixed).abs() < 1e-6);
         }
-        let stats = tree.root_stats();
-        let strong = tree.root_edge(Action::Place(0)).unwrap();
-        let balanced = tree.root_edge(Action::Place(1)).unwrap();
-        // Raw backup would give +0.8; the responder swaps, so the opener gets -0.8.
-        assert!((stats[strong].q + 0.8).abs() < 1.0e-6);
-        assert!((stats[balanced].q + 0.05).abs() < 1.0e-6);
-        assert!(stats[balanced].q > stats[strong].q);
-        assert_eq!(tree.root_value(), Some(-0.425));
-        let target = tree.completed_q_target(GumbelParameters::PAPER);
-        assert!(target[balanced].1 > target[strong].1);
+    }
 
-        // Unvisited edges receive the mixed estimate built from transformed
-        // values and the root's own (already optimal-swap) network value.
-        let completed = tree.completed_q(0);
-        let unvisited = (0..completed.len())
-            .find(|edge| tree.nodes[0].edges[*edge].visits == 0)
-            .unwrap();
-        let prior = tree.nodes[0].edges[strong].prior;
-        let visited_prior_q = (prior * -0.8 + prior * -0.05) / (2.0 * prior);
-        let expected_mixed = (-0.1 + 2.0 * visited_prior_q) / 3.0;
-        assert!((completed[unvisited] - expected_mixed).abs() < 1.0e-5);
+    #[test]
+    fn pie_responder_completion_never_uses_option_inclusive_value() {
+        for mode in [Mode::Classic, Mode::Double] {
+            for option_value in [-0.9, 0.5, 1.0] {
+                let mut root = GameState::with_variant(
+                    Arc::new(Board::new(4).unwrap()),
+                    Variant::new(mode, 1, true).unwrap(),
+                );
+                root.apply(Action::Place(0)).unwrap();
+                let mut tree = SearchTree::new(root);
+                initialize_uniform(&mut tree, option_value);
+                assert!(tree.root_completed_q().iter().all(|q| *q == 0.0));
+                for edge in 0..4 {
+                    let SimulationStart::NeedsEvaluation(keep) = tree
+                        .start_simulation(Some(edge), GumbelParameters::PAPER)
+                        .unwrap()
+                    else {
+                        panic!("expected keep evaluation")
+                    };
+                    let value = if keep.state.to_move() == Player::One {
+                        -0.5
+                    } else {
+                        0.5
+                    };
+                    assert_eq!(
+                        tree.finish_simulation(evaluation(&keep, value)).unwrap(),
+                        Some(edge)
+                    );
+                    assert!(
+                        tree.root_completed_q()
+                            .iter()
+                            .all(|q| (*q + 0.5).abs() < 1e-6)
+                    );
+                }
+                let targets = tree.completed_q_target(GumbelParameters::PAPER);
+                assert!(
+                    targets
+                        .iter()
+                        .all(|(_, p)| (*p - 1.0 / targets.len() as f32).abs() < 1e-6)
+                );
+                // Reusing or refreshing the real responder state cannot inject
+                // the swap-inclusive prediction into conditional keep estimates.
+                let refresh = tree.root_refresh_request().unwrap();
+                tree.refresh_root_evaluation(evaluation(&refresh, -option_value))
+                    .unwrap();
+                assert!(
+                    tree.root_completed_q()
+                        .iter()
+                        .all(|q| (*q + 0.5).abs() < 1e-6)
+                );
+            }
+        }
+    }
 
-        // Deeper nodes are untouched: the responder's root is a normal root.
-        let mut responder = tree.root_state().clone();
-        responder.apply(Action::Place(0)).unwrap();
-        let responder_tree = SearchTree::new(responder);
-        assert!(!responder_tree.uses_pie_root_transform());
+    #[test]
+    fn pie_completion_with_underflowed_visited_priors_still_uses_keep_values() {
+        let mut root = GameState::with_variant(
+            Arc::new(Board::new(4).unwrap()),
+            Variant::new(Mode::Double, 1, true).unwrap(),
+        );
+        root.apply(Action::Place(0)).unwrap();
+        let mut tree = SearchTree::new(root);
+        let request = tree.root_request().unwrap();
+        let mut logits = vec![-1000.0; request.legal_actions.len()];
+        logits[0] = 0.0;
+        tree.initialize_root(Evaluation {
+            token: request.token,
+            value: 0.8,
+            policy_logits: logits,
+        })
+        .unwrap();
+        let SimulationStart::NeedsEvaluation(leaf) = tree
+            .start_simulation(Some(1), GumbelParameters::PAPER)
+            .unwrap()
+        else {
+            panic!("expected keep leaf")
+        };
+        assert_eq!(
+            tree.finish_simulation(evaluation(&leaf, -0.5)).unwrap(),
+            Some(1)
+        );
+        assert_eq!(tree.root_stats()[1].prior, 0.0);
+        assert!(
+            tree.root_completed_q()
+                .iter()
+                .all(|q| (*q + 0.5).abs() < 1e-6)
+        );
+    }
+
+    #[test]
+    fn pie_opening_transforms_the_keep_mean_not_each_leaf_return() {
+        for mode in [Mode::Classic, Mode::Double] {
+            let mut tree = SearchTree::new(GameState::with_variant(
+                Arc::new(Board::new(4).unwrap()),
+                Variant::new(mode, 1, true).unwrap(),
+            ));
+            initialize_uniform(&mut tree, 0.0);
+            let SimulationStart::NeedsEvaluation(option) = tree
+                .start_simulation(Some(0), GumbelParameters::PAPER)
+                .unwrap()
+            else {
+                panic!("expected option-inclusive node")
+            };
+            assert_eq!(
+                tree.finish_simulation(evaluation(&option, 0.8)).unwrap(),
+                None
+            );
+            for keep_value in [0.8, -0.8] {
+                let SimulationStart::NeedsEvaluation(keep) = tree
+                    .start_simulation(Some(0), GumbelParameters::PAPER)
+                    .unwrap()
+                else {
+                    panic!("expected keep node")
+                };
+                let value = if keep.state.to_move() == Player::One {
+                    keep_value
+                } else {
+                    -keep_value
+                };
+                assert_eq!(
+                    tree.finish_simulation(evaluation(&keep, value)).unwrap(),
+                    Some(0)
+                );
+            }
+            assert_eq!(tree.root_stats()[0].visits, 2);
+            assert_eq!(tree.root_stats()[0].q, 0.0);
+        }
+    }
+
+    #[test]
+    fn pie_responder_reuse_preserves_keep_statistics_and_excludes_refreshed_option_value() {
+        for mode in [Mode::Classic, Mode::Double] {
+            let mut tree = SearchTree::new(GameState::with_variant(
+                Arc::new(Board::new(4).unwrap()),
+                Variant::new(mode, 1, true).unwrap(),
+            ));
+            initialize_uniform(&mut tree, -0.8);
+            let SimulationStart::NeedsEvaluation(option) = tree
+                .start_simulation(Some(0), GumbelParameters::PAPER)
+                .unwrap()
+            else {
+                panic!("expected responder")
+            };
+            assert_eq!(
+                tree.finish_simulation(evaluation(&option, 0.8)).unwrap(),
+                None
+            );
+            let SimulationStart::NeedsEvaluation(keep) = tree
+                .start_simulation(Some(0), GumbelParameters::PAPER)
+                .unwrap()
+            else {
+                panic!("expected keep leaf")
+            };
+            let value = if keep.state.to_move() == Player::One {
+                -0.8
+            } else {
+                0.8
+            };
+            assert_eq!(
+                tree.finish_simulation(evaluation(&keep, value)).unwrap(),
+                Some(0)
+            );
+            assert_eq!(
+                tree.reuse_root(option.state, 100)
+                    .unwrap()
+                    .unwrap()
+                    .retained_visits,
+                1
+            );
+            assert_eq!(tree.root_value(), Some(-0.8));
+            let refresh = tree.root_refresh_request().unwrap();
+            tree.refresh_root_evaluation(evaluation(&refresh, 0.8))
+                .unwrap();
+            assert!(
+                tree.root_completed_q()
+                    .iter()
+                    .all(|q| (*q + 0.8).abs() < 1e-6)
+            );
+            assert!(tree.root_state().swap_available());
+        }
     }
 
     #[test]

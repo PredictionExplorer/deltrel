@@ -2172,6 +2172,12 @@ class ExperimentConfig:
         # release, avoiding a new compatibility-hash dimension on old runs.
         # Enabled/nondefault values remain explicit and authoritative.
         result = without_efficiency_program_defaults(asdict(self))
+        # Disabled target treatments preserve old checkpoint/profile authority.
+        for name, default in (
+            ("policy_target_scale", 1.0), ("policy_target_max_kl", None),
+        ):
+            if getattr(self.selfplay, name) == default:
+                del result["selfplay"][name]
         if self.learner.reuse_clock_reference_target is None:
             del result["learner"]["reuse_clock_reference_target"]
         for name, default in (

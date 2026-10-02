@@ -17,7 +17,7 @@ mod session;
 mod tree;
 
 /// Search behavior fingerprint, independent of the game and model schemas.
-pub const SEARCH_ALGORITHM_ID: &str = "gumbel-completed-q-v2-finite-noise-selected-keep";
+pub const SEARCH_ALGORITHM_ID: &str = "gumbel-completed-q-v3-conditional-keep";
 
 pub use batch::{
     RootSearchConfig, SearchNonce, SearchResult, SearchRunError, gumbel_search_batch,

@@ -204,6 +204,7 @@ def search_position(
         "root_value": float(result.root_values[0]),
         "actions": list(result.actions),
         "policy_target": list(result.policy_target),
+        "priors": list(result.priors),
         "q_values": list(result.q_values),
         "visits": list(result.visits),
         "inference": metrics,

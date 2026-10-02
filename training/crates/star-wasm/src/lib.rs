@@ -365,14 +365,16 @@ mod bindings {
                 .token)
         }
 
-        /// Supplies one pending leaf evaluation.
+        /// Supplies a leaf evaluation; true means one simulation was completed.
+        /// False requires resuming the same root action after policy-only expansion.
         pub fn finish(
             &mut self,
             token: u64,
             value: f32,
             policy_logits: Vec<f32>,
-        ) -> Result<(), JsValue> {
-            self.inner
+        ) -> Result<bool, JsValue> {
+            let completed = self
+                .inner
                 .finish_simulation(Evaluation {
                     token,
                     value,
@@ -380,7 +382,7 @@ mod bindings {
                 })
                 .map_err(js_error)?;
             self.pending = None;
-            Ok(())
+            Ok(completed.is_some())
         }
 
         /// Root node ids in stable order.
