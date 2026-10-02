@@ -16,6 +16,10 @@ from .strength_recovery import FORMAT, PLAN_NAME, digest
 
 PROVENANCE = "strength-recovery-provenance.json"
 SNAPSHOTS = "strength-recovery-snapshots"
+CONTINUATION_PLAN = "strength-continuation-plan.json"
+CONTINUATION_FORMAT = "deltreltrain.strength-continuation"
+CONTINUATION_INPUT = "strength-continuation-input.yaml"
+INSTALLED_PROFILE = "profile-elo-ablation.yaml"
 
 
 def _entries(plan: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -79,7 +83,7 @@ def validate_archive(
     Stat identities alone are never acceptable fingerprints for live files.
     """
     if PLAN_NAME not in available:
-        if PROVENANCE in available or any(
+        if PROVENANCE in available or CONTINUATION_PLAN in available or any(
             path.startswith(SNAPSHOTS + "/") for path in available
         ):
             raise ValueError("recovery artifacts lack their immutable plan")
@@ -139,6 +143,34 @@ def validate_archive(
     for entry in provenance["artifacts"]:
         pinned(entry)
     source_root = Path(plan["run_root"])
+    installed_profile = plan.get("installed_profile_name")
+    if installed_profile is None and CONTINUATION_PLAN in available:
+        # Older recovery plans predate the explicit field. Their continuation
+        # still depends on the original installed profile after migration.
+        installed_profile = INSTALLED_PROFILE
+    if installed_profile is not None:
+        if installed_profile != INSTALLED_PROFILE:
+            raise ValueError("recovery installed profile name is invalid")
+        pinned({**plan["profile"], "path": installed_profile})
+    if CONTINUATION_PLAN in available:
+        continuation = document(CONTINUATION_PLAN)
+        if (
+            continuation.get("format") != CONTINUATION_FORMAT
+            or continuation.get("schema_version") != 1
+            or continuation.get("recovery_plan_sha256") != plan["plan_sha256"]
+            or continuation.get("plan_sha256")
+            != digest(
+                {k: v for k, v in continuation.items() if k != "plan_sha256"}
+            )
+        ):
+            raise ValueError("continuation plan checksum or recovery identity differs")
+        target = continuation.get("target_profile")
+        if not isinstance(target, dict) or not isinstance(target.get("path"), str):
+            raise ValueError("continuation target profile pin is invalid")
+        relative = Path(target["path"]).relative_to(source_root).as_posix()
+        if relative != CONTINUATION_INPUT:
+            raise ValueError("continuation target escaped its immutable input path")
+        pinned({**target, "path": relative})
     for seconds in plan["schedule_seconds"]:
         logical = f"{SNAPSHOTS}/{seconds}/snapshot.json"
         if logical not in available:
@@ -180,8 +212,18 @@ def validate_archive(
 
 
 def backup_files(root: Path) -> dict[str, str]:
-    """List only committed endpoints, rejecting symlinks and corrupt closure."""
-    available = {name for name in (PLAN_NAME, PROVENANCE) if (root / name).exists()}
+    """List committed endpoints and continuation inputs with verified closure."""
+    available = {
+        name
+        for name in (
+            PLAN_NAME,
+            PROVENANCE,
+            CONTINUATION_PLAN,
+            CONTINUATION_INPUT,
+            INSTALLED_PROFILE,
+        )
+        if (root / name).exists()
+    }
     for name in ("strength-recovery-provenance", SNAPSHOTS):
         folder = root / name
         if folder.is_symlink():
