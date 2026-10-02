@@ -117,9 +117,15 @@ A separate operations package provides monitoring every 15 seconds, strength
 reports every 15 minutes and disaster snapshots every 14 minutes. It passed 90
 target-host tests; the authority repair passed six. The immutable R3 training
 source was not edited. A later review identified a clean-budget completion
-integrity-record gap; the current run needs the explicitly qualified completion
-repair before its twelve-hour handoff, while future runners record that check
-directly.
+integrity-record gap. Future runners now record that check directly. For the
+immutable current release, an `OnFailure` operator was armed without restarting
+training; 14 compatibility tests passed against R3, and 62 checks cover the
+future runner and repair. The handler requires the exact clean twelve-hour
+exit-78 invocation, pinned sources, retained endpoint and a fresh successful
+integrity check. It preserves original metadata and file ownership, and cannot
+restart an unrelated failure or loop across later service invocations. Its
+installed helper SHA-256 is
+`4ef88ced72066d4ffc38244689d4fb0c304627650c116aa32702a59a522b6a56`.
 
 The new champion-only freshness mode is tested but not enabled in R3. Qualify an
 explicit transition before the learner is 120,000 steps ahead of its teacher;
