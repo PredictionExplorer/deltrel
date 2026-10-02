@@ -702,6 +702,9 @@ def replay_selection_diagnostics(
         "model_identity": protection.model_identity if protection else None,
         "model_step": protection.model_step if protection else None,
         "max_fraction": protection.max_fraction if protection else None,
+        "champion_only_freshness": (
+            protection.champion_only_freshness if protection else False
+        ),
         "selected_rows": selected_protected,
         "ordinary_selected_rows": total - selected_protected,
         "selected_fraction": selected_protected / total if total else 0.0,
@@ -3795,7 +3798,10 @@ class LearnerLoop:
 
     def _protected_champion_replay(self) -> ProtectedChampionReplay | None:
         configured = self.learner_config
-        if configured.protected_champion_fraction == 0:
+        if (
+            configured.protected_champion_fraction == 0
+            and not configured.champion_only_replay_freshness
+        ):
             return None
         after = configured.protected_champion_after_ns
         assert after is not None
@@ -3818,7 +3824,12 @@ class LearnerLoop:
                 after, now - int(configured.protected_champion_max_age_seconds * 1e9)
             ),
             maximum_first_published_ns=now,
-            max_fraction=configured.protected_champion_fraction,
+            max_fraction=(
+                1.0
+                if configured.champion_only_replay_freshness
+                else configured.protected_champion_fraction
+            ),
+            champion_only_freshness=configured.champion_only_replay_freshness,
         )
 
     def _rank_zero_select_replay_spans(

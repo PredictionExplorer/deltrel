@@ -50,3 +50,34 @@ selected source counts, protected model identity/step, per-cell fractions, and
 cap check. The monitor exposes that allocation with its age independently of
 the latest training-loss record. Its scope is the selected window, not the
 number of optimizer updates that have consumed it.
+
+## Champion-only freshness mode
+
+`learner.champion_only_replay_freshness: true` is a separate opt-in for an
+experiment whose `model_refresh.selfplay_source` is exactly `champion`. It
+requires `protected_champion_fraction: 0`, an explicit fixed
+`protected_champion_after_ns`, and the same bounded publication-age setting.
+It must be admitted in a new profile; adding this implementation does not enable
+it on an existing run or change its frozen source/profile authority.
+
+Once activated, actors retain the champion even after its model step falls
+outside the learner's normal lag window. Selection verifies that current
+champion's checkpoint, identity, original step, run and generation before using
+newly published games from it. The explicit full mode permits up to 100% of each
+replay cell to come from that protected source, so it does not require an
+ordinary majority when champion-only generation is the entire supply. Ordinary
+recent replay retains its existing semantics. Other old model identities,
+unknown publication origins, future timestamps and expired games remain
+ineligible for this exception; ordinary future-model exclusion is unchanged.
+
+The existing shard watermark and original-first-publication bounds both apply.
+Final-label enrichment cannot make an older game fresh or credit its positions
+again. No model step, sample origin, replay payload, or cumulative UTD credit is
+rewritten. Promotion changes the verified protected identity on the next
+selection, and normal pinned replay-window/refresh semantics remain in force.
+Retention protects the next bounded eligible window with the same selector.
+
+The legacy protected-fraction mode still requires `(0, 0.5]` and an ordinary
+majority. A protected fraction of one is accepted only by the explicit internal
+champion-only freshness mode; it is not a general relaxation of the cap. The new
+configuration field is omitted when false, preserving old serialized profiles.

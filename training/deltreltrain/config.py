@@ -279,10 +279,14 @@ class LearnerConfig:
     # ``None`` selects the most recent samples regardless of variant; the
     # loader fills it from ``selfplay.variants`` when the mixture is enabled.
     segment_quotas: dict[str, float] | None = None
+    # Separate from the legacy capped exception; appended for positional compatibility.
+    champion_only_replay_freshness: bool = False
 
     def __post_init__(self) -> None:
         if type(self.unlimited) is not bool:
             raise ConfigError("unlimited must be boolean")
+        if type(self.champion_only_replay_freshness) is not bool:
+            raise ConfigError("champion_only_replay_freshness must be boolean")
         if (
             isinstance(self.replay_refresh_seconds, bool)
             or not isinstance(self.replay_refresh_seconds, (int, float))
@@ -312,11 +316,15 @@ class LearnerConfig:
         ):
             raise ConfigError("protected_champion_after_ns must be a positive integer")
         if (
-            self.protected_champion_fraction
+            (self.protected_champion_fraction or self.champion_only_replay_freshness)
             and self.protected_champion_after_ns is None
         ):
             raise ConfigError(
                 "protected champion replay requires an activation timestamp"
+            )
+        if self.champion_only_replay_freshness and self.protected_champion_fraction:
+            raise ConfigError(
+                "champion-only freshness cannot combine with a bounded protected fraction"
             )
         if self.segment_quotas is not None:
             if not isinstance(self.segment_quotas, dict) or not self.segment_quotas:
@@ -1899,6 +1907,12 @@ class ExperimentConfig:
             raise ConfigError("experiment profile is invalid")
         if self.profile == "continuous" and not self.orchestration.enabled:
             raise ConfigError("continuous profile requires orchestration")
+        if self.learner.champion_only_replay_freshness and (
+            self.orchestration.model_refresh.selfplay_source != "champion"
+        ):
+            raise ConfigError(
+                "champion-only replay freshness requires champion-only self-play"
+            )
         self._validate_variant_family()
         if self.orchestration.training_objective == "ring10_only":
             stages = tuple(
@@ -2184,6 +2198,7 @@ class ExperimentConfig:
             ("protected_champion_fraction", 0.0),
             ("protected_champion_max_age_seconds", 21_600.0),
             ("protected_champion_after_ns", None),
+            ("champion_only_replay_freshness", False),
         ):
             if getattr(self.learner, name) == default:
                 del result["learner"][name]

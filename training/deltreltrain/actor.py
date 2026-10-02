@@ -1194,7 +1194,10 @@ class ActorSupervisor:
                     if (
                         not ordinary_replay_eligible_at_commit
                         and model_lag_at_commit >= 0
-                        and protection.protected_champion_fraction > 0
+                        and (
+                            protection.protected_champion_fraction > 0
+                            or protection.champion_only_replay_freshness
+                        )
                         and protection.protected_champion_after_ns is not None
                         and batch_completed_ns >= protection.protected_champion_after_ns
                     ):
@@ -2185,12 +2188,15 @@ class ActorSupervisor:
 
         learner = self.experiment.learner
         if (
-            learner.protected_champion_fraction > 0
+            (
+                learner.protected_champion_fraction > 0
+                or learner.champion_only_replay_freshness
+            )
             and learner.protected_champion_after_ns is not None
             and time.time_ns() >= learner.protected_champion_after_ns
         ):
-            # Selection keeps the original identity/step and admits only a
-            # bounded share of newly published games from this champion.
+            # Selection keeps the original identity/step and enforces original
+            # publication freshness plus the explicitly configured replay cap.
             return False
         window = learner.max_replay_lag_steps
         return learner_step - champion_step >= window
