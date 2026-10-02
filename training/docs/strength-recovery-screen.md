@@ -47,6 +47,20 @@ application fails after the fork has been copied, preserve that directory for
 inspection; the command does not overwrite or silently rebuild an existing
 fork. Qualification and backups of the new root precede starting it.
 
+The fork includes an independent copy of every pinned source, profile and
+implementation input under `strength-recovery-provenance/`. Its catalog is bound
+to the experiment plan. Restart verifies implementation bytes in the running
+release; disappearing preparation directories cannot redirect local inputs.
+Keep the full tested release and native extension with deployment backups too.
+
+Disaster and stopped-run backups include this provenance and every completed
+timed snapshot's receipt, immutable manifest and checkpoint. Independent backup
+verification checks the complete reference chain and payload hashes. A corrupt
+dependency prevents publishing a new backup. Restore these experiments to their
+original run path: hashed profiles, endpoint times and provenance are not
+silently rewritten by profile relocation. Exact-root restore and repeated backup
+are covered by integration tests.
+
 ## Run and resume
 
 ```sh

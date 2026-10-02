@@ -28,6 +28,7 @@ from deltreltrain.strength_recovery import (
     digest,
     recovery_config,
 )
+from deltreltrain.strength_recovery_archive import preserve_provenance
 
 
 def artifact(path: Path) -> dict[str, Any]:
@@ -50,7 +51,7 @@ def verify_artifact(pin: dict[str, Any]) -> None:
 def implementation_pins() -> list[dict[str, Any]]:
     training = Path(__file__).resolve().parents[1]
     return [
-        artifact(training / name)
+        {**artifact(training / name), "relative_path": name}
         for name in (
             "scripts/prepare_strength_recovery.py",
             "scripts/run_strength_recovery.py",
@@ -58,6 +59,7 @@ def implementation_pins() -> list[dict[str, Any]]:
             "scripts/fork_elo_ablation.py",
             "scripts/prepare_champion_warm_start.py",
             "deltreltrain/strength_recovery.py",
+            "deltreltrain/strength_recovery_archive.py",
             "deltreltrain/learner.py",
             "deltreltrain/contracts.py",
         )
@@ -251,6 +253,7 @@ def apply(plan_path: Path) -> dict[str, Any]:
     )
     atomic_json(destination / PLAN_NAME, plan)
     (destination / PLAN_NAME).chmod(0o444)
+    preserve_provenance(destination, plan)
     for pin in plan["source_pins"]:
         verify_artifact(pin)
     return {

@@ -387,6 +387,10 @@ def preserve_stopped_snapshot(run_root: Path, destination: Path) -> dict[str, An
                         and source.name != "metrics.jsonl"
                     ):
                         capture(str(source.relative_to(root)))
+        from deltreltrain.strength_recovery_archive import backup_files
+
+        for logical, checksum in backup_files(root).items():
+            capture(logical, checksum=checksum, link=True, kind="strength-recovery")
         for logical in (
             "status/coordinator.json",
             "status/learner.heartbeat.json",
@@ -497,6 +501,11 @@ def verify_snapshot(destination: Path) -> dict[str, Any]:
             raise PreservationError(f"archived artifact checksum failed: {logical}")
     _verify_preserved_measurement(
         root, files, source_root=Path(marker["source_run_root"])
+    )
+    from deltreltrain.strength_recovery_archive import validate_archive
+
+    validate_archive(
+        read=lambda logical: _path(root, logical).read_bytes(), available=set(files)
     )
     database = _path(root, "replay/manifest.sqlite3")
     with closing(
