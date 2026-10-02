@@ -32,6 +32,40 @@ test('preserves exact historical deployment identities without exempting other f
   assert.ok(inspectBrand('src/app/page.tsx', `${prior}train.model-pointer`).length);
 });
 
+test('allows exact predecessor wire identities only at the explicit migration boundary', () => {
+  const bridge = 'training/deltreltrain/champion_migration.py';
+  const fixtures = 'training/tests/test_champion_migration.py';
+  const identifiers = [
+    `${prior}train.checkpoint`, `${prior}train.model-manifest`, `${prior}train.model-pointer`,
+    `edgeconnect.${prior}.rules.v3`, `edgeconnect.${prior}.action-layout.nodes-only.v1`,
+  ];
+  for (const path of [bridge, fixtures]) {
+    for (const identifier of identifiers) {
+      for (const quote of ['"', "'"]) {
+        assert.deepEqual(inspectBrand(path, `value = ${quote}${identifier}${quote}`), []);
+      }
+      assert.ok(inspectBrand(path, `value = "${identifier}.unexpected"`).length);
+      assert.ok(inspectBrand('src/app/page.tsx', `"${identifier}"`).length);
+    }
+    assert.ok(inspectBrand(path, `new ${prior}train product`).length);
+    assert.ok(inspectBrand(path, `${prior}Count = 1`).length);
+    assert.ok(inspectBrand(path, String.fromCharCode(0x2605)).length);
+  }
+  assert.deepEqual(inspectBrand(fixtures, `replace("deltreltrain.", "${prior}train.")`), []);
+  assert.ok(inspectBrand(bridge, `"${prior}train."`).length);
+});
+
+test('limits migration prose exceptions to the documented historical boundary', () => {
+  const oldName = prior[0].toUpperCase() + prior.slice(1) + 'Train';
+  const bridgeText = `Supports the immediately preceding ${oldName} publication layout only.`;
+  const docText = `from a frozen ${oldName} champion and a separately verified, conclusive promotion`;
+  assert.deepEqual(inspectBrand('training/deltreltrain/champion_migration.py', bridgeText), []);
+  assert.deepEqual(inspectBrand('training/docs/deltrel-rebrand.md', docText), []);
+  assert.ok(inspectBrand('src/app/page.tsx', bridgeText).length);
+  assert.ok(inspectBrand('training/docs/deltrel-rebrand.md', `Welcome to ${oldName}`).length);
+  assert.ok(inspectBrand('training/deltreltrain/champion_migration.py', `"${oldName}"`).length);
+});
+
 test('detects retired coordinates and symbols without rejecting new coordinates', () => {
   assert.ok(inspectBrand('board.ts', "'" + '*' + "10'").length);
   assert.ok(inspectBrand('board.ts', String.fromCharCode(0x2605)).length);

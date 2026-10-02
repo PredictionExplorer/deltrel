@@ -29,10 +29,54 @@ const historicalDeploymentEvidence = new Set([
   'training/docs/strength-recovery-deployment-20261002.md',
 ]);
 
+// The explicit migration boundary must recognize exact historical wire values.
+// Exempt only quoted protocol identifiers and the two sentences documenting
+// that boundary, never whole implementation/test files or new product text.
+const migrationBoundaryFiles = new Set([
+  'training/deltreltrain/champion_migration.py',
+  'training/tests/test_champion_migration.py',
+]);
+const predecessorPackage = `${retired}train`;
+const predecessorIdentifiers = [
+  `${predecessorPackage}.checkpoint`,
+  `${predecessorPackage}.model-manifest`,
+  `${predecessorPackage}.model-pointer`,
+  `edgeconnect.${retired}.rules.v3`,
+  `edgeconnect.${retired}.action-layout.nodes-only.v1`,
+];
+
+function migrationBrandText(path, contents) {
+  let inspected = contents;
+  if (migrationBoundaryFiles.has(path)) {
+    const identifiers = path === 'training/tests/test_champion_migration.py'
+      ? [...predecessorIdentifiers, `${predecessorPackage}.`]
+      : predecessorIdentifiers;
+    for (const identifier of identifiers) {
+      for (const quote of ['"', "'"]) {
+        inspected = inspected.replaceAll(`${quote}${identifier}${quote}`, `${quote}legacy-wire-identity${quote}`);
+      }
+    }
+  }
+  if (path === 'training/deltreltrain/champion_migration.py') {
+    inspected = inspected.replaceAll(
+      `Supports the immediately preceding ${title}Train publication layout only.`,
+      'Supports the immediately preceding publication layout only.',
+    );
+  }
+  if (path === 'training/docs/deltrel-rebrand.md') {
+    inspected = inspected.replaceAll(
+      `from a frozen ${title}Train champion and a separately verified, conclusive promotion`,
+      'from a frozen preceding champion and a separately verified, conclusive promotion',
+    );
+  }
+  return inspected;
+}
+
 export function inspectBrand(path, contents = '') {
   const findings = [];
   if (names.test(path) || symbols.test(path)) findings.push('retired brand in path');
-  if ((names.test(contents) || symbols.test(contents)) && !historicalDeploymentEvidence.has(path)) {
+  const brandText = migrationBrandText(path, contents);
+  if ((names.test(brandText) || symbols.test(brandText)) && !historicalDeploymentEvidence.has(path)) {
     findings.push('retired brand in text');
   }
   if (oldTerms.test(contents)) findings.push('retired scoring terminology');
