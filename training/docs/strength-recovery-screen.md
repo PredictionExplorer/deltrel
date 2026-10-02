@@ -13,6 +13,9 @@ without the old per-ring reduced-full-search waivers. This deliberately raises
 search quality and does not carry old qualification receipts into corrected pie
 search. The normal search-admission validator still runs.
 
+Even pie games explicitly use zero asymmetric PDA. The keep/swap identity
+assumes zero PDA; the corrected actor enforces it too. Handicap PDA is unchanged.
+
 GPU 0 remains the learner, GPUs 1–6 generate games, and GPU 7 is a dedicated
 evaluator. Promotion keeps the same 256-simulation game/search/statistical
 contract. Independent measurements use 1024 simulations and a new epoch anchored
@@ -85,6 +88,46 @@ normal retention. The receipt records the actual capture time. If a restart
 misses multiple endpoints, only the latest elapsed endpoint is captured and
 earlier endpoints are explicitly reported missing. The tools never label one
 late checkpoint as multiple historical snapshots.
+
+## Continue automatically after the screen
+
+To keep the qualified lineage training without a desktop connection, prepare
+the continuation controller before starting the screen:
+
+```sh
+python -m scripts.run_strength_recovery_continuation prepare \
+  --run-root /runs/strength-recovery --source-commit VERIFIED_RELEASE_COMMIT
+python -m scripts.run_strength_recovery_continuation run \
+  --run-root /runs/strength-recovery
+```
+
+The controller owns the screen runner and the later orchestrator. Run it under
+one server service with `KillMode=control-group`, `Restart=on-failure`, and
+`RestartPreventExitStatus=78`. A retryable screen crash returns 75 and retains
+its original deadline. Fatal validation/worker errors return 78. A live GPU
+owner blocks startup; stop other experiments before assigning all eight GPUs.
+
+At clean twelve-hour completion it verifies checkpoint integrity and confirmed
+worker release, requires the retained twelve-hour endpoint, and seals the screen
+metadata. It then uses the existing profile migrator to change only publication
+cadence to three million examples. Rates, optimizer state, EMA, search, teacher
+source and champion remain unchanged. A narrowly scoped migration exception
+admits this exact completed-screen continuation; other continuous-profile
+validation is unchanged. An already-applied migration is verified and reused
+after restart. A partial or conflicting handoff fails closed.
+
+The continuation runs until an operator stop or a fatal failure, with its own
+clock and process-attempt accounting in `strength-continuation-state.json`.
+Completed screen metadata is never restarted or extended, and later updates
+cannot fabricate missing screen snapshots. A signal checkpoints and releases
+the owned process group. The controller retries only a bounded number of
+transient exits; it never falls back to older search code.
+
+Configure monitoring and backups to read the active profile filename from
+`profile.sha256` at invocation time. The migration installs
+`profile-strength-continuation.yaml`; a service hard-coded to the screen profile
+will have the wrong active checksum after handoff. Both original and continuation
+profiles are retained by the recovery backup dependency closure.
 
 ## Independently evaluate a frozen endpoint
 

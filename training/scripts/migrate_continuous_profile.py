@@ -648,7 +648,12 @@ def _validate_profile_pair(
     try:
         validate_continuous_config(new)
     except ValueError as exc:
-        raise MigrationError(f"new profile fails continuous validation: {exc}") from exc
+        from deltreltrain.strength_recovery import validate_continuation_transition
+
+        if not validate_continuation_transition(old, new, run_root):
+            raise MigrationError(
+                f"new profile fails continuous validation: {exc}"
+            ) from exc
 
     if (
         not old.orchestration.run_id
@@ -717,7 +722,9 @@ def _validate_profile_pair(
             if abs(after - before * scale) > 1:
                 raise MigrationError(f"learner.{name} must preserve its fresh-data age")
         if old.train != new.train:
-            raise MigrationError("reuse clock migration must preserve training settings")
+            raise MigrationError(
+                "reuse clock migration must preserve training settings"
+            )
     return tuple(
         (".".join(path), _json_value(before), _json_value(after))
         for path, before, after in differences

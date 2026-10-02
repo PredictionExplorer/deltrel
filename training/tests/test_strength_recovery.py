@@ -66,6 +66,10 @@ def test_recovery_preserves_objective_but_declares_quality_and_topology_changes(
     assert target.orchestration.plateau.enabled is False
     assert target.selfplay.ring_search_allocations == ()
     assert target.selfplay.full_probability == 0.35
+    assert target.selfplay.variants.asymmetric_pda_fraction == 0.0
+    assert (
+        target.selfplay.variants.handicap_pda == source.selfplay.variants.handicap_pda
+    )
     assert target.train.scheduler.min_lr_ratio == 1
     assert target.optimizer.muon_lr == 0.0005
     workers = build_worker_specs(
