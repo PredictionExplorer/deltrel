@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .search_options import SearchExecutionConfig
@@ -93,36 +93,42 @@ def compatible_config_epoch_payloads(
     pre_inference_execution = without_inference_execution_defaults(current)
     if pre_inference_execution != current:
         inference_representations.append(pre_inference_execution)
+    inference_representations = _unique_epoch_payloads(inference_representations)
     execution_representations = []
     for representation in inference_representations:
         execution_representations.append(representation)
         pre_execution = without_search_execution_defaults(representation)
         if pre_execution != representation:
             execution_representations.append(pre_execution)
+    execution_representations = _unique_epoch_payloads(execution_representations)
     budget_representations = []
     for representation in execution_representations:
         budget_representations.append(representation)
         pre_budget = without_cohort_search_budget_defaults(representation)
         if pre_budget != representation:
             budget_representations.append(pre_budget)
+    budget_representations = _unique_epoch_payloads(budget_representations)
     pipeline_representations = []
     for representation in budget_representations:
         pipeline_representations.append(representation)
         pre_pipeline = without_selfplay_pipeline_defaults(representation)
         if pre_pipeline != representation:
             pipeline_representations.append(pre_pipeline)
+    pipeline_representations = _unique_epoch_payloads(pipeline_representations)
     representations = []
     for representation in pipeline_representations:
         representations.append(representation)
         pre_clipping = without_gradient_clipping_defaults(representation)
         if pre_clipping != representation:
             representations.append(pre_clipping)
+    representations = _unique_epoch_payloads(representations)
     sources: list[dict[str, Any]] = []
     for representation in representations:
         sources.append(representation)
         pre_broadcast = without_broadcast_topology_default(representation)
         if pre_broadcast != representation:
             sources.append(pre_broadcast)
+    sources = _unique_epoch_payloads(sources)
     variants: list[dict[str, Any]] = []
     for source in sources:
         pre_session = without_evaluation_session_defaults(source)
@@ -135,6 +141,7 @@ def compatible_config_epoch_payloads(
         variants.extend(previous)
         if without_pause_strategy_default(source) != source:
             variants.extend(without_pause_strategy_default(row) for row in previous)
+    variants = _unique_epoch_payloads(variants)
     # These two options share one release epoch. Preserve the representation
     # before both additions without inventing arbitrary subset combinations.
     # Enabled values and untyped lookalikes remain in every hash.
@@ -142,27 +149,38 @@ def compatible_config_epoch_payloads(
         previous_training = without_training_execution_defaults(variant)
         if previous_training != variant:
             variants.append(previous_training)
+    variants = _unique_epoch_payloads(variants)
     for variant in tuple(variants):
         previous_fresh_data = without_fresh_data_defaults(variant)
         if previous_fresh_data != variant:
             variants.append(previous_fresh_data)
+    variants = _unique_epoch_payloads(variants)
     for variant in tuple(variants):
         previous_clinch = without_arena_clinch_default(variant)
         if previous_clinch != variant:
             variants.append(previous_clinch)
+    variants = _unique_epoch_payloads(variants)
     # Both scheduling additions belong to one release, not two independently
     # shipped epochs. Preserve old hashes without another Cartesian dimension.
     for variant in tuple(variants):
         previous_scheduling = without_efficiency_program_defaults(variant)
         if previous_scheduling != variant:
             variants.append(previous_scheduling)
-    # Several historical omission paths converge on the same representation.
-    # Downstream provenance consumers must not hash every duplicate again.
+    return tuple(_unique_epoch_payloads(variants))
+
+
+def _unique_epoch_payloads(
+    variants: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    # Every epoch adapter only deletes keys from a deep copy. Convergent paths
+    # therefore have the same future omissions; collapse them before copying
+    # duplicates through another stage. Keep the original final dedup's first
+    # key position and last representative, without normalizing Python types.
     unique = {
         json.dumps(item, sort_keys=True, separators=(",", ":")): item
         for item in variants
     }
-    return tuple(unique.values())
+    return list(unique.values())
 
 
 def without_efficiency_program_defaults(payload: Mapping[str, Any]) -> dict[str, Any]:
