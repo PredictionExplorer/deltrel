@@ -401,6 +401,10 @@ class Host:
             deadline,
         )
         values = dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
+        # systemd omits this empty array even with --all (transient watchdogs
+        # have no EnvironmentFile). Normalize only this one known omission.
+        if set(values) == set(PROPERTIES) - {"EnvironmentFiles"}:
+            values["EnvironmentFiles"] = ""
         if set(values) != set(PROPERTIES):
             raise Refusal("incomplete-systemd-evidence")
         # Runtime PID/timestamps are deliberately excluded from the ExecStart pin.

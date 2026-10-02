@@ -946,3 +946,75 @@ def test_protected_credentials_cannot_be_sent_to_external_https(setup):
     path.write_bytes(op.encoded(plan))
     with pytest.raises(op.Refusal, match="credentials-require-exact-role-loopback"):
         op.load_plan(path, op.digest(path.read_bytes()))
+
+
+SYSTEMD_WATCHDOG_FIXTURE = (
+    Path(__file__).parent / "fixtures/cloud-watchdog-systemctl-show.txt"
+)
+
+
+def test_actual_systemd_watchdog_empty_environment_array_is_normalized(monkeypatch):
+    # Captured from attempt01, which refused before stopping production. Even
+    # systemctl --all omitted EnvironmentFiles; no other property was missing.
+    raw = SYSTEMD_WATCHDOG_FIXTURE.read_text()
+    host = op.Host()
+    monkeypatch.setattr(host, "command", lambda argv, deadline: raw)
+    actual = host.unit(
+        "deltrelserve-qualification-572377-a00cae5-01-watchdog.service", host.now() + 1
+    )
+    assert set(actual) == set(op.PROPERTIES)
+    assert actual["EnvironmentFiles"] == ""
+    assert actual["User"] == "root" and actual["Type"] == "exec"
+    assert actual["RuntimeMaxUSec"] == "15min 10s"
+    assert actual["InvocationID"] == "564975706f42402d95b700922ac80e4c"
+    assert actual["MainPID"] == "0" and actual["Result"] == "exit-code"
+    assert " ; ignore_errors=" not in actual["ExecStart"]
+
+
+@pytest.mark.parametrize(
+    "missing", [key for key in op.PROPERTIES if key != "EnvironmentFiles"]
+)
+def test_no_other_missing_systemd_property_is_normalized(monkeypatch, missing):
+    raw = (
+        "\n".join(
+            line
+            for line in SYSTEMD_WATCHDOG_FIXTURE.read_text().splitlines()
+            if not line.startswith(missing + "=")
+        )
+        + "\n"
+    )
+    host = op.Host()
+    monkeypatch.setattr(host, "command", lambda argv, deadline: raw)
+    with pytest.raises(op.Refusal, match="incomplete-systemd-evidence"):
+        host.unit("test.service", host.now() + 1)
+
+
+@pytest.mark.parametrize("role", ["production", "stage", "probe"])
+def test_omitted_environment_files_cannot_satisfy_nonempty_unit_pin(
+    setup, monkeypatch, role
+):
+    plan, path, sha, directory, fake = setup
+    expected = plan[role]
+    expected["properties"]["EnvironmentFiles"] = (
+        "/etc/deltrelserve/protected.env (ignore_errors=no)"
+    )
+    raw = (
+        "\n".join(
+            f"{key}={value}"
+            for key, value in fake.units[expected["unit"]].items()
+            if key != "EnvironmentFiles"
+        )
+        + "\n"
+    )
+    host = op.Host()
+    monkeypatch.setattr(host, "command", lambda argv, deadline: raw)
+    with pytest.raises(op.Refusal, match="unit-definition-changed-" + role):
+        op._owned(plan, role, host, host.now() + 1)
+
+
+def test_unexpected_systemd_properties_still_refuse(monkeypatch):
+    raw = SYSTEMD_WATCHDOG_FIXTURE.read_text() + "Unexpected=not-admitted\n"
+    host = op.Host()
+    monkeypatch.setattr(host, "command", lambda argv, deadline: raw)
+    with pytest.raises(op.Refusal, match="incomplete-systemd-evidence"):
+        host.unit("test.service", host.now() + 1)
