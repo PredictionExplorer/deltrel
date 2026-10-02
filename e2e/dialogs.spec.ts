@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import { fillFourRingGame, reachFourRingClinch } from './helpers';
 
+test.use({ actionTimeout: 10_000 });
+
 async function startFreshGame(page: Page) {
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
@@ -30,6 +32,9 @@ test('opens and closes the rules dialog through named controls', async ({ page }
 });
 
 test('reviews, reopens, and rematches from the game-over dialog', async ({ page }) => {
+  // CI WebKit can spend about 2s on each ordinary, actionability-checked click.
+  // Allow all fifty placements without extending the timeout of any one action.
+  test.setTimeout(180_000);
   await expect(page.getByRole('button', { name: 'Pass' })).toHaveCount(0);
   await fillFourRingGame(page);
 
@@ -54,6 +59,7 @@ test('reviews, reopens, and rematches from the game-over dialog', async ({ page 
 test('explains a clinch, previews proof, and persists an accepted result', async ({
   page,
 }) => {
+  test.setTimeout(180_000);
   await reachFourRingClinch(page);
 
   const clinch = page.getByRole('dialog', { name: /cannot be caught/i });

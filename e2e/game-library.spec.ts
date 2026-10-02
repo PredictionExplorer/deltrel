@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { reachFourRingClinch } from './helpers';
 
+test.use({ actionTimeout: 10_000 });
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await page.evaluate(() => localStorage.clear());
@@ -13,6 +15,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('shares, imports and reviews a game without overwriting the active match', async ({ page }) => {
+  // This crosses import, replay, reload and setup; bound actions separately.
+  test.setTimeout(90_000);
   await page.getByRole('button', { name: /^Node A10, empty/ }).click();
   await page.getByRole('button', { name: /Steal it/ }).click();
   await page.getByRole('button', { name: /^Node B10, empty/ }).click();
@@ -41,6 +45,8 @@ test('shares, imports and reviews a game without overwriting the active match', 
 });
 
 test('resignation and proven clinch are preserved as distinct portable results', async ({ page }) => {
+  // Complete both a resignation flow and up to fifty real clinch placements.
+  test.setTimeout(180_000);
   await page.getByRole('button', { name: /^Node A10, empty/ }).click();
   await page.getByRole('button', { name: 'Resign Grace', exact: true }).click();
   await page.getByRole('dialog', { name: /resign/i }).getByRole('button', { name: /resign/i }).click();
