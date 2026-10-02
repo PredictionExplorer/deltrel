@@ -8,6 +8,45 @@ import pytest
 from scripts import benchmark_search_budgets as benchmark
 
 
+def test_standalone_evaluator_accepts_shared_production_actor_topology():
+    from dataclasses import replace
+    from deltreltrain.config import load_config
+
+    source = load_config("configs/h100-8gpu.yaml")
+    refresh = source.orchestration.model_refresh
+    source = replace(
+        source,
+        orchestration=replace(
+            source.orchestration,
+            gpus=tuple(
+                replace(gpu, actor_cohorts=2) if gpu.role == "actor" else gpu
+                for gpu in source.orchestration.gpus
+            ),
+            model_refresh=replace(
+                refresh,
+                compatible_cohort_work=True,
+                work_scheduling=replace(refresh.work_scheduling, enabled=True),
+                inference=replace(
+                    refresh.inference,
+                    shared_batching=True,
+                    cache_max_entries=100,
+                    cache_max_bytes=1000000,
+                    cuda_graphs=True,
+                ),
+            ),
+        ),
+    )
+    result = benchmark.standalone_evaluation_config(source)
+    inference = result.orchestration.model_refresh.inference
+    assert result.game == source.game
+    assert result.model == source.model
+    assert result.selfplay == source.selfplay
+    assert result.orchestration.gpus == source.orchestration.gpus
+    assert inference.shared_batching
+    assert not inference.cuda_graphs and not inference.cache_max_entries
+    assert not result.train.compile
+
+
 def write_positions(path: Path, **changes):
     value = {"id": "fixed", "rings": 4, "actions": [], "seed": 7}
     value.update(changes)
