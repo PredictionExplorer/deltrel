@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import fields
+from collections.abc import Callable
 import hashlib
 import json
 import math
@@ -42,6 +43,7 @@ def per_head_gradient_conflicts(
     *,
     device: torch.device,
     precision: str,
+    check_budget: Callable[[], None] | None = None,
 ) -> dict[str, object]:
     """No optimizer step or .grad mutation; at most 32 rows, one graph per call.
 
@@ -52,10 +54,16 @@ def per_head_gradient_conflicts(
     rows = int(batch.targets.policy.shape[0])
     if not 1 <= rows <= 32:
         raise ValueError("gradient diagnostic requires 1..32 frozen rows")
+    output_parameters = {
+        id(parameter)
+        for name, module in model.named_children()
+        if name.endswith("_head") or name in ("node_policy", "soft_node_policy")
+        for parameter in module.parameters()
+    }
     named = [
         (name, parameter)
         for name, parameter in model.named_parameters()
-        if parameter.requires_grad and "head" not in name
+        if parameter.requires_grad and id(parameter) not in output_parameters
     ]
     if not named:
         raise ValueError("gradient diagnostic found no shared parameters")
@@ -63,6 +71,8 @@ def per_head_gradient_conflicts(
     before_mode = model.training
     model.eval()
     try:
+        if check_budget is not None:
+            check_budget()
         moved = batch.to(device)
         with torch.autocast(
             device_type=device.type, dtype=torch.bfloat16, enabled=precision == "bf16"
@@ -83,6 +93,8 @@ def per_head_gradient_conflicts(
         }
         vectors = {}
         for index, (name, weight) in enumerate(weights.items()):
+            if check_budget is not None:
+                check_budget()
             gradients = torch.autograd.grad(
                 losses[name] * weight,
                 parameters,
@@ -106,6 +118,7 @@ def per_head_gradient_conflicts(
             "parameter_names_sha256": hashlib.sha256(
                 json.dumps([name for name, _ in named]).encode()
             ).hexdigest(),
+            "parameter_names": [name for name, _ in named],
             "parameter_elements": sum(parameter.numel() for parameter in parameters),
             "head_coefficients": weights,
             **geometry,

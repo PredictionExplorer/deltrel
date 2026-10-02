@@ -214,6 +214,63 @@ def test_recovery_resume_keeps_rates_and_rejects_changed_rate(tmp_path):
     ]
 
 
+def test_recovery_evaluation_budget_stops_with_reusable_checkpoint(
+    tmp_path, monkeypatch
+):
+    settings, _, _, _, _ = _fixture(tmp_path)
+    calls = []
+
+    def expired(**kwargs):
+        calls.append(kwargs)
+        assert callable(kwargs["check_budget"])
+        raise calibration.CalibrationBudgetExpired("deadline")
+
+    monkeypatch.setattr(calibration, "_evaluate_holdout", expired)
+    result = calibration.run_calibration(settings)
+    assert result["status"] == "budget_exhausted"
+    assert Path(result["progress"]["checkpoint"]["path"]).is_file()
+    assert len(calls) == 1  # Raw evaluation never starts after EMA times out.
+    assert not (settings.output_dir / "result.json").exists()
+    assert (
+        json.loads((settings.output_dir / "state.json").read_text())["status"]
+        == "budget_exhausted"
+    )
+
+
+def test_holdout_checks_budget_between_model_forwards(tmp_path, monkeypatch):
+    settings, config, _, _, _ = _fixture(tmp_path)
+    champion = calibration._champion_pin(settings.champion, config)
+    replay = calibration.freeze_replay(settings, champion, decode=True)
+    model = GraphResTNet(config.model)
+    ema = ExponentialMovingAverage(model, decay=0.9)
+    checks, forwards = [], []
+    original = calibration._component_loss_totals
+
+    def measured(*args, **kwargs):
+        forwards.append(1)
+        return original(*args, **kwargs)
+
+    def deadline():
+        checks.append(1)
+        if len(checks) == 5:
+            raise calibration.CalibrationBudgetExpired("deadline")
+
+    monkeypatch.setattr(calibration, "_component_loss_totals", measured)
+    with pytest.raises(calibration.CalibrationBudgetExpired):
+        calibration._evaluate_holdout(
+            config=config,
+            champion=champion,
+            replay=replay,
+            model=model,
+            ema=ema,
+            device=torch.device("cpu"),
+            precision="fp32",
+            batch_size=8,
+            check_budget=deadline,
+        )
+    assert len(forwards) == 2
+
+
 def test_gradient_diagnostic_is_read_only_and_reports_shared_losses(tmp_path):
     _, config, samples, _, _ = _fixture(tmp_path)
     model = GraphResTNet(config.model)
@@ -229,6 +286,12 @@ def test_gradient_diagnostic_is_read_only_and_reports_shared_losses(tmp_path):
     assert diagnostic["rows"] == 2
     assert diagnostic["weighted_gradient_norms"]["policy"] > 0
     assert diagnostic["weighted_gradient_norms"]["outcome"] > 0
+    names = diagnostic["parameter_names"]
+    assert "node_projection.weight" in names
+    assert not any(
+        name.startswith(("node_policy.", "soft_node_policy.")) or "_head." in name
+        for name in names
+    )
     assert model.training
     assert all(parameter.grad is None for parameter in model.parameters())
     assert all(

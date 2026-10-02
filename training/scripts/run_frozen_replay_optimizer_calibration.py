@@ -12,7 +12,7 @@ import sqlite3
 import subprocess
 import sys
 import time
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -110,6 +110,10 @@ RECOVERY_CELLS = {
     "handicap-double": 0.05,
 }
 RECOVERY_PARTITION = "bounded-finalized-ring10-pie-cell-game-disjoint-v1"
+
+
+class CalibrationBudgetExpired(RuntimeError):
+    """Cooperative stop between bounded evaluation operations."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1514,7 +1518,10 @@ def _evaluate_holdout(
     precision: str,
     batch_size: int,
     use_ema: bool = True,
+    check_budget: Callable[[], None] | None = None,
 ) -> dict[str, object]:
+    if check_budget is not None:
+        check_budget()
     serialized = config.as_dict()
     reference = GraphResTNet(config.model).to(device)
     load_ema_checkpoint(
@@ -1549,6 +1556,8 @@ def _evaluate_holdout(
             for side in ("reference", "candidate")
         }
         for start in range(0, len(references), batch_size):
+            if check_budget is not None:
+                check_budget()
             count = min(batch_size, len(references) - start)
             batch = _materialize(
                 replay,
@@ -1562,6 +1571,8 @@ def _evaluate_holdout(
                 ("reference", reference),
                 ("candidate", candidate),
             ):
+                if check_budget is not None:
+                    check_budget()
                 losses = _component_loss_totals(
                     evaluated_model, batch, config, device=device, precision=precision
                 )
@@ -1974,62 +1985,8 @@ def _run_calibration(
             },
         }
 
-    heldout = _evaluate_holdout(
-        config=config,
-        champion=champion,
-        replay=replay,
-        model=model,
-        ema=ema,
-        device=device,
-        precision=precision,
-        batch_size=settings.evaluation_batch_size,
-    )
-    recovery_diagnostics: dict[str, object] = {}
-    if settings.arm in RECOVERY_ARMS:
-        recovery_diagnostics["raw_heldout"] = _evaluate_holdout(
-            config=config,
-            champion=champion,
-            replay=replay,
-            model=model,
-            ema=ema,
-            device=device,
-            precision=precision,
-            batch_size=settings.evaluation_batch_size,
-            use_ema=False,
-        )
-        if settings.gradient_diagnostic_rows:
-            from scripts.frozen_gradient_diagnostics import per_head_gradient_conflicts
-
-            count = min(settings.gradient_diagnostic_rows, len(replay.train))
-            diagnostic_batch = _materialize(
-                replay,
-                replay.train,
-                start=0,
-                batch_size=count,
-                seed=settings.seed,
-                augment=False,
-            )
-            recovery_diagnostics["gradient_conflicts"] = per_head_gradient_conflicts(
-                model,
-                diagnostic_batch,
-                config,
-                device=device,
-                precision=precision,
-            )
-        expected_rates = [float(group["lr"]) for group in optimizer.param_groups]
-        if any(
-            rate
-            != (
-                settings.effective_muon_lr
-                if group["algorithm"] == "muon"
-                else settings.effective_adamw_lr
-            )
-            for rate, group in zip(expected_rates, optimizer.param_groups, strict=True)
-        ):
-            raise ValueError("recovery effective rates changed unexpectedly")
-        recovery_diagnostics["actual_final_learning_rates"] = expected_rates
-    state["elapsed_seconds"] = wall_elapsed_seconds()
-    if float(state["elapsed_seconds"]) > budget_seconds:
+    def budget_exhausted_result() -> dict[str, object]:
+        state["elapsed_seconds"] = wall_elapsed_seconds()
         state["status"] = "budget_exhausted"
         atomic_json(_state_path(settings), state)
         return {
@@ -2042,6 +1999,80 @@ def _run_calibration(
                 "checkpoint": checkpoint_pin.as_dict(),
             },
         }
+
+    def check_evaluation_budget() -> None:
+        if wall_elapsed_seconds() >= budget_seconds:
+            raise CalibrationBudgetExpired("calibration evaluation budget exhausted")
+
+    try:
+        heldout = _evaluate_holdout(
+            config=config,
+            champion=champion,
+            replay=replay,
+            model=model,
+            ema=ema,
+            device=device,
+            precision=precision,
+            batch_size=settings.evaluation_batch_size,
+            check_budget=check_evaluation_budget,
+        )
+        recovery_diagnostics: dict[str, object] = {}
+        if settings.arm in RECOVERY_ARMS:
+            recovery_diagnostics["raw_heldout"] = _evaluate_holdout(
+                config=config,
+                champion=champion,
+                replay=replay,
+                model=model,
+                ema=ema,
+                device=device,
+                precision=precision,
+                batch_size=settings.evaluation_batch_size,
+                check_budget=check_evaluation_budget,
+                use_ema=False,
+            )
+            if settings.gradient_diagnostic_rows:
+                check_evaluation_budget()
+                from scripts.frozen_gradient_diagnostics import (
+                    per_head_gradient_conflicts,
+                )
+
+                count = min(settings.gradient_diagnostic_rows, len(replay.train))
+                diagnostic_batch = _materialize(
+                    replay,
+                    replay.train,
+                    start=0,
+                    batch_size=count,
+                    seed=settings.seed,
+                    augment=False,
+                )
+                recovery_diagnostics["gradient_conflicts"] = (
+                    per_head_gradient_conflicts(
+                        model,
+                        diagnostic_batch,
+                        config,
+                        device=device,
+                        precision=precision,
+                        check_budget=check_evaluation_budget,
+                    )
+                )
+            expected_rates = [float(group["lr"]) for group in optimizer.param_groups]
+            if any(
+                rate
+                != (
+                    settings.effective_muon_lr
+                    if group["algorithm"] == "muon"
+                    else settings.effective_adamw_lr
+                )
+                for rate, group in zip(
+                    expected_rates, optimizer.param_groups, strict=True
+                )
+            ):
+                raise ValueError("recovery effective rates changed unexpectedly")
+            recovery_diagnostics["actual_final_learning_rates"] = expected_rates
+    except CalibrationBudgetExpired:
+        return budget_exhausted_result()
+    if wall_elapsed_seconds() >= budget_seconds:
+        return budget_exhausted_result()
     _verify_sources(settings, champion, replay)
     _verify_pin(config_pin)
     if (
@@ -2050,6 +2081,9 @@ def _run_calibration(
         != _recovery_implementation()
     ):
         raise ValueError("recovery calibration implementation changed during the arm")
+    state["elapsed_seconds"] = wall_elapsed_seconds()
+    if float(state["elapsed_seconds"]) >= budget_seconds:
+        return budget_exhausted_result()
     mean_losses = {name: total / completed for name, total in sorted(loss_sums.items())}
     training_finite = (
         nonfinite_loss == 0

@@ -42,6 +42,10 @@ evaluation settings, and immutable implementation. `--dry-run` checks the pins
 and partition without creating an output directory. `--stop-after-steps` permits
 an operational pause; restart with identical arguments to resume. Paused wall
 time still counts against the original arm's two-H100-hour ceiling.
+Budget enforcement is cooperative: checks occur between training updates,
+held-out forwards, and gradient heads. An operation already running may finish;
+once the deadline is reached, later evaluation work does not start and the
+existing checkpoint is retained with `budget_exhausted` status.
 
 Selection uses only finalized ring-10 pie/handicap rows, optionally from one exact
 teacher identity. The lower shard cutoff bounds the source scan. Hashes and
