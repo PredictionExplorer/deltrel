@@ -1609,7 +1609,9 @@ def test_main_uses_manifest_resolved_active_workload(
 
     assert result == 0
     assert captured["run_root"] == paths["run_root"]
-    assert captured["profile_path"] == paths["profile"]
+    # The workload/root is fixed by continuity, but an omitted --profile must
+    # follow profile.sha256 again on every snapshot after a local handoff.
+    assert captured["profile_path"] is None
     assert captured["unit"] == "edgeconnect-primary.service"
     assert captured["continuity_state_path"] == paths["state"]
     assert captured["disaster_backup_root"] == paths["disaster_root"]
