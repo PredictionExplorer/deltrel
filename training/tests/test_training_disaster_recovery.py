@@ -347,7 +347,10 @@ def _strength_recovery_artifacts(fixture):
         "schedule_seconds": list(SCHEDULE_SECONDS),
         "profile": artifact(fixture.profile),
         "profile_sha256": _sha256(fixture.profile.read_bytes()),
-        "source_pins": [artifact(fixture.checkpoint)],
+        "source_pins": [
+            artifact(fixture.checkpoint),
+            artifact(fixture.root / "replay/manifest.sqlite3"),
+        ],
         "implementation_pins": [artifact(Path(__file__))],
     }
     plan["plan_sha256"] = digest(plan)
@@ -405,6 +408,34 @@ def test_recovery_backup_rejects_corrupt_provenance_and_keeps_previous_snapshot(
         _snapshot(fixture, backup)
     assert (backup / "latest.json").read_bytes() == previous
     assert recovery.verify_snapshot(first)["status"] == "ok"
+
+
+def test_recovery_binary_provenance_is_streamed_and_not_loaded_by_catalog_reader(
+    tmp_path, monkeypatch
+):
+    from startrain.strength_recovery_archive import backup_files
+
+    fixture = _fixture(tmp_path)
+    _strength_recovery_artifacts(fixture)
+    original_read = Path.read_bytes
+
+    def guarded_read(path):
+        if "strength-recovery-provenance" in path.parts:
+            pytest.fail("binary provenance was materialized instead of streamed")
+        return original_read(path)
+
+    monkeypatch.setattr(Path, "read_bytes", guarded_read)
+    assert backup_files(fixture.root)
+    original_data = recovery._CatalogReader.data
+
+    def guarded_data(reader, logical):
+        if logical.startswith("strength-recovery-provenance/"):
+            pytest.fail("catalog already verified provenance; do not load it again")
+        return original_data(reader, logical)
+
+    monkeypatch.setattr(recovery._CatalogReader, "data", guarded_data)
+    snapshot = _snapshot(fixture, tmp_path / "backup")
+    assert recovery.verify_snapshot(snapshot)["status"] == "ok"
 
 
 def _publish_latest(

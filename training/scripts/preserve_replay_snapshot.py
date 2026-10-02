@@ -505,7 +505,10 @@ def verify_snapshot(destination: Path) -> dict[str, Any]:
     from startrain.strength_recovery_archive import validate_archive
 
     validate_archive(
-        read=lambda logical: _path(root, logical).read_bytes(), available=set(files)
+        read=lambda logical: _path(root, logical).read_bytes(),
+        available=set(files),
+        # Every payload was independently hashed against this inventory above.
+        fingerprint=lambda logical: (files[logical]["sha256"], files[logical]["bytes"]),
     )
     database = _path(root, "replay/manifest.sqlite3")
     with closing(

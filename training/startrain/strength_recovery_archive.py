@@ -10,7 +10,7 @@ from pathlib import Path, PurePosixPath
 import shutil
 from typing import Any
 
-from .checkpoint import verify_file
+from .checkpoint import sha256_file, verify_file
 from .runtime import atomic_json
 from .strength_recovery import FORMAT, PLAN_NAME, digest
 
@@ -70,8 +70,14 @@ def validate_archive(
     *,
     read: Callable[[str], bytes],
     available: set[str],
+    fingerprint: Callable[[str], tuple[str, int]] | None = None,
 ) -> dict[str, str]:
-    """Validate the closure using local files or independently stored objects."""
+    """Validate closure with streaming hashes or independently checked catalog pins.
+
+    With a fingerprint callback, ``read`` loads only small JSON metadata.
+    Catalog callers apply their declared payload verification policy first.
+    Stat identities alone are never acceptable fingerprints for live files.
+    """
     if PLAN_NAME not in available:
         if PROVENANCE in available or any(
             path.startswith(SNAPSHOTS + "/") for path in available
@@ -80,11 +86,18 @@ def validate_archive(
         return {}
     checksums: dict[str, str] = {}
 
-    def contents(logical: str) -> bytes:
+    def safe(logical: str) -> None:
         pure = PurePosixPath(logical)
         if pure.is_absolute() or ".." in pure.parts or logical not in available:
             raise ValueError(f"missing or unsafe recovery dependency: {logical}")
+
+    def contents(logical: str) -> bytes:
+        safe(logical)
+        if fingerprint is not None and fingerprint(logical)[1] > 1024 * 1024:
+            raise ValueError("recovery JSON metadata exceeds one MiB")
         data = read(logical)
+        if len(data) > 1024 * 1024:
+            raise ValueError("recovery JSON metadata exceeds one MiB")
         checksums[logical] = hashlib.sha256(data).hexdigest()
         return data
 
@@ -95,11 +108,15 @@ def validate_archive(
         return payload
 
     def pinned(entry: Mapping[str, Any]) -> None:
-        data = contents(str(entry["path"]))
-        if (
-            checksums[str(entry["path"])] != entry["sha256"]
-            or len(data) != entry["bytes"]
-        ):
+        logical = str(entry["path"])
+        safe(logical)
+        if fingerprint is None:
+            data = read(logical)
+            actual, size = hashlib.sha256(data).hexdigest(), len(data)
+        else:
+            actual, size = fingerprint(logical)
+        checksums[logical] = actual
+        if actual != entry["sha256"] or size != entry["bytes"]:
             raise ValueError("recovery dependency checksum or size differs")
 
     plan = document(PLAN_NAME)
@@ -182,4 +199,10 @@ def backup_files(root: Path) -> dict[str, str]:
             raise ValueError("recovery backup dependency is unsafe")
         return path.read_bytes()
 
-    return validate_archive(read=read, available=available)
+    def fingerprint(logical: str) -> tuple[str, int]:
+        path = root / logical
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("recovery backup dependency is unsafe")
+        return sha256_file(path), path.stat().st_size
+
+    return validate_archive(read=read, available=available, fingerprint=fingerprint)
