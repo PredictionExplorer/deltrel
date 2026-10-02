@@ -7,6 +7,8 @@ import {
 } from '@/lib/deltrel/rules';
 import { DeltrelAiError, asDeltrelAiError } from '@/lib/deltrel/ai/errors';
 import { downloadBrowserModel } from '@/lib/deltrel/ai/model-download';
+import { downloadRuntimeArtifact } from '@/lib/deltrel/ai/runtime-download';
+import { DELTREL_RUNTIME_SEARCH_ALGORITHM } from '@/lib/deltrel/ai/runtime-channel';
 import type { LocalAiProgress, LocalAiReadyInfo } from '@/lib/deltrel/ai/local-ai-status';
 import { predictionsFromNetworkOutput } from '@/lib/deltrel/ai/predictions';
 import { DELTREL_ORT_ASSET_PREFIX } from '@/lib/deltrel/ai/runtime-assets';
@@ -180,7 +182,7 @@ export interface WasmSearchSession {
 }
 
 export const DELTREL_LOCAL_SEARCH_ALGORITHM_ID =
-  'gumbel-completed-q-v3-conditional-keep';
+  DELTREL_RUNTIME_SEARCH_ALGORITHM;
 
 export function hasExpectedWasmSearch(wasm: Partial<DeltrelWasmModule>): boolean {
   try {
@@ -190,10 +192,6 @@ export function hasExpectedWasmSearch(wasm: Partial<DeltrelWasmModule>): boolean
     // A new JS wrapper paired with an old binary can lack the exported function.
     return false;
   }
-}
-
-export function versionedWasmUrl(url: string): string {
-  return `${url}?search=${encodeURIComponent(DELTREL_LOCAL_SEARCH_ALGORITHM_ID)}&implementation=search-session-v1`;
 }
 
 export function hasExpectedWasmExecution(wasm: Partial<DeltrelWasmModule>): boolean {
@@ -329,44 +327,30 @@ async function fetchJson(url: string, signal: AbortSignal): Promise<unknown> {
   }
 }
 
-async function fetchBytes(
-  url: string,
-  label: string,
-  signal: AbortSignal,
-): Promise<ArrayBuffer> {
-  let response: Response;
-  try {
-    response = await fetch(url, { cache: 'force-cache', signal });
-  } catch (error) {
-    throw new DeltrelAiError('unavailable', `${label} could not be loaded.`, true, error);
-  }
-  if (!response.ok) {
-    throw new DeltrelAiError(
-      'unavailable',
-      `${label} is unavailable (HTTP ${response.status}).`,
-      response.status >= 500,
-    );
-  }
-  return response.arrayBuffer();
-}
-
 async function importWasm(
   manifest: DeltrelBrowserModelManifest,
   signal: AbortSignal,
 ): Promise<DeltrelWasmModule> {
   let wasmModule: DeltrelWasmModule;
   try {
-    wasmModule = (await import(
-      /* webpackIgnore: true */
-      /* turbopackIgnore: true */
-      versionedWasmUrl(manifest.wasm.moduleUrl)
-    )) as unknown as DeltrelWasmModule;
-    const binary = await fetchBytes(
-      versionedWasmUrl(manifest.wasm.binaryUrl),
-      'Local AI WASM binary',
-      signal,
-    );
-    await wasmModule.default({ module_or_path: binary });
+    const [moduleBytes, binary] = await Promise.all([
+      downloadRuntimeArtifact('module', signal),
+      downloadRuntimeArtifact('binary', signal),
+    ]);
+    // Import only the bytes whose digest was verified, avoiding a second URL
+    // fetch between verification and execution. Initialization gets WASM bytes
+    // explicitly, so the generated module needs no relative fetch from this blob.
+    const moduleUrl = URL.createObjectURL(new Blob([moduleBytes], { type: 'text/javascript' }));
+    try {
+      wasmModule = (await import(
+        /* webpackIgnore: true */
+        /* turbopackIgnore: true */
+        moduleUrl
+      )) as unknown as DeltrelWasmModule;
+      await wasmModule.default({ module_or_path: binary });
+    } finally {
+      URL.revokeObjectURL(moduleUrl);
+    }
   } catch (error) {
     throw new DeltrelAiError(
       'unavailable',

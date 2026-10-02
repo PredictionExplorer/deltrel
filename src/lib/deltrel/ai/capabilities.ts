@@ -11,6 +11,7 @@ import {
   DELTREL_FEATURE_SCHEMA_VERSION,
 } from './protocol';
 import { configuredServerHealthUrl } from './server-client';
+import { DELTREL_RUNTIME_CHANNEL_PATH } from './runtime-channel';
 
 export type AiCapability =
   | { status: 'checking'; label: string }
@@ -53,7 +54,6 @@ export const INITIAL_AI_CAPABILITIES: AiCapabilities = {
   local: { status: 'checking', label: 'Local AI' },
 };
 
-const LOCAL_MANIFEST_PATH = '/models/deltrel/manifest.json';
 const CAPABILITY_TIMEOUT_MS = 5_000;
 const CAPABILITY_BODY_BYTES = 256 * 1024;
 
@@ -368,7 +368,7 @@ export async function checkLocalAiCapability(
     let pinned = getPinnedLocalAiRelease();
     let payload: unknown = pinned;
     if (pinned === undefined) {
-      const response = await fetch(LOCAL_MANIFEST_PATH, { cache: 'no-store', signal: timeout.signal });
+      const response = await fetch(DELTREL_RUNTIME_CHANNEL_PATH, { cache: 'no-store', signal: timeout.signal });
       // Preparation may have finished while this preflight request was in flight.
       pinned = getPinnedLocalAiRelease();
       if (pinned !== undefined) {

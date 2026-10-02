@@ -8,6 +8,7 @@ import {
 import { DELTREL_FEATURE_SCHEMA_HASH } from '../protocol';
 import publishedManifest from '../../../../../public/models/deltrel/manifest.json';
 import * as localClient from '../local-client';
+import { DELTREL_RUNTIME_CHANNEL_PATH } from '../runtime-channel';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -29,8 +30,9 @@ describe('AI capability preflight', () => {
 
   it('advertises native custom limits separately from the published search defaults and presets', async () => {
     vi.stubGlobal('Worker', class {});
-    vi.stubGlobal('fetch', vi.fn(async (_url: string, options?: RequestInit) =>
-      options?.method === 'HEAD' ? new Response(null) : Response.json(publishedManifest)));
+    const fetchMock = vi.fn(async (_url: string, options?: RequestInit) =>
+      options?.method === 'HEAD' ? new Response(null) : Response.json(publishedManifest));
+    vi.stubGlobal('fetch', fetchMock);
     await expect(checkLocalAiCapability()).resolves.toMatchObject({
       status: 'available',
       search: {
@@ -39,6 +41,7 @@ describe('AI capability preflight', () => {
         presets: { maximum: { simulations: 4096, maxConsidered: 64 } },
       },
     });
+    expect(fetchMock.mock.calls[0][0]).toBe(DELTREL_RUNTIME_CHANNEL_PATH);
   });
 
   it('checks cloud health independently from the published browser release', async () => {
