@@ -102,6 +102,8 @@ RECOVERY_ARMS = (
     "recovery-effective-control",
     "recovery-effective-moderate",
     "recovery-effective-high",
+    "recovery-effective-muon-half",
+    "recovery-effective-adam-double",
 )
 RECOVERY_CELLS = {
     "pie-classic": 0.45,

@@ -11,6 +11,7 @@ from pathlib import Path
 import random
 
 from deltreltrain.runtime import atomic_json
+from scripts.recovery_label_compatibility import normalize_implementation, verify_bridge
 from scripts.run_frozen_replay_optimizer_calibration import (
     FORMAT,
     RECOVERY_ARMS,
@@ -114,14 +115,19 @@ def _read(path: Path) -> tuple[dict, dict]:
     return result, _pin(path).as_dict()
 
 
-def _common_contract(result: dict) -> dict:
+def _common_contract(result: dict, *, label_only_bridge: dict | None = None) -> dict:
     config = copy.deepcopy(result["config_contract"])
     config["optimizer"].pop("muon_lr")
     config["optimizer"].pop("adamw_lr")
+    recovery = copy.deepcopy(result["recovery"])
+    if label_only_bridge is not None:
+        recovery["implementation"] = normalize_implementation(
+            recovery["implementation"], label_only_bridge
+        )
     return {
         "config": config,
         "partition": result["partition"],
-        "recovery": result["recovery"],
+        "recovery": recovery,
         "champion_identity": result["champion"]["model_identity"],
         "champion_checkpoint": result["champion"]["checkpoint"]["sha256"],
         "cutoff": result["replay"]["cutoff_sha256"],
@@ -208,6 +214,7 @@ def compare(
     confidence: float = 0.95,
     seed: int = 17,
     minimum_games: int = 8,
+    label_only_bridge: Path | None = None,
 ) -> dict:
     if (
         not 100 <= bootstrap_samples <= 100000
@@ -220,11 +227,21 @@ def compare(
     if len(results) != len(paths) or len(paths) < 2 or RECOVERY_ARMS[0] not in results:
         raise ValueError("unique recovery control and at least one treatment required")
     control = results[RECOVERY_ARMS[0]]
-    contract = _common_contract(control)
+    bridge = verify_bridge(label_only_bridge) if label_only_bridge is not None else None
+    if bridge is not None:
+        control_pin = next(
+            pin for result, pin in pairs if result["arm"] == RECOVERY_ARMS[0]
+        )
+        expected = bridge["document"]["control_result"]
+        if any(control_pin[key] != expected[key] for key in ("sha256", "bytes")):
+            raise ValueError(
+                "comparison control is not the immutable control pinned by the label-only bridge"
+            )
+    contract = _common_contract(control, label_only_bridge=bridge)
     comparisons = {}
     alpha = (1 - confidence) / (len(results) - 1)
     for arm, result in results.items():
-        if _common_contract(result) != contract:
+        if _common_contract(result, label_only_bridge=bridge) != contract:
             raise ValueError("recovery arms differ beyond explicit learning rates")
         if arm == RECOVERY_ARMS[0]:
             continue
@@ -247,6 +264,8 @@ def compare(
     best_score = max((score for score, _ in passing), default=None)
     best = [arm for score, arm in passing if score == best_score]
     selected = best[0] if len(best) == 1 else None
+    if label_only_bridge is not None and verify_bridge(label_only_bridge) != bridge:
+        raise ValueError("label-only source evidence changed during comparison")
     return {
         "format": "deltreltrain.recovery-calibration-comparison",
         "schema_version": 1,
@@ -259,6 +278,7 @@ def compare(
         "confidence": confidence,
         "per_treatment_alpha": alpha,
         "bootstrap_samples": bootstrap_samples,
+        **({"label_only_compatibility": bridge} if bridge is not None else {}),
         "limitations": "Exploratory fixed-data calibration; raw results are descriptive. Playing strength still requires frozen paired arena evaluation.",
     }
 
@@ -270,12 +290,14 @@ def main() -> None:
     parser.add_argument("--bootstrap-samples", type=int, default=2000)
     parser.add_argument("--confidence", type=float, default=0.95)
     parser.add_argument("--minimum-games-per-cell", type=int, default=8)
+    parser.add_argument("--label-only-bridge", type=Path)
     args = parser.parse_args()
     result = compare(
         args.result,
         bootstrap_samples=args.bootstrap_samples,
         confidence=args.confidence,
         minimum_games=args.minimum_games_per_cell,
+        label_only_bridge=args.label_only_bridge,
     )
     atomic_json(args.output, result)
     print(json.dumps(result, sort_keys=True))
