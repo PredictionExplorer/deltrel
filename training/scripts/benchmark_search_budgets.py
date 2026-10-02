@@ -23,7 +23,7 @@ import time
 from typing import Any
 
 from startrain.checkpoint import load_model_manifest
-from startrain.config import ActorInferenceConfig, load_config
+from startrain.config import ActorInferenceConfig, ExperimentConfig, load_config
 from startrain.contracts import (
     FEATURE_SCHEMA_VERSION,
     RULES_HASH_WIRE,
@@ -234,6 +234,28 @@ def compare_search(
     }
 
 
+def standalone_evaluation_config(config: ExperimentConfig) -> ExperimentConfig:
+    """Disable evaluator optimizations without invalidating unused fleet topology.
+
+    Direct GraphInferenceAdapter loading never starts the shared actor broker.
+    Its structural settings must nevertheless remain valid when reading a
+    production profile with multiple cohorts and cooperative work scheduling.
+    """
+    refresh = config.orchestration.model_refresh
+    inference = ActorInferenceConfig(
+        shared_batching=refresh.inference.shared_batching,
+        max_batch_rows=refresh.inference.max_batch_rows,
+    )
+    return replace(
+        config,
+        train=replace(config.train, compile=False),
+        orchestration=replace(
+            config.orchestration,
+            model_refresh=replace(refresh, inference=inference),
+        ),
+    )
+
+
 def _parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
@@ -353,16 +375,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     native = load_star_native(required=True)
     assert native is not None
-    benchmark_config = replace(
-        config,
-        train=replace(config.train, compile=False),
-        orchestration=replace(
-            config.orchestration,
-            model_refresh=replace(
-                config.orchestration.model_refresh, inference=ActorInferenceConfig()
-            ),
-        ),
-    )
+    benchmark_config = standalone_evaluation_config(config)
     evaluator = load_manifest_evaluator(benchmark_config, manifest, device=args.device)
     deadline = time.monotonic() + args.timeout_seconds
     records = []
