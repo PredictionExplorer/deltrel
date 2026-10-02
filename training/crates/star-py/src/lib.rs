@@ -1793,6 +1793,36 @@ impl PySearchBatch {
         self.budgets.clone()
     }
 
+    /// Completed new simulations per row, excluding outstanding evaluations and
+    /// inherited subtree visits. Terminal and prediction-cached leaves count.
+    #[getter]
+    fn completed_simulations(&self) -> Vec<u32> {
+        self.execution.as_ref().map_or_else(
+            || {
+                self.schedulers.as_ref().map_or_else(
+                    || vec![0; self.trees.len()],
+                    |schedulers| {
+                        schedulers
+                            .iter()
+                            .map(|scheduler| {
+                                scheduler
+                                    .as_ref()
+                                    .map_or(0, GumbelSequentialHalving::simulations)
+                            })
+                            .collect()
+                    },
+                )
+            },
+            |execution| {
+                execution
+                    .sessions
+                    .iter()
+                    .map(SearchSession::simulations)
+                    .collect()
+            },
+        )
+    }
+
     /// Current unique tree nodes per root, for bounded completed-search pools.
     #[getter]
     fn unique_state_counts(&self) -> Vec<usize> {
