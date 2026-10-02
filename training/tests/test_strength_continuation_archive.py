@@ -9,14 +9,24 @@ import pytest
 from startrain.runtime import atomic_json
 from startrain.strength_recovery import FORMAT, PLAN_NAME, digest
 from startrain.strength_recovery_archive import (
-    CONTINUATION_FORMAT, CONTINUATION_INPUT, CONTINUATION_PLAN,
-    INSTALLED_PROFILE, PROVENANCE, backup_files, preserve_provenance, validate_archive,
+    CONTINUATION_FORMAT,
+    CONTINUATION_INPUT,
+    CONTINUATION_PLAN,
+    INSTALLED_PROFILE,
+    PROVENANCE,
+    backup_files,
+    preserve_provenance,
+    validate_archive,
 )
 
 
 def pin(path):
     data = path.read_bytes()
-    return {"path": str(path), "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
+    return {
+        "path": str(path),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "bytes": len(data),
+    }
 
 
 def sealed(path, body):
@@ -32,9 +42,13 @@ def make_run(root, *, explicit=True, continuation=True):
     binary = root.parent / "checkpoint.pt"
     binary.write_bytes(b"binary" * 200000)
     body = {
-        "format": FORMAT, "schema_version": 1, "run_root": str(root),
-        "source_pins": [pin(binary)], "implementation_pins": [],
-        "profile": pin(source), "schedule_seconds": [7200, 21600, 43200],
+        "format": FORMAT,
+        "schema_version": 1,
+        "run_root": str(root),
+        "source_pins": [pin(binary)],
+        "implementation_pins": [],
+        "profile": pin(source),
+        "schedule_seconds": [7200, 21600, 43200],
     }
     if explicit:
         body["installed_profile_name"] = INSTALLED_PROFILE
@@ -45,23 +59,41 @@ def make_run(root, *, explicit=True, continuation=True):
     if continuation:
         target = root / CONTINUATION_INPUT
         target.write_text("kind: continuous\n")
-        sealed(root / CONTINUATION_PLAN, {
-            "format": CONTINUATION_FORMAT, "schema_version": 1,
-            "recovery_plan_sha256": plan["plan_sha256"], "target_profile": pin(target),
-            "target_profile_name": "profile-strength-continuation.yaml",
-            "provisioned_gpus": 8, "candidate_interval_examples": 3000000,
-            "implementation": {"relative_path": "scripts/run_strength_recovery_continuation.py", "sha256": "code", "bytes": 1},
-            "source_commit": "test-source",
-        })
+        sealed(
+            root / CONTINUATION_PLAN,
+            {
+                "format": CONTINUATION_FORMAT,
+                "schema_version": 1,
+                "recovery_plan_sha256": plan["plan_sha256"],
+                "target_profile": pin(target),
+                "target_profile_name": "profile-strength-continuation.yaml",
+                "provisioned_gpus": 8,
+                "candidate_interval_examples": 3000000,
+                "implementation": {
+                    "relative_path": "scripts/run_strength_recovery_continuation.py",
+                    "sha256": "code",
+                    "bytes": 1,
+                },
+                "source_commit": "test-source",
+            },
+        )
     return plan
 
 
 @pytest.mark.parametrize("explicit", [False, True])
-def test_continuation_keeps_original_profile_and_relocates_without_binary_reads(tmp_path, explicit):
+def test_continuation_keeps_original_profile_and_relocates_without_binary_reads(
+    tmp_path, explicit
+):
     root = tmp_path / "run"
     make_run(root, explicit=explicit)
     expected = backup_files(root)
-    assert {PLAN_NAME, PROVENANCE, CONTINUATION_PLAN, CONTINUATION_INPUT, INSTALLED_PROFILE} <= expected.keys()
+    assert {
+        PLAN_NAME,
+        PROVENANCE,
+        CONTINUATION_PLAN,
+        CONTINUATION_INPUT,
+        INSTALLED_PROFILE,
+    } <= expected.keys()
     restored = tmp_path / "restore"
     shutil.copytree(root, restored)
     assert backup_files(restored) == expected
@@ -74,7 +106,10 @@ def test_continuation_keeps_original_profile_and_relocates_without_binary_reads(
         path = restored / logical
         return hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_size
 
-    assert validate_archive(read=read, available=set(expected), fingerprint=fingerprint) == expected
+    assert (
+        validate_archive(read=read, available=set(expected), fingerprint=fingerprint)
+        == expected
+    )
 
 
 @pytest.mark.parametrize("name", [INSTALLED_PROFILE, CONTINUATION_INPUT])
@@ -92,7 +127,9 @@ def test_rejects_missing_changed_or_symlinked_dependencies(tmp_path, name, mutat
         backup_files(root)
 
 
-@pytest.mark.parametrize("change", ["hash", "recovery", "format", "escape", "other-input"])
+@pytest.mark.parametrize(
+    "change", ["hash", "recovery", "format", "escape", "other-input"]
+)
 def test_rejects_invalid_continuation_plan_links_and_paths(tmp_path, change):
     root = tmp_path / "run"
     make_run(root)
@@ -109,7 +146,8 @@ def test_rejects_invalid_continuation_plan_links_and_paths(tmp_path, change):
             body["format"] = "other-format"
         else:
             body["target_profile"]["path"] = str(
-                tmp_path / CONTINUATION_INPUT if change == "escape"
+                tmp_path / CONTINUATION_INPUT
+                if change == "escape"
                 else root / "profile-strength-continuation.yaml"
             )
         sealed(path, body)

@@ -307,8 +307,11 @@ def test_pie_search_uses_keep_values_without_relabeling_states(mode, width, resp
         states.apply_many([0], [0])
     original = states.data()
     search = native.SearchBatch(
-        states, simulations=16, max_considered=16,
-        seeds_per_root=[17], first_visit_batch_size=width,
+        states,
+        simulations=16,
+        max_considered=16,
+        seeds_per_root=[17],
+        first_visit_batch_size=width,
     )
     calls = 0
     option_rows = 0
@@ -325,7 +328,8 @@ def test_pie_search_uses_keep_values_without_relabeling_states(mode, width, resp
             for available, player in zip(data.swap_available, data.to_move, strict=True)
         ]
         return InferenceResponse(
-            tokens=list(requests.tokens), values=values,
+            tokens=list(requests.tokens),
+            values=values,
             policy_offsets=list(requests.legal_offsets),
             policy_logits=[0.0] * len(requests.legal_actions),
         )
@@ -345,12 +349,25 @@ def test_pie_search_uses_keep_values_without_relabeling_states(mode, width, resp
     result = search.results()
     assert search.completed_simulations == [16]
     assert sum(result.visits) == 16
-    assert all(abs(q + 0.8) < 1e-6 for q, count in zip(result.q_values, result.visits, strict=True) if count)
+    assert all(
+        abs(q + 0.8) < 1e-6
+        for q, count in zip(result.q_values, result.visits, strict=True)
+        if count
+    )
     assert calls == (17 if responder else 33)
     assert option_rows == (1 if responder else 16)
     if responder:
         assert result.q_values == pytest.approx([-0.8] * len(result.actions))
-        assert result.policy_target == pytest.approx([1 / len(result.actions)] * len(result.actions))
+        assert result.policy_target == pytest.approx(
+            [1 / len(result.actions)] * len(result.actions)
+        )
     after = states.data()
-    for field in ("zero_bits", "one_bits", "to_move", "swap_available", "swapped", "moves_left"):
+    for field in (
+        "zero_bits",
+        "one_bits",
+        "to_move",
+        "swap_available",
+        "swapped",
+        "moves_left",
+    ):
         assert getattr(after, field) == getattr(original, field)

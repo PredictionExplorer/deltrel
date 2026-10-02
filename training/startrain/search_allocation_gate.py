@@ -41,9 +41,7 @@ AUXILIARY_TRANSITION_SCOPE = POLICY_TRANSITION_SCOPE
 SCHEDULING_TRANSITION_FORMAT = "startrain.search-allocation-scheduling-transition"
 SCHEDULING_TRANSITION_CLASS = "unchanged-search-execution-scheduling-transition"
 SCHEDULING_TRANSITION_SCOPE = POLICY_TRANSITION_SCOPE
-RECOVERY_TRANSITION_FORMAT = (
-    "startrain.search-allocation-training-recovery-transition"
-)
+RECOVERY_TRANSITION_FORMAT = "startrain.search-allocation-training-recovery-transition"
 RECOVERY_TRANSITION_CLASS = "unchanged-search-execution-training-recovery-transition"
 RECOVERY_TRANSITION_SCOPE = POLICY_TRANSITION_SCOPE
 MAX_RECOVERY_TRANSITIONS = 8

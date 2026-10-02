@@ -32,7 +32,10 @@ def test_each_backup_follows_the_latest_registered_profile(tmp_path, monkeypatch
 
     monkeypatch.setattr(backup, "create_snapshot", capture)
     first = _register(root, "profile-screen.yaml", "screen")
-    assert backup.backup_active_profile(root, destination, expected_backup_mount=mount) == destination / "snapshot.json"
+    assert (
+        backup.backup_active_profile(root, destination, expected_backup_mount=mount)
+        == destination / "snapshot.json"
+    )
     second = _register(root, "profile-continuation.yaml", "continued")
     backup.backup_active_profile(root, destination, expected_backup_mount=mount)
     assert observed == [first, second]
@@ -48,10 +51,14 @@ def test_corrupt_authority_cannot_publish_using_legacy_fallback(tmp_path, monkey
 
     monkeypatch.setattr(backup, "create_snapshot", unexpected)
     with pytest.raises(ValueError, match="checksum"):
-        backup.backup_active_profile(tmp_path, tmp_path / "backup", expected_backup_mount=tmp_path)
+        backup.backup_active_profile(
+            tmp_path, tmp_path / "backup", expected_backup_mount=tmp_path
+        )
 
 
-def test_capture_failure_is_reported_without_retrying_old_profile(tmp_path, monkeypatch, capsys):
+def test_capture_failure_is_reported_without_retrying_old_profile(
+    tmp_path, monkeypatch, capsys
+):
     _register(tmp_path, "profile-screen.yaml", "screen")
     calls = []
 
@@ -60,9 +67,18 @@ def test_capture_failure_is_reported_without_retrying_old_profile(tmp_path, monk
         raise backup.DisasterRecoveryError("active profile changed during capture")
 
     monkeypatch.setattr(backup, "create_snapshot", changed)
-    assert backup.main([
-        "--run-root", str(tmp_path), "--backup-root", str(tmp_path / "backup"),
-        "--expected-backup-mount", str(tmp_path),
-    ]) == 2
+    assert (
+        backup.main(
+            [
+                "--run-root",
+                str(tmp_path),
+                "--backup-root",
+                str(tmp_path / "backup"),
+                "--expected-backup-mount",
+                str(tmp_path),
+            ]
+        )
+        == 2
+    )
     assert len(calls) == 1
     assert '"status": "error"' in capsys.readouterr().err

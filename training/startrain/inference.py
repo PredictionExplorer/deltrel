@@ -195,8 +195,12 @@ class PreparedInferenceRequest:
             if encoded is None:
                 snapshot = object.__getattribute__(self, "native_snapshot")
                 if type(snapshot) is not _native_key_batch_type():
-                    raise ValueError("deferred features require an immutable native snapshot")
-                preserve = object.__getattribute__(self, "native_preserve_broadcast_topology")
+                    raise ValueError(
+                        "deferred features require an immutable native snapshot"
+                    )
+                preserve = object.__getattribute__(
+                    self, "native_preserve_broadcast_topology"
+                )
                 with torch.inference_mode(False):
                     host = encode_native_feature_data(
                         snapshot.selected_features(list(range(len(snapshot)))),
@@ -221,7 +225,11 @@ class PreparedInferenceRequest:
 
     @property
     def max_nodes(self) -> int:
-        return int(self.native_snapshot.node_count) if self.native_lazy else self.encoded.max_nodes
+        return (
+            int(self.native_snapshot.node_count)
+            if self.native_lazy
+            else self.encoded.max_nodes
+        )
 
     @property
     def rows(self) -> int:
@@ -297,12 +305,16 @@ def _clone_batch_tensor(tensor: torch.Tensor) -> torch.Tensor:
 
 
 def _own_encoded_batch(host: EncodedBatch, preserve_broadcast: bool) -> EncodedBatch:
-    return EncodedBatch(**{
-        field.name: (
-            _clone_batch_tensor(getattr(host, field.name)) if preserve_broadcast
-            else getattr(host, field.name).detach().clone()
-        ) for field in dataclasses.fields(host)
-    })
+    return EncodedBatch(
+        **{
+            field.name: (
+                _clone_batch_tensor(getattr(host, field.name))
+                if preserve_broadcast
+                else getattr(host, field.name).detach().clone()
+            )
+            for field in dataclasses.fields(host)
+        }
+    )
 
 
 def _merge_batch_tensors(tensors: Sequence[torch.Tensor]) -> torch.Tensor:
@@ -443,7 +455,9 @@ class GraphInferenceAdapter:
     @property
     def has_auxiliary_predictions(self) -> bool:
         raw_model = getattr(self.model, "_orig_mod", self.model)
-        return bool(getattr(getattr(raw_model, "config", None), "auxiliary_predictions", False))
+        return bool(
+            getattr(getattr(raw_model, "config", None), "auxiliary_predictions", False)
+        )
 
     @property
     def namespace(self) -> InferenceNamespace:
@@ -460,7 +474,8 @@ class GraphInferenceAdapter:
         raw_model = getattr(self.model, "_orig_mod", self.model)
         signature = getattr(raw_model, "inference_execution_signature", None)
         return (
-            namespace if signature in (None, ("graph-inference-v1", False))
+            namespace
+            if signature in (None, ("graph-inference-v1", False))
             else (*namespace, "execution", signature)
         )
 
@@ -648,13 +663,18 @@ class GraphInferenceAdapter:
         )
         if not 0 <= weight <= 1:
             raise ValueError("score utility weight must be in [0, 1]")
-        if not self.config.legacy_features and type(requests) is _native_key_batch_type():
+        if (
+            not self.config.legacy_features
+            and type(requests) is _native_key_batch_type()
+        ):
             native_request = cast(_NativeKeyBatchProtocol, requests)
             tokens = tuple(requests.tokens)
             offsets = tuple(requests.legal_offsets)
             actions = tuple(requests.legal_actions)
             if not tokens or len(tokens) != len(requests):
-                raise ValueError("prepared requests require a nonempty matching token batch")
+                raise ValueError(
+                    "prepared requests require a nonempty matching token batch"
+                )
             # The sealed native method validates CSR against its owned engine
             # states. Every field determining features is serialized exactly.
             key_started = time.perf_counter()
@@ -665,7 +685,11 @@ class GraphInferenceAdapter:
             prefix = repr(namespace).encode("utf-8") + b"\0native-semantic-v1\0"
             keys = tuple(prefix + key for key in semantic_keys) if keyed else None
             key_seconds = time.perf_counter() - key_started
-            hints = self._prediction_cache.peek_many(keys) if keys is not None and self._prediction_cache.enabled else (None,) * len(tokens)
+            hints = (
+                self._prediction_cache.peek_many(keys)
+                if keys is not None and self._prediction_cache.enabled
+                else (None,) * len(tokens)
+            )
             seen: set[bytes] = set()
             prepare_rows: list[int] = []
             for row, hint in enumerate(hints):
@@ -681,9 +705,18 @@ class GraphInferenceAdapter:
                 self.last_feature_path = "rust"
                 self.feature_path_counts["rust"] += 1
             return PreparedInferenceRequest(
-                cast(EncodedBatch, None), tokens, offsets, actions, namespace, float(weight), keys, None,
-                time.perf_counter() - preparation_started, key_seconds,
-                requests, self.config.preserve_broadcast_topology,
+                cast(EncodedBatch, None),
+                tokens,
+                offsets,
+                actions,
+                namespace,
+                float(weight),
+                keys,
+                None,
+                time.perf_counter() - preparation_started,
+                key_seconds,
+                requests,
+                self.config.preserve_broadcast_topology,
             )
         native_features = getattr(requests, "features", None)
         if native_features is not None and all(
@@ -814,7 +847,11 @@ class GraphInferenceAdapter:
         return keys
 
     def _run_raw_predictions(
-        self, host: EncodedBatch, *, ring: int | None, logical_rows: int | None = None,
+        self,
+        host: EncodedBatch,
+        *,
+        ring: int | None,
+        logical_rows: int | None = None,
         include_auxiliary: bool = False,
     ) -> list[RawPrediction]:
         requested_rows = host.batch_size if logical_rows is None else logical_rows
@@ -871,12 +908,14 @@ class GraphInferenceAdapter:
                     ):
                         raise ValueError("model output shapes violate inference schema")
                     fields = [
-                            output.policy_logits.float(),
-                            output.outcome_logits.float(),
-                            output.score_margin_logits.float(),
+                        output.policy_logits.float(),
+                        output.outcome_logits.float(),
+                        output.score_margin_logits.float(),
                     ]
                     if include_auxiliary:
-                        fields.append(pack_auxiliary_logits(output, rows, host.max_nodes))
+                        fields.append(
+                            pack_auxiliary_logits(output, rows, host.max_nodes)
+                        )
                     return torch.cat(fields, dim=1)
 
                 pins: tuple[torch.Tensor, ...] = ()
@@ -906,7 +945,9 @@ class GraphInferenceAdapter:
                 # before releasing the owner lock or replaying another request.
                 packed = packed_device.cpu()
                 self._neural_round_trip_seconds += time.perf_counter() - neural_started
-                primary_width = host.max_nodes + 2 + SCORE_MARGIN_MAX - SCORE_MARGIN_MIN + 1
+                primary_width = (
+                    host.max_nodes + 2 + SCORE_MARGIN_MAX - SCORE_MARGIN_MIN + 1
+                )
                 if not torch.isfinite(packed[:, host.max_nodes : primary_width]).all():
                     raise ValueError("non-finite neural value predictions")
                 if not torch.isfinite(
@@ -921,7 +962,8 @@ class GraphInferenceAdapter:
                 self.model.train()
         return [
             RawPrediction(
-                row[:primary_width].numpy().tobytes(), host.max_nodes,
+                row[:primary_width].numpy().tobytes(),
+                host.max_nodes,
                 row[primary_width:].numpy().tobytes() if include_auxiliary else None,
             )
             for row in packed[:requested_rows]
@@ -942,9 +984,11 @@ class GraphInferenceAdapter:
             return rows
         upper = 1 << (rows - 1).bit_length()
         intermediate = upper * 3 // 4
-        if self.config.cuda_graphs and (
-            rows > 64 or (self.config.small_batch_graph_buckets and upper >= 4)
-        ) and rows <= intermediate:
+        if (
+            self.config.cuda_graphs
+            and (rows > 64 or (self.config.small_batch_graph_buckets and upper >= 4))
+            and rows <= intermediate
+        ):
             return intermediate
         return upper
 
@@ -988,10 +1032,7 @@ class GraphInferenceAdapter:
                 ring is None or any(request.ring != ring for request in requests)
             ):
                 raise ValueError("batched requests must have one common ring")
-            if any(
-                request.max_nodes != first.max_nodes
-                for request in requests
-            ):
+            if any(request.max_nodes != first.max_nodes for request in requests):
                 raise ValueError("batched inference shapes are incompatible")
             if self._cache_namespace != namespace:
                 self._prediction_cache.clear()
@@ -1016,7 +1057,10 @@ class GraphInferenceAdapter:
             if keyed:
                 for request in requests:
                     if request.native_lazy:
-                        if request.prepared_keys is None or len(request.prepared_keys) != request.rows:
+                        if (
+                            request.prepared_keys is None
+                            or len(request.prepared_keys) != request.rows
+                        ):
                             raise ValueError("native prepared keys are incomplete")
                         keys.extend(request.prepared_keys)
                         continue
@@ -1091,28 +1135,45 @@ class GraphInferenceAdapter:
                     if local:
                         if request.native_lazy:
                             with torch.inference_mode(False):
-                                features = request.native_snapshot.selected_features(local)
+                                features = request.native_snapshot.selected_features(
+                                    local
+                                )
                                 encoded = _own_encoded_batch(
-                                    encode_native_feature_data(features, source="native_request"),
+                                    encode_native_feature_data(
+                                        features, source="native_request"
+                                    ),
                                     self.config.preserve_broadcast_topology,
                                 )
                         else:
                             encoded = request.encoded
                             if len(local) != request.rows:
                                 indices = torch.tensor(local, dtype=torch.long)
-                                encoded = EncodedBatch(**{
-                                    field.name: _select_batch_tensor(getattr(encoded, field.name), indices)
-                                    for field in dataclasses.fields(encoded)
-                                })
+                                encoded = EncodedBatch(
+                                    **{
+                                        field.name: _select_batch_tensor(
+                                            getattr(encoded, field.name), indices
+                                        )
+                                        for field in dataclasses.fields(encoded)
+                                    }
+                                )
                         pieces.append(encoded)
                     offset = end
-                host = pieces[0] if len(pieces) == 1 else EncodedBatch(**{
-                    field.name: _merge_batch_tensors([getattr(piece, field.name) for piece in pieces])
-                    for field in dataclasses.fields(EncodedBatch)
-                })
+                host = (
+                    pieces[0]
+                    if len(pieces) == 1
+                    else EncodedBatch(
+                        **{
+                            field.name: _merge_batch_tensors(
+                                [getattr(piece, field.name) for piece in pieces]
+                            )
+                            for field in dataclasses.fields(EncodedBatch)
+                        }
+                    )
+                )
                 physical_rows = self._inference_batch_rows(len(misses))
                 indices = torch.tensor(
-                    list(range(len(misses))) + [len(misses) - 1] * (physical_rows - len(misses)),
+                    list(range(len(misses)))
+                    + [len(misses) - 1] * (physical_rows - len(misses)),
                     dtype=torch.long,
                 )
                 selected = (
@@ -1128,7 +1189,9 @@ class GraphInferenceAdapter:
                     )
                 )
                 fresh = self._run_raw_predictions(
-                    selected, ring=ring, logical_rows=len(misses),
+                    selected,
+                    ring=ring,
+                    logical_rows=len(misses),
                     include_auxiliary=any(auxiliary_rows[row] for row in misses),
                 )
                 for row, prediction in zip(misses, fresh, strict=True):
@@ -1188,7 +1251,11 @@ class GraphInferenceAdapter:
                         row_indices, np.asarray(request.legal_actions, dtype=np.intp)
                     ].tolist()
                 else:
-                    logits = raw[start:end, :nodes].masked_select(request.encoded.legal_action_mask).tolist()
+                    logits = (
+                        raw[start:end, :nodes]
+                        .masked_select(request.encoded.legal_action_mask)
+                        .tolist()
+                    )
                 response = InferenceResponse(
                     list(request.tokens),
                     values.tolist(),
@@ -1205,8 +1272,11 @@ class GraphInferenceAdapter:
                         [
                             unpack_auxiliary_prediction(prediction.auxiliary, nodes)
                             for prediction in predictions[start:end]
-                            if prediction is not None and prediction.auxiliary is not None
-                        ] if self.has_auxiliary_predictions else None,
+                            if prediction is not None
+                            and prediction.auxiliary is not None
+                        ]
+                        if self.has_auxiliary_predictions
+                        else None,
                     )
                     if detailed
                     else None
@@ -1323,7 +1393,11 @@ class GraphInferenceAdapter:
             ):
                 output = self.model(
                     *encoded.model_args(),
-                    **({"include_auxiliary": include_details} if self.has_auxiliary_predictions else {}),
+                    **(
+                        {"include_auxiliary": include_details}
+                        if self.has_auxiliary_predictions
+                        else {}
+                    ),
                 )
                 self._neural_calls += 1
                 self._neural_rows += rows
@@ -1368,7 +1442,8 @@ class GraphInferenceAdapter:
                 )
                 auxiliary = (
                     pack_auxiliary_logits(output, rows, encoded.max_nodes).cpu()
-                    if include_details and self.has_auxiliary_predictions else None
+                    if include_details and self.has_auxiliary_predictions
+                    else None
                 )
         finally:
             if was_training:
@@ -1404,6 +1479,8 @@ class GraphInferenceAdapter:
             auxiliary_predictions=[
                 unpack_auxiliary_prediction(row.numpy().tobytes(), encoded.max_nodes)
                 for row in auxiliary
-            ] if auxiliary is not None else None,
+            ]
+            if auxiliary is not None
+            else None,
         )
         return response, details

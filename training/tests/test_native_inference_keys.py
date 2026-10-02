@@ -21,26 +21,35 @@ def native():
 
 def adapter(**options):
     return GraphInferenceAdapter(
-        ObservedNetwork(), model_identity="immutable-a",
+        ObservedNetwork(),
+        model_identity="immutable-a",
         config=InferenceConfig(
             cache_max_entries=options.pop("cache_max_entries", 16),
-            cache_max_bytes=2_000_000, deduplicate=True, **options,
+            cache_max_bytes=2_000_000,
+            deduplicate=True,
+            **options,
         ),
     )
 
 
 def roots(native, pda=(0,), rings=4):
     states = native.StateBatch(rings, len(pda))
-    search = native.SearchBatch(states, simulations=1, pda_by_seat=[(x, -x) for x in pda])
+    search = native.SearchBatch(
+        states, simulations=1, pda_by_seat=[(x, -x) for x in pda]
+    )
     return states, search.root_requests()
 
 
 def general(request):
     return SimpleNamespace(
-        features=request.features, tokens=request.tokens, states=request.states,
-        legal_offsets=request.legal_offsets, legal_actions=request.legal_actions,
+        features=request.features,
+        tokens=request.tokens,
+        states=request.states,
+        legal_offsets=request.legal_offsets,
+        legal_actions=request.legal_actions,
         # A proxy cannot obtain trust merely by advertising the native methods.
-        inference_keys=request.inference_keys, selected_features=request.selected_features,
+        inference_keys=request.inference_keys,
+        selected_features=request.selected_features,
     )
 
 
@@ -74,7 +83,9 @@ def test_compact_keys_deduplicate_before_scoring_and_warm_hits_need_no_features(
 
 
 @pytest.mark.parametrize("rings", [4, 6, 8, 10])
-def test_native_and_general_inputs_match_predictions_and_keep_separate_trust(native, rings):
+def test_native_and_general_inputs_match_predictions_and_keep_separate_trust(
+    native, rings
+):
     _, request = roots(native, (0, 1, -2), rings)
     fast = adapter()
     slow = adapter()
@@ -100,7 +111,10 @@ def test_partial_hits_and_eviction_after_producer_peek_are_safe(native):
     inference.evaluate(replacement)
     restored = inference.evaluate_prepared([prepared])[0][0]
     assert warm.encoded_feature_rows == 1
-    assert restored.values == expected.values and restored.policy_logits == expected.policy_logits
+    assert (
+        restored.values == expected.values
+        and restored.policy_logits == expected.policy_logits
+    )
     inference = adapter()
     inference.evaluate(initial)
     _, mixed = roots(native, (0, 1, 1))
@@ -125,22 +139,42 @@ def test_native_snapshot_survives_state_and_export_mutations(native):
     actual = inference.evaluate_prepared([prepared])[0][0]
     _, original = roots(native)
     expected = adapter().evaluate(original)
-    assert actual.values == expected.values and actual.policy_logits == expected.policy_logits
+    assert (
+        actual.values == expected.values
+        and actual.policy_logits == expected.policy_logits
+    )
 
 
-def test_lazy_rows_match_existing_full_native_encoder_and_invalid_selection_is_atomic(native):
+def test_lazy_rows_match_existing_full_native_encoder_and_invalid_selection_is_atomic(
+    native,
+):
     for rings in [4, 10]:
-        for mode, handicap, pie in [("classic", 1, False), ("double", 4, False), ("double", 1, True)]:
+        for mode, handicap, pie in [
+            ("classic", 1, False),
+            ("double", 4, False),
+            ("double", 1, True),
+        ]:
             states = native.StateBatch(rings, 2, mode=mode, handicap=handicap, pie=pie)
             states.apply_many([0, 1], [0, 1])
-            request = native.SearchBatch(states, simulations=1, pda_by_seat=[(2, -2), (-1, 1)]).root_requests()
+            request = native.SearchBatch(
+                states, simulations=1, pda_by_seat=[(2, -2), (-1, 1)]
+            ).root_requests()
             assert request.encoded_feature_rows == 0
             with pytest.raises(ValueError, match="out of range"):
                 request.prefetch_features([0, 2])
             assert request.encoded_feature_rows == 0
             expected = request.states.feature_data(pda=request.pda)
             actual = request.selected_features([0, 1])
-            for name in ["rings", "node_features", "global_features", "node_mask", "legal_action_mask", "score_components", "node_owner", "alive_stones"]:
+            for name in [
+                "rings",
+                "node_features",
+                "global_features",
+                "node_mask",
+                "legal_action_mask",
+                "score_components",
+                "node_owner",
+                "alive_stones",
+            ]:
                 assert bytes(getattr(actual, name)) == bytes(getattr(expected, name))
             assert request.encoded_feature_rows == 2
             request.prefetch_features([0, 1, 0])
@@ -156,7 +190,12 @@ def test_explicit_prepared_tensor_mutation_switches_to_full_input_validation(nat
     assert not prepared.native_lazy
     after = inference.evaluate_prepared([prepared])[0][0]
     assert after.policy_logits != before.policy_logits
-    changed = replace(prepared, encoded=replace(prepared.encoded, global_features=prepared.encoded.global_features + 1))
+    changed = replace(
+        prepared,
+        encoded=replace(
+            prepared.encoded, global_features=prepared.encoded.global_features + 1
+        ),
+    )
     assert inference.evaluate_prepared([changed])[0][0].values != after.values
     prepared.encoded.legal_action_mask[0, 0] = False
     with pytest.raises(ValueError, match="legal-action metadata"):
@@ -167,26 +206,53 @@ def test_explicit_prepared_tensor_mutation_switches_to_full_input_validation(nat
 
 def test_each_history_plane_and_pda_are_present_without_a_lossy_hash(native):
     words = len(native.StateBatch(4, 1).data().zero_bits)
+
     def bits(nodes):
         return [sum(1 << x for x in nodes), *([0] * (words - 1))]
+
     base = dict(
-        rings=4, zero_bits=bits([0, 2, 4]), one_bits=bits([1, 3]),
-        to_move=[0], moves_left=[1], opening=[False], mode=[1], handicap=[1],
-        pie=[False], swap_available=[False], swapped=[False],
-        current_turn_bits=bits([4]), previous_turn_bits=bits([1]),
-        own_previous_turn_bits=bits([0]), handicap_bits=bits([0]),
+        rings=4,
+        zero_bits=bits([0, 2, 4]),
+        one_bits=bits([1, 3]),
+        to_move=[0],
+        moves_left=[1],
+        opening=[False],
+        mode=[1],
+        handicap=[1],
+        pie=[False],
+        swap_available=[False],
+        swapped=[False],
+        current_turn_bits=bits([4]),
+        previous_turn_bits=bits([1]),
+        own_previous_turn_bits=bits([0]),
+        handicap_bits=bits([0]),
     )
     requests = []
-    for updates in [{}, {"current_turn_bits": bits([2])}, {"previous_turn_bits": bits([3])},
-                    {"own_previous_turn_bits": bits([2])}, {"handicap_bits": bits([2])}]:
+    for updates in [
+        {},
+        {"current_turn_bits": bits([2])},
+        {"previous_turn_bits": bits([3])},
+        {"own_previous_turn_bits": bits([2])},
+        {"handicap_bits": bits([2])},
+    ]:
         state = native.StateBatch.from_semantic(**(base | updates))
         requests.append(native.SearchBatch(state, simulations=1).root_requests())
     assert len({r.inference_keys()[0] for r in requests}) == 5
-    assert len({(tuple(r.states.zero_bits), tuple(r.states.one_bits)) for r in requests}) == 1
+    assert (
+        len({(tuple(r.states.zero_bits), tuple(r.states.one_bits)) for r in requests})
+        == 1
+    )
     assert all(len(r.inference_keys()[0]) > 6 * words * 8 for r in requests)
-    flipped = native.StateBatch.from_semantic(**(base | {
-        "zero_bits": base["one_bits"], "one_bits": base["zero_bits"], "to_move": [1],
-    }))
+    flipped = native.StateBatch.from_semantic(
+        **(
+            base
+            | {
+                "zero_bits": base["one_bits"],
+                "one_bits": base["zero_bits"],
+                "to_move": [1],
+            }
+        )
+    )
     flipped_request = native.SearchBatch(flipped, simulations=1).root_requests()
     assert flipped_request.inference_keys() == requests[0].inference_keys()
     left = encode_native_feature_data(requests[0].features)
@@ -210,7 +276,22 @@ def test_cache_peek_is_nonmutating_and_small_graph_buckets_are_opt_in():
     assert default._inference_batch_rows(33) == 64
     assert small._inference_batch_rows(33) == 48
     assert {small._inference_batch_rows(n) for n in range(1, 257)} == {
-        1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256,
+        1,
+        2,
+        3,
+        4,
+        6,
+        8,
+        12,
+        16,
+        24,
+        32,
+        48,
+        64,
+        96,
+        128,
+        192,
+        256,
     }
 
 
@@ -224,7 +305,9 @@ def test_runtime_gather_signature_invalidates_prediction_namespace():
             return "graph-inference-v1", self.enabled
 
     model = Network()
-    inference = GraphInferenceAdapter(model, config=InferenceConfig(compact_inference_gather=True))
+    inference = GraphInferenceAdapter(
+        model, config=InferenceConfig(compact_inference_gather=True)
+    )
     assert model.enabled and inference.namespace[-1] == ("graph-inference-v1", True)
     model.set_compact_inference_gather(False)
     assert len(inference.namespace) == 6
