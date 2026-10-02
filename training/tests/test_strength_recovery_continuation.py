@@ -172,6 +172,9 @@ def test_continuation_stop_reaps_owned_process_and_accounts_separately(
     assert state["phase"] == "stopped"
     assert state["provisioned_gpus"] == 8
     assert state["continuation_provisioned_gpu_hours"] >= 0
+    assert (
+        state["continuation_started_ns"] == json.loads(original)["resource_released_ns"]
+    )
     assert terminated == [process]
     assert (screen / "ablation.json").read_bytes() == original
 

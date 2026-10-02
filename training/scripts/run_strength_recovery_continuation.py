@@ -239,7 +239,11 @@ def supervise_continuation(
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     if state and state.get("plan_sha256") != plan["plan_sha256"]:
         raise ValueError("continuation process state belongs to another plan")
-    state.setdefault("continuation_started_ns", time.time_ns())
+    # Charge sealing, migration and restart downtime to the post-screen
+    # segment. Its clock begins exactly where the screen released resources.
+    state.setdefault(
+        "continuation_started_ns", completed_screen(root)["resource_released_ns"]
+    )
     state.setdefault("attempts", [])
     state.update(
         schema_version=1,
