@@ -79,6 +79,9 @@ async function inspectModelCache() {
 
 // This exercises the published model, real worker, WASM search and ONNX runtime.
 // No remote inference is permitted; the browser uses the shipped model.
+// Playwright >=1.63 lets Firefox optimize worker WASM; older Juggler debuggers
+// forced its slow baseline tier. Keep the dependency fix, not a lower budget:
+// https://github.com/microsoft/playwright/blob/v1.63.0/browser_patches/firefox/juggler/content/Runtime.js#L54-L57
 test('preserves Standard strength through preparation, plays two real Mini searches locally, and reuses its verified cache', async ({ page, context, browserName }, testInfo) => {
   // Both moves use the public Standard preset, including on the CPU fallback.
   // The real client's 90-second inactivity timeout still detects stalled work.
