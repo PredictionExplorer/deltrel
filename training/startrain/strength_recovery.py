@@ -123,6 +123,7 @@ def recovery_config(
             full_simulations=384,
             simulation_reference_rings=6,
             simulation_ring_exponent=1.0,
+            variants=replace(source.selfplay.variants, asymmetric_pda_fraction=0.0),
         ),
         learner=replace(
             source.learner,
@@ -167,6 +168,10 @@ def due_snapshot(root: Path, *, now_ns: int | None = None) -> tuple[int, int] | 
     if plan is None:
         return None
     metadata = json.loads((root / "ablation.json").read_text())
+    if metadata.get("measurement_status") == "complete":
+        # Continuation belongs to another compute segment. It must never fill
+        # a missing screen endpoint with a later, better-trained checkpoint.
+        return None
     if metadata.get("profile_sha256") != plan["profile_sha256"]:
         raise ValueError("recovery budget/profile disagrees with the pinned schedule")
     started = metadata.get("measurement_started_ns")
@@ -182,6 +187,79 @@ def due_snapshot(root: Path, *, now_ns: int | None = None) -> tuple[int, int] | 
     endpoint = due[-1]
     record = root / "strength-recovery-snapshots" / str(endpoint) / "snapshot.json"
     return None if record.exists() else (endpoint, started)
+
+
+def completed_screen(root: Path) -> dict[str, Any]:
+    """Require real, clean budget completion before an automatic handoff."""
+    plan = load_plan(root)
+    if plan is None:
+        raise ValueError("completed screen has no immutable recovery plan")
+    metadata = json.loads((root / "ablation.json").read_text())
+    teardown = metadata.get("measurement_teardown", {})
+    integrity = metadata.get("integrity", {})
+    started = metadata.get("measurement_started_ns")
+    cutoff = metadata.get("measurement_cutoff_ns")
+    released = metadata.get("resource_released_ns")
+    if (
+        metadata.get("profile_sha256") != plan["profile_sha256"]
+        or metadata.get("measurement_status") != "complete"
+        or metadata.get("measurement_outcome") != "budget_completion"
+        or metadata.get("measurement_completion_status") != "complete"
+        or metadata.get("measurement_stop_reason") != "wall_budget"
+        or not isinstance(teardown, dict)
+        or not isinstance(integrity, dict)
+        or teardown.get("clean") is not True
+        or teardown.get("process_group_released") is not True
+        or integrity.get("valid") is not True
+        or any(
+            type(value) is not int or value <= 0
+            for value in (started, cutoff, released)
+        )
+        or not started < cutoff <= released
+        or cutoff - started < plan["wall_budget_seconds"] * 10**9
+    ):
+        raise ValueError(
+            "screen did not finish its wall budget with valid state and released workers"
+        )
+    endpoint = root / "strength-recovery-snapshots/43200/snapshot.json"
+    if not endpoint.is_file():
+        raise ValueError("screen finished without a retained twelve-hour endpoint")
+    receipt = json.loads(endpoint.read_text())
+    if (
+        receipt.get("plan_sha256") != plan["plan_sha256"]
+        or receipt.get("scheduled_seconds") != 43200
+    ):
+        raise ValueError("terminal endpoint belongs to another screen")
+    return metadata
+
+
+def validate_continuation_transition(
+    source: ExperimentConfig,
+    target: ExperimentConfig,
+    root: Path,
+) -> bool:
+    """Narrow exception to generic continuous-service policy, not integrity."""
+    expected = replace(
+        source, learner=replace(source.learner, candidate_interval_examples=3_000_000)
+    )
+    if source == target or target != expected:
+        return False
+    try:
+        plan = load_plan(root)
+        if plan is None:
+            return False
+        profile = root / "profile-elo-ablation.yaml"
+        from .config import load_config
+
+        if (
+            sha256_file(profile) != plan["profile_sha256"]
+            or load_config(profile) != source
+        ):
+            return False
+        completed_screen(root)
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return True
 
 
 def record_snapshot(

@@ -55,6 +55,7 @@ def implementation_pins() -> list[dict[str, Any]]:
         for name in (
             "scripts/prepare_strength_recovery.py",
             "scripts/run_strength_recovery.py",
+            "scripts/run_strength_recovery_continuation.py",
             "scripts/run_elo_ablation.py",
             "scripts/fork_elo_ablation.py",
             "scripts/prepare_champion_warm_start.py",
@@ -141,6 +142,7 @@ def prepare(
         "implementation_pins": implementation_pins(),
         "profile": artifact(profile),
         "profile_sha256": sha256_file(profile),
+        "installed_profile_name": "profile-elo-ablation.yaml",
         "schedule_seconds": list(SCHEDULE_SECONDS),
         "wall_budget_seconds": SCHEDULE_SECONDS[-1],
         "leaf_budget": 10**15,
