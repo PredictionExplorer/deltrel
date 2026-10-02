@@ -129,7 +129,11 @@ def recovery_config(
             source.learner,
             minimum_replay_shard_id_exclusive=replay_watermark,
             protected_champion_fraction=0.0,
-            protected_champion_after_ns=None,
+            protected_champion_after_ns=(
+                source.learner.protected_champion_after_ns
+                if getattr(source.learner, "champion_only_replay_freshness", False)
+                else None
+            ),
             reuse_clock_reference_target=None,
             # Timed publication below, not an assumed learner speed, controls
             # the predeclared endpoints. The ordinary cadence stays unreachable.

@@ -7,6 +7,7 @@ import argparse
 from dataclasses import replace
 import json
 from pathlib import Path
+import re
 import sqlite3
 import time
 from typing import Any
@@ -59,6 +60,7 @@ def implementation_pins() -> list[dict[str, Any]]:
             "scripts/run_elo_ablation.py",
             "scripts/fork_elo_ablation.py",
             "scripts/prepare_champion_warm_start.py",
+            "scripts/normalize_recovery_fork_authority.py",
             "deltreltrain/strength_recovery.py",
             "deltreltrain/strength_recovery_archive.py",
             "deltreltrain/learner.py",
@@ -75,12 +77,25 @@ def prepare(
     muon_lr: float,
     adamw_lr: float,
     warmup_steps: int,
+    source_commit: str | None = None,
 ) -> dict[str, Any]:
     source_profile, destination, output = (
         path.expanduser().resolve() for path in (source_profile, destination, output)
     )
     source_config = load_config(source_profile)
     source = Path(source_config.orchestration.directories.root).resolve()
+    if (
+        source_commit is not None
+        and re.fullmatch(r"[0-9a-f]{40,64}", source_commit) is None
+    ):
+        raise ValueError("qualified source commit must be a full Git ID")
+    if source_commit is None and any(
+        (source / name).exists()
+        for name in ("source-commit.txt", "continuous-migrations.jsonl")
+    ):
+        raise ValueError(
+            "forking inherited source history requires an explicit qualified source commit"
+        )
     for other in (destination, output):
         if other == source or source in other.parents or other in source.parents:
             raise ValueError("recovery destination/output must be separate from source")
@@ -152,6 +167,11 @@ def prepare(
         "anchor_manifest_name": (champion.artifact_manifest or champion.path).name,
         "anchor_step": champion.model_step,
         "created_ns": time.time_ns(),
+        **(
+            {"prepared_source_commit": source_commit}
+            if source_commit is not None
+            else {}
+        ),
         "classification": "coupled-champion-restart-and-higher-search-quality-screen",
         "strength_improvement_established": False,
         "compute_contract": "Eight provisioned GPUs; elapsed clock includes restarts and teardown is reported separately.",
@@ -220,6 +240,31 @@ def apply(plan_path: Path) -> dict[str, Any]:
     fork_elo_ablation(
         source_run_root=source, plan_path=fork_plan, treatment="strength-recovery"
     )
+    # These controls describe the parent experiment, not this newly isolated
+    # branch. Keep exact child-local copies as history before installing new
+    # registrations or future continuation destinations.
+    for name in (
+        "strength-recovery-plan.json",
+        "strength-recovery-provenance.json",
+        "strength-recovery-provenance",
+        "strength-recovery-snapshots",
+        "strength-continuation-plan.json",
+        "strength-continuation-state.json",
+        "strength-screen-seal.json",
+        "strength-continuation-input.yaml",
+        "profile-strength-continuation.yaml",
+        "profile-strength-continuation.sha256",
+        "strength-recovery-fork-authority.json",
+        "strength-recovery-fork-authority.pending.json",
+    ):
+        inherited = destination / name
+        if inherited.exists() or inherited.is_symlink():
+            archived = destination / "ablation-parent" / ("inherited-" + name)
+            if archived.exists() or archived.is_symlink():
+                raise ValueError(
+                    "inherited recovery controls conflict with existing archive"
+                )
+            inherited.rename(archived)
     # Old evaluation contracts, pending leases and plateau verdicts cannot join
     # the corrected-search experiment, even though checkpoint schemas match.
     arena = destination / "arena"
@@ -256,6 +301,10 @@ def apply(plan_path: Path) -> dict[str, Any]:
     atomic_json(destination / PLAN_NAME, plan)
     (destination / PLAN_NAME).chmod(0o444)
     preserve_provenance(destination, plan)
+    if plan.get("prepared_source_commit") is not None:
+        from scripts.normalize_recovery_fork_authority import normalize
+
+        normalize(destination, source_commit=plan["prepared_source_commit"], apply=True)
     for pin in plan["source_pins"]:
         verify_artifact(pin)
     return {
@@ -277,6 +326,7 @@ def main() -> None:
     for name in ("muon-lr", "adamw-lr"):
         freeze.add_argument("--" + name, type=float, required=True)
     freeze.add_argument("--warmup-steps", type=int, required=True)
+    freeze.add_argument("--source-commit", required=True)
     activate = sub.add_parser("apply")
     activate.add_argument("--plan", type=Path, required=True)
     args = vars(parser.parse_args())

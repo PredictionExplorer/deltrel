@@ -166,3 +166,44 @@ def test_existing_r3_backup_catalog_recovers_exact_archives_from_receipt(
     corrupted["archives"][0]["payload_base64"] = base64.b64encode(b"tampered").decode()
     with pytest.raises(ValueError):
         repair.validate_receipt(corrupted)
+
+
+def test_new_preparation_requires_and_installs_qualified_source_authority(
+    source, tmp_path
+):
+    source_commit = "a" * 40
+    (source.root / "source-commit.txt").write_text(source_commit + "\n")
+    row = {
+        "schema_version": 1,
+        "run_id": source.config.orchestration.run_id,
+        "generation_family": "family",
+        "timestamp_ns": time.time_ns() - 1,
+        "to_profile": source.profile.name,
+        "to_profile_sha256": hashlib.sha256(source.profile.read_bytes()).hexdigest(),
+        "to_source_commit": source_commit,
+    }
+    journal = json.dumps(row) + "\n"
+    (source.root / "continuous-migrations.jsonl").write_text(journal)
+    root, output = tmp_path / "next-fork", tmp_path / "next-plan"
+    arguments = dict(
+        source_profile=source.profile,
+        destination=root,
+        output=output,
+        muon_lr=0.0005,
+        adamw_lr=0.0000075,
+        warmup_steps=500,
+    )
+    with pytest.raises(ValueError, match="explicit qualified source"):
+        preparation.prepare(**arguments)
+    assert not output.exists() and not root.exists()
+    preparation.prepare(**arguments, source_commit="b" * 40)
+    preparation.apply(output / PLAN_NAME)
+    assert (root / "source-commit.txt").read_text().strip() == "b" * 40
+    assert not (root / "continuous-migrations.jsonl").exists()
+    assert (
+        root / repair.ARCHIVES["continuous-migrations.jsonl"]
+    ).read_text() == journal
+    assert (source.root / "continuous-migrations.jsonl").read_text() == journal
+    assert (source.root / "source-commit.txt").read_text().strip() == source_commit
+    receipt = repair._json(root / repair.RECEIPT)
+    assert receipt["qualified_source_commit"] == "b" * 40
