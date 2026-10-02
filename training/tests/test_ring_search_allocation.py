@@ -97,6 +97,7 @@ def test_empty_group_preserves_canonical_authority_and_nonempty_never_disappears
         "protected_champion_fraction",
         "protected_champion_max_age_seconds",
         "protected_champion_after_ns",
+        "champion_only_replay_freshness",
     ):
         del old_payload["learner"][name]
     for section, names in (
