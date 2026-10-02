@@ -1,7 +1,9 @@
 from dataclasses import replace
 import json
+import os
 import time
 from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
@@ -217,3 +219,12 @@ def test_continuation_transient_crashes_have_bounded_restarts(screen, monkeypatc
     assert len(launched) == 4
     state = json.loads((screen / controller.STATE).read_text())
     assert state["phase"] == "failed" and len(state["attempts"]) == 4
+
+
+def test_qualified_source_precedes_editable_environment_and_is_restored(monkeypatch):
+    monkeypatch.setenv("PYTHONPATH", "/older/release:/existing/libraries")
+    expected = str(Path(controller.__file__).resolve().parents[1])
+    with controller.qualified_sources():
+        assert os.environ["PYTHONPATH"].split(os.pathsep)[0] == expected
+        assert "/older/release" in os.environ["PYTHONPATH"]
+    assert os.environ["PYTHONPATH"] == "/older/release:/existing/libraries"
