@@ -77,6 +77,20 @@ The elapsed screen began at nanosecond timestamp `1790931126840849890`.
 Read `profile.sha256` for current authority rather than assuming that the initial
 profile is still active.
 
+The [live canary](strength-recovery-canary-20261002.json) reached step 566870:
+442 fresh optimizer updates. Thirty consecutive recorded metric intervals had
+finite losses/gradients, the exact calibrated rates and EMA, the fresh replay
+threshold, the prospective credit baseline and no unknown policy provenance.
+All 24 GPU cohorts used the retained champion and all ten workers were healthy
+with zero worker restarts in the current coordinator attempt.
+
+The new run's first disaster snapshot completed at 09:48 UTC and passed
+independent full verification at 09:53 UTC. Catalog SHA-256:
+`99c64f9e82d4ed216b8b2dc0c809d05d9adc45b925da486801bb987dafd0be6f`.
+Completed experiment artifacts also have a separately verified off-host
+archive: 12,216 files / 12,881,182,411 bytes, manifest SHA-256
+`d65f581fbd970d990dd062eb36dddb3a996d7d914bffcdca97436ca9453c3f88`.
+
 The old run stopped cleanly at step 844329, with all workers exiting zero.
 Its final recovery checkpoint is
 `sha256-ff831ae8da5cfe2e1ae2897378c3a18688f3ca7a70eea5368c9a01e863a801e3.pt`.
@@ -93,6 +107,19 @@ Also, an isolated fork inherited the parent's migration journal and source
 authority. The normalization operator archives the exact historical bytes and
 records the already-qualified source under a clean stop; it does not invent a
 migration or reset weights, replay, credit or experiment time.
+That repair completed under one clean stop: all ten workers exited zero, replay
+prefixes were flushed, and the same R3 release resumed with its original clock.
+The new assignments supplied the missing classic ring-6/ring-8 coverage.
+The normalization receipt hash is
+`dd2957c438f62adb5118e6e953af0a10b86dd2d9fdf06d1ef1887c26251456aa`.
+
+A separate operations package provides monitoring every 15 seconds, strength
+reports every 15 minutes and disaster snapshots every 14 minutes. It passed 90
+target-host tests; the authority repair passed six. The immutable R3 training
+source was not edited. A later review identified a clean-budget completion
+integrity-record gap; the current run needs the explicitly qualified completion
+repair before its twelve-hour handoff, while future runners record that check
+directly.
 
 The new champion-only freshness mode is tested but not enabled in R3. Qualify an
 explicit transition before the learner is 120,000 steps ahead of its teacher;

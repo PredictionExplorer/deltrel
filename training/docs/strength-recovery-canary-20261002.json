@@ -1,0 +1,38 @@
+{
+  "status": "passed",
+  "checked_ns": 1790934789749636287,
+  "run_root": "/home/ubuntu/edgeconnect-runs/strength-recovery-20261002",
+  "plan_sha256": "efd086917ea569b22dd415cb58e5366f22674553261be6cb9e340f8e7eff7511",
+  "learner_step": 566870,
+  "fresh_updates": 442,
+  "finite_metric_rows": 30,
+  "first_checked_step": 566580,
+  "last_checked_step": 566870,
+  "learning_rates": [
+    0.000533667,
+    8.005e-06,
+    8.005e-06
+  ],
+  "ema_decay": 0.9999,
+  "replay_watermark": 8735527,
+  "selected_replay_samples_by_ring": {
+    "4": 15120,
+    "6": 11470,
+    "8": 9216,
+    "10": 168639
+  },
+  "teacher_cohorts": 24,
+  "teacher_step": 566428,
+  "worker_restarts": {
+    "actor-cpu-ring4": 0,
+    "actor-gpu-1": 0,
+    "actor-gpu-2": 0,
+    "actor-gpu-3": 0,
+    "actor-gpu-4": 0,
+    "actor-gpu-5": 0,
+    "actor-gpu-6": 0,
+    "arena-promotion": 0,
+    "learner": 0
+  },
+  "scope": "Observed runtime configuration, fresh replay threshold, credit baseline, teacher identities, finite metrics and actual updates. No strength claim."
+}
