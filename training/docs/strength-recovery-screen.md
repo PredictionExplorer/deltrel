@@ -118,6 +118,8 @@ after restart. A partial or conflicting handoff fails closed.
 
 The continuation runs until an operator stop or a fatal failure, with its own
 clock and process-attempt accounting in `strength-continuation-state.json`.
+That clock begins at screen resource release, charging sealing and migration
+time to the continuation segment instead of dropping the handoff cost.
 Completed screen metadata is never restarted or extended, and later updates
 cannot fabricate missing screen snapshots. A signal checkpoints and releases
 the owned process group. The controller retries only a bounded number of

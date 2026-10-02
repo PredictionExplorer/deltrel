@@ -1230,8 +1230,9 @@ class ImmutableModelPublisher:
         global_batch_size: int | None = None,
         utd_segment: Mapping[str, object] | None = None,
         extra: Mapping[str, object] | None = None,
+        force: bool = False,
     ) -> ModelManifest:
-        if self.candidate_path.is_file():
+        if not force and self.candidate_path.is_file():
             try:
                 current = load_model_manifest(self.candidate_path)
             except ValueError:
@@ -2623,6 +2624,29 @@ class LearnerLoop:
                 raise cleanup_failure
         if self.rank == 0:
             completed = target is not None and self.step >= target
+            if not completed:
+                from .strength_recovery import due_snapshot
+
+                if due_snapshot(self.publisher.root.parent) is not None:
+                    # Unlimited runs can stop in replay/UTD wait without a
+                    # final optimizer step. Serialize the healthy completed
+                    # state now, while the budget runner is still tearing down.
+                    # Same-step candidate caching must not retain older optimizer
+                    # or scheduler state in this terminal checkpoint.
+                    candidate = self._publish(force=True)
+                    self._last_candidate_examples = self.examples_consumed
+                    self._last_recovery_step = self.step
+                    self._write_cadence_state()
+                    self.metrics.append(
+                        {
+                            "schema_version": 1,
+                            "timestamp_ns": time.time_ns(),
+                            "event": "timed_shutdown_snapshot",
+                            "model_identity": candidate.model_identity,
+                            "model_step": candidate.model_step,
+                            "examples_consumed": self.examples_consumed,
+                        }
+                    )
             if completed:
                 final_manifest = self._publish()
                 atomic_json(
@@ -3268,14 +3292,16 @@ class LearnerLoop:
             pin_memory=self.data_config.pin_memory,
         )
 
-    def _publish(self) -> ModelManifest:
-        manifest = self._publish_to(self.publisher)
+    def _publish(self, *, force: bool = False) -> ModelManifest:
+        manifest = self._publish_to(self.publisher, force=force)
         from .strength_recovery import record_snapshot
 
         record_snapshot(self.publisher.root.parent, manifest)
         return manifest
 
-    def _publish_to(self, publisher: ImmutableModelPublisher) -> ModelManifest:
+    def _publish_to(
+        self, publisher: ImmutableModelPublisher, *, force: bool = False
+    ) -> ModelManifest:
         utd_segment = self._ensure_utd_segment_state()
         return publisher.publish(
             model=unwrap_model(self.compiled_model),
@@ -3290,6 +3316,7 @@ class LearnerLoop:
             global_batch_size=self.train_config.global_batch_size(self.world_size),
             utd_segment=utd_segment.as_dict() if utd_segment is not None else None,
             extra=self._checkpoint_extra(),
+            force=force,
         )
 
     def _load_cadence_state(self) -> None:

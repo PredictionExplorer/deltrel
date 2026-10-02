@@ -1,5 +1,7 @@
 import json
 from contextlib import contextmanager
+from dataclasses import replace
+import time
 
 import pytest
 import torch
@@ -7,6 +9,10 @@ import torch
 import startrain.learner as learner_module
 from startrain.config import LearnerConfig
 from startrain.replay_store import ReplayStore
+from startrain.checkpoint import load_model_manifest
+from startrain.contracts import SEARCH_ALGORITHM_ID
+from startrain.runtime import atomic_json
+from startrain.strength_recovery import FORMAT, PLAN_NAME, SCHEDULE_SECONDS, digest
 from test_pipeline_core import (
     append_replay,
     make_replay_sample,
@@ -216,3 +222,81 @@ def test_checkpoint_retry_is_bounded_and_preserves_previous_recovery(
         assert attempts == [1, 1]
         assert recovery_pointer(learner) == before
         assert "retry after loader cleanup failed" in error.value.__notes__[0]
+
+
+def prepare_wall_endpoint(tmp_path, started):
+    plan = {
+        "format": FORMAT,
+        "schema_version": 1,
+        "run_root": str(tmp_path),
+        "search_algorithm": SEARCH_ALGORITHM_ID,
+        "schedule_seconds": list(SCHEDULE_SECONDS),
+        "profile_sha256": "test-profile",
+    }
+    plan["plan_sha256"] = digest(plan)
+    atomic_json(tmp_path / PLAN_NAME, plan)
+    atomic_json(
+        tmp_path / "ablation.json",
+        {
+            "profile_sha256": "test-profile",
+            "measurement_started_ns": started,
+            "measurement_status": "running",
+        },
+    )
+
+
+def test_unlimited_stop_without_update_serializes_due_endpoint_and_current_optimizer(
+    tmp_path, monkeypatch
+):
+    with trained_fixture(tmp_path) as learner:
+        learner.learner_config = replace(learner.learner_config, unlimited=True)
+        previous = learner._publish()
+        old = torch.load(previous.checkpoint, weights_only=True, map_location="cpu")
+        # A controller can change optimizer state without advancing model step.
+        # The shutdown publication must not reuse a cached same-step artifact.
+        learner.optimizer.param_groups[0]["lr"] *= 0.5
+        expected_rate = learner.optimizer.param_groups[0]["lr"]
+        started = time.time_ns()
+        now = [started]
+        prepare_wall_endpoint(tmp_path, started)
+        monkeypatch.setattr(time, "time_ns", lambda: now[0])
+
+        def stop():
+            now[0] = started + 43200 * 10**9
+            return True
+
+        assert learner.run(stop_requested=stop) == 0
+        receipt = json.loads(
+            (tmp_path / "strength-recovery-snapshots/43200/snapshot.json").read_text()
+        )
+        final = load_model_manifest(receipt["artifacts"]["manifest"]["path"])
+        saved = torch.load(final.checkpoint, weights_only=True, map_location="cpu")
+        assert saved["optimizer"]["param_groups"][0]["lr"] == expected_rate
+        assert (
+            saved["optimizer"]["param_groups"][0]["lr"]
+            != old["optimizer"]["param_groups"][0]["lr"]
+        )
+        assert final.model_step == previous.model_step == 0
+        assert final.model_identity != previous.model_identity
+        assert receipt["captured_ns"] >= started + 43200 * 10**9
+        assert not (learner.publisher.root / "learner-complete.json").exists()
+
+
+def test_cleanup_failure_cannot_publish_due_terminal_endpoint(tmp_path, monkeypatch):
+    with trained_fixture(tmp_path) as learner:
+        learner.learner_config = replace(learner.learner_config, unlimited=True)
+        started = time.time_ns()
+        now = [started]
+        prepare_wall_endpoint(tmp_path, started)
+        monkeypatch.setattr(time, "time_ns", lambda: now[0])
+
+        def failed_cleanup():
+            now[0] = started + 43200 * 10**9
+            return RuntimeError("loader shutdown failed")
+
+        monkeypatch.setattr(learner, "_shutdown_loader_pool", failed_cleanup)
+        with pytest.raises(RuntimeError, match="loader shutdown failed"):
+            learner.run(stop_requested=lambda: True)
+        assert not (
+            tmp_path / "strength-recovery-snapshots/43200/snapshot.json"
+        ).exists()

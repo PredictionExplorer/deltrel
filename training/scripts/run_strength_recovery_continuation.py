@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from dataclasses import replace
 import fcntl
 import json
+import os
 from pathlib import Path
 import re
 import signal
@@ -38,6 +40,31 @@ STATE = "strength-continuation-state.json"
 SEAL = "strength-screen-seal.json"
 FORMAT = "startrain.strength-continuation"
 INSTALLED = "profile-strength-continuation.yaml"
+
+
+def qualified_environment() -> dict[str, str]:
+    environment = dict(os.environ)
+    root = str(Path(__file__).resolve().parents[1])
+    inherited = [
+        part
+        for part in environment.get("PYTHONPATH", "").split(os.pathsep)
+        if part and part != root
+    ]
+    environment["PYTHONPATH"] = os.pathsep.join([root, *inherited])
+    return environment
+
+
+@contextmanager
+def qualified_sources():
+    previous = os.environ.get("PYTHONPATH")
+    os.environ["PYTHONPATH"] = qualified_environment()["PYTHONPATH"]
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("PYTHONPATH", None)
+        else:
+            os.environ["PYTHONPATH"] = previous
 
 
 def prepare(root: Path, *, source_commit: str) -> dict[str, Any]:
@@ -106,6 +133,12 @@ def verify_plan(root: Path) -> dict[str, Any]:
         raise ValueError("continuation plan identity changed")
     verify_artifact(plan["target_profile"])
     verify_artifact({**plan["implementation"], "path": str(Path(__file__))})
+    implementation_root = Path(__file__).resolve().parents[1]
+    for pin in recovery["implementation_pins"]:
+        relative = Path(pin["relative_path"])
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("recovery implementation path is unsafe")
+        verify_artifact({**pin, "path": str(implementation_root / relative)})
     source = load_config(root / "profile-elo-ablation.yaml")
     target = load_config(Path(plan["target_profile"]["path"]))
     if target != replace(
@@ -206,7 +239,11 @@ def supervise_continuation(
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     if state and state.get("plan_sha256") != plan["plan_sha256"]:
         raise ValueError("continuation process state belongs to another plan")
-    state.setdefault("continuation_started_ns", time.time_ns())
+    # Charge sealing, migration and restart downtime to the post-screen
+    # segment. Its clock begins exactly where the screen released resources.
+    state.setdefault(
+        "continuation_started_ns", completed_screen(root)["resource_released_ns"]
+    )
     state.setdefault("attempts", [])
     state.update(
         schema_version=1,
@@ -240,6 +277,7 @@ def supervise_continuation(
                     stdout=output,
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
+                    env=qualified_environment(),
                 )
                 attempt.update(pid=process.pid, status="running")
                 atomic_json(state_path, state)
@@ -294,7 +332,7 @@ def supervise_continuation(
 
 def run(root: Path, *, orchestrator: str) -> dict[str, Any]:
     root = root.resolve()
-    with (root / ".strength-continuation.lock").open("a") as lock:
+    with (root / ".strength-continuation.lock").open("a") as lock, qualified_sources():
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         plan = verify_plan(root)
         metadata = json.loads((root / "ablation.json").read_text())
@@ -324,7 +362,13 @@ def main() -> int:
             result = prepare(args.run_root, source_commit=args.source_commit)
         else:
             result = run(args.run_root, orchestrator=args.orchestrator)
-    except (OSError, ValueError, RuntimeError, KeyError) as error:
+    except (
+        OSError,
+        ValueError,
+        RuntimeError,
+        KeyError,
+        subprocess.SubprocessError,
+    ) as error:
         print(json.dumps({"status": "failed", "error": str(error)}))
         return 78
     print(json.dumps(result, indent=2))
