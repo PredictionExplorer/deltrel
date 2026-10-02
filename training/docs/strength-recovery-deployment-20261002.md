@@ -62,10 +62,21 @@ The first completed block contained only 16 reversed-seat pairs: its weighted
 score was 0.3375, with an anytime confidence interval of [0, 0.83163]. The
 evaluation continued without promotion. This early block is unfavorable but
 does not establish the model's strength or an Elo change.
-At the next recorded observation, 12:41 UTC, the completed boundary had grown
-to 36 pairs / 72 games with weighted score 0.49832 and interval
-[0.18221, 0.85625]. The decision remained inconclusive. The change illustrates
+At the 13:22 UTC observation, the completed boundary had grown to 56 pairs /
+112 games with weighted score 0.53608 and interval [0.29420, 0.81034]. The
+decision remained inconclusive. The change illustrates
 why the first small block should not be treated as a reliable strength estimate.
+
+An evaluation-throughput audit found no substantial scheduler idle time. The
+completed continuation wave's broker was busy for 98% of its elapsed time;
+neural round trips consumed 68%, and 34.9% of physical batch rows were padding.
+The arena already uses compiled BF16 inference. Its CUDA graphs are disabled.
+The next proposed experiment therefore compares graph execution against that
+actual control, initially holding padding sizes fixed. It has an eight-minute
+adapter gate followed only if useful by a separate, at-most-45-minute search
+comparison. The driver and GPU reservation still require qualification; no
+graph speedup has been measured or activated. The existing finite cooldown
+can retain a CUDA context, so it is not by itself proof of exclusive GPU use.
 
 Startup ring-10 batches initially had few outcome labels. By 12:41 UTC,
 sampled gradient-diagnostic batches had outcome/score targets for 80.78% of
@@ -201,7 +212,13 @@ accumulation preserves scalar operation order, checked against the previous
 implementation. Historical profile enumeration now deduplicates convergent
 omission paths at each stage while preserving the exact ordered payloads and
 hashes; 395 parity, mutation-isolation and authority checks passed with branch
-coverage and two workers. None of these changes weakens promotion thresholds or changes
+coverage and two workers. A subsequent optimization skips provable no-op
+scheduling copies, normalizes autonomous epochs once, and rejects unrelated
+provenance edits before enumeration. It passed 671 affected checks; 141
+independent comparisons matched the previous implementation. The two slow
+resume cases fell from about 41 seconds to 13 seconds locally with the same
+coverage settings and unchanged 60-second limits. A further 1,794 tests in
+unaffected modules passed. None of these changes weakens promotion thresholds or changes
 the live training recipe. Final-head GitHub CI remains the merge gate.
 
 Detailed server receipts live under
