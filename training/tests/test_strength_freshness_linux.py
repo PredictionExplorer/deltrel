@@ -76,11 +76,9 @@ class FakeIO(a.LinuxIO):
         return super().file_metadata(path, deadline)
 
     def process_origin(self, pid, deadline):
+        assert self.time < deadline
         value = self.processes[pid]
-        return {
-            key: value.get(key, str(Path(f"/proc/{pid}/{key}").resolve()))
-            for key in ("exe", "cwd")
-        }
+        return {key: value[key] for key in ("exe", "cwd")}
 
     def read(self, path, maximum, deadline):
         assert self.time < deadline
@@ -1013,6 +1011,8 @@ def install_progress_capture(host, monkeypatch):
             "pid": p.pid,
             "start_ticks": p.start_ticks,
             "cgroup": "0::" + unit.cgroup,
+            "exe": "/qualified/python3.11",
+            "cwd": "/qualified/training",
         }
         host.io.files[f"/proc/{p.pid}/environ"] = b"PYTHONPATH=/qualified\0"
     host.io.files["/proc/stat"] = (
@@ -1020,17 +1020,28 @@ def install_progress_capture(host, monkeypatch):
     )
     host.manifest["process_runtime"] = {
         "r4": {
-            "executables": [
-                str(Path(f"/proc/{p.pid}/exe").resolve()) for p in unit.members
-            ],
-            "working_directories": [
-                str(Path(f"/proc/{p.pid}/cwd").resolve()) for p in unit.members
-            ],
+            "executables": ["/qualified/python3.11"],
+            "working_directories": ["/qualified/training"],
             "environment": {"PYTHONPATH": "/qualified"},
         }
     }
     monkeypatch.setattr(host, "clock", lambda: args["clock"])
     return data, args, paths
+
+
+def test_progress_fixture_never_resolves_real_proc_paths(host, monkeypatch):
+    resolve = Path.resolve
+
+    def forbid_proc(path, *args, **kwargs):
+        if path.is_relative_to("/proc"):
+            raise AssertionError("fake process fixture reached real /proc")
+        return resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", forbid_proc)
+    _, args, _ = install_progress_capture(host, monkeypatch)
+    units = {"r4": args["unit"], "r3": g.Unit("r3.service", "a" * 64, "/r3")}
+    result = host._progress(units, args["clock"], 105)
+    assert result is not None and "contract_failure" not in result
 
 
 def test_missing_heartbeat_cannot_hide_later_current_owned_failure(host, monkeypatch):
@@ -1194,6 +1205,8 @@ def test_noncertifying_compiler_is_pending_without_hiding_owned_failure(
         "pid": compiler.pid,
         "start_ticks": compiler.start_ticks,
         "cgroup": "0::" + unit.cgroup,
+        "exe": "/unqualified/compiler",
+        "cwd": "/unqualified",
     }
     host.io.files[f"/proc/{compiler.pid}/environ"] = b"PYTHONPATH=/qualified\0"
     host.io.files[f"/proc/{compiler.pid}/cmdline"] = b"unknown-compiler\0"
