@@ -799,6 +799,12 @@ def validate_parent_context(
     )
 
 
+def caller_parent(kernel, own: outer.ProcessIdentity, registered: dict) -> dict:
+    require(asdict(own) == completion.identity(registered), "caller-self-not-prebound")
+    # This is only an actual-parent liveness fence, never bootstrap authority.
+    return asdict(kernel.identity(own.ppid))
+
+
 def load_admission(
     authorization_path: str,
     approved_sha256: str,
@@ -809,7 +815,7 @@ def load_admission(
     store=None,
 ) -> Admission:
     require(
-        role in {"supervisor", "operator", "guardian", "helper"}
+        role in {"caller", "supervisor", "operator", "guardian", "helper"}
         and completion.checksum(approved_sha256),
         "runtime-admission-arguments",
     )
@@ -880,7 +886,7 @@ def load_admission(
         and now.wall_ns >= start.wall_ns,
         "admission-original-clock",
     )
-    limit = 120 if role == "supervisor" else 720
+    limit = 120 if role in {"caller", "supervisor"} else 720
     require(
         now.monotonic_ns < start.monotonic_ns + limit * outer.SECOND
         and now.wall_ns < start.wall_ns + limit * outer.SECOND,
@@ -895,7 +901,7 @@ def load_admission(
     require(_path(cfg["input_root"]) == path.parent, "runtime-input-root")
     own = k.self_identity()
     require(own.uid == 0 and k.task_ids() == (own.pid,), "runtime-current-owner")
-    if role != "supervisor":
+    if role not in {"caller", "supervisor"}:
         require(frame is not None, "inherited-frame-required")
         assert frame is not None
     if role == "helper":
@@ -910,7 +916,9 @@ def load_admission(
             min(reader.deadline_wall_ns, frame["work_deadline"]["wall_ns"]),
             k.clock,
         )
-    if role == "supervisor":
+    if role == "caller":
+        expected_parent = caller_parent(k, own, cfg["caller"])
+    elif role == "supervisor":
         expected_parent = completion.identity(cfg["caller"])
     else:
         assert frame is not None
@@ -1073,7 +1081,10 @@ def load_admission(
             )
         copied_cfg = copy.deepcopy(cfg)
         copied_cfg["authorization_path"] = authorization_path
-        verify_resources(role, apply=role == "supervisor")
+        verify_resources(
+            "supervisor" if role == "caller" else role,
+            apply=role in {"caller", "supervisor"},
+        )
         admitted = Admission(
             raw,
             approved_sha256,

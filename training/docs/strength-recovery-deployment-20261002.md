@@ -643,7 +643,7 @@ inputs; its guardian program/resource contract remains the one committed by the
 before proof. A future phase-specific guardian command requires another reviewed
 contract, rather than accepting a new claim from the after receipt.
 
-The pure renderer checks the before completion proof and approved template,
+At revision `df09faf4`, the pure renderer checks the before completion proof and approved template,
 changes only the absolute watchdog deadline in supplied unit definitions, and
 produces the plan, original Anchor and fixed role authorizations. Both support
 stages must have exact environment variants and complete pinned source bytes.
@@ -679,7 +679,7 @@ and pure-function limits. These counts do not qualify a Linux target, hardware
 execution, the missing outer installer or a live training transition.
 
 
-The next local implementation adds fixed executable supervisor, operator and
+Revision `8151937f` adds fixed executable supervisor, operator and
 phase-guardian entrypoints, a standard-library installer facade, a separately
 supervised site-enabled helper and a closed file/service backend. No operation
 or callback is selected by arbitrary JSON code. The helper is needed because
@@ -737,3 +737,43 @@ tests, 1,023 web tests, 107 clean browser E2E tests plus five skips, all 28 cove
 floors, Rust/WASM, audits and container checks. Its final small archive was
 independently read back. That result applies to the prior committed source; the
 new executable revision requires its own latest-head CI result.
+
+The outside-caller audit now supplies the fixed terminal launcher. Its approved
+intent must already identify the actual caller lifetime; admission checks that
+identity along with the existing interpreter, source, session, site, environment
+and resource contracts. The caller launches only the fixed supervisor command,
+retains its pidfd and records actual natural exit, reaping and an empty owned
+family. Its result covers those completed descendant events. It does not claim
+the caller's own future exit or manufacture target qualification.
+
+The caller consumes the original START record and supervisor ACK, then joins
+the supervisor's output bytes to its retained result, the operator's output
+hash, complete BEFORE/AFTER producer proofs, final CPU audit, plan and source
+pins. Historical producer evidence remains historical; current kernel terminal
+observations supply the final closure. Supervisor work ends at the original
+119/599 cutoffs; caller closure and publication end at 120/600, bounded by the
+original aggregate 720 seconds. The separate child alarm is an aggregate
+backstop, not an extension of those checked deadlines. Raw START timestamps
+remain raw; stored Anchor-derived nanoseconds use the existing declared floor
+projection, without a round-trip equality assumption or added tolerance.
+
+Actual Linux/session/bootstrap and resource qualification remains outstanding.
+The readiness assessment sequences a separately reviewed harmless CPU witness
+routine, exact additive staging and independent real receipt verification
+before the normal runtime can consume those prerequisites. The twelve-unit
+dummy protocol and production R3 sources, profile and services stay unchanged.
+The separately named learner-append observation-window proposal is approved
+only for local implementation preparation and independent review. Its initial
+slice is a bounded append-proof verifier and registered file-range reads; old
+historical-birth gates stay unconditional, and a new success-producing route
+requires explicit end-to-end contract selection and consumer review.
+
+Committed `8151937f` passed all six CI jobs on attempt one: 6,506 Python/native
+tests, 1,023 web tests, 107 clean browser E2E tests plus five skips, all 28 coverage
+floors, Rust/WASM, audits and container checks. These results apply to that
+committed source; the caller audit has its own affected-check and CI evidence.
+Its final affected check passed 269 cases with two workers, zero failures/skips,
+stable source bytes and clean Ruff, formatting and Pyright. The repository brand
+audit passed across 950 files. The earlier 32-case author packet and its 35-case
+admission-coverage revision remain distinct evidence; their counts are not added
+to the final run. Unchanged collector suites were not repeated.

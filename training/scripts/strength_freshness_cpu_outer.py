@@ -23,7 +23,7 @@ import time
 from typing import Callable, Protocol
 
 SECOND = 10**9
-ROLES = {"supervisor", "operator", "guardian"}
+ROLES = {"caller", "supervisor", "operator", "guardian"}
 CAPTURE_LIMITS = {
     "cpu_affinity_count": 1,
     "nice": 19,
