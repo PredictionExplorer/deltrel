@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 from dataclasses import asdict, dataclass
+import fcntl
 import hashlib
 import json
 import os
@@ -19,7 +20,7 @@ import select
 import signal
 import sys
 import time
-from typing import Protocol
+from typing import Callable, Protocol
 
 SECOND = 10**9
 ROLES = {"supervisor", "operator", "guardian"}
@@ -252,6 +253,407 @@ class CaptureSpec:
 
 
 @dataclass(frozen=True)
+class RoleSpec:
+    """Only the two fixed composition entrypoints; phase data is not argv."""
+
+    phase: str
+    role: str
+    python: str
+    control_root: str
+    authorization_path: str
+    authorization_sha256: str
+    deadline_monotonic_ns: int
+    frame: bytes
+    qualified_sources: tuple[str, str]
+
+    @property
+    def process_deadline_ns(self) -> int:
+        if self.role == "guardian":
+            doc = json.loads(self.frame)
+            deadline = doc["budget"]["cleanup"]["monotonic_ns"]
+            require(
+                type(deadline) is int
+                and self.deadline_monotonic_ns
+                <= deadline
+                <= self.deadline_monotonic_ns + 10 * SECOND,
+                "guardian-terminal-bound",
+            )
+            return deadline
+        return self.deadline_monotonic_ns
+
+    def argv(self) -> tuple[str, ...]:
+        require(self.role in {"operator", "guardian"}, "fixed-outer-entrypoint")
+        require(
+            self.phase
+            in ({"session"} if self.role == "operator" else {"before", "after"}),
+            "fixed-role-phase",
+        )
+        for path in (self.python, self.control_root, self.authorization_path):
+            require(
+                isinstance(path, str)
+                and Path(path).is_absolute()
+                and str(Path(path)) == path
+                and ".." not in Path(path).parts,
+                "role-path",
+            )
+        require(
+            Path(self.python).name == "python" and checksum(self.authorization_sha256),
+            "role-contract",
+        )
+        require(
+            type(self.frame) is bytes
+            and 0 < len(self.frame) <= 65536
+            and type(self.deadline_monotonic_ns) is int
+            and self.deadline_monotonic_ns > 0,
+            "role-frame-bound",
+        )
+        require(
+            len(self.qualified_sources) == 2
+            and all(checksum(v) for v in self.qualified_sources),
+            "role-qualified-sources",
+        )
+        return (
+            self.python,
+            "-S",
+            "-E",
+            "-B",
+            "-m",
+            "scripts.strength_freshness_cpu_outer_runtime",
+            "--role",
+            self.role,
+            "--authorization",
+            self.authorization_path,
+            "--sha256",
+            self.authorization_sha256,
+        )
+
+    def contract(self) -> dict:
+        argv = list(self.argv())
+        require(
+            argv[-2] == "--sha256" and argv[-1] == self.authorization_sha256,
+            "role-authority-argument",
+        )
+        argv[-1] = "@approved-outer-intent-sha256"
+        return {
+            "format": "strength-freshness-fixed-role-contract-v1",
+            "argv_template": argv,
+            "cwd": self.control_root,
+            "env": dict(ENV),
+            "qualified_sources": {
+                "primitive": self.qualified_sources[0],
+                "runtime": self.qualified_sources[1],
+            },
+            "resources": {
+                **CAPTURE_LIMITS,
+                "address_space_hard_bytes": 16 * 2**30
+                if self.role == "operator"
+                else CAPTURE_LIMITS["address_space_bytes"],
+                "inherited_frame_fd": 127,
+                "inherited_frame_max_bytes": 65536,
+            },
+        }
+
+
+@dataclass(frozen=True)
+class BudgetWindow:
+    """Supervisor's one bounded session; never a capture budget or renewal."""
+
+    start: Clock
+    dummy_start: Clock | None = None
+
+    phase = "session"
+
+    @property
+    def phase_start(self) -> Clock:
+        return self.start
+
+    def validate(self) -> None:
+        self.start.validate()
+        if self.dummy_start is not None:
+            self.dummy_start.validate()
+            require(
+                self.dummy_start.boot_id == self.start.boot_id
+                and 0
+                <= self.dummy_start.monotonic_ns - self.start.monotonic_ns
+                <= 118 * SECOND
+                and 0 <= self.dummy_start.wall_ns - self.start.wall_ns <= 118 * SECOND,
+                "dummy-handoff-window",
+            )
+
+    def compact(self) -> dict:
+        self.validate()
+        if self.dummy_start is None:
+            return {
+                name: {
+                    axis: getattr(self.start, axis) + seconds * SECOND
+                    for axis in ("monotonic_ns", "wall_ns")
+                }
+                for name, seconds in (("work", 118), ("cleanup", 119), ("gate", 120))
+            }
+        return {
+            name: {
+                axis: min(
+                    getattr(self.dummy_start, axis) + seconds * SECOND,
+                    getattr(self.start, axis) + total * SECOND,
+                )
+                for axis in ("monotonic_ns", "wall_ns")
+            }
+            for name, seconds, total in (
+                ("work", 598, 718),
+                ("cleanup", 599, 719),
+                ("gate", 600, 720),
+            )
+        }
+
+    @property
+    def work_ns(self) -> int:
+        return self.compact()["work"]["monotonic_ns"]
+
+    def remaining_ns(self, stage: str, now: Clock) -> int:
+        now.validate()
+        require(stage in {"work", "cleanup", "gate"}, "budget-stage")
+        require(
+            now.boot_id == self.start.boot_id
+            and now.monotonic_ns >= self.start.monotonic_ns
+            and now.wall_ns >= self.start.wall_ns,
+            "budget-clock",
+        )
+        return min(
+            self.compact()[stage][axis] - getattr(now, axis)
+            for axis in ("monotonic_ns", "wall_ns")
+        )
+
+    def handoff(self, dummy_start: Clock, observed: Clock) -> BudgetWindow:
+        require(
+            self.dummy_start is None and self.remaining_ns("work", observed) > 0,
+            "late-or-repeated-handoff",
+        )
+        require(
+            dummy_start.monotonic_ns <= observed.monotonic_ns
+            and dummy_start.wall_ns <= observed.wall_ns,
+            "future-dummy-start",
+        )
+        result = BudgetWindow(self.start, dummy_start)
+        result.validate()
+        return result
+
+
+def guardian_contract_sha256(
+    python: str,
+    control_root: str,
+    authorization_path: str,
+    qualified_sources: tuple[str, str],
+) -> str:
+    spec = RoleSpec(
+        "before",
+        "guardian",
+        python,
+        control_root,
+        authorization_path,
+        "0" * 64,
+        1,
+        b"{}",
+        qualified_sources,
+    )
+    return digest(spec.contract())
+
+
+HELPER_MODES = {"prepare-install", "inspect-cleanup", "audit", "prearm-cleanup"}
+ACK_FORMAT = "strength-freshness-dummy-start-ack-v1"
+
+
+def dummy_start_ack(
+    *,
+    outer_intent_sha256: str,
+    nonce: str,
+    start_pin: dict,
+    before_execution_pin: dict,
+    enclosing: dict,
+) -> dict:
+    """Pure identity/content binding only; this does not attest publication time."""
+    require(
+        checksum(outer_intent_sha256)
+        and isinstance(nonce, str)
+        and re.fullmatch(r"[0-9a-f]{32}", nonce) is not None,
+        "dummy-ack-authority",
+    )
+    pins = []
+    for value in (start_pin, before_execution_pin):
+        require(
+            isinstance(value, dict) and set(value) == {"path", "sha256", "bytes"},
+            "dummy-ack-pin-fields",
+        )
+        path = value["path"]
+        require(
+            isinstance(path, str)
+            and Path(path).is_absolute()
+            and str(Path(path)) == path
+            and ".." not in Path(path).parts
+            and checksum(value["sha256"])
+            and type(value["bytes"]) is int
+            and 0 < value["bytes"] <= 2**20,
+            "dummy-ack-pin",
+        )
+        pins.append(dict(value))
+    inputs = Path(pins[0]["path"]).parent
+    require(
+        Path(pins[0]["path"]) == inputs / "dummy-start.json"
+        and Path(pins[1]["path"]) == inputs / "before-execution.json",
+        "dummy-ack-paths",
+    )
+    require(
+        isinstance(enclosing, dict) and set(enclosing) == {"operator", "supervisor"},
+        "dummy-ack-enclosing",
+    )
+    owners = []
+    for role in ("operator", "supervisor"):
+        try:
+            owner = ProcessIdentity(**enclosing[role])
+        except (TypeError, KeyError):
+            raise OuterRefusal("dummy-ack-owner-fields") from None
+        owner.validate()
+        owners.append(owner)
+    op, sup = owners
+    require(
+        op.uid == sup.uid == 0
+        and op.pid != sup.pid
+        and op.ppid == sup.pid
+        and sup.start_ticks <= op.start_ticks
+        and op.boot_id == sup.boot_id
+        and op.pid_namespace_inode == sup.pid_namespace_inode
+        and op.cgroup == sup.cgroup,
+        "dummy-ack-owners",
+    )
+    return {
+        "format": ACK_FORMAT,
+        "schema_version": 1,
+        "outer_intent_sha256": outer_intent_sha256,
+        "nonce": nonce,
+        "start_pin": pins[0],
+        "before_execution_pin": pins[1],
+        "enclosing": {"operator": asdict(op), "supervisor": asdict(sup)},
+    }
+
+
+def validate_dummy_start_ack(value: dict, **expected) -> dict:
+    canonical = dummy_start_ack(**expected)
+    require(value == canonical, "dummy-ack-binding")
+    return canonical
+
+
+@dataclass(frozen=True)
+class HelperSpec:
+    mode: str
+    python: str
+    control_root: str
+    authorization_path: str
+    authorization_sha256: str
+    deadline_monotonic_ns: int
+    frame: bytes
+
+    phase = "helper"
+
+    def argv(self) -> tuple[str, ...]:
+        require(self.mode in HELPER_MODES, "helper-operation")
+        # Reuse the closed role path/frame validation, never a caller argv.
+        RoleSpec(
+            "session",
+            "operator",
+            self.python,
+            self.control_root,
+            self.authorization_path,
+            self.authorization_sha256,
+            self.deadline_monotonic_ns,
+            self.frame,
+            ("0" * 64, "0" * 64),
+        ).argv()
+        return (
+            self.python,
+            "-s",
+            "-B",
+            str(
+                Path(self.control_root)
+                / "scripts/strength_freshness_cpu_install_helper.py"
+            ),
+            "--operation",
+            self.mode,
+            "--authorization",
+            self.authorization_path,
+            "--sha256",
+            self.authorization_sha256,
+        )
+
+    def contract(self) -> dict:
+        return {
+            "argv": self.argv(),
+            "cwd": self.control_root,
+            "env": {**ENV, "PYTHONPATH": self.control_root},
+            "resources": {
+                **CAPTURE_LIMITS,
+                "address_space_bytes": 16 * 2**30,
+                "address_space_hard_bytes": 16 * 2**30,
+                "stdout_stderr_bytes": 8 * 2**20,
+                "inherited_frame_fd": 127,
+                "inherited_frame_max_bytes": 65536,
+            },
+        }
+
+
+@dataclass(frozen=True)
+class HelperBudget:
+    mode: str
+    start: Clock
+    phase_start: Clock
+    ceiling: Clock
+
+    phase = "helper"
+
+    def validate(self) -> None:
+        require(self.mode in HELPER_MODES, "helper-operation")
+        for value in (self.start, self.phase_start, self.ceiling):
+            value.validate()
+        cap = (60 if self.mode == "prepare-install" else 10) * SECOND
+        require(
+            self.start.boot_id == self.phase_start.boot_id == self.ceiling.boot_id
+            and self.start.monotonic_ns <= self.phase_start.monotonic_ns
+            and self.start.wall_ns <= self.phase_start.wall_ns
+            and 2 * SECOND
+            < self.ceiling.monotonic_ns - self.phase_start.monotonic_ns
+            <= cap
+            and 2 * SECOND < self.ceiling.wall_ns - self.phase_start.wall_ns <= cap,
+            "helper-original-window",
+        )
+
+    @property
+    def work_ns(self) -> int:
+        return self.ceiling.monotonic_ns - 2 * SECOND
+
+    def compact(self) -> dict:
+        self.validate()
+        return {
+            name: {
+                axis: getattr(self.ceiling, axis) - reserve * SECOND
+                for axis in ("monotonic_ns", "wall_ns")
+            }
+            for name, reserve in (("work", 2), ("cleanup", 0), ("gate", 0))
+        }
+
+    def remaining_ns(self, stage: str, now: Clock) -> int:
+        now.validate()
+        require(
+            stage in {"work", "cleanup", "gate"}
+            and now.boot_id == self.start.boot_id
+            and now.monotonic_ns >= self.phase_start.monotonic_ns
+            and now.wall_ns >= self.phase_start.wall_ns,
+            "helper-clock",
+        )
+        return min(
+            self.compact()[stage][axis] - getattr(now, axis)
+            for axis in ("monotonic_ns", "wall_ns")
+        )
+
+
+@dataclass(frozen=True)
 class Binding:
     """Expected caller-provided bindings, not an execution certificate."""
 
@@ -262,7 +664,11 @@ class Binding:
     budget_sha256: str
     exec_sha256: str
 
-    def validate(self, budget: PhaseBudget, spec: CaptureSpec) -> None:
+    def validate(
+        self,
+        budget: PhaseBudget | BudgetWindow | HelperBudget,
+        spec: CaptureSpec | RoleSpec | HelperSpec,
+    ) -> None:
         require(
             re.fullmatch(r"[0-9a-f]{32}", self.nonce) is not None
             and all(
@@ -316,7 +722,9 @@ class Kernel(Protocol):
     def self_identity(self) -> ProcessIdentity: ...
     def task_ids(self) -> tuple[int, ...]: ...
     def subreaper(self, enabled: bool | None = None) -> int: ...
-    def admit_execution(self, binding: Binding, spec: CaptureSpec) -> None: ...
+    def admit_execution(
+        self, binding: Binding, spec: CaptureSpec | RoleSpec | HelperSpec
+    ) -> None: ...
     def children(self) -> tuple[int, ...]: ...
     def identity(self, pid: int) -> ProcessIdentity: ...
     def open_pidfd(self, pid: int) -> int: ...
@@ -326,7 +734,7 @@ class Kernel(Protocol):
     def reap(self, fd: int) -> Reaped: ...
     def signal(self, fd: int, sig: int) -> None: ...
     def close(self, fd: int) -> None: ...
-    def fork_capture(self, spec: CaptureSpec) -> Spawn: ...
+    def fork_capture(self, spec: CaptureSpec | RoleSpec | HelperSpec) -> Spawn: ...
     def release(self, fd: int) -> None: ...
     def read_output(self, fd: int, maximum: int) -> bytes | None: ...
     def sleep(self, seconds: float) -> None: ...
@@ -383,13 +791,13 @@ class OwnedFamily:
         self,
         kernel: Kernel,
         proof: RoleProof,
-        budget: PhaseBudget,
+        budget: PhaseBudget | BudgetWindow | HelperBudget,
         *,
         maximum_children: int = 32,
         maximum_output: int = 2**20,
     ):
         require(
-            1 <= maximum_children <= 32 and 1 <= maximum_output <= 2**20,
+            1 <= maximum_children <= 32 and 1 <= maximum_output <= 8 * 2**20,
             "family-limits",
         )
         budget.validate()
@@ -416,6 +824,7 @@ class OwnedFamily:
         self.parent: Handle | None = None
         self.sent: set[tuple[int, int, int]] = set()
         self.start_failure: str | None = None
+        self.subject: CaptureSpec | RoleSpec | HelperSpec | None = None
 
     def _clock(self) -> Clock:
         now = self.kernel.clock()
@@ -475,13 +884,20 @@ class OwnedFamily:
         return h
 
     def start_capture(
-        self, spec: CaptureSpec, binding: Binding, parent: Handle
+        self,
+        spec: CaptureSpec | RoleSpec | HelperSpec,
+        binding: Binding,
+        parent: Handle,
     ) -> None:
         require(
             self.spawn is None and not self.handles and not self.kernel.children(),
             "family-not-fresh",
         )
         binding.validate(self.budget, spec)
+        require(
+            self.maximum_output <= spec.contract()["resources"]["stdout_stderr_bytes"],
+            "subject-output-limit",
+        )
         now = self._clock()
         require(
             spec.phase == self.budget.phase
@@ -500,6 +916,7 @@ class OwnedFamily:
         self.kernel.admit_execution(binding, spec)
         self.parent = parent
         self.binding = binding
+        self.subject = spec
         spawned = self.kernel.fork_capture(spec)
         self.spawn = spawned
         try:
@@ -526,13 +943,21 @@ class OwnedFamily:
                 and self.kernel.identity(parent.identity.pid) == parent.identity,
                 "parent-died-before-release",
             )
+            # This is gate-write initiation, not a completion timestamp. A fast
+            # child may run before the parent is scheduled again after write.
+            release_clock = self._clock()
             self.kernel.release(spawned.gate_fd)
             spawned.gate_fd = -1
+            require(
+                self.budget.remaining_ns("work", self._clock()) > 0
+                and not self.kernel.exited(parent.pidfd),
+                "post-release-deadline-or-parent",
+            )
             self.events.append(
                 {
                     "event": "child_released",
                     "child": asdict(h.identity),
-                    "clock": asdict(self._clock()),
+                    "clock": asdict(release_clock),
                     "exec_contract_sha256": binding.exec_sha256,
                 }
             )
@@ -641,7 +1066,12 @@ class OwnedFamily:
                     }
                 )
 
-    def finish(self, parent: Handle) -> dict:
+    def finish(
+        self,
+        parent: Handle,
+        *,
+        handoff_check: Callable[[Clock], Clock | None] | None = None,
+    ) -> dict:
         require(
             self.spawn is not None and self.binding is not None, "capture-not-started"
         )
@@ -652,10 +1082,26 @@ class OwnedFamily:
         closed = None
         while True:
             now = self._clock()
+            if handoff_check is not None:
+                require(isinstance(self.budget, BudgetWindow), "handoff-budget-kind")
+                assert isinstance(self.budget, BudgetWindow)
+                if self.budget.dummy_start is None:
+                    observed_start = handoff_check(now)
+                    if observed_start is not None:
+                        now = self._clock()
+                        self.budget = self.budget.handoff(observed_start, now)
             if self.budget.remaining_ns("cleanup", now) <= 0:
                 failure = failure or "cleanup-deadline"
                 break
-            if self.budget.remaining_ns("work", now) <= 0:
+            # Only the fixed guardian may use its cleanup tail to publish the
+            # already-closed collector family. Its own code enforces capture work.
+            work_stage = (
+                "cleanup"
+                if isinstance(self.subject, RoleSpec)
+                and self.subject.role == "guardian"
+                else "work"
+            )
+            if self.budget.remaining_ns(work_stage, now) <= 0:
                 failure = failure or "work-deadline"
             if self.kernel.exited(parent.pidfd):
                 failure = failure or "parent-died"
@@ -856,7 +1302,9 @@ class LinuxKernel:
         )
         return result.value
 
-    def admit_execution(self, binding: Binding, spec: CaptureSpec) -> None:
+    def admit_execution(
+        self, binding: Binding, spec: CaptureSpec | RoleSpec | HelperSpec
+    ) -> None:
         del binding, spec
         raise OuterRefusal("actual-caller-session-source-admission-unqualified")
 
@@ -917,7 +1365,7 @@ class LinuxKernel:
     def close(self, fd: int) -> None:
         os.close(fd)
 
-    def fork_capture(self, spec: CaptureSpec) -> Spawn:
+    def fork_capture(self, spec: CaptureSpec | RoleSpec | HelperSpec) -> Spawn:
         expected = digest(spec.contract())
         require(
             self._admitted_exec == expected,
@@ -926,12 +1374,38 @@ class LinuxKernel:
         self._admitted_exec = None
         return self._fork_capture_gated(spec)
 
-    def _fork_capture_gated(self, spec: CaptureSpec) -> Spawn:
+    def _fork_capture_gated(self, spec: CaptureSpec | RoleSpec | HelperSpec) -> Spawn:
         """Private syscall primitive; no public admission path currently arms it."""
         require(
             self.task_ids() == (os.getpid(),) and self.subreaper() == 1,
             "fork-role-not-proven",
         )
+        frame_fd = None
+        if isinstance(spec, (RoleSpec, HelperSpec)):
+            require(hasattr(os, "memfd_create"), "sealed-frame-unavailable")
+            frame_fd = getattr(os, "memfd_create")(
+                "cpu-outer-frame",
+                getattr(os, "MFD_CLOEXEC") | getattr(os, "MFD_ALLOW_SEALING"),
+            )
+            try:
+                require(
+                    os.write(frame_fd, spec.frame) == len(spec.frame), "frame-write"
+                )
+                os.lseek(frame_fd, 0, os.SEEK_SET)
+                seals = (
+                    getattr(fcntl, "F_SEAL_WRITE")
+                    | getattr(fcntl, "F_SEAL_GROW")
+                    | getattr(fcntl, "F_SEAL_SHRINK")
+                    | getattr(fcntl, "F_SEAL_SEAL")
+                )
+                fcntl.fcntl(frame_fd, getattr(fcntl, "F_ADD_SEALS"), seals)
+                require(
+                    fcntl.fcntl(frame_fd, getattr(fcntl, "F_GET_SEALS")) == seals,
+                    "frame-seals",
+                )
+            except BaseException:
+                os.close(frame_fd)
+                raise
         gate_r, gate_w = getattr(os, "pipe2")(os.O_CLOEXEC)
         ready_r, ready_w = getattr(os, "pipe2")(os.O_CLOEXEC | os.O_NONBLOCK)
         out_r, out_w = getattr(os, "pipe2")(os.O_CLOEXEC)
@@ -948,7 +1422,24 @@ class LinuxKernel:
                     0, {min(getattr(os, "sched_getaffinity")(0))}
                 )
                 os.nice(max(0, 19 - os.getpriority(os.PRIO_PROCESS, 0)))
-                resource.setrlimit(resource.RLIMIT_AS, (512 * 2**20, 512 * 2**20))
+                address_space = spec.contract()["resources"]["address_space_bytes"]
+                hard_address_space = spec.contract()["resources"].get(
+                    "address_space_hard_bytes", address_space
+                )
+                inherited_hard = resource.getrlimit(resource.RLIMIT_AS)[1]
+                require(
+                    inherited_hard == resource.RLIM_INFINITY
+                    or inherited_hard >= hard_address_space,
+                    "inherited-address-space-ceiling",
+                )
+                resource.setrlimit(
+                    resource.RLIMIT_AS, (address_space, hard_address_space)
+                )
+                require(
+                    resource.getrlimit(resource.RLIMIT_AS)
+                    == (address_space, hard_address_space),
+                    "address-space-readback",
+                )
                 resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
                 resource.setrlimit(resource.RLIMIT_FSIZE, (32 * 2**20, 32 * 2**20))
                 os.dup2(out_w, 1)
@@ -956,9 +1447,18 @@ class LinuxKernel:
                 os.close(out_w)
                 os.close(err_w)
                 os.chdir(spec.control_root)
+                if frame_fd is not None:
+                    os.dup2(frame_fd, 127, inheritable=True)
+                    if frame_fd != 127:
+                        os.close(frame_fd)
                 os.write(ready_w, b"R")
                 os.close(ready_w)
-                remaining = (spec.deadline_monotonic_ns - time.monotonic_ns()) / SECOND
+                child_deadline = (
+                    spec.process_deadline_ns
+                    if isinstance(spec, RoleSpec)
+                    else spec.deadline_monotonic_ns
+                )
+                remaining = (child_deadline - time.monotonic_ns()) / SECOND
                 if remaining <= 0:
                     os._exit(124)
                 signal.signal(signal.SIGALRM, signal.SIG_DFL)
@@ -966,11 +1466,13 @@ class LinuxKernel:
                 if os.read(gate_r, 1) != b"G":
                     os._exit(125)
                 os.close(gate_r)
-                os.execve(spec.python, spec.argv(), dict(ENV))
+                os.execve(spec.python, spec.argv(), spec.contract()["env"])
             except BaseException:
                 os._exit(125)
         for fd in (gate_r, ready_w, out_w, err_w):
             os.close(fd)
+        if frame_fd is not None:
+            os.close(frame_fd)
         # Readiness is before recorded identity: setsid and resource setup must
         # not change the child after its start proof has been captured.
         remaining = (spec.deadline_monotonic_ns - time.monotonic_ns()) / SECOND

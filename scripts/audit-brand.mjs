@@ -65,6 +65,7 @@ const collectorCompatibilityLiterals = new Map([
   ['training/tests/test_strength_freshness_cpu_collect_records.py', [`${predecessorPackage}.model-pointer`]],
   ['training/tests/test_strength_freshness_cpu_readonly.py', [predecessorPackage]],
   ['training/scripts/strength_freshness_cpu_capture_cli.py', [predecessorPackage]],
+  ['training/scripts/strength_freshness_cpu_outer_runtime.py', [predecessorPackage]],
   ['training/tests/test_strength_freshness_cpu_capture_cli.py', [predecessorPackage, predecessorNative]],
 ]);
 

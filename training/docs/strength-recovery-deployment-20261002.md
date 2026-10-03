@@ -677,3 +677,63 @@ actual imported-driver origin check and its positive/shadowed-origin cases.
 Request-side, process-family and renderer reviews retain their explicit synthetic
 and pure-function limits. These counts do not qualify a Linux target, hardware
 execution, the missing outer installer or a live training transition.
+
+
+The next local implementation adds fixed executable supervisor, operator and
+phase-guardian entrypoints, a standard-library installer facade, a separately
+supervised site-enabled helper and a closed file/service backend. No operation
+or callback is selected by arbitrary JSON code. The helper is needed because
+qualification imports reach the training package; keeping those imports out of
+the supervision processes preserves their small, standard-library bootstrap.
+Collector/guardian limits remain separate from the helper's virtual-address
+allowance. Parent soft and hard limits are explicit so a helper does not depend
+on an undeclared privilege to raise an inherited hard ceiling. These are resource
+contracts to qualify, not claims of observed target memory use or an aggregate
+cgroup limit.
+
+The original dummy-start record is retained before rendering or setup. The
+supervisor must acknowledge that exact record, completed BEFORE proof and
+current enclosing identities before helper writes. The preflight handoff,
+cleanup and outside audit cutoffs are 118/119/120 seconds; the dummy operator,
+supervisor cleanup and outside audit cutoffs are 598/599/600, also bounded by the
+original aggregate 718/719/720 limits. Existing dispatcher, cleanup, capture,
+observer and publisher boundaries remain unchanged. A process cannot certify
+its own future exit: successful dummy audit remains distinct from an outside
+caller's actual supervisor termination and reaping evidence.
+
+The blueprint precommits the BEFORE launch/request/registration and replaces
+only three fixed-path output placeholders after checking actual completed
+producer evidence. The guardian program contract normalizes only the separately
+bound authorization digest value, avoiding an intent/blueprint/guardian hash
+cycle; actual argv, source, frame and intent bindings remain exact. The backend
+uses exclusive file creation and records durable creation and completed-file
+identities. Unknown, partial, replaced or modified residues remain incomplete.
+Once a control-start intent exists, prearm cleanup cannot retire the independent
+cleanup resources. These source implementations have not installed dummy units
+or modified production.
+
+Actual host applicability remains mandatory. The existing R4 interpreter's
+observed ownership/mode differs from a generic root-readonly-file assumption.
+An exact independently approved interpreter metadata and byte identity contract,
+including the actual loaded `/proc/self/exe` image, must be checked without
+chmod, copying or silently replacing the live runtime. This is not an immutable
+interpreter claim. Helper startup also needs current small startup-file hashes,
+qualified large-library cache identities, allowed site inventory, actual import
+origins and the original source/session/resource proof. Cached large-library
+identity is not a fresh content hash. No missing qualification is synthesized.
+
+The combined current-tree check passed 1,255 CPU/fault cases with two workers,
+zero failures/skips, stable source bytes and clean Ruff/format/Pyright. Eight
+brand tests and the complete 948-file audit passed after adding one exact quoted
+legacy-package token exception for the new runtime's import guard. The runtime
+bytes and other audit prohibitions remain unchanged. Independent source review
+covers producer/consumer composition, filesystem crash cases, interpreter and
+site identity, parent liveness and dual-clock publication checks; actual target
+bootstrap, Linux behavior, session survival, helper-site qualification and the
+outside caller's terminal audit remain separate gates.
+
+Committed `df09faf4` passed all six CI jobs on attempt one: 6,372 Python/native
+tests, 1,023 web tests, 107 clean browser E2E tests plus five skips, all 28 coverage
+floors, Rust/WASM, audits and container checks. Its final small archive was
+independently read back. That result applies to the prior committed source; the
+new executable revision requires its own latest-head CI result.
