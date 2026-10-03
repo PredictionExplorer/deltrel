@@ -598,3 +598,97 @@ def test_strict_json_accepts_only_runtime_utf8_encoding():
     with pytest.raises(m.CollectionRefusal, match="^invalid-json$"):
         m.strict_json('{"x":1}'.encode("utf-16"))
     assert m.strict_json('{"x":"résumé"}'.encode("utf-8")) == {"x": "résumé"}
+
+
+@pytest.mark.parametrize("property_name", m.OPTIONAL_EMPTY_EXEC)
+def test_missing_optional_exec_requires_registered_rule(property_name):
+    reg, io, _ = identity_fixture()
+    del io.props[m.RUNTIME][property_name]
+    with pytest.raises(
+        m.CollectionRefusal, match="unqualified-execution-property-absence"
+    ):
+        collector(reg, io).unit_static(m.RUNTIME, io.props[m.RUNTIME], {})
+
+
+@pytest.mark.parametrize("property_name", m.OPTIONAL_EMPTY_EXEC)
+def test_registered_empty_exec_retains_observed_absence_and_semantics(property_name):
+    reg, io, _ = identity_fixture()
+    baseline = collector(reg, io).unit_static(m.RUNTIME, io.props[m.RUNTIME], {})
+    reg["empty_property_rules"][property_name] = "systemd-255-empty-" + property_name
+    del io.props[m.RUNTIME][property_name]
+    original = copy.deepcopy(io.props[m.RUNTIME])
+    c = collector(reg, io)
+    assert c.unit_static(m.RUNTIME, io.props[m.RUNTIME], {}) == baseline
+    assert io.props[m.RUNTIME] == original and property_name not in io.props[m.RUNTIME]
+    assert c.derivations["omitted_execution_properties"] == [
+        {
+            "unit": m.RUNTIME,
+            "parsed_properties_sha256": m.sha(m.encoded(original)),
+            "observed_present": False,
+            "normalization_rules": {
+                property_name: "systemd-255-empty-" + property_name
+            },
+        }
+    ]
+    assert SECRET not in json.dumps(c.derivations)
+
+
+@pytest.mark.parametrize("property_name", m.OPTIONAL_EMPTY_EXEC)
+def test_registered_rule_never_erases_nonempty_exec(property_name):
+    reg, io, _ = identity_fixture()
+    reg["empty_property_rules"][property_name] = "systemd-255-empty-" + property_name
+    baseline = collector(reg, io).unit_static(m.RUNTIME, io.props[m.RUNTIME], {})
+    io.props[m.RUNTIME][property_name] = (
+        "{ path=/bin/true ; argv[]=true ; ignore_errors=no ; pid=0 ; status=0 }"
+    )
+    c = collector(reg, io)
+    assert (
+        c.unit_static(m.RUNTIME, io.props[m.RUNTIME], {})["definition_sha256"]
+        != baseline["definition_sha256"]
+    )
+    assert c.derivations == {}
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("ExecStart", "systemd-255-empty-ExecStart"),
+        ("ExecReload", "systemd-255-empty-ExecReload"),
+        ("ExecStartPre", "systemd-255-empty-ExecStop"),
+        ("ExecStop", "systemd-256-empty-ExecStop"),
+    ],
+)
+def test_no_required_unknown_or_mismatched_exec_rule(key, value):
+    reg, io, _ = identity_fixture()
+    reg["empty_property_rules"][key] = value
+    with pytest.raises(m.CollectionRefusal, match="empty-property-rules"):
+        collector(reg, io)
+    assert io.calls == []
+
+
+def test_optional_rules_do_not_fill_missing_required_execstart():
+    reg, io, _ = identity_fixture()
+    reg["empty_property_rules"].update(
+        {key: "systemd-255-empty-" + key for key in m.OPTIONAL_EMPTY_EXEC}
+    )
+    del io.props[m.RUNTIME]["ExecStart"]
+    with pytest.raises(m.CollectionRefusal, match="missing-unit-property"):
+        collector(reg, io).unit_static(m.RUNTIME, io.props[m.RUNTIME], {})
+
+
+def test_actual_three_property_omission_is_not_a_timer_environment_rule():
+    reg, io, _ = identity_fixture()
+    reg["empty_property_rules"].update(
+        {key: "systemd-255-empty-" + key for key in m.OPTIONAL_EMPTY_EXEC}
+    )
+    for key in m.OPTIONAL_EMPTY_EXEC:
+        del io.props[m.RUNTIME][key]
+    c = collector(reg, io)
+    assert c.unit_static(m.RUNTIME, io.props[m.RUNTIME], {})
+    assert (
+        c.derivations["omitted_execution_properties"][0]["normalization_rules"]
+        == reg["empty_property_rules"]
+    )
+    count = len(c.derivations["omitted_execution_properties"])
+    c.unit_static(TIMER, io.props[TIMER], {})
+    assert len(c.derivations["omitted_execution_properties"]) == count

@@ -36,6 +36,7 @@ ORIGIN_ENV_PREFIXES = (
     "OPENBLAS_",
 )
 FINGERPRINT = ("device", "inode", "mode", "uid", "gid", "bytes", "mtime_ns", "ctime_ns")
+OPTIONAL_EMPTY_EXEC = ("ExecStartPre", "ExecStop", "ExecStopPost")
 
 
 class CollectionRefusal(ValueError):
@@ -466,6 +467,7 @@ class IdentityCollector:
                 "PassEnvironment",
                 "UnsetEnvironment",
                 "EnvironmentFiles",
+                *OPTIONAL_EMPTY_EXEC,
             }
             and all(v == "systemd-255-empty-" + k for k, v in rules.items()),
             "empty-property-rules",
@@ -690,6 +692,31 @@ class IdentityCollector:
 
     def unit_static(self, name: str, props, target_props) -> dict[str, Any]:
         require(name in self.reg["units"], "unregistered-unit")
+        # systemd255's execution-array printer emits no property line for an
+        # empty array, even with --all. Only these observed optional properties
+        # may use an explicitly registered rule; never infer missing ExecStart.
+        observed = props
+        props = dict(props)
+        omitted = {}
+        if name.endswith(".service"):
+            for key in OPTIONAL_EMPTY_EXEC:
+                if key not in props:
+                    rule = self.reg["empty_property_rules"].get(key)
+                    require(
+                        rule == "systemd-255-empty-" + key,
+                        "unqualified-execution-property-absence",
+                    )
+                    props[key] = ""
+                    omitted[key] = rule
+        if omitted:
+            self.derivations.setdefault("omitted_execution_properties", []).append(
+                {
+                    "unit": name,
+                    "parsed_properties_sha256": sha(encoded(observed)),
+                    "observed_present": False,
+                    "normalization_rules": omitted,
+                }
+            )
         fields = facts.TIMER_STATIC if name.endswith(".timer") else facts.SERVICE_STATIC
         require(
             set(fields).union(

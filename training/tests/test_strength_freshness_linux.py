@@ -1174,6 +1174,43 @@ def test_timer_uses_unit_properties_and_known_empty_service_array_is_explicit(ho
         host._unit("r3.service", {}, 105)
 
 
+def test_empty_exec_start_pre_omission_keeps_exact_pinned_unit(host):
+    raw = host.io.raw["r3.service"]
+    assert raw["ExecStartPre"] == raw["EnvironmentFiles"] == ""
+    del raw["ExecStartPre"]
+    del raw["EnvironmentFiles"]
+    assert host._unit("r3.service", {}, 105)[0].dead
+
+
+@pytest.mark.parametrize("role", ["r3", "r4", "probe"])
+def test_missing_exec_start_pre_never_satisfies_pinned_gate(host, role):
+    name = role + ".service"
+    for stage in ("before", "after"):
+        host.manifest["units"][name][stage]["properties"]["ExecStartPre"] = (
+            "{ path=/qualified/gate ; argv[]=/qualified/gate ; ignore_errors=no }"
+        )
+    del host.io.raw[name]["ExecStartPre"]
+    with pytest.raises(g.Refusal, match="unit-properties-drift"):
+        host._unit(name, {}, 105)
+
+
+@pytest.mark.parametrize(
+    "field", sorted(set(a.PROPERTIES) - {"EnvironmentFiles", "ExecStartPre"})
+)
+def test_other_missing_unit_property_is_never_defaulted(host, field):
+    del host.io.raw["r3.service"][field]
+    with pytest.raises(g.Refusal, match="unit-incomplete"):
+        host._unit("r3.service", {}, 105)
+
+
+def test_unknown_unit_property_still_refuses_with_empty_omissions(host):
+    raw = host.io.raw["r3.service"]
+    del raw["ExecStartPre"]
+    raw["UnexpectedProperty"] = ""
+    with pytest.raises(g.Refusal, match="unit-incomplete"):
+        host._unit("r3.service", {}, 105)
+
+
 def test_known_cgroup_growth_retries_with_original_deadline(host, monkeypatch):
     calls = []
     wanted = observation(host)

@@ -706,3 +706,22 @@ def test_arbitrary_exception_audit_is_not_serialized(sample):
         collect(sample)
     assert "failed_operation" not in caught.value.provenance
     assert "private-sensitive-token" not in json.dumps(caught.value.provenance)
+
+
+def test_actual_core_provenance_keeps_registered_exec_absence(sample):
+    reg, io = sample
+    reg["empty_property_rules"]["ExecStartPre"] = "systemd-255-empty-ExecStartPre"
+    del io.props[ident.RUNTIME]["ExecStartPre"]
+    result = collect(sample)
+    observations = result["provenance"]["identity_derivations"][
+        "omitted_execution_properties"
+    ]
+    assert observations and all(
+        row["observed_present"] is False for row in observations
+    )
+    assert all(
+        row["normalization_rules"] == {"ExecStartPre": "systemd-255-empty-ExecStartPre"}
+        for row in observations
+    )
+    assert "ExecStartPre" not in io.props[ident.RUNTIME]
+    assert identity_fixtures["SECRET"] not in json.dumps(result)

@@ -1801,8 +1801,11 @@ class LinuxHost:
             deadline,
         )
         rows = dict(line.split("=", 1) for line in raw.splitlines() if "=" in line)
-        if name.endswith(".service") and "EnvironmentFiles" not in rows:
-            rows["EnvironmentFiles"] = ""  # systemd's known empty-array omission
+        if name.endswith(".service"):
+            # systemd255 omits these empty arrays even with --all. The exact
+            # property inventory and pinned nonempty command gates still apply.
+            for field in ("EnvironmentFiles", "ExecStartPre"):
+                rows.setdefault(field, "")
         require(set(rows) == set(property_names(name)), "linux-unit-incomplete")
         rows = stable_properties(rows)
         spec = self.manifest["units"][name]

@@ -526,7 +526,9 @@ def executed_sources(value, *, modules=()):
     return {name: pins[name] for name in sorted(expected)}
 
 
-def dummy_static(value, *, allow_empty_environment_files=False):
+def dummy_static(
+    value, *, allow_empty_environment_files=False, allow_empty_exec_start_pre=False
+):
     """The pinned LinuxHost projection, without importing its training runtime.
 
     Keep unknown Exec fields and ignore_errors. Only volatile execution suffixes
@@ -536,6 +538,9 @@ def dummy_static(value, *, allow_empty_environment_files=False):
     if "EnvironmentFiles" not in rows:
         require(allow_empty_environment_files, "unqualified-dummy-empty-property")
         rows["EnvironmentFiles"] = ""
+    if "ExecStartPre" not in rows:
+        require(allow_empty_exec_start_pre, "unqualified-dummy-empty-property")
+        rows["ExecStartPre"] = ""
     require(
         DUMMY_STATIC <= set(rows)
         and all(isinstance(rows[k], str) for k in DUMMY_STATIC),
@@ -1000,7 +1005,14 @@ def admit_after(
         == "systemd-255-empty-EnvironmentFiles"
     )
     require(
-        dummy_static(barrier["unit"], allow_empty_environment_files=empty_rule)
+        dummy_static(
+            barrier["unit"],
+            allow_empty_environment_files=empty_rule,
+            allow_empty_exec_start_pre=(
+                registration["empty_property_rules"].get("ExecStartPre")
+                == "systemd-255-empty-ExecStartPre"
+            ),
+        )
         == expected_props,
         "dispatcher-definition-proof",
     )

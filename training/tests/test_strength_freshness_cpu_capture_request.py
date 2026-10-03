@@ -238,8 +238,33 @@ def test_static_projection_keeps_ignore_errors_unknown_fields_and_order():
     assert m.dummy_static(value, allow_empty_environment_files=True) == static
 
 
+@pytest.mark.parametrize("registered", [False, True])
+def test_dummy_empty_exec_start_pre_requires_explicit_permission(registered):
+    expected = dict.fromkeys(m.DUMMY_STATIC, "")
+    raw = {k: v for k, v in expected.items() if k != "ExecStartPre"}
+    if registered:
+        assert m.dummy_static(raw, allow_empty_exec_start_pre=True) == expected
+        expected["ExecStartPre"] = "/qualified/gate"
+        assert m.dummy_static(raw, allow_empty_exec_start_pre=True) != expected
+    else:
+        with pytest.raises(m.RequestRefusal, match="unqualified-dummy-empty-property"):
+            m.dummy_static(raw)
+
+
+@pytest.mark.parametrize(
+    "field", sorted(m.DUMMY_STATIC - {"EnvironmentFiles", "ExecStartPre"})
+)
+def test_dummy_projection_never_defaults_other_static_fields(field):
+    raw = dict.fromkeys(m.DUMMY_STATIC, "")
+    del raw[field]
+    with pytest.raises(m.RequestRefusal, match="dummy-static-fields"):
+        m.dummy_static(
+            raw, allow_empty_environment_files=True, allow_empty_exec_start_pre=True
+        )
+
+
 @pytest.fixture
-def admitted(observations):
+def admitted(observations, request):
     policy, before, _, champions = copy.deepcopy(observations)
     now_ns = before["clock"]["wall_ns"]
     root = Path("/input")
@@ -270,6 +295,9 @@ def admitted(observations):
             "EnvironmentFiles": "systemd-255-empty-EnvironmentFiles"
         },
     }
+
+    if getattr(request, "param", None) is not None:
+        registration["empty_property_rules"]["ExecStartPre"] = request.param
 
     def add(path, value):
         raw = value if isinstance(value, bytes) else encoded(value)
@@ -609,6 +637,31 @@ def repin(files, expected, value):
     files[expected["path"]] = raw
     expected.update(sha256=m.digest(raw), bytes=len(raw))
     return expected
+
+
+@pytest.mark.parametrize(
+    "admitted,allowed",
+    [
+        (None, False),
+        ("unqualified-empty-ExecStartPre", False),
+        ("systemd-255-empty-ExecStartPre", True),
+    ],
+    indirect=["admitted"],
+)
+def test_cleanup_command_omission_needs_exact_registered_rule(admitted, allowed):
+    args, files, *_ = admitted
+    cp = args["value"]["cleanup_pin"]
+    completed = json.loads(files[cp["path"]])
+    rp = completed["data"]["raw"]
+    raw = json.loads(files[rp["path"]])
+    del raw["data"]["facts"]["dispatcher_barrier"]["unit"]["ExecStartPre"]
+    repin(files, rp, raw)
+    repin(files, cp, completed)
+    if allowed:
+        assert m.admit_after(**args).cleanup_clock["monotonic"] == 106
+    else:
+        with pytest.raises(m.RequestRefusal, match="unqualified-dummy-empty-property"):
+            m.admit_after(**args)
 
 
 @pytest.mark.parametrize(

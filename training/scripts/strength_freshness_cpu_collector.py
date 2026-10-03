@@ -91,6 +91,7 @@ class _Capture:
             "read_start": dict(self.start),
             "raw_inventory": copy.deepcopy(self.identity.audit),
             "raw_inventory_sha256": preservation.digest(self.identity.audit),
+            "identity_derivations": copy.deepcopy(self.identity.derivations),
             "support_witnesses": copy.deepcopy(self.witnesses),
             "support_provenance": copy.deepcopy(self.support_provenance),
             "source_checks": copy.deepcopy(self.source_checks),
