@@ -14,6 +14,24 @@ from scripts import strength_freshness_cpu_outer_runtime as r
 from tests.test_strength_freshness_cpu_outer_runtime import admission, pin
 
 
+def isolate_fake_kernel_signal(monkeypatch):
+    # FakeKernel cases also need an explicit signal observation. Replacing this
+    # module's reference avoids changing the shared signal module or the worker's
+    # real process disposition, which other tests/libraries may legitimately own.
+    facade = SimpleNamespace(
+        SIGCHLD=signal.SIGCHLD,
+        SIG_DFL=signal.SIG_DFL,
+        getsignal=lambda which: signal.SIG_DFL,
+    )
+    monkeypatch.setattr(m, "signal", facade)
+    return facade
+
+
+@pytest.fixture(autouse=True)
+def fake_kernel_signal(monkeypatch):
+    return isolate_fake_kernel_signal(monkeypatch)
+
+
 def caller():
     a = admission("caller")
     a.outer["caller"] = asdict(a.identity)
@@ -146,9 +164,30 @@ def test_failure_matrix_cannot_publish_complete_and_never_signals_foreign(
     assert 50 not in [pid for pid, _ in a.kernel.signalled]
 
 
-def test_bad_inherited_sigchld_refuses_before_fork(monkeypatch):
+@pytest.mark.parametrize("handler", [signal.SIG_IGN, lambda signum, frame: None])
+def test_fake_kernel_success_is_independent_of_preceding_signal_observer(
+    monkeypatch, handler
+):
+    actual_getsignal = signal.getsignal
+    actual_handler = signal.getsignal(signal.SIGCHLD)
+    preceding = SimpleNamespace(
+        SIGCHLD=signal.SIGCHLD,
+        SIG_DFL=signal.SIG_DFL,
+        getsignal=lambda which: handler,
+    )
+    monkeypatch.setattr(m, "signal", preceding)
+    assert m.signal.getsignal(signal.SIGCHLD) is handler
+    isolate_fake_kernel_signal(monkeypatch)
+    test_actual_owned_family_path_reaps_supervisor_without_self_exit_claim(monkeypatch)
+    assert preceding.getsignal(signal.SIGCHLD) is handler
+    assert signal.getsignal is actual_getsignal
+    assert signal.getsignal(signal.SIGCHLD) is actual_handler
+
+
+@pytest.mark.parametrize("handler", [signal.SIG_IGN, lambda signum, frame: None])
+def test_bad_inherited_sigchld_refuses_before_fork(monkeypatch, handler):
     no_io(monkeypatch)
-    monkeypatch.setattr(m.signal, "getsignal", lambda which: signal.SIG_IGN)
+    monkeypatch.setattr(m.signal, "getsignal", lambda which: handler)
     a = caller()
     with pytest.raises(r.RuntimeRefusal, match="sigchld"):
         m.run_caller(a, authorization_path="/input/outer.json")

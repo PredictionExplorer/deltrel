@@ -777,3 +777,47 @@ stable source bytes and clean Ruff, formatting and Pyright. The repository brand
 audit passed across 950 files. The earlier 32-case author packet and its 35-case
 admission-coverage revision remain distinct evidence; their counts are not added
 to the final run. Unchanged collector suites were not repeated.
+
+The first learner-window component now implements conditional append evidence
+and narrow reads of the already registered `metrics.jsonl` slot. Independently
+admitted writer/file/source, recipe and original time-window bindings are
+required. The reader retains an observed EOF and private prefix bytes, then
+reads and rereads fixed contiguous ranges with actual file/name/descriptor
+metadata and bounded clocks. Bytes remain charged even when a later check
+refuses. The public proof contains safe numeric facts and hashes, not raw log
+content or private paths.
+
+The pure verifier checks every complete captured record for failures and
+nonfinite or contradictory data before choosing two loss records wholly after
+the causal fence. The first may have been prepared before that fence; its
+synchronous append precedes the subsequent serial learner work represented by
+the second. A parseable initial pre-window fragment is conservatively screened
+for explicit negatives without claiming a proven record boundary. Unrecoverable
+fragments, observed replacement, rewrite or truncation, contradictory owners,
+sources or clocks refuse. Observed growth beyond the final fixed EOF is
+incomplete; the reader does not chase it or renew the deadline.
+
+This result proves only conditional serial work within the observed window.
+It neither establishes the writer's qualification nor proves exhaustive earlier
+history, current full preservation or playing strength. Unobserved filesystem
+changes between samples remain covered by the explicitly qualified append-only
+writer/access premise. Existing registration, collector, CLI and historical
+birth gates remain unchanged. A full observed-window capture still needs a
+separate explicit contract discriminator, owner/static/support/recipe checks,
+transitive proof retention and independent consumer review.
+
+The `7f279e18` CI run passed five jobs, but its Python/native job stopped after
+5,424 passes and one fake-kernel caller test reached the strict ambient SIGCHLD
+guard. The exact nondefault handler and its earlier setter were not identified.
+The test now supplies a module-local signal facade; it changes neither the real
+process disposition nor the shared signal module. Explicit ignored/callable
+handler cases retain the production refusal. That failed head was not retried;
+the corrected head requires its own full CI result.
+
+The final affected run passed 184 cases with two workers, zero failures/skips,
+stable source bytes and clean Ruff, formatting and Pyright. It includes actual
+private-file reader-to-proof composition and the signal-fixture correction.
+The complete 954-file brand audit also passed. Separate author runs and earlier
+proof revisions remain preserved rather than combined into a larger count.
+No target qualification, live source/profile/service change, GPU work or R4
+activation accompanied this local preparation.

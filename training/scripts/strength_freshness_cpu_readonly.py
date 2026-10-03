@@ -21,7 +21,7 @@ import stat
 import subprocess
 import time
 from types import MappingProxyType
-from typing import Any, Generic, Mapping, TypeVar, cast
+from typing import Any, Callable, Generic, Mapping, TypeVar, cast
 
 T = TypeVar("T")
 MAX_CAPTURE_BYTES = 32 * 2**20
@@ -30,6 +30,7 @@ MAX_TAIL_BYTES = 4 * 2**20
 MAX_PROC_BYTES = 65536
 MAX_MAP_BYTES = 2 * 2**20
 MAX_PIDS = 256
+MAX_APPEND_PREFIX = 65536
 COMMON_PROPERTIES = (
     "Id",
     "Names",
@@ -254,6 +255,13 @@ def _stat(value: os.stat_result) -> dict[str, int]:
     }
 
 
+def _append_identity(path: str, value: Mapping[str, int]) -> dict[str, Any]:
+    return {
+        "path": path,
+        **{name: value[name] for name in ("device", "inode", "uid", "gid", "mode")},
+    }
+
+
 def _readonly_vector(argv: tuple[str, ...]) -> bool:
     if argv in (
         ("systemctl", "get-default"),
@@ -371,6 +379,89 @@ class System:
                 "stat_after": _stat(after),
                 "offset": offset,
                 "end_offset": offset + len(data),
+            }
+        finally:
+            os.close(fd)
+
+    def append_file(
+        self,
+        path: str,
+        maximum: int,
+        deadline: float,
+        *,
+        span: tuple[int, int] | None,
+        expected: Mapping[str, Any] | None,
+        charge: Callable[[int], None],
+        allowance: int,
+    ) -> tuple[bytes, dict[str, Any]]:
+        """Read one fixed span, or a bounded prefix ending at the observed EOF.
+
+        This detects observed identity, size and byte drift; it cannot establish
+        historical append-only behavior between observations. That premise and
+        comparison of retained spans belong to the separate proof consumer.
+        ``charge`` accounts each actual read even if a later check refuses.
+        """
+        self._time(deadline)
+        require(str(Path(path).resolve()) == path, "append-path-alias")
+        named_before = os.stat(path, follow_symlinks=False)
+        require(stat.S_ISREG(named_before.st_mode), "append-regular-file-required")
+        fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            before = os.fstat(fd)
+            require(stat.S_ISREG(before.st_mode), "append-regular-file-required")
+            identity = _append_identity(path, _stat(before))
+            require(
+                identity == _append_identity(path, _stat(named_before))
+                and (expected is None or identity == expected),
+                "append-file-identity",
+            )
+            start, end = (
+                (max(0, before.st_size - maximum), before.st_size)
+                if span is None
+                else span
+            )
+            require(
+                0 <= start <= end <= before.st_size and end - start <= maximum,
+                "append-range-bounds",
+            )
+            require(end - start <= allowance, "capture-byte-budget")
+            chunks: list[bytes] = []
+            offset = start
+            while offset < end:
+                self._time(deadline)
+                size = min(65536, end - offset)
+                block = os.pread(fd, size, offset)
+                charge(len(block))
+                require(0 < len(block) <= size, "append-short-read")
+                chunks.append(block)
+                offset += len(block)
+            after = os.fstat(fd)
+            named_after = os.stat(path, follow_symlinks=False)
+            require(
+                stat.S_ISREG(after.st_mode)
+                and stat.S_ISREG(named_after.st_mode)
+                and str(Path(path).resolve()) == path
+                and identity == _append_identity(path, _stat(after))
+                and identity == _append_identity(path, _stat(named_after)),
+                "append-file-identity",
+            )
+            observations = (named_before, before, after, named_after)
+            for earlier, later in zip(observations, observations[1:]):
+                require(later.st_size >= earlier.st_size, "append-size-regression")
+                require(
+                    later.st_size > earlier.st_size
+                    or (earlier.st_mtime_ns, earlier.st_ctime_ns)
+                    == (later.st_mtime_ns, later.st_ctime_ns),
+                    "append-observed-rewrite",
+                )
+            self._time(deadline)
+            return b"".join(chunks), {
+                "named_before": _stat(named_before),
+                "stat_before": _stat(before),
+                "stat_after": _stat(after),
+                "named_after": _stat(named_after),
+                "offset": start,
+                "end_offset": end,
             }
         finally:
             os.close(fd)
@@ -727,6 +818,122 @@ class ReadOnlyIO:
         entry = self.scope.tails[key]
         data, meta = self._read(entry.path, entry.maximum_bytes, tail=True)
         return self._observation("tail", key, start, data, data, **meta)
+
+    def _metrics(self, key: str) -> FileKey:
+        require(
+            key == "metrics"
+            and key in self.scope.tails
+            and Path(self.scope.tails[key].path).name == "metrics.jsonl",
+            "registered-learner-metrics-required",
+        )
+        return self.scope.tails[key]
+
+    def _append_read(
+        self,
+        entry: FileKey,
+        *,
+        maximum: int,
+        span: tuple[int, int] | None,
+        expected: Mapping[str, Any] | None,
+    ):
+        self._check()
+
+        def charge(count: int) -> None:
+            self._consumed += count
+            require(self._consumed <= self.maximum_bytes, "capture-byte-budget")
+
+        data, meta = self._backend.append_file(
+            entry.path,
+            maximum,
+            self.deadline,
+            span=span,
+            expected=expected,
+            charge=charge,
+            allowance=self.maximum_bytes - self._consumed,
+        )
+        require(len(data) <= maximum, "append-output-limit")
+        return data, meta
+
+    def append_fence(self, key: str) -> Observation[dict[str, Any]]:
+        """Retain bounded private bytes through a fixed, observed metrics EOF.
+
+        A prefix can begin mid-row. It is never silently line-trimmed; the pure
+        consumer must refuse when the retained initial row is unrecoverable.
+        This measurement alone grants no writer or preservation authority.
+        """
+        entry = self._metrics(key)
+        start = self._clock()
+        data, meta = self._append_read(
+            entry,
+            maximum=min(MAX_APPEND_PREFIX, entry.maximum_bytes),
+            span=None,
+            expected=None,
+        )
+        value = {
+            "registered_key": key,
+            "file_identity": _append_identity(entry.path, meta["stat_before"]),
+            "size_at_fstat": meta["stat_before"]["bytes"],
+            "prefix": {
+                "start": meta["offset"],
+                "end": meta["end_offset"],
+                "sha256": sha(data),
+                "raw": data,
+            },
+            "line_boundary": not data or data.endswith(b"\n"),
+        }
+        return self._observation("append-fence", key, start, value, data, **meta)
+
+    def read_append_range(
+        self,
+        key: str,
+        *,
+        file_identity: Mapping[str, Any],
+        start: int,
+        end: int,
+    ) -> Observation[dict[str, Any]]:
+        """Read/reread one caller-fixed range of the same registered file.
+
+        Ranges never chase a growing EOF. The consumer authenticates fences,
+        demands contiguous coverage and compares original/reread bytes.
+        """
+        entry = self._metrics(key)
+        require(
+            isinstance(file_identity, Mapping)
+            and set(file_identity) == {"path", "device", "inode", "uid", "gid", "mode"}
+            and file_identity["path"] == entry.path
+            and all(
+                type(file_identity[k]) is int and file_identity[k] >= 0
+                for k in ("device", "inode", "uid", "gid", "mode")
+            )
+            and file_identity["inode"] > 0
+            and file_identity["mode"] <= 0o7777,
+            "append-expected-identity",
+        )
+        require(
+            type(start) is int
+            and type(end) is int
+            and 0 <= start <= end
+            and end - start <= entry.maximum_bytes,
+            "append-range-bounds",
+        )
+        clock = self._clock()
+        data, meta = self._append_read(
+            entry,
+            maximum=entry.maximum_bytes,
+            span=(start, end),
+            expected=dict(file_identity),
+        )
+        value = {
+            "registered_key": key,
+            "file_identity": dict(file_identity),
+            "start": start,
+            "end": end,
+            "sha256": sha(data),
+            "raw": data,
+            "size_before": meta["stat_before"]["bytes"],
+            "size_after": meta["stat_after"]["bytes"],
+        }
+        return self._observation("append-range", key, clock, value, data, **meta)
 
     def query(self, kind: str, target: str | None = None) -> Observation[str]:
         if kind == "unit":
