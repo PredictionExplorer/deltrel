@@ -45,8 +45,34 @@ const predecessorIdentifiers = [
   `edgeconnect.${retired}.action-layout.nodes-only.v1`,
 ];
 
+// Read-only collectors must recognize the immutable predecessor runtime. Keep
+// exact quoted native/wire values and complete fixture literals scoped to their
+// five compatibility files; other identifiers, prose and symbols still fail.
+const predecessorNative = `${retired}_native`;
+const collectorCompatibilityLiterals = new Map([
+  ['training/scripts/strength_freshness_cpu_collect_identity.py', [predecessorNative]],
+  ['training/scripts/strength_freshness_cpu_collect_records.py', [`${predecessorPackage}.model-pointer`]],
+  ['training/tests/test_strength_freshness_cpu_collect_identity.py', [
+    predecessorPackage,
+    predecessorNative,
+    `/release/${predecessorNative}.so`,
+    `/release/bin/python\\0-m\\0${predecessorPackage}.worker\\0`,
+    `100-200 r-xp 0 08:01 10 /release/${predecessorNative}.so\\n`,
+    `100-200 r-xp 0 08:01 99 /release/${predecessorNative}.so\\n`,
+    `100-200 r-xp 0 08:01 10 /release/${predecessorNative}.so (deleted)\\n`,
+    `100-200 r-xp 0 bad 10 /release/${predecessorNative}.so\\n`,
+  ]],
+  ['training/tests/test_strength_freshness_cpu_collect_records.py', [`${predecessorPackage}.model-pointer`]],
+  ['training/tests/test_strength_freshness_cpu_readonly.py', [predecessorPackage]],
+]);
+
 function migrationBrandText(path, contents) {
   let inspected = contents;
+  for (const literal of collectorCompatibilityLiterals.get(path) ?? []) {
+    for (const quote of ['"', "'"]) {
+      inspected = inspected.replaceAll(`${quote}${literal}${quote}`, `${quote}legacy-runtime-identity${quote}`);
+    }
+  }
   if (migrationBoundaryFiles.has(path)) {
     const identifiers = path === 'training/tests/test_champion_migration.py'
       ? [...predecessorIdentifiers, `${predecessorPackage}.`]
