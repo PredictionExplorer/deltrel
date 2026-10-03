@@ -474,3 +474,41 @@ formatting and Pyright passed on the same source bytes. Independent reviews
 closed the dispatcher terminal-grace mismatch and verified the source-backed
 work proof. These results qualify local preparation only; actual target
 rendering, collection, Linux behavior and CUDA remain unqualified.
+
+The following collector components use only the Python standard library:
+closed, bounded file/process/systemd/NVML reads; canonical unit, environment,
+boot and process-origin digests; process ownership and kernel birth joins; and
+strict normalization of the existing R3 metadata and metric records. Private
+command and environment bytes stay in memory. Cached source/native references
+are checked against qualified file identities without claiming a new payload
+hash. Unknown processes, changed imports, reused-PID heartbeats, unsupported
+records and unavailable time provenance refuse collection.
+
+The digest contract excludes a timer's changing next-elapse values from its
+static definition and explicitly marks service environment as inapplicable to
+timer units. Worker restart counts come from the coordinator's worker record;
+controller, coordinator and monitor restart counts come from their owning unit.
+Kernel birth bounds remain conditional on the independently qualified boot and
+wall-clock mapping. They are not inferred from a heartbeat timestamp.
+
+These are locally tested collection components, not an armed collector or a
+target execution receipt. The final before/after orchestration must still bind
+requests and cleanup proof, recheck owners and source closure after producer
+sampling, derive support-job ages from actual manager observations, and stamp
+the capture after those reads. The original deadline, full legacy import and
+runtime inventory, target registration and independent outer observer also
+remain required before the bounded Linux qualification. No production source,
+profile, unit, model or GPU allocation changed during this preparation.
+
+Full CI for `2a71e55` passed all six jobs: 5,599 Python/native tests,
+1,023 web tests and 107 clean browser E2E tests plus five skips. All 28
+coverage floors, Rust/WASM checks, audits and the container check passed.
+The older failed heads were retained as evidence and were not retried.
+
+The collector-component joint check passed 478 local CPU/fault tests with two
+workers, zero failures and zero skips, plus Ruff, formatting and Pyright. It
+includes actual identity-helper composition with the kernel-join component,
+strict private-data redaction, malformed-record refusal and current-lifetime
+negative evidence retained before freshness filtering. Independent component
+reviews and the final source bindings are preserved separately from execution
+qualification. No runnable target collector or new GPU authority is implied.
