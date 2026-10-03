@@ -1,0 +1,13 @@
+{
+  "name": "@deltrel/next-eslint-glob",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Directory-only glob adapter for Next 16.3.8 ESLint rootDir discovery",
+  "main": "index.cjs",
+  "dependencies": {
+    "tinyglobby": "0.2.17"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  }
+}
