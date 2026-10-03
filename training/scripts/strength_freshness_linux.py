@@ -33,6 +33,15 @@ from scripts.qualify_cloud_gpu_window import Host as SystemHost
 FORMAT = "deltreltrain.strength-freshness-linux"
 QUALIFICATION = "deltreltrain.strength-freshness-linux-qualification"
 AUTHORIZATION = "adapter-authorization.json"
+JOBS_COMMAND = (
+    "systemctl",
+    "list-jobs",
+    "--all",
+    "--no-pager",
+    "--no-legend",
+    "--plain",
+    "--full",
+)
 LEASE = "linux-lease.json"
 CHECKS = {
     "ownership",
@@ -665,23 +674,61 @@ def load_manifest(
     return manifest, plan
 
 
+def parse_jobs_text(raw: str) -> dict[int, dict[str, Any]]:
+    """Read the exact systemd255 four-column table, without legend or ellipses."""
+    require(isinstance(raw, str) and len(raw.encode()) <= 2**20, "linux-job-output")
+    lines = raw.splitlines()
+    require(len(lines) <= 4096, "linux-job-inventory")
+    result: dict[int, dict[str, Any]] = {}
+    units = set()
+    for line in lines:
+        fields = line.split()
+        require(len(fields) == 4, "linux-job-columns")
+        identifier, unit, kind, state = fields
+        require(re.fullmatch(r"[1-9][0-9]*", identifier), "linux-job-id")
+        job_id = int(identifier)
+        require(
+            re.fullmatch(
+                r"(?:[A-Za-z0-9_.@:-]|\\x[0-9a-fA-F]{2})+\.(?:service|timer|target|slice|socket|mount|automount|swap|path|scope|device)",
+                unit,
+            ),
+            "linux-job-unit",
+        )
+        require(
+            re.fullmatch(r"[a-z-]+", kind) and state in {"waiting", "running"},
+            "linux-job-type-state",
+        )
+        require(job_id not in result and unit not in units, "linux-duplicate-job")
+        units.add(unit)
+        result[job_id] = {"job": job_id, "unit": unit, "type": kind, "state": state}
+    return result
+
+
 def parse_job(
     value: str, jobs: Mapping[int, dict[str, Any]], name: str
 ) -> Mapping[str, Any] | None:
-    if value in ("", "0", "0 /"):
+    # systemctl show prints the ID from the D-Bus (uo) property, not its path.
+    if value in ("", "0"):
+        require(
+            not any(row.get("unit") == name for row in jobs.values()), "linux-job-join"
+        )
         return None
-    match = re.fullmatch(r"([1-9][0-9]*) /org/freedesktop/systemd1/job/\1", value)
-    require(match is not None, "linux-job-property")
-    assert match is not None
-    row = jobs.get(int(match[1]))
+    require(
+        isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*", value),
+        "linux-job-property",
+    )
+    identifier = int(value)
+    row = jobs.get(identifier)
     require(
         row is not None
+        and row.get("job") == identifier
         and row.get("unit") == name
-        and row.get("type") in {"start", "stop", "restart"},
+        and row.get("type") in {"start", "stop", "restart"}
+        and row.get("state") in {"waiting", "running"},
         "linux-job-join",
     )
     assert row is not None
-    return {"id": int(match[1]), "kind": row["type"], "state": row.get("state")}
+    return {"id": identifier, "kind": row["type"], "state": row["state"]}
 
 
 class LinuxHost:
@@ -1732,15 +1779,7 @@ class LinuxHost:
             self.lease_fd = None
 
     def _jobs(self, deadline: float) -> dict[int, dict[str, Any]]:
-        rows = json.loads(
-            self.io.command(
-                ["systemctl", "list-jobs", "--all", "--no-pager", "--output=json"],
-                deadline,
-            )
-        )
-        require(isinstance(rows, list) and len(rows) <= 4096, "linux-job-inventory")
-        require(len({r["job"] for r in rows}) == len(rows), "linux-duplicate-job")
-        return {int(r["job"]): r for r in rows}
+        return parse_jobs_text(self.io.command(list(JOBS_COMMAND), deadline))
 
     def _unit(
         self,

@@ -47,7 +47,7 @@ const predecessorIdentifiers = [
 
 // Read-only collectors must recognize the immutable predecessor runtime. Keep
 // exact quoted native/wire values and complete fixture literals scoped to their
-// five compatibility files; other identifiers, prose and symbols still fail.
+// compatibility files; other identifiers, prose and symbols still fail.
 const predecessorNative = `${retired}_native`;
 const collectorCompatibilityLiterals = new Map([
   ['training/scripts/strength_freshness_cpu_collect_identity.py', [predecessorNative]],
@@ -64,6 +64,8 @@ const collectorCompatibilityLiterals = new Map([
   ]],
   ['training/tests/test_strength_freshness_cpu_collect_records.py', [`${predecessorPackage}.model-pointer`]],
   ['training/tests/test_strength_freshness_cpu_readonly.py', [predecessorPackage]],
+  ['training/scripts/strength_freshness_cpu_capture_cli.py', [predecessorPackage]],
+  ['training/tests/test_strength_freshness_cpu_capture_cli.py', [predecessorPackage, predecessorNative]],
 ]);
 
 function migrationBrandText(path, contents) {

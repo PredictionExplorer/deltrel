@@ -257,7 +257,15 @@ def _stat(value: os.stat_result) -> dict[str, int]:
 def _readonly_vector(argv: tuple[str, ...]) -> bool:
     if argv in (
         ("systemctl", "get-default"),
-        ("systemctl", "list-jobs", "--all", "--no-pager", "--output=json"),
+        (
+            "systemctl",
+            "list-jobs",
+            "--all",
+            "--no-pager",
+            "--no-legend",
+            "--plain",
+            "--full",
+        ),
         ("nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader,nounits"),
         (
             "nvidia-smi",
@@ -591,12 +599,24 @@ class System:
 
 
 class ReadOnlyIO:
-    def __init__(self, scope: ReadScope, *, deadline: float, backend: Any = None):
+    def __init__(
+        self,
+        scope: ReadScope,
+        *,
+        deadline: float,
+        backend: Any = None,
+        maximum_bytes: int = MAX_CAPTURE_BYTES,
+    ):
         require(
             type(deadline) in (int, float) and math.isfinite(deadline),
             "finite-absolute-deadline",
         )
         self.scope, self.deadline = scope, deadline
+        require(
+            type(maximum_bytes) is int and 1 <= maximum_bytes <= MAX_CAPTURE_BYTES,
+            "capture-budget-range",
+        )
+        self.maximum_bytes = maximum_bytes
         self._backend = backend if backend is not None else System()
         self._consumed = 0
         self._returned = 0
@@ -613,7 +633,7 @@ class ReadOnlyIO:
         data, meta = self._backend.read_file(path, maximum, self.deadline, tail=tail)
         require(len(data) <= maximum, "file-output-limit")
         self._consumed += len(data)
-        require(self._consumed <= MAX_CAPTURE_BYTES, "capture-byte-budget")
+        require(self._consumed <= self.maximum_bytes, "capture-byte-budget")
         return data, meta
 
     def _clock(self) -> dict[str, Any]:
@@ -663,7 +683,7 @@ class ReadOnlyIO:
             **metadata,
         }
         self._returned += _value_size(value) + len(encoded(audit))
-        require(self._returned <= MAX_CAPTURE_BYTES, "capture-output-budget")
+        require(self._returned <= self.maximum_bytes, "capture-output-budget")
         return Observation(value, audit)
 
     def clock(self) -> Observation[dict[str, Any]]:
@@ -723,7 +743,16 @@ class ReadOnlyIO:
             )
         elif kind == "jobs":
             require(target is None, "query-target-not-permitted")
-            argv = ("systemctl", "list-jobs", "--all", "--no-pager", "--output=json")
+            # systemd255 list-jobs uses table_print, not the JSON output mode.
+            argv = (
+                "systemctl",
+                "list-jobs",
+                "--all",
+                "--no-pager",
+                "--no-legend",
+                "--plain",
+                "--full",
+            )
         elif kind == "default-target":
             require(target is None, "query-target-not-permitted")
             argv = ("systemctl", "get-default")
@@ -774,7 +803,7 @@ class ReadOnlyIO:
             "command-output-limit",
         )
         self._consumed += len(raw) + len(result["stderr"])
-        require(self._consumed <= MAX_CAPTURE_BYTES, "capture-byte-budget")
+        require(self._consumed <= self.maximum_bytes, "capture-byte-budget")
         obs = self._observation(
             "query",
             kind + (":" + target if target else ""),
@@ -823,11 +852,41 @@ class ReadOnlyIO:
             pid, self.deadline, details=details, expected=expected, maps=maps
         )
         self._consumed += sum(len(x) for x in raw.values() if isinstance(x, bytes))
-        require(self._consumed <= MAX_CAPTURE_BYTES, "capture-byte-budget")
+        require(self._consumed <= self.maximum_bytes, "capture-byte-budget")
         before = _process_identity(pid, raw["stat_before"], raw["cgroup_before"])
         after = _process_identity(pid, raw["stat_after"], raw["cgroup_after"])
         require(before == after, "process-identity-raced")
         return raw, before
+
+    def manager_identity(self) -> Observation[dict[str, Any]]:
+        """Fixed PID1 lifetime/namespace metadata only; grants no PID admission."""
+        start = self._clock()
+        raw_before, before = self._proc(1, details=False, maps=False)
+        self_ns = self._backend.namespace("self", self.deadline)
+        manager_ns = self._backend.namespace(1, self.deadline)
+        raw_after, after = self._proc(1, details=False, maps=False)
+        require(
+            before == after and before["ppid"] == 0 and before["start_ticks"] > 0,
+            "manager-lifetime-raced",
+        )
+        require(
+            self_ns == manager_ns and set(self_ns) == {"pid", "time"},
+            "manager-namespace-mismatch",
+        )
+        value = {"boot_id": start["boot_id"], **before, "namespaces": manager_ns}
+        components = {
+            "before": _component_pins(raw_before),
+            "after": _component_pins(raw_after),
+            "namespaces": manager_ns,
+        }
+        return self._observation(
+            "manager-identity",
+            "pid1",
+            start,
+            value,
+            encoded(components),
+            raw_encoding="component-pins-v1",
+        )
 
     def members(self, unit: str) -> Observation[tuple[ProcessAdmission, ...]]:
         require(self.scope.units.get(unit) == "service", "unregistered-service-cgroup")

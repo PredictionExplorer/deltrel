@@ -433,9 +433,11 @@ def test_deadline_failure_audit_never_invents_a_boot_recheck(fixture):
     assert caught.value.audit["boot_rechecked"] is False
 
 
-def test_low_capture_limit_refuses_without_unbounded_output(fixture, monkeypatch):
-    io, _ = fixture
-    monkeypatch.setattr(r, "MAX_CAPTURE_BYTES", 100)
+def test_low_capture_limit_refuses_without_unbounded_output(fixture):
+    previous, fake = fixture
+    io = r.ReadOnlyIO(
+        previous.scope, deadline=previous.deadline, backend=fake, maximum_bytes=100
+    )
     with pytest.raises(r.ReadRefusal, match="capture"):
         io.read("heartbeat")
 
@@ -448,3 +450,131 @@ def test_syscall_boundary_itself_has_no_arbitrary_or_mutating_command():
     ):
         with pytest.raises(r.ReadRefusal, match="not-readonly"):
             r.System().command(command, 1)
+
+
+def manager_fake():
+    fake = Fake()
+    fake.proc_data[1] = {
+        "stat_before": proc_stat(pid=1, start=1, ppid=0),
+        "stat_after": proc_stat(pid=1, start=1, ppid=0),
+        "cgroup_before": b"0::/init.scope\n",
+        "cgroup_after": b"0::/init.scope\n",
+    }
+    return fake
+
+
+def test_fixed_manager_identity_does_not_admit_or_read_private_pid1():
+    fake = manager_fake()
+    io = r.ReadOnlyIO(scope(), deadline=200, backend=fake)
+    observed = io.manager_identity()
+    assert observed.value["pid"] == 1 and observed.value["start_ticks"] == 1
+    assert observed.value["boot_id"] == BOOT
+    assert [c for c in fake.calls if c[0] == "proc"] == [
+        ("proc", 1, False),
+        ("proc", 1, False),
+    ]
+    assert not io._admitted
+    assert "environ" not in json.dumps(observed.audit) and "cmdline" not in json.dumps(
+        observed.audit
+    )
+
+
+def test_manager_identity_refuses_namespace_mismatch():
+    fake = manager_fake()
+    original = fake.namespace
+
+    def namespace(pid, deadline):
+        value = original(pid, deadline)
+        if pid == 1:
+            value["pid"]["literal"] = "pid:[999]"
+        return value
+
+    fake.namespace = namespace
+    with pytest.raises(r.ReadRefusal, match="manager-namespace-mismatch"):
+        r.ReadOnlyIO(scope(), deadline=200, backend=fake).manager_identity()
+
+
+def test_manager_identity_refuses_changed_lifetime_between_brackets():
+    fake = manager_fake()
+    original = fake.proc
+    count = 0
+
+    def proc(pid, deadline, **kwargs):
+        nonlocal count
+        count += 1
+        if count == 2:
+            fake.proc_data[1]["stat_before"] = proc_stat(pid=1, start=2, ppid=0)
+            fake.proc_data[1]["stat_after"] = proc_stat(pid=1, start=2, ppid=0)
+        return original(pid, deadline, **kwargs)
+
+    fake.proc = proc
+    with pytest.raises(r.ReadRefusal, match="manager-lifetime-raced"):
+        r.ReadOnlyIO(scope(), deadline=200, backend=fake).manager_identity()
+
+
+def test_jobs_query_uses_systemd255_closed_plain_full_vector():
+    fake = Fake()
+    io = r.ReadOnlyIO(scope(), deadline=200, backend=fake)
+    io.query("jobs")
+    assert (
+        "command",
+        (
+            "systemctl",
+            "list-jobs",
+            "--all",
+            "--no-pager",
+            "--no-legend",
+            "--plain",
+            "--full",
+        ),
+    ) in fake.calls
+
+
+@pytest.mark.parametrize("budget", [0, -1, True, 1.5, r.MAX_CAPTURE_BYTES + 1])
+def test_per_capture_budget_cannot_expand_or_be_ambiguous(budget):
+    with pytest.raises(r.ReadRefusal, match="capture-budget-range"):
+        r.ReadOnlyIO(scope(), deadline=200, backend=Fake(), maximum_bytes=budget)
+
+
+def test_smaller_metadata_budget_is_shared_across_repeated_operations():
+    io = r.ReadOnlyIO(scope(), deadline=200, backend=Fake(), maximum_bytes=1000)
+    io.clock()
+    with pytest.raises(r.ReadRefusal, match="capture-output-budget"):
+        for _ in range(20):
+            io.clock()
+    assert io.maximum_bytes == 1000
+
+
+def test_default_metadata_budget_remains_32mib():
+    assert (
+        r.ReadOnlyIO(scope(), deadline=200, backend=Fake()).maximum_bytes == 32 * 2**20
+    )
+
+
+def test_real_command_gate_accepts_only_corrected_job_query():
+    assert r._readonly_vector(
+        (
+            "systemctl",
+            "list-jobs",
+            "--all",
+            "--no-pager",
+            "--no-legend",
+            "--plain",
+            "--full",
+        )
+    )
+    assert not r._readonly_vector(
+        ("systemctl", "list-jobs", "--all", "--no-pager", "--output=json")
+    )
+    assert not r._readonly_vector(
+        (
+            "systemctl",
+            "list-jobs",
+            "--all",
+            "--no-pager",
+            "--no-legend",
+            "--plain",
+            "--full",
+            "foreign.service",
+        )
+    )

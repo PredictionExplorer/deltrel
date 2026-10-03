@@ -75,6 +75,8 @@ def make_plan():
         "preservation": {
             "policy": artifact(INPUT / "policy.json", b"{}"),
             "before": artifact(INPUT / "before.json", b"{}"),
+            "before_request": artifact(INPUT / "before-request.json", b"{}"),
+            "before_receipt": artifact(INPUT / "before-receipt.json", b"{}"),
             "after_path": str(SCRATCH / "external/r3-after.json"),
             "verified_champions": {"sha256-" + "2" * 64: "3" * 64},
         },
@@ -94,7 +96,7 @@ def make_plan():
         p["source_pins"].append(
             artifact(Path(p["control_root"]) / "scripts" / module, b"source")
         )
-    data = {}
+    data = {p["preservation"][key]["path"]: b"{}" for key in q.PRESERVATION_INPUTS}
     for suffix, role, kind in (
         ("dispatcher", "dispatcher", "service"),
         ("observer", "observer", "service"),
@@ -689,3 +691,147 @@ def test_shared_support_scenario_keeps_runtime_roles_disjoint(fixture, fault):
     else:
         with pytest.raises(q.Refusal, match="shared-support"):
             q.validate_shared_support_bindings(fixture.plan, scenario)
+
+
+@pytest.mark.parametrize("key", ["before_request", "before_receipt"])
+def test_plan_precommits_required_before_provenance(key):
+    value, _ = make_plan()
+    initial = q.Plan.parse(q.encode(value), q.sha(q.encode(value)))
+    value["preservation"][key]["sha256"] = "e" * 64
+    changed = q.Plan.parse(q.encode(value), q.sha(q.encode(value)))
+    assert initial.checksum != changed.checksum
+    del value["preservation"][key]
+    with pytest.raises(q.Refusal, match="preservation-inputs"):
+        q.Plan.parse(q.encode(value), q.sha(q.encode(value)))
+
+
+@pytest.mark.parametrize("key", q.PRESERVATION_INPUTS)
+@pytest.mark.parametrize(
+    "fault", ["outside", "root", "traversal", "alias", "large", "empty", "bool"]
+)
+def test_preservation_input_scope_and_bounds(key, fault):
+    value, _ = make_plan()
+    pin = value["preservation"][key]
+    if fault == "outside":
+        pin["path"] = str(INPUT) + "-other/input.json"
+    elif fault == "root":
+        pin["path"] = str(INPUT)
+    elif fault == "traversal":
+        pin["path"] = str(INPUT / ".." / "input.json")
+    elif fault == "alias":
+        other = next(k for k in q.PRESERVATION_INPUTS if k != key)
+        pin["path"] = value["preservation"][other]["path"]
+    elif fault == "large":
+        pin["bytes"] = 2**20 + 1
+    elif fault == "empty":
+        pin["bytes"] = 0
+    else:
+        pin["bytes"] = True
+    with pytest.raises(q.Refusal):
+        q.Plan.parse(q.encode(value), q.sha(q.encode(value)))
+
+
+def test_before_provenance_addendum_is_required():
+    value, _ = make_plan()
+    value["addenda_sha256"].remove(
+        "8d3ad081564569564ca8eefbb79f3565c87f55ec8759bdefa793aff7e874143c"
+    )
+    with pytest.raises(q.Refusal):
+        q.Plan.parse(q.encode(value), q.sha(q.encode(value)))
+
+
+def preservation_pin_reader(fixture):
+    seen = []
+
+    def pin(value, deadline):
+        raw = fixture.io.read(Path(value["path"]), 2**20, deadline)
+        q.require(
+            len(raw) == value["bytes"] and q.sha(raw) == value["sha256"],
+            "test-pin-mismatch",
+        )
+        seen.append(value["path"])
+
+    return SimpleNamespace(pin=pin), seen
+
+
+def test_before_provenance_uses_existing_bounded_input_read_path(fixture):
+    reader, seen = preservation_pin_reader(fixture)
+    q.verify_preservation_inputs(
+        fixture.plan, cast(q.linux.LinuxIO, reader), fixture.facts, 120
+    )
+    assert seen == [
+        fixture.value["preservation"][key]["path"] for key in q.PRESERVATION_INPUTS
+    ]
+    assert fixture.facts.events[-1] == (
+        "preservation-input-pins",
+        {key: fixture.value["preservation"][key] for key in q.PRESERVATION_INPUTS},
+    )
+    assert not fixture.backend.actions and not fixture.backend.commands
+    with pytest.raises(q.Refusal, match="read-path-scope"):
+        fixture.io.read(Path(str(INPUT) + "-other/before-receipt.json"), 2**20, 120)
+
+
+@pytest.mark.parametrize("key", ["before_request", "before_receipt"])
+def test_source_admission_refuses_changed_prework_artifact_before_capability(
+    fixture, key
+):
+    reader, seen = preservation_pin_reader(fixture)
+    fixture.backend.data[fixture.value["preservation"][key]["path"]] = b"changed"
+    with pytest.raises(q.Refusal, match="test-pin-mismatch"):
+        q.verify_sources(
+            fixture.plan, cast(q.linux.LinuxIO, reader), fixture.facts, 120
+        )
+    assert fixture.value["preservation"][key]["path"] not in seen
+    assert not any(name == "source-origins.raw" for name, _ in fixture.facts.events)
+    assert not fixture.backend.actions and not fixture.backend.commands
+
+
+def test_preservation_input_admission_cannot_extend_original_deadline(fixture):
+    reader, seen = preservation_pin_reader(fixture)
+    fixture.backend.time = fixture.anchor.deadline("work")
+    with pytest.raises(q.Refusal):
+        q.verify_preservation_inputs(
+            fixture.plan,
+            cast(q.linux.LinuxIO, reader),
+            fixture.facts,
+            fixture.backend.time + 10,
+        )
+    assert seen == [] and not fixture.backend.actions
+
+
+@pytest.mark.parametrize("key", ["before_request", "before_receipt"])
+def test_prework_pin_hash_shape_is_not_just_a_path(key):
+    value, _ = make_plan()
+    value["preservation"][key]["sha256"] = "not-a-content-hash"
+    with pytest.raises(q.Refusal, match="artifact-sha"):
+        q.Plan.parse(q.encode(value), q.sha(q.encode(value)))
+
+
+def test_preservation_schema_never_silently_accepts_extra_provenance():
+    value, _ = make_plan()
+    value["preservation"]["uncommitted_witness"] = artifact(INPUT / "extra.json", b"{}")
+    with pytest.raises(q.Refusal, match="preservation-inputs"):
+        q.Plan.parse(q.encode(value), q.sha(q.encode(value)))
+
+
+def test_dummy_jobs_use_exact_plain_table_through_closed_dispatcher(fixture):
+    fixture.backend.response = "7 unrelated-backup.service start running\n"
+    host = q.DummyReadHost(fixture.io)
+    assert host._jobs(120) == {
+        7: {
+            "job": 7,
+            "unit": "unrelated-backup.service",
+            "type": "start",
+            "state": "running",
+        }
+    }
+    assert fixture.backend.commands == [list(q.linux.JOBS_COMMAND)]
+    fixture.backend.commands.clear()
+    for argv in (
+        ["systemctl", "list-jobs", "--all", "--no-pager", "--output=json"],
+        [*q.linux.JOBS_COMMAND, "foreign.service"],
+        [*q.linux.JOBS_COMMAND, "--after"],
+    ):
+        with pytest.raises(q.Refusal, match="command-not-allowed"):
+            fixture.io.command(argv, 120)
+    assert fixture.backend.commands == []

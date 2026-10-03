@@ -512,3 +512,60 @@ strict private-data redaction, malformed-record refusal and current-lifetime
 negative evidence retained before freshness filtering. Independent component
 reviews and the final source bindings are preserved separately from execution
 qualification. No runnable target collector or new GPU authority is implied.
+
+
+The before/after capture workflow is now implemented locally. The standard-library
+CLI reads a hash-pinned launch manifest, retains the original absolute deadline,
+and uses separate eight-MiB metadata and twenty-four-MiB runtime read budgets.
+The launch manifest remains an input from an independently qualified launcher;
+it does not authorize itself. Actual custom module origins must match pinned
+source paths. Private process command/environment bytes stay in memory.
+
+Request schema v2 closes a pre-work provenance gap. The prospective plan now
+commits the before request and receipt alongside the before capture and policy.
+The after request must name those exact pins. The before phase stays plan-free,
+so this ordering introduces no digest cycle. A bounded read-only facade checks
+the existing lifecycle cleanup chain without constructing an evidence writer;
+the planned workload set, dispatcher owner/definition, original Anchor, source
+and time bounds must agree. Dispatcher properties use the same narrow stable
+projection as the host adapter, preserving unknown static fields and ignore-error
+semantics. Metadata opens are nonblocking before their regular-file check, so a
+substituted FIFO refuses instead of waiting for a writer.
+
+Support collection uses actual manager/process identity and coherent unit/job
+observations. A previous no-job witness must come from the plan-committed before
+receipt, its retained provenance and matching observation inventory. It cannot
+be manufactured from a job's first-seen time. Final support-state contradictions
+refuse, and later capture timing only extends existing age upper bounds. Producer
+heartbeat/progress timestamps are never rewritten. A source check found that
+systemd 255 emits a plain four-column jobs table and a scalar `Job` ID; the
+collector and older controller/dummy adapters now consume those actual formats
+with closed query vectors and strict joining, rather than assuming JSON output.
+
+A compact, bounded provenance artifact is published first, then its receipt,
+then the capture file as the commit marker. Existing outputs are never replaced;
+interrupted partial artifacts remain evidence. Refused receipts can be preserved
+only after output/source authority is admitted and while the original limits
+permit it. Expired budgets or storage failures cannot be described as complete
+failure closure. The outer finite launcher still owns terminal observation.
+
+Local tests exercise real protected temporary files, no-clobber publication,
+request/provenance binding, the existing cleanup semantics, real helper
+composition and fault cases over explicit fake host observations. The published
+before artifacts also pass the actual request validators. Positive CLI
+source/bootstrap and after-authority setup remains simulated; these tests do not
+qualify an actual Linux target, interpreter/import/native closure or outer
+watchdog. An additive immutable legacy rendering, exact host registration and
+independently reviewed prospective plan remain required before target execution.
+No training unit, source, profile, model or GPU reservation changed.
+
+All six CI jobs passed for committed head `4f4534f`: 5,888 Python/native tests,
+1,023 web tests and 107 clean browser E2E tests plus five skips, all 28 coverage
+floors, Rust/WASM, audits and the container check. That result does not qualify
+this subsequent capture-workflow revision; its own full CI remains a separate gate.
+
+The final joint local workflow check passed 1,060 CPU/fault tests with two
+workers, zero failures and zero skips, plus Ruff, formatting and Pyright on
+unchanged source bytes. Earlier 1,059-case evidence is retained separately;
+the final run includes the nonblocking FIFO regression. These checks preserve
+the remaining target/bootstrap/outer-launcher qualification limits above.

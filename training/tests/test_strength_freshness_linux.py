@@ -100,7 +100,11 @@ class FakeIO(a.LinuxIO):
         if argv == ["systemctl", "get-default"]:
             return "multi-user.target\n"
         if argv[:2] == ["systemctl", "list-jobs"]:
-            return json.dumps(self.jobs)
+            assert argv == list(a.JOBS_COMMAND)
+            return "".join(
+                f"{row['job']} {row['unit']} {row['type']} {row['state']}\n"
+                for row in self.jobs
+            )
         if argv[:2] == ["systemctl", "show"]:
             return "\n".join(f"{k}={v}" for k, v in self.raw[argv[2]].items())
         if argv[0] == "nvidia-smi":
@@ -116,7 +120,7 @@ class FakeIO(a.LinuxIO):
             return ""
         if argv[:2] == ["systemctl", "stop"]:
             row = self.raw[argv[-1]]
-            row.update(MainPID="0", ActiveState="inactive", SubState="dead", Job="0 /")
+            row.update(MainPID="0", ActiveState="inactive", SubState="dead", Job="")
             self.groups[row["ControlGroup"]] = ()
             return ""
         if argv[:2] == ["systemctl", "start"]:
@@ -174,7 +178,7 @@ def host(tmp_path):
             ExecMainStatus="0",
             ExecMainPID="0",
             NRestarts="0",
-            Job="0 /",
+            Job="",
             UnitFileState="disabled",
             KillMode="control-group",
             SendSIGKILL="yes",
@@ -291,13 +295,10 @@ def details(host, obs):
     }
 
 
-@pytest.mark.parametrize(
-    "value",
-    ["12 /org/freedesktop/systemd1/job/12", "12 /org/freedesktop/systemd1/job/13"],
-)
+@pytest.mark.parametrize("value", ["12", "13"])
 def test_pending_jobs_are_joined_to_exact_unit_and_id(value):
     jobs = {12: {"job": 12, "unit": "r3.service", "type": "stop", "state": "running"}}
-    if value.endswith("/13"):
+    if value == "13":
         with pytest.raises(g.Refusal):
             a.parse_job(value, jobs, "r3.service")
     else:
@@ -1142,7 +1143,7 @@ def test_timer_uses_unit_properties_and_known_empty_service_array_is_explicit(ho
         LoadState="loaded",
         ActiveState="active",
         SubState="waiting",
-        Job="0 /",
+        Job="",
         UnitFileState="disabled",
         FragmentPath="/etc/systemd/system/" + name,
     )
@@ -1508,3 +1509,64 @@ def test_exec_dynamic_fields_normalize_but_static_ignore_errors_remains(host, ke
     host.io.raw["r3.service"][key] = ignored
     with pytest.raises(g.Refusal, match="properties-drift"):
         host._unit("r3.service", {}, 105)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[]",
+        "No jobs running.\n",
+        "JOB UNIT TYPE STATE\n",
+        "1 r3.service start running extra\n",
+        "0 r3.service start running\n",
+        "1 r3.service start unknown\n",
+        "1 /foreign.service start running\n",
+        "1 r3.service start running\n1 other.service stop waiting\n",
+        "1 r3.service start running\n2 r3.service stop waiting\n",
+    ],
+)
+def test_actual_job_table_refuses_unknown_or_ambiguous_shape(text):
+    with pytest.raises(g.Refusal):
+        a.parse_jobs_text(text)
+
+
+def test_actual_job_table_empty_unrelated_and_scalar_property(host):
+    assert a.parse_jobs_text("") == {}
+    host.io.jobs = [
+        {"job": 12, "unit": "r3.service", "type": "start", "state": "running"},
+        {
+            "job": 14,
+            "unit": "unrelated-backup.service",
+            "type": "stop",
+            "state": "waiting",
+        },
+    ]
+    jobs = host._jobs(105)
+    assert host.io.calls[-1] == (list(a.JOBS_COMMAND), 105)
+    assert a.parse_job("12", jobs, "r3.service") == {
+        "id": 12,
+        "kind": "start",
+        "state": "running",
+    }
+    assert a.parse_job("", jobs, "r4.service") is None
+    for value in ("", "0", "12 /org/freedesktop/systemd1/job/12", "0 /"):
+        with pytest.raises(g.Refusal):
+            a.parse_job(value, jobs, "r3.service")
+    with pytest.raises(g.Refusal, match="linux-job-join"):
+        a.parse_job("12", jobs, "r4.service")
+
+
+def test_job_table_inventory_and_output_are_bounded():
+    valid = "".join(f"{i} unit-{i}.service start waiting\n" for i in range(1, 4097))
+    assert len(a.parse_jobs_text(valid)) == 4096
+    with pytest.raises(g.Refusal, match="linux-job-inventory"):
+        a.parse_jobs_text(valid + "4097 unit-4097.service start waiting\n")
+    with pytest.raises(g.Refusal, match="linux-job-output"):
+        a.parse_jobs_text("x" * (2**20 + 1))
+
+
+def test_job_table_escaped_dependency_names_do_not_create_authority():
+    jobs = a.parse_jobs_text("4 dev-disk\\x2dlabel.device start waiting\n")
+    assert jobs[4]["unit"] == "dev-disk\\x2dlabel.device"
+    with pytest.raises(g.Refusal, match="linux-job-join"):
+        a.parse_job("4", jobs, "r3.service")

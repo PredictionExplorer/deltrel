@@ -38,6 +38,7 @@ ADDENDA = (
     "c0dd13d6df6a7639550975c6c0e22139e9256ed3d29341a8a40318e83392acda",
     "7174bf8635293651dcc8319b631822923c23d9baaa94031a1822dd7a9a887dc9",
     "1ad97635c45a780a3dd472634dad0c2ec04629b2fa4674ba2a85338496b4f7f5",
+    "8d3ad081564569564ca8eefbb79f3565c87f55ec8759bdefa793aff7e874143c",
 )
 CASES = (
     "typed-properties",
@@ -72,6 +73,7 @@ LIMITS = {
     "audit": 600,
 }
 ROLES = {"dispatcher", "observer", "publisher", "cleanup", "watchdog", "workload"}
+PRESERVATION_INPUTS = ("policy", "before", "before_request", "before_receipt")
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 HEX32 = re.compile(r"[0-9a-f]{32}\Z")
 MAX_OUTPUT = 32 * 2**20
@@ -617,14 +619,22 @@ class Plan:
         )
         preservation = exact(
             p["preservation"],
-            {"policy", "before", "after_path", "verified_champions"},
+            set(PRESERVATION_INPUTS) | {"after_path", "verified_champions"},
             "preservation-inputs",
         )
-        for key in ("policy", "before"):
+        preservation_paths = []
+        for key in PRESERVATION_INPUTS:
             pin = pin_shape(preservation[key])
+            path = canonical(pin["path"])
             require(
-                canonical(pin["path"]).is_relative_to(inputs), "preservation-source"
+                path != inputs and path.is_relative_to(inputs), "preservation-source"
             )
+            require(0 < pin["bytes"] <= 2**20, "preservation-input-size")
+            preservation_paths.append(path)
+        require(
+            len(set(preservation_paths)) == len(PRESERVATION_INPUTS),
+            "preservation-input-alias",
+        )
         require(
             canonical(preservation["after_path"])
             == scratch / "external" / "r3-after.json",
@@ -1071,7 +1081,7 @@ class ClosedIO:
         }
         allowed = argv in (
             ["systemctl", "get-default"],
-            ["systemctl", "list-jobs", "--all", "--no-pager", "--output=json"],
+            list(linux.JOBS_COMMAND),
         )
         if (
             len(argv) == 6
@@ -1443,11 +1453,27 @@ def validate_shared_support_bindings(plan: Plan, scenario: Mapping[str, Any]) ->
     )
 
 
+def verify_preservation_inputs(
+    plan: Plan, io: linux.LinuxIO, facts: RawFacts, deadline: float
+) -> None:
+    """Admit all pre-work artifacts committed by the plan before capability use.
+
+    The request/proof reader separately checks the complete semantic linkage.
+    This gate is only bounded byte admission, never a collector qualification.
+    """
+    preserved = plan.value["preservation"]
+    pins = {key: preserved[key] for key in PRESERVATION_INPUTS}
+    for pin in pins.values():
+        io.pin(pin, deadline)
+    facts.record("preservation-input-pins", pins)
+
+
 def verify_sources(
     plan: Plan, io: linux.LinuxIO, facts: RawFacts, deadline: float
 ) -> None:
     """Verify actual loaded control origins before any dummy capability is used."""
     p = plan.value
+    verify_preservation_inputs(plan, io, facts, deadline)
     pins = {x["path"]: x for x in p["source_pins"]}
     from scripts import strength_freshness_cpu_lifecycle as lifecycle
     from scripts import qualify_cloud_gpu_window as system_host

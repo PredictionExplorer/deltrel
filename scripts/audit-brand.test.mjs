@@ -90,6 +90,8 @@ test('allows only exact collector compatibility literals in their declared files
     ]],
     ['training/tests/test_strength_freshness_cpu_collect_records.py', [`${packageName}.model-pointer`]],
     ['training/tests/test_strength_freshness_cpu_readonly.py', [packageName]],
+    ['training/scripts/strength_freshness_cpu_capture_cli.py', [packageName]],
+    ['training/tests/test_strength_freshness_cpu_capture_cli.py', [packageName, native]],
   ];
   for (const [path, literals] of entries) {
     for (const literal of literals) {
@@ -119,4 +121,6 @@ test('collector exceptions do not transfer between compatibility files', () => {
   assert.ok(inspectBrand('training/scripts/strength_freshness_cpu_collect_identity.py', `"${packageName}.model-pointer"`).length);
   assert.ok(inspectBrand('training/tests/test_strength_freshness_cpu_readonly.py', `"${native}"`).length);
   assert.ok(inspectBrand('training/scripts/strength_freshness_cpu_collect_identity.py', `"/release/${native}.so"`).length);
+  assert.ok(inspectBrand('training/scripts/strength_freshness_cpu_capture_cli.py', `"${native}"`).length);
+  assert.ok(inspectBrand('training/tests/test_strength_freshness_cpu_capture_cli.py', `"${packageName}.model-pointer"`).length);
 });
