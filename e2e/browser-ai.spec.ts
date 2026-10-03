@@ -86,9 +86,10 @@ async function inspectModelCache() {
 // forced its slow baseline tier. Keep the dependency fix, not a lower budget:
 // https://github.com/microsoft/playwright/blob/v1.63.0/browser_patches/firefox/juggler/content/Runtime.js#L54-L57
 test('preserves Standard strength through preparation, plays two real Mini searches locally, and reuses its verified cache', async ({ page, context, browserName }, testInfo) => {
-  // Both moves use the public Standard preset, including on the CPU fallback.
-  // The real client's 90-second inactivity timeout still detects stalled work.
-  const searchTimeout = browserName === 'firefox' ? 300_000 : 180_000;
+  // CI Chromium/WebKit were still advancing at 84–99% of the full search when
+  // 180 seconds expired. Use Firefox's existing finite completion window for
+  // every engine; the client's 90-second real-progress watchdog stays unchanged.
+  const searchTimeout = 300_000;
   test.setTimeout(2 * searchTimeout + 180_000);
   const cpuOnly = process.env.DELTREL_E2E_CPU_ONLY === '1';
   if (cpuOnly) {
@@ -302,6 +303,19 @@ test('preserves Standard strength through preparation, plays two real Mini searc
   expect(resumedReport.analysis.simulations).toBe(544);
   expect(resumedReport.analysis.maxConsidered).toBe(16);
   expect(resumedReport.analysis.rootVisits.reduce((sum, visits) => sum + visits, 0)).toBe(544);
+  await testInfo.attach('real-standard-search-timings', {
+    contentType: 'application/json',
+    body: JSON.stringify({
+      browser: browserName,
+      providerScope: cpuOnly ? 'forced CPU/WASM' : 'automatic; provider not observed',
+      completionDeadlineMs: searchTimeout,
+      gameSeed,
+      first: { modelVersion: report.analysis.modelVersion, simulations: report.analysis.simulations,
+        maxConsidered: report.analysis.maxConsidered, timingMs: report.analysis.timingMs },
+      resumed: { modelVersion: resumedReport.analysis.modelVersion, simulations: resumedReport.analysis.simulations,
+        maxConsidered: resumedReport.analysis.maxConsidered, timingMs: resumedReport.analysis.timingMs },
+    }, null, 2),
+  });
   await expect(page.getByText('Human versus AI', { exact: true })).toHaveCount(0);
   expect(modelGets).toBe(expectedModelGets);
   expect(remoteInference).toEqual([]);
