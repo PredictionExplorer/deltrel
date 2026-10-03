@@ -63,7 +63,9 @@ def pytest_collection_modifyitems(
         "native": pytest.mark.skip(reason="requires compiled deltrel_native extension"),
         "cuda": pytest.mark.skip(reason="requires a CUDA-capable GPU"),
         "multi_gpu": pytest.mark.skip(reason="requires at least two CUDA-capable GPUs"),
-        "soak": pytest.mark.skip(reason="requires --run-soak or DELTRELTRAIN_RUN_SOAK=1"),
+        "soak": pytest.mark.skip(
+            reason="requires --run-soak or DELTRELTRAIN_RUN_SOAK=1"
+        ),
     }
     for item in items:
         if item.get_closest_marker("native") and not native_available:

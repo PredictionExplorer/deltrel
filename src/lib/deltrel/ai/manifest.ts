@@ -17,6 +17,7 @@ import {
   DELTREL_NODE_FEATURE_DIM,
 } from './features';
 import { DeltrelAiError } from './errors';
+import { DELTREL_RUNTIME_ARTIFACTS, DELTREL_RUNTIME_CHANNEL_PATH } from './runtime-channel';
 
 export const DELTREL_BROWSER_MODEL_MANIFEST_SCHEMA_ID =
   'deltreltrain.browser-model' as const;
@@ -40,12 +41,10 @@ export const DEFAULT_BROWSER_AI_SUBTREE_REUSE_MAX_NODES = 4_096;
 export const MAX_BROWSER_AI_SUBTREE_REUSE_NODES = 65_536;
 
 /** Deployment convention; intentionally absent until a trained model is published. */
-export const DELTREL_BROWSER_MODEL_MANIFEST_PATH = '/models/deltrel/manifest.json' as const;
+export const DELTREL_BROWSER_MODEL_MANIFEST_PATH = DELTREL_RUNTIME_CHANNEL_PATH;
 /** Immutable package identity includes both its rules hash and search implementation. */
-export const DELTREL_WASM_MODULE_PATH =
-  '/models/deltrel/wasm-46e4fbcff4e17fd3-champion-v1/deltrel_wasm.js' as const;
-export const DELTREL_WASM_BINARY_PATH =
-  '/models/deltrel/wasm-46e4fbcff4e17fd3-champion-v1/deltrel_wasm_bg.wasm' as const;
+export const DELTREL_WASM_MODULE_PATH = DELTREL_RUNTIME_ARTIFACTS.module.url;
+export const DELTREL_WASM_BINARY_PATH = DELTREL_RUNTIME_ARTIFACTS.binary.url;
 
 export interface DeltrelBrowserModelManifest {
   format: typeof DELTREL_BROWSER_MODEL_MANIFEST_SCHEMA_ID;

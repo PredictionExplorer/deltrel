@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -13,6 +14,7 @@ from pathlib import Path
 
 from .checkpoint import sha256_file, verify_file
 from .contracts import RULES_HASH_HEX
+from .browser_runtime import qualified_runtime
 from .distill import (
     BROWSER_MANIFEST_FORMAT,
     BROWSER_MANIFEST_SCHEMA_VERSION,
@@ -29,16 +31,35 @@ def publish_browser_artifacts(
     wasm_build_command: Sequence[str] = (),
     wasm_working_directory: str | Path | None = None,
     wasm_source_directory: str | Path | None = None,
+    channel: str = "legacy",
 ) -> dict[str, object]:
+    if channel not in ("legacy", "qualified"):
+        raise ValueError("browser channel must be legacy or qualified")
+    runtime = qualified_runtime() if channel == "qualified" else None
+    if runtime is not None and wasm_build_command:
+        raise ValueError(
+            "qualified runtime must be prebuilt; publication cannot rebuild it"
+        )
     source_manifest = Path(manifest_path).resolve()
-    with source_manifest.open("r", encoding="utf-8") as stream:
-        payload = json.load(stream)
+    # Pin the exact bytes that supplied the validated artifact metadata. A later
+    # atomic replacement must not substitute an unvalidated release pointer.
+    source_manifest_bytes = source_manifest.read_bytes()
+    source_manifest_sha256 = hashlib.sha256(source_manifest_bytes).hexdigest()
+    payload = json.loads(source_manifest_bytes)
     if (
         not isinstance(payload, dict)
         or payload.get("format") != BROWSER_MANIFEST_FORMAT
         or payload.get("schema_version") != BROWSER_MANIFEST_SCHEMA_VERSION
     ):
         raise ValueError("unsupported browser model manifest")
+    if runtime is not None and (
+        not isinstance(payload.get("rules"), Mapping)
+        or not isinstance(payload.get("features"), Mapping)
+        or payload["rules"].get("hash") != runtime["rules_hash"]
+        or payload["features"].get("hash") != runtime["feature_schema_hash"]
+        or payload.get("weights") != "ema"
+    ):
+        raise ValueError("model is incompatible with the qualified browser runtime")
     artifacts = payload.get("artifacts")
     if not isinstance(artifacts, Mapping):
         raise ValueError("browser manifest artifacts are missing")
@@ -88,21 +109,35 @@ def publish_browser_artifacts(
         )
     target = Path(target_directory).resolve()
     target.mkdir(parents=True, exist_ok=True)
+    wasm_directory = (
+        str(runtime["directory"]) if runtime is not None else WASM_ASSET_DIRECTORY
+    )
     wasm_source = (
         Path(wasm_source_directory).resolve()
         if wasm_source_directory is not None
-        else target / WASM_ASSET_DIRECTORY
+        else target / wasm_directory
     )
     wasm_sources = {
         "module": wasm_source / "deltrel_wasm.js",
         "binary": wasm_source / "deltrel_wasm_bg.wasm",
     }
     _verify_wasm(wasm_sources["module"], wasm_sources["binary"])
+    if runtime is not None:
+        for name, source in wasm_sources.items():
+            verify_file(
+                source,
+                expected_sha256=runtime[name]["sha256"],
+                expected_bytes=runtime[name]["bytes"],
+            )
 
-    wasm_target = target / WASM_ASSET_DIRECTORY
+    wasm_target = target / wasm_directory
+    if runtime is not None and wasm_target.resolve() != wasm_target:
+        raise ValueError("qualified runtime directory cannot contain symlinks")
     wasm_target.mkdir(parents=True, exist_ok=True)
     destination_onnx = target / resolved["onnx"].name
-    destination_manifest = target / "manifest.json"
+    destination_manifest = target / (
+        str(runtime["manifest"]) if runtime is not None else "manifest.json"
+    )
     destinations = {
         "module": wasm_target / "deltrel_wasm.js",
         "binary": wasm_target / "deltrel_wasm_bg.wasm",
@@ -116,6 +151,13 @@ def publish_browser_artifacts(
         staged["onnx"] = _stage_copy(resolved["onnx"], destination_onnx)
         staged["manifest"] = _stage_copy(source_manifest, destination_manifest)
         _verify_wasm(staged["module"], staged["binary"])
+        if runtime is not None:
+            for name in ("module", "binary"):
+                verify_file(
+                    staged[name],
+                    expected_sha256=runtime[name]["sha256"],
+                    expected_bytes=runtime[name]["bytes"],
+                )
         onnx_entry = artifacts["onnx"]
         verify_file(
             staged["onnx"],
@@ -124,12 +166,34 @@ def publish_browser_artifacts(
         )
         verify_file(
             staged["manifest"],
-            expected_sha256=sha256_file(source_manifest),
-            expected_bytes=source_manifest.stat().st_size,
+            expected_sha256=source_manifest_sha256,
+            expected_bytes=len(source_manifest_bytes),
         )
-        # Runtime assets are committed first. The canonical model manifest is
-        # the release pointer and is atomically replaced strictly last.
+        # A qualified channel never overwrites immutable runtime/model bytes,
+        # including on a racing writer. The legacy default retains its API.
+        if runtime is not None:
+            for name in ("module", "binary", "onnx"):
+                source = staged[name]
+                try:
+                    os.link(source, destinations[name])
+                except FileExistsError:
+                    if destinations[name].is_symlink():
+                        raise ValueError(
+                            "immutable browser artifact cannot be a symlink"
+                        )
+                    verify_file(
+                        destinations[name],
+                        expected_sha256=sha256_file(source),
+                        expected_bytes=source.stat().st_size,
+                    )
+                source.unlink()
+                staged.pop(name)
+            _fsync_directory(wasm_target)
+            _fsync_directory(target)
+        # Only the selected mutable channel manifest is replaced, strictly last.
         for name in ("module", "binary", "onnx", "manifest"):
+            if name not in staged:
+                continue
             os.replace(staged[name], destinations[name])
             staged.pop(name)
         _fsync_directory(target)
@@ -141,6 +205,7 @@ def publish_browser_artifacts(
         "manifest": str(destination_manifest),
         "onnx": str(destination_onnx),
         "model_version": payload.get("model_version"),
+        **({"channel": channel} if runtime is not None else {}),
         "wasm_build_invoked": bool(wasm_build_command),
         "wasm_module": str(destinations["module"]),
         "wasm_binary": str(destinations["binary"]),
@@ -157,6 +222,7 @@ def publish_browser_main(argv: list[str] | None = None) -> None:
     parser.add_argument("--target", required=True)
     parser.add_argument("--wasm-cwd")
     parser.add_argument("--wasm-source")
+    parser.add_argument("--channel", choices=("legacy", "qualified"), default="legacy")
     parser.add_argument("--wasm-build", nargs=argparse.REMAINDER, default=())
     arguments = parser.parse_args(argv)
     result = publish_browser_artifacts(
@@ -165,6 +231,7 @@ def publish_browser_main(argv: list[str] | None = None) -> None:
         wasm_build_command=arguments.wasm_build,
         wasm_working_directory=arguments.wasm_cwd,
         wasm_source_directory=arguments.wasm_source,
+        channel=arguments.channel,
     )
     print(json.dumps(result, sort_keys=True))
 

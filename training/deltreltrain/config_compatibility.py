@@ -9,11 +9,42 @@ from __future__ import annotations
 
 from copy import deepcopy
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .search_options import SearchExecutionConfig
 from dataclasses import asdict
+
+_HISTORY_HORIZON_DEFAULTS = (
+    ("history_horizon_enabled", False),
+    ("history_horizon_initial_seconds", 3600.0),
+)
+_MEASUREMENT_SCHEDULER_DEFAULTS = (
+    ("measurement_service_fraction", 0.0),
+    ("measurement_max_wait_seconds", 3_600.0),
+)
+
+
+def _matches_typed_default(
+    parent: Mapping[str, Any], name: str, default: object
+) -> bool:
+    return type(parent.get(name)) is type(default) and parent[name] == default
+
+
+def _has_efficiency_program_defaults(payload: Mapping[str, Any]) -> bool:
+    orchestration = payload.get("orchestration")
+    if not isinstance(orchestration, dict):
+        return False
+    for section, defaults in (
+        ("model_refresh", _HISTORY_HORIZON_DEFAULTS),
+        ("historical_evaluation", _MEASUREMENT_SCHEDULER_DEFAULTS),
+    ):
+        parent = orchestration.get(section)
+        if isinstance(parent, dict) and any(
+            _matches_typed_default(parent, name, default) for name, default in defaults
+        ):
+            return True
+    return False
 
 
 def without_pause_strategy_default(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -39,11 +70,8 @@ def without_history_horizon_defaults(payload: Mapping[str, Any]) -> dict[str, An
         orchestration.get("model_refresh") if isinstance(orchestration, dict) else None
     )
     if isinstance(refresh, dict):
-        for name, default in (
-            ("history_horizon_enabled", False),
-            ("history_horizon_initial_seconds", 3600.0),
-        ):
-            if type(refresh.get(name)) is type(default) and refresh[name] == default:
+        for name, default in _HISTORY_HORIZON_DEFAULTS:
+            if _matches_typed_default(refresh, name, default):
                 del refresh[name]
     return result
 
@@ -93,36 +121,42 @@ def compatible_config_epoch_payloads(
     pre_inference_execution = without_inference_execution_defaults(current)
     if pre_inference_execution != current:
         inference_representations.append(pre_inference_execution)
+    inference_representations = _unique_epoch_payloads(inference_representations)
     execution_representations = []
     for representation in inference_representations:
         execution_representations.append(representation)
         pre_execution = without_search_execution_defaults(representation)
         if pre_execution != representation:
             execution_representations.append(pre_execution)
+    execution_representations = _unique_epoch_payloads(execution_representations)
     budget_representations = []
     for representation in execution_representations:
         budget_representations.append(representation)
         pre_budget = without_cohort_search_budget_defaults(representation)
         if pre_budget != representation:
             budget_representations.append(pre_budget)
+    budget_representations = _unique_epoch_payloads(budget_representations)
     pipeline_representations = []
     for representation in budget_representations:
         pipeline_representations.append(representation)
         pre_pipeline = without_selfplay_pipeline_defaults(representation)
         if pre_pipeline != representation:
             pipeline_representations.append(pre_pipeline)
+    pipeline_representations = _unique_epoch_payloads(pipeline_representations)
     representations = []
     for representation in pipeline_representations:
         representations.append(representation)
         pre_clipping = without_gradient_clipping_defaults(representation)
         if pre_clipping != representation:
             representations.append(pre_clipping)
+    representations = _unique_epoch_payloads(representations)
     sources: list[dict[str, Any]] = []
     for representation in representations:
         sources.append(representation)
         pre_broadcast = without_broadcast_topology_default(representation)
         if pre_broadcast != representation:
             sources.append(pre_broadcast)
+    sources = _unique_epoch_payloads(sources)
     variants: list[dict[str, Any]] = []
     for source in sources:
         pre_session = without_evaluation_session_defaults(source)
@@ -135,6 +169,7 @@ def compatible_config_epoch_payloads(
         variants.extend(previous)
         if without_pause_strategy_default(source) != source:
             variants.extend(without_pause_strategy_default(row) for row in previous)
+    variants = _unique_epoch_payloads(variants)
     # These two options share one release epoch. Preserve the representation
     # before both additions without inventing arbitrary subset combinations.
     # Enabled values and untyped lookalikes remain in every hash.
@@ -142,27 +177,42 @@ def compatible_config_epoch_payloads(
         previous_training = without_training_execution_defaults(variant)
         if previous_training != variant:
             variants.append(previous_training)
+    variants = _unique_epoch_payloads(variants)
     for variant in tuple(variants):
         previous_fresh_data = without_fresh_data_defaults(variant)
         if previous_fresh_data != variant:
             variants.append(previous_fresh_data)
+    variants = _unique_epoch_payloads(variants)
     for variant in tuple(variants):
         previous_clinch = without_arena_clinch_default(variant)
         if previous_clinch != variant:
             variants.append(previous_clinch)
+    variants = _unique_epoch_payloads(variants)
     # Both scheduling additions belong to one release, not two independently
     # shipped epochs. Preserve old hashes without another Cartesian dimension.
     for variant in tuple(variants):
+        # Canonical current profiles already omit these disabled defaults.
+        # Avoid two whole-tree copies when neither adapter can delete a key.
+        if not _has_efficiency_program_defaults(variant):
+            continue
         previous_scheduling = without_efficiency_program_defaults(variant)
         if previous_scheduling != variant:
             variants.append(previous_scheduling)
-    # Several historical omission paths converge on the same representation.
-    # Downstream provenance consumers must not hash every duplicate again.
+    return tuple(_unique_epoch_payloads(variants))
+
+
+def _unique_epoch_payloads(
+    variants: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    # Every epoch adapter only deletes keys from a deep copy. Convergent paths
+    # therefore have the same future omissions; collapse them before copying
+    # duplicates through another stage. Keep the original final dedup's first
+    # key position and last representative, without normalizing Python types.
     unique = {
         json.dumps(item, sort_keys=True, separators=(",", ":")): item
         for item in variants
     }
-    return tuple(unique.values())
+    return list(unique.values())
 
 
 def without_efficiency_program_defaults(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -184,11 +234,8 @@ def without_measurement_scheduler_defaults(
         else None
     )
     if isinstance(parent, dict):
-        for name, default in (
-            ("measurement_service_fraction", 0.0),
-            ("measurement_max_wait_seconds", 3_600.0),
-        ):
-            if type(parent.get(name)) is type(default) and parent[name] == default:
+        for name, default in _MEASUREMENT_SCHEDULER_DEFAULTS:
+            if _matches_typed_default(parent, name, default):
                 del parent[name]
     return result
 

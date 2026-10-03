@@ -17,18 +17,29 @@ const configFor = (rings: number) => ({
   playerNames: ['Zero', 'One'] as [string, string],
 });
 
+// Each variant gets a bounded test and full-game randomized traces. Enumerating
+// the matrix also guarantees pie keep/swap and every handicap on every board.
+const turnScheduleCases = SUPPORTED_RINGS.flatMap((rings) =>
+  (['classic', 'double'] as const).flatMap((mode) => [
+    ...Array.from({ length: 9 }, (_, index) => ({
+      rings, mode, handicap: index + 1, pie: false, takeSwap: false,
+      variant: `handicap ${index + 1}`,
+    })),
+    ...[false, true].map((takeSwap) => ({
+      rings, mode, handicap: 1, pie: true, takeSwap,
+      variant: takeSwap ? 'pie swap' : 'pie keep',
+    })),
+  ]),
+);
+
 describe('game properties', () => {
-  it('matches an independent turn schedule through complete randomized games in every variant', () => {
+  it.each(turnScheduleCases)('matches the complete turn schedule: $rings rings, $mode, $variant', ({ rings, mode, handicap, pie, takeSwap }) => {
+    const nodes = getBoard(rings).n;
     fc.assert(
       fc.property(
-        fc.constantFrom(...SUPPORTED_RINGS),
-        fc.constantFrom('classic' as const, 'double' as const),
-        fc.integer({ min: 1, max: 9 }),
-        fc.boolean(),
-        fc.boolean(),
-        fc.array(fc.nat(), { minLength: 275, maxLength: 275 }),
-        (rings, mode, handicap, pie, takeSwap, selectors) => {
-          const config = { ...configFor(rings), mode, handicap, pieRule: handicap === 1 && pie };
+        fc.array(fc.nat(), { minLength: nodes, maxLength: nodes }),
+        (selectors) => {
+          const config = { ...configFor(rings), mode, handicap, pieRule: pie };
           const turnSize = mode === 'classic' ? 1 : 2;
           const swapped = config.pieRule && takeSwap;
           let state = initialState(config);
@@ -67,7 +78,7 @@ describe('game properties', () => {
           expect(validateTerminalWinner(state.board, state.stones).winner).toBeOneOf([0, 1]);
         },
       ),
-      { numRuns: 100 },
+      { numRuns: 2 },
     );
   });
 

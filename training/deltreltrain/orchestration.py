@@ -149,22 +149,33 @@ def _compatible_autonomous_config_sha256s(experiment: ExperimentConfig) -> set[s
         ("arena", "segment_handicap_classic_share"),
     )
     for source in compatible_config_epoch_payloads(materialized):
+        # Preserve the historical JSON normalization once per epoch. Each mask
+        # then owns only the dictionaries it edits; the other branches are read
+        # only. Ineligible omissions need neither a copy nor serialization.
+        source = json.loads(json.dumps(source))
+        eligible = 0
+        for bit, path in enumerate(paths):
+            parent = source
+            for key in path[:-1]:
+                parent = parent[key]
+            if type(parent[path[-1]]) is float and parent[path[-1]] == 0.0:
+                eligible |= 1 << bit
         for mask in range(1 << len(paths)):
-            payload = json.loads(json.dumps(source))
+            if mask & ~eligible:
+                continue
+            payload = dict(source) if mask else source
             for bit, path in enumerate(paths):
                 if not mask & (1 << bit):
                     continue
                 parent = payload
                 for key in path[:-1]:
+                    parent[key] = dict(parent[key])
                     parent = parent[key]
-                if type(parent[path[-1]]) is not float or parent[path[-1]] != 0.0:
-                    break
                 del parent[path[-1]]
-            else:
-                encoded = json.dumps(
-                    payload, sort_keys=True, separators=(",", ":")
-                ).encode("utf-8")
-                hashes.add(hashlib.sha256(encoded).hexdigest())
+            encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+            hashes.add(hashlib.sha256(encoded).hexdigest())
     return hashes
 
 
@@ -237,6 +248,12 @@ def ensure_autonomous_provenance(
             payload.get("config_sha256") if isinstance(payload, dict) else None
         )
         if payload != expected and isinstance(recorded_hash, str):
+            if payload != {**expected, "config_sha256": recorded_hash}:
+                # Legacy config representations cannot authorize different run
+                # identity, seed, origin claims, or additional provenance keys.
+                raise ValueError(
+                    "autonomous provenance disagrees with the frozen run profile"
+                )
             if recorded_hash in _compatible_autonomous_config_sha256s(experiment):
                 # A legacy hash changes only the expected hash, never any other
                 # provenance field. Keep the original hash and bytes, including

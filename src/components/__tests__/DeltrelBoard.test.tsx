@@ -462,13 +462,22 @@ describe('DeltrelBoard', () => {
     expect(onPlace).not.toHaveBeenCalled();
   });
 
-  it.each(SUPPORTED_RINGS)('shows only the hovered point coordinate on a %i-ring board', (rings) => {
+  // Keep every point and consecutive hover transition, but bound the number of
+  // full SVG rerenders charged to one test on CPU-constrained coverage runners.
+  const hoverCases = SUPPORTED_RINGS.flatMap((rings) => {
+    const count = getBoard(rings).n;
+    return Array.from({ length: Math.ceil(count / 50) }, (_, chunk) => ({
+      rings, first: chunk * 50, last: Math.min((chunk + 1) * 50, count) - 1,
+    }));
+  });
+  it.each(hoverCases)('shows only the hovered point coordinate: $rings rings, nodes $first–$last', ({ rings, first, last }) => {
     const atlas = getBoard(rings);
     const { container } = render(<DeltrelBoard board={atlas} stones={new Int8Array(atlas.n).fill(EMPTY)} interactive />);
     const nodes = screen.getAllByRole('button');
     expect(nodes).toHaveLength(atlas.n);
     expect(container.querySelector('[data-coordinate-tooltip]')).not.toBeInTheDocument();
-    for (let node = 0; node < atlas.n; node++) {
+    if (first > 0) fireEvent.mouseEnter(nodes[first - 1]);
+    for (let node = first; node <= last; node++) {
       expect(nodes[node]).toHaveAccessibleName(new RegExp(`^Node ${atlas.labels[node]}, empty`));
       fireEvent.mouseEnter(nodes[node]);
       expect(container.querySelectorAll('[data-coordinate-tooltip]')).toHaveLength(1);

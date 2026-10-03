@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -323,6 +324,118 @@ def _snapshot_payload(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(payload, dict)
     return payload
+
+
+def _strength_recovery_artifacts(fixture):
+    from scripts.prepare_strength_recovery import artifact
+    from deltreltrain.checkpoint import load_model_manifest
+    from deltreltrain.contracts import SEARCH_ALGORITHM_ID
+    from deltreltrain.strength_recovery import (
+        FORMAT,
+        PLAN_NAME,
+        SCHEDULE_SECONDS,
+        digest,
+        record_snapshot,
+    )
+    from deltreltrain.strength_recovery_archive import preserve_provenance
+
+    plan = {
+        "schema_version": 1,
+        "format": FORMAT,
+        "run_root": str(fixture.root),
+        "search_algorithm": SEARCH_ALGORITHM_ID,
+        "schedule_seconds": list(SCHEDULE_SECONDS),
+        "profile": artifact(fixture.profile),
+        "profile_sha256": _sha256(fixture.profile.read_bytes()),
+        "source_pins": [
+            artifact(fixture.checkpoint),
+            artifact(fixture.root / "replay/manifest.sqlite3"),
+        ],
+        "implementation_pins": [artifact(Path(__file__))],
+    }
+    plan["plan_sha256"] = digest(plan)
+    atomic_json(fixture.root / PLAN_NAME, plan)
+    preserve_provenance(fixture.root, plan)
+    started = time.time_ns()
+    atomic_json(
+        fixture.root / "ablation.json",
+        {"profile_sha256": plan["profile_sha256"], "measurement_started_ns": started},
+    )
+    record_snapshot(
+        fixture.root,
+        load_model_manifest(fixture.manifest),
+        now_ns=started + 7200 * 10**9,
+    )
+
+
+def test_recovery_experiment_closure_survives_backup_and_exact_root_restore(tmp_path):
+    from deltreltrain.strength_recovery_archive import backup_files
+
+    fixture = _fixture(tmp_path)
+    _strength_recovery_artifacts(fixture)
+    dependencies = backup_files(fixture.root)
+    assert any(name.endswith("/snapshot.json") for name in dependencies)
+    backup = tmp_path / "backup"
+    first = _snapshot(fixture, backup)
+    second = _snapshot(fixture, backup)
+    assert recovery.verify_snapshot(first)["status"] == "ok"
+    assert recovery.verify_snapshot(second)["status"] == "ok"
+    for name, checksum in dependencies.items():
+        assert _snapshot_payload(second)["catalog"][name]["sha256"] == checksum
+    with pytest.raises(recovery.DisasterRecoveryError, match="original run root"):
+        recovery.restore_snapshot(second, tmp_path / "relocated", relocate_profile=True)
+    saved = tmp_path / "retired-source"
+    fixture.root.rename(saved)
+    recovery.restore_snapshot(second, fixture.root)
+    shutil.rmtree(saved)
+    assert backup_files(fixture.root) == dependencies
+    repeated = _snapshot(fixture, backup)
+    assert recovery.verify_snapshot(repeated)["status"] == "ok"
+
+
+def test_recovery_backup_rejects_corrupt_provenance_and_keeps_previous_snapshot(
+    tmp_path,
+):
+    fixture = _fixture(tmp_path)
+    _strength_recovery_artifacts(fixture)
+    backup = tmp_path / "backup"
+    first = _snapshot(fixture, backup)
+    previous = (backup / "latest.json").read_bytes()
+    source_copy = next((fixture.root / "strength-recovery-provenance/source").iterdir())
+    source_copy.chmod(0o644)
+    source_copy.write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="checksum or size"):
+        _snapshot(fixture, backup)
+    assert (backup / "latest.json").read_bytes() == previous
+    assert recovery.verify_snapshot(first)["status"] == "ok"
+
+
+def test_recovery_binary_provenance_is_streamed_and_not_loaded_by_catalog_reader(
+    tmp_path, monkeypatch
+):
+    from deltreltrain.strength_recovery_archive import backup_files
+
+    fixture = _fixture(tmp_path)
+    _strength_recovery_artifacts(fixture)
+    original_read = Path.read_bytes
+
+    def guarded_read(path):
+        if "strength-recovery-provenance" in path.parts:
+            pytest.fail("binary provenance was materialized instead of streamed")
+        return original_read(path)
+
+    monkeypatch.setattr(Path, "read_bytes", guarded_read)
+    assert backup_files(fixture.root)
+    original_data = recovery._CatalogReader.data
+
+    def guarded_data(reader, logical):
+        if logical.startswith("strength-recovery-provenance/"):
+            pytest.fail("catalog already verified provenance; do not load it again")
+        return original_data(reader, logical)
+
+    monkeypatch.setattr(recovery._CatalogReader, "data", guarded_data)
+    snapshot = _snapshot(fixture, tmp_path / "backup")
+    assert recovery.verify_snapshot(snapshot)["status"] == "ok"
 
 
 def _publish_latest(

@@ -27,13 +27,23 @@ beforeAll(async () => {
 });
 
 /** Real exported WASM and production worker; deterministic tensors isolate search mechanics. */
-function fixture(predictionCapacity = 1_024, searchOptions: Partial<typeof manifest.search> = {}) {
+function fixture(predictionCapacity = 1_024, searchOptions: Partial<typeof manifest.search> = {},
+  valueAtFeatures?: (features: Float32Array) => number) {
   const run = vi.fn(async (feeds: Record<string, ort.Tensor>) => {
     const batch = feeds.node_features.dims[0];
     const nodes = feeds.node_features.dims[1];
     const head = (dims: number[]) => new ort.Tensor('float32', new Float32Array(dims.reduce((a, b) => a * b, 1)), dims);
+    const outcomes = head([batch, 2]);
+    if (valueAtFeatures) {
+      const features = feeds.global_features.data as Float32Array;
+      const width = feeds.global_features.dims[1];
+      for (let row = 0; row < batch; row++) {
+        const value = valueAtFeatures(features.slice(row * width, (row + 1) * width));
+        (outcomes.data as Float32Array)[row * 2 + 1] = Math.log((1 + value) / (1 - value));
+      }
+    }
     return {
-      policy_logits: head([batch, nodes]), outcome_logits: head([batch, 2]),
+      policy_logits: head([batch, nodes]), outcome_logits: outcomes,
       score_margin_logits: head([batch, 303]), ownership_logits: head([batch, nodes, 3]),
       alive_logits: head([batch, nodes]), soft_policy_logits: head([batch, nodes]),
       opponent_reply_logits: head([batch, nodes + 1]), second_stone_logits: head([batch, nodes]),
@@ -81,6 +91,25 @@ async function sessionSearch(f: ReturnType<typeof fixture>, request: DeltrelAiRe
 }
 
 describe('published browser WASM search', () => {
+  it.each(['classic', 'double'] as const)('keeps pie option values out of %s placement search and counts only completed simulations', async mode => {
+    const f = fixture(1_024, { scoreUtilityWeight: 0 }, features => {
+      if (features[22]) return 0.8; // Actual-game value with the option to swap.
+      if (features[1] === 0) return -0.8;
+      return mode === 'classic' ? 0.8 : -0.8; // Conditional losing keep leaf.
+    });
+    const request = buildAiRequest({ rings: 4, mode, pieRule: true, playerNames: ['A', 'B'] }, []);
+    expect(wasm.search_algorithm_id()).toBe('gumbel-completed-q-v3-conditional-keep');
+    const result = await f.search(request, 4, 4);
+    for (let index = 0; index < result.rootVisits.length; index++) {
+      if (result.rootVisits[index]) expect(result.rootQ[index]).toBeCloseTo(-0.8, 5);
+    }
+    // Root + four real decision-point policies + four conditional keep leaves.
+    expect(f.run).toHaveBeenCalledTimes(9);
+    const forwards = f.run.mock.calls.length;
+    expect(await f.search(request, 4, 4)).toEqual(result);
+    expect(f.run).toHaveBeenCalledTimes(forwards);
+  });
+
   // Recorded from the native Python SearchBatch with zero-valued evaluations and
   // deterministic_seed = state_hash & (2**53 - 1), independently of this worker.
   it.each([

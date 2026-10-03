@@ -24,12 +24,87 @@ const historicalDeploymentEvidence = new Set([
   'training/docs/elo-efficiency-deployment-20260923.md',
   'training/docs/elo-efficiency-release-20260923.md',
   'training/docs/elo-efficiency-runtime-deployment-evidence-20260923.json',
+  'training/docs/training-recovery-deployment-20260928.md',
+  'training/docs/training-recovery-deployment-evidence-20260928.json',
+  'training/docs/strength-recovery-deployment-20261002.md',
 ]);
+
+// The explicit migration boundary must recognize exact historical wire values.
+// Exempt only quoted protocol identifiers and the two sentences documenting
+// that boundary, never whole implementation/test files or new product text.
+const migrationBoundaryFiles = new Set([
+  'training/deltreltrain/champion_migration.py',
+  'training/tests/test_champion_migration.py',
+]);
+const predecessorPackage = `${retired}train`;
+const predecessorIdentifiers = [
+  `${predecessorPackage}.checkpoint`,
+  `${predecessorPackage}.model-manifest`,
+  `${predecessorPackage}.model-pointer`,
+  `edgeconnect.${retired}.rules.v3`,
+  `edgeconnect.${retired}.action-layout.nodes-only.v1`,
+];
+
+// Read-only collectors must recognize the immutable predecessor runtime. Keep
+// exact quoted native/wire values and complete fixture literals scoped to their
+// compatibility files; other identifiers, prose and symbols still fail.
+const predecessorNative = `${retired}_native`;
+const collectorCompatibilityLiterals = new Map([
+  ['training/scripts/strength_freshness_cpu_collect_identity.py', [predecessorNative]],
+  ['training/scripts/strength_freshness_cpu_collect_records.py', [`${predecessorPackage}.model-pointer`]],
+  ['training/tests/test_strength_freshness_cpu_collect_identity.py', [
+    predecessorPackage,
+    predecessorNative,
+    `/release/${predecessorNative}.so`,
+    `/release/bin/python\\0-m\\0${predecessorPackage}.worker\\0`,
+    `100-200 r-xp 0 08:01 10 /release/${predecessorNative}.so\\n`,
+    `100-200 r-xp 0 08:01 99 /release/${predecessorNative}.so\\n`,
+    `100-200 r-xp 0 08:01 10 /release/${predecessorNative}.so (deleted)\\n`,
+    `100-200 r-xp 0 bad 10 /release/${predecessorNative}.so\\n`,
+  ]],
+  ['training/tests/test_strength_freshness_cpu_collect_records.py', [`${predecessorPackage}.model-pointer`]],
+  ['training/tests/test_strength_freshness_cpu_readonly.py', [predecessorPackage]],
+  ['training/scripts/strength_freshness_cpu_capture_cli.py', [predecessorPackage]],
+  ['training/tests/test_strength_freshness_cpu_capture_cli.py', [predecessorPackage, predecessorNative]],
+]);
+
+function migrationBrandText(path, contents) {
+  let inspected = contents;
+  for (const literal of collectorCompatibilityLiterals.get(path) ?? []) {
+    for (const quote of ['"', "'"]) {
+      inspected = inspected.replaceAll(`${quote}${literal}${quote}`, `${quote}legacy-runtime-identity${quote}`);
+    }
+  }
+  if (migrationBoundaryFiles.has(path)) {
+    const identifiers = path === 'training/tests/test_champion_migration.py'
+      ? [...predecessorIdentifiers, `${predecessorPackage}.`]
+      : predecessorIdentifiers;
+    for (const identifier of identifiers) {
+      for (const quote of ['"', "'"]) {
+        inspected = inspected.replaceAll(`${quote}${identifier}${quote}`, `${quote}legacy-wire-identity${quote}`);
+      }
+    }
+  }
+  if (path === 'training/deltreltrain/champion_migration.py') {
+    inspected = inspected.replaceAll(
+      `Supports the immediately preceding ${title}Train publication layout only.`,
+      'Supports the immediately preceding publication layout only.',
+    );
+  }
+  if (path === 'training/docs/deltrel-rebrand.md') {
+    inspected = inspected.replaceAll(
+      `from a frozen ${title}Train champion and a separately verified, conclusive promotion`,
+      'from a frozen preceding champion and a separately verified, conclusive promotion',
+    );
+  }
+  return inspected;
+}
 
 export function inspectBrand(path, contents = '') {
   const findings = [];
   if (names.test(path) || symbols.test(path)) findings.push('retired brand in path');
-  if ((names.test(contents) || symbols.test(contents)) && !historicalDeploymentEvidence.has(path)) {
+  const brandText = migrationBrandText(path, contents);
+  if ((names.test(brandText) || symbols.test(brandText)) && !historicalDeploymentEvidence.has(path)) {
     findings.push('retired brand in text');
   }
   if (oldTerms.test(contents)) findings.push('retired scoring terminology');

@@ -14,7 +14,12 @@ import torch
 
 from .contracts import LEGACY_FEATURE_SCHEMA_HASH, LEGACY_FEATURE_SCHEMA_VERSION
 from .contracts import SCORE_MARGIN_MAX
-from .features import DoubleDeltrelPosition, EncodedBatch, EncodedPosition, collate_encoded
+from .features import (
+    DoubleDeltrelPosition,
+    EncodedBatch,
+    EncodedPosition,
+    collate_encoded,
+)
 from .scoring import EMPTY, score_position
 from .topology import MAX_RINGS, get_topology
 

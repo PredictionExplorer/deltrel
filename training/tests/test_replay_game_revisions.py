@@ -212,7 +212,9 @@ def test_clinch_finalization_can_enrich_outcome_without_inventing_auxiliary_labe
         row.target_mask == TARGET_POLICY | TARGET_SOFT_POLICY | TARGET_OUTCOME
         for row in restored
     )
-    assert all(row.final_shores is None and row.final_networks is None for row in restored)
+    assert all(
+        row.final_shores is None and row.final_networks is None for row in restored
+    )
     targets = collate_replay_samples(restored).targets
     assert not targets.final_shores_mask.any()
     assert not targets.final_networks_mask.any()

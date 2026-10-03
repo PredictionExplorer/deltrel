@@ -227,7 +227,9 @@ def export_champion_snapshot(
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description=("Export one verified champion publication for Mac-local deltrelserve")
+        description=(
+            "Export one verified champion publication for Mac-local deltrelserve"
+        )
     )
     parser.add_argument(
         "--champion", required=True, help="atomic champion.json pointer"

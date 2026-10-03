@@ -2,6 +2,9 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import { reachFourRingClinch } from './helpers';
 
+// Keep a stalled control bounded independently of the complete workflow budget.
+test.use({ actionTimeout: 10_000 });
+
 test('setup and gameplay have no automatically detectable accessibility violations', async ({
   page,
 }) => {
@@ -44,6 +47,9 @@ test('reduced motion suppresses placement ripples and decorative water motion', 
 });
 
 test('clinch decisions and proof remain accessible', async ({ page }) => {
+  // Fifty real placements plus two axe scans exceed 30s on CI WebKit/Firefox.
+  // Retain normal click actionability checks rather than bypassing hit testing.
+  test.setTimeout(180_000);
   await page.goto('/');
   await page.getByRole('button', { name: 'Mini, 4 rings' }).click();
   await page.getByRole('button', { name: 'Begin the game' }).click();

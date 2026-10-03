@@ -8,7 +8,8 @@
     "build:deltrel-wasm": "node scripts/build-deltrel-wasm.mjs",
     "bench:scoring": "node scripts/benchmark-deltrel-scoring.mjs",
     "start": "next start",
-    "lint": "eslint src scripts e2e playwright.config.ts vitest.config.ts vitest.setup.ts stryker.config.mjs",
+    "lint": "npm run test:eslint-glob && eslint src scripts e2e playwright.config.ts vitest.config.ts vitest.setup.ts stryker.config.mjs",
+    "test:eslint-glob": "node --test scripts/next-eslint-glob.test.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
@@ -25,19 +26,23 @@
   },
   "dependencies": {
     "lucide-react": "^1.24.0",
-    "next": "16.3.3",
+    "next": "16.3.8",
     "onnxruntime-web": "^1.27.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "zustand": "^5.0.14"
   },
   "overrides": {
+    "@next/eslint-plugin-next@16.3.8": {
+      "fast-glob": "$fast-glob"
+    },
     "postcss": "^8.5.10",
     "qs": "^6.15.3"
   },
   "devDependencies": {
+    "fast-glob": "file:./vendor/next-eslint-glob",
     "@axe-core/playwright": "^4.12.1",
-    "@playwright/test": "^1.61.1",
+    "@playwright/test": "^1.63.0",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
     "@tailwindcss/postcss": "^4",
@@ -51,7 +56,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^9",
-    "eslint-config-next": "16.3.3",
+    "eslint-config-next": "16.3.8",
     "fast-check": "^4.9.0",
     "jsdom": "^29.1.1",
     "tailwindcss": "^4",

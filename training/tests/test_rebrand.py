@@ -154,9 +154,9 @@ def test_headless_checkpoints_migrate_only_unambiguous_disabled_count_losses(
 def test_polar_coordinates_are_unique_round_trip_and_ordered(rings: int) -> None:
     topology = get_topology(rings)
     assert len(set(topology.labels)) == topology.n
-    assert [
-        topology.labels[topology.idx(s, rings, 0)] for s in range(5)
-    ] == [f"{arm}{rings % 10}0" for arm in "ABCDE"]
+    assert [topology.labels[topology.idx(s, rings, 0)] for s in range(5)] == [
+        f"{arm}{rings % 10}0" for arm in "ABCDE"
+    ]
     for node, label in enumerate(topology.labels):
         assert len(label) == 3
         assert label[0] in "ABCDE" and label[1:].isdecimal()
@@ -167,7 +167,7 @@ def test_polar_coordinates_are_unique_round_trip_and_ordered(rings: int) -> None
         assert ord(label[0]) - ord("A") == int(topology.sector_of[node])
         assert (int(label[1]) or 10) == int(topology.ring_of[node])
         assert int(label[2]) == int(topology.pos_of[node])
-    assert topology.labels == get_topology(10).labels[:topology.n]
+    assert topology.labels == get_topology(10).labels[: topology.n]
     for invalid in ("A", "F10", "A 10", "A0", "A11", "Z999", "A1"):
         with pytest.raises(ValueError, match="unknown node label"):
             topology.label_to_id(invalid)

@@ -57,7 +57,9 @@ class BoundedPredictionCache:
         Hints may be evicted before inference; the owner always looks up again.
         """
         with self._lock:
-            return tuple(self._entries[key][0] if key in self._entries else None for key in keys)
+            return tuple(
+                self._entries[key][0] if key in self._entries else None for key in keys
+            )
 
     def get(self, key: bytes) -> RawPrediction | None:
         with self._lock:

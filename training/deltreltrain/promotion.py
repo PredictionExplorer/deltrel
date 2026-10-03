@@ -2825,7 +2825,9 @@ class PromotionSupervisor:
         if self.experiment.arena.balanced_cells:
             from .balanced_evaluation import evaluation_contract
 
-            contract_identity = str(evaluation_contract(self.experiment.arena)["identity"])
+            contract_identity = str(
+                evaluation_contract(self.experiment.arena)["identity"]
+            )
         if prior.get("evaluation_contract_identity") != contract_identity:
             # A different objective/budget starts a new rejection streak even
             # for the same candidate; an old verdict is not a duplicate of it.

@@ -11,7 +11,11 @@ import torch
 from torch import nn
 
 import deltreltrain.actor as actor_module
-from deltreltrain.actor import ActorSupervisor, HistoricalModelPool, ManifestModelProvider
+from deltreltrain.actor import (
+    ActorSupervisor,
+    HistoricalModelPool,
+    ManifestModelProvider,
+)
 from deltreltrain.config import (
     ConfigError,
     GPUWorkerConfig,

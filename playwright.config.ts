@@ -12,7 +12,9 @@ export default defineConfig({
   reporter: process.env.CI
     ? [['line'], ['html', { open: 'never' }]]
     : [['list'], ['html', { open: 'never' }]],
-  snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
+  // Native scrollbar gutters differ between Linux CI and macOS.
+  // Keep reviewed baselines for each platform instead of hiding that difference.
+  snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{platform}/{arg}{ext}',
   expect: {
     toHaveScreenshot: {
       animations: 'disabled',

@@ -139,6 +139,59 @@ def test_preservation_retains_unconsumed_plateau_verdicts_after_arena_gc(tmp_pat
     assert preservation.verify_snapshot(target)["status"] == "verified"
 
 
+def test_preservation_includes_recovery_provenance_and_endpoint_closure(tmp_path):
+    from scripts.prepare_strength_recovery import artifact
+    from deltreltrain.strength_recovery import FORMAT, PLAN_NAME, digest as plan_digest
+    from deltreltrain.strength_recovery_archive import backup_files, preserve_provenance
+
+    root, target = fixture(tmp_path)
+    source = root / "source-commit.txt"
+    plan = {
+        "format": FORMAT,
+        "schema_version": 1,
+        "run_root": str(root),
+        "schedule_seconds": [7200],
+        "source_pins": [artifact(source)],
+        "implementation_pins": [],
+        "profile": artifact(source),
+    }
+    plan["plan_sha256"] = plan_digest(plan)
+    write_json(root / PLAN_NAME, plan)
+    preserve_provenance(root, plan)
+    endpoint = root / "strength-recovery-snapshots/7200"
+    checkpoint = endpoint / "checkpoints/model.pt"
+    checkpoint.parent.mkdir(parents=True)
+    checkpoint.write_bytes(b"pinned endpoint")
+    checkpoint_pin = artifact(checkpoint)
+    manifest = endpoint / "manifests/model.json"
+    write_json(
+        manifest,
+        {
+            "checkpoint": "../checkpoints/model.pt",
+            "checkpoint_sha256": checkpoint_pin["sha256"],
+            "checkpoint_bytes": checkpoint_pin["bytes"],
+            "model_identity": "pinned",
+            "model_step": 25,
+        },
+    )
+    write_json(
+        endpoint / "snapshot.json",
+        {
+            "plan_sha256": plan["plan_sha256"],
+            "scheduled_seconds": 7200,
+            "model_identity": "pinned",
+            "model_step": 25,
+            "artifacts": {"checkpoint": checkpoint_pin, "manifest": artifact(manifest)},
+        },
+    )
+    expected = backup_files(root)
+    preservation.preserve_stopped_snapshot(root, target)
+    assert backup_files(target) == expected
+    shutil.rmtree(root / "strength-recovery-snapshots")
+    shutil.rmtree(root / "strength-recovery-provenance")
+    assert preservation.verify_snapshot(target)["status"] == "verified"
+
+
 def measurement_fixture(tmp_path, *, terminal=True):
     from deltreltrain.measurement_scheduling import MeasurementServiceLedger
     from deltreltrain.runtime import append_jsonl, load_run_identity

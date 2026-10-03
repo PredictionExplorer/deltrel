@@ -28,7 +28,7 @@ BOARD_NOTATION_CONTRACT = {
 
 # Search behavior changes independently of model inputs and game rules. Arena
 # evidence and resumed games must never span incompatible search algorithms.
-SEARCH_ALGORITHM_ID = "gumbel-completed-q-v2-finite-noise-selected-keep"
+SEARCH_ALGORITHM_ID = "gumbel-completed-q-v3-conditional-keep"
 
 # The previous lineage's contract. Only the lineage-transfer tool and the
 # cross-schema arena may accept artifacts carrying these identifiers.

@@ -915,9 +915,7 @@ class GraphResTNet(nn.Module):
             final_networks_logits = self.final_networks_head(pooled).reshape(
                 batch_size, 2, 26
             )
-            final_capes_logits = self.final_capes_head(pooled).reshape(
-                batch_size, 2, 6
-            )
+            final_capes_logits = self.final_capes_head(pooled).reshape(batch_size, 2, 6)
             final_shores_logits = _mask_logits(
                 final_shores_logits,
                 torch.arange(51, device=rings.device)[None, None, :]

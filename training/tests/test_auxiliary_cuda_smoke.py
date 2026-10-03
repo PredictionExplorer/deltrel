@@ -11,7 +11,11 @@ import torch
 
 from scripts import smoke_auxiliary_predictions_cuda as smoke
 from deltreltrain.auxiliary_upgrade import AUXILIARY_LOSSES
-from deltreltrain.checkpoint import ExponentialMovingAverage, save_checkpoint, sha256_file
+from deltreltrain.checkpoint import (
+    ExponentialMovingAverage,
+    save_checkpoint,
+    sha256_file,
+)
 from deltreltrain.config import load_config
 from deltreltrain.model import GraphResTNet
 from deltreltrain.native import score_results_from_native

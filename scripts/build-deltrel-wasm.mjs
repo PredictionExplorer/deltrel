@@ -1,89 +1,44 @@
 import { spawnSync } from 'node:child_process';
-import {
-  existsSync,
-  mkdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { dirname, relative, resolve } from 'node:path';
+import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { register } from 'node:module';
-
-register(new URL('./typescript-loader.mjs', import.meta.url));
-const { DELTREL_RULES_HASH, DELTREL_RULES_SCHEMA_ID } =
-  await import('../src/lib/deltrel/rules.ts');
+import { verifyLegacyBrowserArtifacts, verifyQualifiedRuntime } from './browser-runtime.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const crate = resolve(root, 'training/crates/deltrel-wasm');
-const wasmDirectory = `wasm-${DELTREL_RULES_HASH.split(':')[1]}-champion-v1`;
-const output = resolve(root, `public/models/deltrel/${wasmDirectory}`);
-const outputFromCrate = relative(crate, output);
 
-if (!existsSync(resolve(crate, 'Cargo.toml'))) {
-  throw new Error(`deltrel-wasm crate not found at ${crate}`);
-}
-
-mkdirSync(dirname(output), { recursive: true });
-rmSync(output, { recursive: true, force: true });
-
-const result = spawnSync(
-  'wasm-pack',
-  [
-    'build',
-    '.',
-    '--target',
-    'web',
-    '--release',
-    '--out-dir',
-    outputFromCrate,
-    '--out-name',
-    'deltrel_wasm',
-    '--no-pack',
-    '--',
-    '--locked',
-  ],
-  {
-    cwd: crate,
-    env: {
-      ...process.env,
-      SOURCE_DATE_EPOCH: process.env.SOURCE_DATE_EPOCH ?? '0',
-    },
-    stdio: 'inherit',
-  },
-);
-
-if (result.error) throw result.error;
-if (result.status !== 0) {
-  throw new Error(`wasm-pack exited with status ${String(result.status)}`);
-}
-
-for (const filename of ['deltrel_wasm.js', 'deltrel_wasm_bg.wasm']) {
-  if (!existsSync(resolve(output, filename))) {
-    throw new Error(`wasm-pack did not produce ${filename}`);
+/** Default builds verify shipped bytes; development compilation requires a new private directory. */
+export async function buildDeltrelWasm(args, projectRoot = root, spawn = spawnSync) {
+  if (args.length === 0) {
+    verifyLegacyBrowserArtifacts(projectRoot);
+    return verifyQualifiedRuntime(projectRoot);
   }
+  if (args.length !== 2 || args[0] !== '--out-dir') {
+    throw new Error('Usage: build-deltrel-wasm.mjs [--out-dir NEW_PRIVATE_DIRECTORY]');
+  }
+  const output = resolve(projectRoot, args[1]);
+  const publicRoot = resolve(projectRoot, 'public');
+  let ancestor = dirname(output);
+  while (!existsSync(ancestor)) ancestor = dirname(ancestor);
+  const physicalOutput = resolve(realpathSync(ancestor), relative(ancestor, output));
+  const physicalPublic = existsSync(publicRoot) ? realpathSync(publicRoot) : publicRoot;
+  const insidePublic = relative(physicalPublic, physicalOutput);
+  const parentTraversal = insidePublic === '..' || insidePublic.startsWith(`..${sep}`);
+  if (insidePublic === '' || (!parentTraversal && !isAbsolute(insidePublic))) {
+    throw new Error('Development WASM output must be outside public; immutable assets are never rebuilt in place.');
+  }
+  if (existsSync(output)) throw new Error('Development WASM output must be a new directory.');
+  const crate = resolve(projectRoot, 'training/crates/deltrel-wasm');
+  if (!existsSync(resolve(crate, 'Cargo.toml'))) throw new Error('Deltrel WASM crate is missing.');
+  mkdirSync(dirname(output), { recursive: true });
+  const result = spawn('wasm-pack', ['build', '.', '--target', 'web', '--release',
+    '--out-dir', relative(crate, output), '--out-name', 'deltrel_wasm', '--no-pack', '--', '--locked'], {
+    cwd: crate, env: { ...process.env, SOURCE_DATE_EPOCH: process.env.SOURCE_DATE_EPOCH ?? '0' }, stdio: 'inherit',
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`wasm-pack exited with status ${String(result.status)}`);
+  return { output, qualifiedForPublication: false };
 }
 
-// Ship the generated rules/search package with the website. wasm-pack's
-// blanket ignore would otherwise hide the files from Git-based deployments.
-for (const filename of ['.gitignore', 'deltrel_wasm.d.ts', 'deltrel_wasm_bg.wasm.d.ts']) {
-  rmSync(resolve(output, filename), { force: true });
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  console.log(JSON.stringify(await buildDeltrelWasm(process.argv.slice(2))));
 }
-
-writeFileSync(
-  resolve(output, 'contract.json'),
-  `${JSON.stringify(
-    {
-      schema: 'deltrel.browser-wasm-build.v3',
-      rulesSchema: DELTREL_RULES_SCHEMA_ID,
-      rulesHash: DELTREL_RULES_HASH,
-      moduleUrl: `/models/deltrel/${wasmDirectory}/deltrel_wasm.js`,
-      binaryUrl: `/models/deltrel/${wasmDirectory}/deltrel_wasm_bg.wasm`,
-      modelManifestUrl: '/models/deltrel/manifest.json',
-    },
-    null,
-    2,
-  )}\n`,
-);
-
-console.log(`Built Deltrel WASM assets in public/models/deltrel/${wasmDirectory}`);
-console.log('Browser model manifest convention: public/models/deltrel/manifest.json');
