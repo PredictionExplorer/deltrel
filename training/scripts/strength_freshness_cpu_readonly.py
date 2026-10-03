@@ -564,6 +564,70 @@ class System:
         finally:
             os.close(fd)
 
+    def proc_credentials(
+        self,
+        admission: ProcessAdmission,
+        deadline: float,
+        *,
+        charge: Callable[[int], None],
+        allowance: int,
+    ) -> dict[str, bytes]:
+        """Only fixed credential metadata under the already admitted proc FD."""
+        self._time(deadline)
+        fd = os.open(
+            f"/proc/{admission.pid}",
+            os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW,
+        )
+        remaining = allowance
+
+        def read(name: str) -> bytes:
+            nonlocal remaining
+            self._time(deadline)
+            source = os.open(
+                name,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK,
+                dir_fd=fd,
+            )
+            try:
+                require(stat.S_ISREG(os.fstat(source).st_mode), "credential-proc-file")
+                data = bytearray()
+                while True:
+                    self._time(deadline)
+                    require(remaining > 0, "capture-byte-budget")
+                    chunk = os.read(
+                        source, min(65536, MAX_PROC_BYTES + 1 - len(data), remaining)
+                    )
+                    charge(len(chunk))
+                    remaining -= len(chunk)
+                    if not chunk:
+                        break
+                    data.extend(chunk)
+                    require(len(data) <= MAX_PROC_BYTES, "credential-proc-limit")
+                return bytes(data)
+            finally:
+                os.close(source)
+
+        try:
+            value = {"stat_before": read("stat"), "cgroup_before": read("cgroup")}
+            before = _process_identity(
+                admission.pid, value["stat_before"], value["cgroup_before"]
+            )
+            require(
+                (before["start_ticks"], before["cgroup"])
+                == (admission.start_ticks, admission.cgroup),
+                "credential-admission-drift",
+            )
+            value["status"] = read("status")
+            value.update(stat_after=read("stat"), cgroup_after=read("cgroup"))
+            after = _process_identity(
+                admission.pid, value["stat_after"], value["cgroup_after"]
+            )
+            require(before == after, "credential-process-raced")
+            self._time(deadline)
+            return value
+        finally:
+            os.close(fd)
+
     def namespace(self, pid: str | int, deadline: float):
         self._time(deadline)
         fd = os.open(
@@ -1189,6 +1253,71 @@ class ReadOnlyIO:
             encoded(_component_pins(raw)),
             raw_encoding="component-pins-v1",
             maps_read=maps,
+        )
+
+    def process_credentials(
+        self, admission: ProcessAdmission
+    ) -> Observation[dict[str, Any]]:
+        """Measure a current UID vector, never historical writer authority."""
+        require(
+            type(admission) is ProcessAdmission and admission in self._admitted,
+            "credential-process-not-admitted",
+        )
+        start = self._clock()
+
+        def charge(count: int) -> None:
+            self._consumed += count
+            require(self._consumed <= self.maximum_bytes, "capture-byte-budget")
+
+        raw = self._backend.proc_credentials(
+            admission,
+            self.deadline,
+            charge=charge,
+            allowance=self.maximum_bytes - self._consumed,
+        )
+        require(
+            set(raw)
+            == {"stat_before", "cgroup_before", "status", "stat_after", "cgroup_after"}
+            and all(
+                type(v) is bytes and len(v) <= MAX_PROC_BYTES for v in raw.values()
+            ),
+            "credential-observation-shape",
+        )
+        before = _process_identity(
+            admission.pid, raw["stat_before"], raw["cgroup_before"]
+        )
+        after = _process_identity(admission.pid, raw["stat_after"], raw["cgroup_after"])
+        require(
+            before == after
+            and (before["start_ticks"], before["cgroup"])
+            == (admission.start_ticks, admission.cgroup),
+            "credential-process-raced",
+        )
+        rows = [line for line in raw["status"].split(b"\n") if line.startswith(b"Uid:")]
+        require(
+            raw["status"].endswith(b"\n")
+            and len(rows) == 1
+            and re.fullmatch(rb"Uid:[ \t]+[0-9]+(?:[ \t]+[0-9]+){3}[ \t]*", rows[0]),
+            "credential-uid-fields",
+        )
+        numbers = rows[0].split()[1:]
+        require(
+            all(len(n) <= 10 and int(n) <= 2**32 - 1 for n in numbers),
+            "credential-uid-range",
+        )
+        uids = dict(
+            zip(("real", "effective", "saved", "filesystem"), map(int, numbers))
+        )
+        components = _component_pins(raw)
+        return self._observation(
+            "process-credentials",
+            str(admission.pid),
+            start,
+            {**before, "uids": uids},
+            encoded(components),
+            raw_encoding="component-pins-v1",
+            components=components,
+            uids=uids,
         )
 
     def namespaces(

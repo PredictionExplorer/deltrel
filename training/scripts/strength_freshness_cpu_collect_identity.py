@@ -187,6 +187,303 @@ def decode(raw: bytes) -> str:
         raise CollectionRefusal("private-text-encoding") from None
 
 
+COMMON_FIELDS = frozenset(
+    {
+        "auxiliary_policy",
+        "boot",
+        "cached_references",
+        "cohorts",
+        "counter_scopes",
+        "empty_property_rules",
+        "encoding_contract_sha256",
+        "heartbeats",
+        "keys",
+        "origins",
+        "policy",
+        "scope",
+        "source_pins",
+        "timer_addendum_sha256",
+        "timer_environment_addendum_sha256",
+        "units",
+    }
+)
+
+
+def validate_common_registration(
+    common: Mapping[str, Any], scope: readonly.ReadScope
+) -> None:
+    """Pure shared checks; not a complete registration or birth admission.
+
+    Both strict format-specific constructors must validate their own header and
+    authority first. This function performs no reads and grants no collector.
+    """
+    require(
+        isinstance(common, Mapping) and set(common) == COMMON_FIELDS,
+        "common-registration-fields",
+    )
+    r = common
+    try:
+        require(
+            r["encoding_contract_sha256"] == CONTRACT
+            and r["timer_addendum_sha256"] == facts.TIMER_ADDENDUM_SHA256
+            and r["timer_environment_addendum_sha256"]
+            == facts.TIMER_ENVIRONMENT_ADDENDUM_SHA256,
+            "encoding-contract",
+        )
+        require(scope_from(r["scope"]) == scope, "io-scope-registration")
+        p = r["policy"]
+        require(
+            p["static"]["runtime_name"] == RUNTIME
+            and p["static"]["source_commit"] == preservation.R3_SOURCE_COMMIT,
+            "immutable-r3-registration",
+        )
+        require(
+            set(p["workers"]) == WORKERS
+            and set(r["heartbeats"]) == WORKERS
+            and len(r["cohorts"]) == 24,
+            "registered-roles",
+        )
+        require(
+            set(r["origins"]) == {"controller", "coordinator", *WORKERS, "monitor"},
+            "origin-inventory",
+        )
+        require(
+            set(r["units"]) == set(scope.units) and RUNTIME in r["units"],
+            "unit-inventory",
+        )
+        require(
+            set(r["keys"])
+            == {
+                "run",
+                "continuation",
+                "profile_authority",
+                "profile",
+                "run_source",
+                "release_source",
+                "source_manifest",
+                "coordinator",
+                "champion",
+                "metrics",
+            },
+            "metadata-keys",
+        )
+        require(set(r["cached_references"]) == set(scope.cached), "cached-inventory")
+        require(
+            set(r["counter_scopes"])
+            == {"controller", "coordinator", "workers", "monitor"},
+            "counter-scope-fields",
+        )
+        require(
+            r["counter_scopes"]
+            == {
+                "controller": "owning-unit-NRestarts",
+                "coordinator": "owning-unit-NRestarts",
+                "workers": "coordinator-worker-restart_count",
+                "monitor": "owning-unit-NRestarts",
+            },
+            "restart-counter-scope",
+        )
+        require(set(r["cohorts"]) == set(p["cohorts"]), "cohort-policy-binding")
+        require(set(r["boot"]) == {"default_target", "edges"}, "boot-registration")
+        for name, spec in r["units"].items():
+            require(
+                set(spec)
+                == {"kind", "fragment", "dropins", "environment_files", "owned_links"},
+                "unit-registration-fields",
+            )
+            require(
+                spec["kind"] in {"runtime", "long_running", "oneshot", "timer"},
+                "unit-kind",
+            )
+            require(
+                (name == RUNTIME) == (spec["kind"] == "runtime"), "runtime-unit-scope"
+            )
+        require(
+            sum(v["kind"] == "long_running" for v in r["units"].values()) == 1,
+            "monitor-count",
+        )
+        for row in r["cohorts"].values():
+            require(
+                set(row) == {"key", "worker", "parent_role"}
+                and row["parent_role"] in preservation.ACTOR_ROLES,
+                "cohort-registration",
+            )
+            require(
+                row["key"] in scope.files
+                and isinstance(row["worker"], str)
+                and row["worker"],
+                "cohort-file-binding",
+            )
+        for key, value in r["keys"].items():
+            require(
+                value in (scope.tails if key == "metrics" else scope.files),
+                "metadata-file-binding",
+            )
+        require(
+            all(key in scope.files for key in r["heartbeats"].values()),
+            "heartbeat-file-binding",
+        )
+        require(
+            isinstance(r["source_pins"], dict) and 0 < len(r["source_pins"]) <= 256,
+            "source-pin-inventory",
+        )
+        for key, pin in r["source_pins"].items():
+            shape(pin, "sha256 bytes", "source-pin-fields")
+            require(
+                key in scope.files
+                and preservation.sha(pin["sha256"])
+                and integer(pin["bytes"], 1)
+                and pin["bytes"] <= 1024 * 1024,
+                "source-pin",
+            )
+        for ref in r["cached_references"].values():
+            shape(
+                ref,
+                "sha256 qualification_sha256 literal_stat resolved_stat",
+                "cache-reference-shape",
+            )
+            require(
+                preservation.sha(ref["sha256"])
+                and preservation.sha(ref["qualification_sha256"]),
+                "qualified-cache-reference",
+            )
+            for field in ("literal_stat", "resolved_stat"):
+                st = shape(ref[field], " ".join(FINGERPRINT), "cache-stat-fields")
+                require(
+                    all(integer(v) for v in st.values()) and st["mode"] <= 0o7777,
+                    "cache-stat-values",
+                )
+        roles = {"controller", "coordinator", *WORKERS}
+        require(set(p["expected_processes"]) == roles, "expected-process-inventory")
+        for role, spec in r["origins"].items():
+            shape(
+                spec,
+                "interpreter cwd argv_sha256 argv_bytes approved_template_id environment native_keys entrypoint_contract_sha256 restart_counter_scope",
+                "origin-spec-fields",
+            )
+            require(
+                spec["interpreter"] in scope.cached and path(spec["cwd"]),
+                "origin-interpreter-cwd",
+            )
+            require(
+                all(
+                    preservation.sha(spec[k])
+                    for k in (
+                        "argv_sha256",
+                        "approved_template_id",
+                        "entrypoint_contract_sha256",
+                    )
+                )
+                and integer(spec["argv_bytes"], 1),
+                "origin-pins",
+            )
+            require(
+                isinstance(spec["native_keys"], list)
+                and len(set(spec["native_keys"])) == len(spec["native_keys"])
+                and all(k in scope.cached for k in spec["native_keys"]),
+                "origin-native-inventory",
+            )
+            require(
+                spec["restart_counter_scope"]
+                == (
+                    "coordinator-worker:restart_count"
+                    if role in WORKERS
+                    else "systemd-unit:NRestarts"
+                ),
+                "origin-restart-counter-scope",
+            )
+            require(isinstance(spec["environment"], dict), "origin-environment-fields")
+            for name, row in spec["environment"].items():
+                require(
+                    isinstance(name, str)
+                    and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name),
+                    "origin-environment-key",
+                )
+                shape(
+                    row, "present value_sha256 value_bytes", "origin-environment-fields"
+                )
+                require(
+                    type(row["present"]) is bool
+                    and integer(row["value_bytes"])
+                    and (
+                        preservation.sha(row["value_sha256"])
+                        if row["present"]
+                        else row["value_sha256"] is None and row["value_bytes"] == 0
+                    ),
+                    "origin-environment-pin",
+                )
+        rules = r["empty_property_rules"]
+        require(
+            isinstance(rules, dict)
+            and set(rules)
+            <= {
+                "Environment",
+                "PassEnvironment",
+                "UnsetEnvironment",
+                "EnvironmentFiles",
+                *OPTIONAL_EMPTY_EXEC,
+            }
+            and all(v == "systemd-255-empty-" + k for k, v in rules.items()),
+            "empty-property-rules",
+        )
+        boot = r["boot"]
+        require(
+            boot["default_target"] in scope.targets and isinstance(boot["edges"], list),
+            "boot-target-binding",
+        )
+        edge_tuples = []
+        for edge in boot["edges"]:
+            shape(edge, "from to relation", "boot-edge-fields")
+            require(
+                edge["from"] in scope.targets
+                and edge["to"] in scope.targets
+                and edge["relation"] in {"Wants", "Requires"},
+                "boot-edge-scope",
+            )
+            edge_tuples.append((edge["from"], edge["to"], edge["relation"]))
+        require(edge_tuples == sorted(set(edge_tuples)), "boot-edge-order")
+        for name, spec in r["units"].items():
+            require(
+                scope.units[name]
+                == ("timer" if spec["kind"] == "timer" else "service"),
+                "unit-kind-binding",
+            )
+            require(
+                spec["fragment"] in scope.files
+                and isinstance(spec["dropins"], list)
+                and len(spec["dropins"]) == len(set(spec["dropins"]))
+                and all(k in scope.files for k in spec["dropins"]),
+                "unit-file-scope",
+            )
+            require(
+                isinstance(spec["environment_files"], list), "environment-file-fields"
+            )
+            env_keys = []
+            for item in spec["environment_files"]:
+                shape(item, "key ignore_missing", "environment-file-fields")
+                require(
+                    item["key"] in scope.files and type(item["ignore_missing"]) is bool,
+                    "environment-file-scope",
+                )
+                env_keys.append(item["key"])
+            require(
+                len(env_keys) == len(set(env_keys))
+                and (not env_keys or spec["kind"] != "timer"),
+                "environment-file-inventory",
+            )
+            require(isinstance(spec["owned_links"], list), "boot-links-registration")
+            for link in spec["owned_links"]:
+                shape(link, "path literal_target resolved_target", "boot-link-fields")
+                require(
+                    path(link["path"])
+                    and path(link["resolved_target"])
+                    and isinstance(link["literal_target"], str),
+                    "boot-link-path",
+                )
+    except (KeyError, TypeError, AttributeError):
+        raise CollectionRefusal("registration-shape") from None
+
+
 class IdentityCollector:
     """Registered static/origin checks; no capture orchestration or CLI."""
 
@@ -241,141 +538,8 @@ class IdentityCollector:
             and r["schema_version"] == 1,
             "registration-format",
         )
-        require(
-            r["encoding_contract_sha256"] == CONTRACT
-            and r["timer_addendum_sha256"] == facts.TIMER_ADDENDUM_SHA256
-            and r["timer_environment_addendum_sha256"]
-            == facts.TIMER_ENVIRONMENT_ADDENDUM_SHA256,
-            "encoding-contract",
-        )
-        require(scope_from(r["scope"]) == self.io.scope, "io-scope-registration")
         p = r["policy"]
-        require(
-            p["static"]["runtime_name"] == RUNTIME
-            and p["static"]["source_commit"] == preservation.R3_SOURCE_COMMIT,
-            "immutable-r3-registration",
-        )
-        require(
-            set(p["workers"]) == WORKERS
-            and set(r["heartbeats"]) == WORKERS
-            and len(r["cohorts"]) == 24,
-            "registered-roles",
-        )
-        require(
-            set(r["origins"]) == {"controller", "coordinator", *WORKERS, "monitor"},
-            "origin-inventory",
-        )
-        require(
-            set(r["units"]) == set(self.io.scope.units) and RUNTIME in r["units"],
-            "unit-inventory",
-        )
-        require(
-            set(r["keys"])
-            == {
-                "run",
-                "continuation",
-                "profile_authority",
-                "profile",
-                "run_source",
-                "release_source",
-                "source_manifest",
-                "coordinator",
-                "champion",
-                "metrics",
-            },
-            "metadata-keys",
-        )
-        require(
-            set(r["cached_references"]) == set(self.io.scope.cached), "cached-inventory"
-        )
-        require(
-            set(r["counter_scopes"])
-            == {"controller", "coordinator", "workers", "monitor"},
-            "counter-scope-fields",
-        )
-        require(
-            r["counter_scopes"]
-            == {
-                "controller": "owning-unit-NRestarts",
-                "coordinator": "owning-unit-NRestarts",
-                "workers": "coordinator-worker-restart_count",
-                "monitor": "owning-unit-NRestarts",
-            },
-            "restart-counter-scope",
-        )
-        require(set(r["cohorts"]) == set(p["cohorts"]), "cohort-policy-binding")
-        require(set(r["boot"]) == {"default_target", "edges"}, "boot-registration")
-        for name, spec in r["units"].items():
-            require(
-                set(spec)
-                == {"kind", "fragment", "dropins", "environment_files", "owned_links"},
-                "unit-registration-fields",
-            )
-            require(
-                spec["kind"] in {"runtime", "long_running", "oneshot", "timer"},
-                "unit-kind",
-            )
-            require(
-                (name == RUNTIME) == (spec["kind"] == "runtime"), "runtime-unit-scope"
-            )
-        require(
-            sum(v["kind"] == "long_running" for v in r["units"].values()) == 1,
-            "monitor-count",
-        )
-        for row in r["cohorts"].values():
-            require(
-                set(row) == {"key", "worker", "parent_role"}
-                and row["parent_role"] in preservation.ACTOR_ROLES,
-                "cohort-registration",
-            )
-            require(
-                row["key"] in self.io.scope.files
-                and isinstance(row["worker"], str)
-                and row["worker"],
-                "cohort-file-binding",
-            )
-        for key, value in r["keys"].items():
-            require(
-                value
-                in (self.io.scope.tails if key == "metrics" else self.io.scope.files),
-                "metadata-file-binding",
-            )
-        require(
-            all(key in self.io.scope.files for key in r["heartbeats"].values()),
-            "heartbeat-file-binding",
-        )
-        require(
-            isinstance(r["source_pins"], dict) and 0 < len(r["source_pins"]) <= 256,
-            "source-pin-inventory",
-        )
-        for key, pin in r["source_pins"].items():
-            shape(pin, "sha256 bytes", "source-pin-fields")
-            require(
-                key in self.io.scope.files
-                and preservation.sha(pin["sha256"])
-                and integer(pin["bytes"], 1)
-                and pin["bytes"] <= 1024 * 1024,
-                "source-pin",
-            )
-        for ref in r["cached_references"].values():
-            shape(
-                ref,
-                "sha256 qualification_sha256 literal_stat resolved_stat",
-                "cache-reference-shape",
-            )
-            require(
-                preservation.sha(ref["sha256"])
-                and preservation.sha(ref["qualification_sha256"]),
-                "qualified-cache-reference",
-            )
-            for field in ("literal_stat", "resolved_stat"):
-                st = shape(ref[field], " ".join(FINGERPRINT), "cache-stat-fields")
-                require(
-                    all(integer(v) for v in st.values()) and st["mode"] <= 0o7777,
-                    "cache-stat-values",
-                )
         roles = {"controller", "coordinator", *WORKERS}
-        require(set(p["expected_processes"]) == roles, "expected-process-inventory")
         birth = shape(
             r["birth_reference"],
             "boot_id qualification_sha256 offset_lower_ns offset_upper_ns max_bracket_ns bounds",
@@ -401,133 +565,9 @@ class IdentityCollector:
             and birth["bounds"]["learner"] == p["learner_birth_upper_ns"],
             "birth-role-bounds",
         )
-        for role, spec in r["origins"].items():
-            shape(
-                spec,
-                "interpreter cwd argv_sha256 argv_bytes approved_template_id environment native_keys entrypoint_contract_sha256 restart_counter_scope",
-                "origin-spec-fields",
-            )
-            require(
-                spec["interpreter"] in self.io.scope.cached and path(spec["cwd"]),
-                "origin-interpreter-cwd",
-            )
-            require(
-                all(
-                    preservation.sha(spec[k])
-                    for k in (
-                        "argv_sha256",
-                        "approved_template_id",
-                        "entrypoint_contract_sha256",
-                    )
-                )
-                and integer(spec["argv_bytes"], 1),
-                "origin-pins",
-            )
-            require(
-                isinstance(spec["native_keys"], list)
-                and len(set(spec["native_keys"])) == len(spec["native_keys"])
-                and all(k in self.io.scope.cached for k in spec["native_keys"]),
-                "origin-native-inventory",
-            )
-            require(
-                spec["restart_counter_scope"]
-                == (
-                    "coordinator-worker:restart_count"
-                    if role in WORKERS
-                    else "systemd-unit:NRestarts"
-                ),
-                "origin-restart-counter-scope",
-            )
-            require(isinstance(spec["environment"], dict), "origin-environment-fields")
-            for name, row in spec["environment"].items():
-                require(
-                    isinstance(name, str)
-                    and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name),
-                    "origin-environment-key",
-                )
-                shape(
-                    row, "present value_sha256 value_bytes", "origin-environment-fields"
-                )
-                require(
-                    type(row["present"]) is bool
-                    and integer(row["value_bytes"])
-                    and (
-                        preservation.sha(row["value_sha256"])
-                        if row["present"]
-                        else row["value_sha256"] is None and row["value_bytes"] == 0
-                    ),
-                    "origin-environment-pin",
-                )
-        rules = r["empty_property_rules"]
-        require(
-            isinstance(rules, dict)
-            and set(rules)
-            <= {
-                "Environment",
-                "PassEnvironment",
-                "UnsetEnvironment",
-                "EnvironmentFiles",
-                *OPTIONAL_EMPTY_EXEC,
-            }
-            and all(v == "systemd-255-empty-" + k for k, v in rules.items()),
-            "empty-property-rules",
+        validate_common_registration(
+            {key: r[key] for key in COMMON_FIELDS}, self.io.scope
         )
-        boot = r["boot"]
-        require(
-            boot["default_target"] in self.io.scope.targets
-            and isinstance(boot["edges"], list),
-            "boot-target-binding",
-        )
-        edge_tuples = []
-        for edge in boot["edges"]:
-            shape(edge, "from to relation", "boot-edge-fields")
-            require(
-                edge["from"] in self.io.scope.targets
-                and edge["to"] in self.io.scope.targets
-                and edge["relation"] in {"Wants", "Requires"},
-                "boot-edge-scope",
-            )
-            edge_tuples.append((edge["from"], edge["to"], edge["relation"]))
-        require(edge_tuples == sorted(set(edge_tuples)), "boot-edge-order")
-        for name, spec in r["units"].items():
-            require(
-                self.io.scope.units[name]
-                == ("timer" if spec["kind"] == "timer" else "service"),
-                "unit-kind-binding",
-            )
-            require(
-                spec["fragment"] in self.io.scope.files
-                and isinstance(spec["dropins"], list)
-                and len(spec["dropins"]) == len(set(spec["dropins"]))
-                and all(k in self.io.scope.files for k in spec["dropins"]),
-                "unit-file-scope",
-            )
-            require(
-                isinstance(spec["environment_files"], list), "environment-file-fields"
-            )
-            env_keys = []
-            for item in spec["environment_files"]:
-                shape(item, "key ignore_missing", "environment-file-fields")
-                require(
-                    item["key"] in self.io.scope.files
-                    and type(item["ignore_missing"]) is bool,
-                    "environment-file-scope",
-                )
-                env_keys.append(item["key"])
-            require(
-                len(env_keys) == len(set(env_keys))
-                and (not env_keys or spec["kind"] != "timer"),
-                "environment-file-inventory",
-            )
-            require(isinstance(spec["owned_links"], list), "boot-links-registration")
-            for link in spec["owned_links"]:
-                shape(link, "path literal_target resolved_target", "boot-link-fields")
-                require(
-                    path(link["path"])
-                    and path(link["resolved_target"])
-                    and isinstance(link["literal_target"], str),
-                    "boot-link-path",
-                )
 
     def take(self, observation):
         self.audit.append(dict(observation.audit))

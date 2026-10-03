@@ -821,3 +821,37 @@ The complete 954-file brand audit also passed. Separate author runs and earlier
 proof revisions remain preserved rather than combined into a larger count.
 No target qualification, live source/profile/service change, GPU work or R4
 activation accompanied this local preparation.
+
+The observed-window registration now has a separate strict parser. It checks
+externally approved raw bytes, exact format and contract, common scope/source/
+environment/boot/cache invariants, the private writer evidence, the complete
+publication-writer inventory and the current-kernel namespace/HZ/credential
+expectations. Raw command and native byte digests join the existing argv and
+native policy pins. Import/access/qualification digests remain externally
+established premises, not facts proved by equality. Its frozen private result
+reports schema validation only; it grants no writer, runtime or execution
+qualification and enables no collector or CLI success route.
+
+Shared validation stays in the existing identity module. The historical
+constructor still requires its exact header and mandatory birth qualification
+before any IO. New registrations reject old birth fields rather than filling
+them with an observation time. The new fixed credential read accepts only a
+previously admitted process token, reads status through its retained proc
+directory, and checks PID/start/parent/cgroup around the read. It reports the
+four literal real/effective/saved/filesystem UIDs without exposing raw status.
+The reader does not infer credentials from a username or proc-directory owner;
+the strict R3 registration separately requires the qualified UID consistency.
+
+The final affected check passed 258 cases with two workers, zero failures/skips,
+stable source bytes and clean Ruff, formatting and Pyright. Private-proc
+reader/schema composition confirms both honest unequal-UID measurement and
+strict schema refusal. The complete 959-file brand audit passed. Actual renewal
+collection, authenticated historical-B reconstruction, the end-to-end contract
+discriminator and safe producer/consumer attestation remain separate work.
+No target staging, service, source, profile, GPU or R4 activation occurred.
+
+Committed `bf798cee` passed all six CI jobs on attempt one: 6,647 Python/native
+tests, 1,023 web tests, 107 clean browser E2E tests plus five skips, all 28 coverage
+floors, Rust/WASM, audits and container checks. The failed `7f279e18` run remains
+preserved as a failure; its test isolation correction was validated on this new
+head. This first registration revision requires its own exact-head CI result.
