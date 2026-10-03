@@ -44,15 +44,25 @@ def _path(state: Path, kind: str, stage: int) -> Path:
 def load_scenario(
     io: q.ClosedIO, pin: dict[str, Any], deadline: float
 ) -> dict[str, Any]:
-    p = io.plan.value
+    q.pin_shape(pin)
+    q.require(
+        Path(pin["path"]).is_relative_to(Path(io.plan.value["input_root"])),
+        "support-scenario-input",
+    )
+    return validate_scenario(io.plan, pin, io.read(Path(pin["path"]), 2**20, deadline))
+
+
+def validate_scenario(plan: q.Plan, pin: dict[str, Any], raw: bytes) -> dict[str, Any]:
+    """Validate already pinned proposal bytes without admitting target actions."""
+    p = plan.value
     q.pin_shape(pin)
     q.require(
         Path(pin["path"]).is_relative_to(Path(p["input_root"])),
         "support-scenario-input",
     )
-    raw = io.read(Path(pin["path"]), 2**20, deadline)
     q.require(
-        len(raw) == pin["bytes"] and _hash(raw) == pin["sha256"], "support-scenario-pin"
+        len(raw) <= 2**20 and len(raw) == pin["bytes"] and _hash(raw) == pin["sha256"],
+        "support-scenario-pin",
     )
     value = q.exact(
         json.loads(raw),

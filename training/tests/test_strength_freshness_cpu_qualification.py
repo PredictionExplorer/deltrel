@@ -77,6 +77,7 @@ def make_plan():
             "before": artifact(INPUT / "before.json", b"{}"),
             "before_request": artifact(INPUT / "before-request.json", b"{}"),
             "before_receipt": artifact(INPUT / "before-receipt.json", b"{}"),
+            "before_execution": artifact(INPUT / "before-execution.json", b"{}"),
             "after_path": str(SCRATCH / "external/r3-after.json"),
             "verified_champions": {"sha256-" + "2" * 64: "3" * 64},
         },
@@ -92,6 +93,14 @@ def make_plan():
         "strength_freshness_cpu_support_case.py",
         "strength_freshness_cpu_preservation.py",
         "strength_freshness_cpu_fixture.py",
+        "strength_freshness_cpu_completion.py",
+        "strength_freshness_cpu_capture_request.py",
+        "strength_freshness_cpu_collect_records.py",
+        "strength_freshness_cpu_collect_support.py",
+        "strength_freshness_cpu_collect_identity.py",
+        "strength_freshness_cpu_collect_facts.py",
+        "strength_freshness_cpu_readonly.py",
+        "strength_freshness_cpu_outer.py",
     ):
         p["source_pins"].append(
             artifact(Path(p["control_root"]) / "scripts" / module, b"source")
@@ -835,3 +844,87 @@ def test_dummy_jobs_use_exact_plain_table_through_closed_dispatcher(fixture):
         with pytest.raises(q.Refusal, match="command-not-allowed"):
             fixture.io.command(argv, 120)
     assert fixture.backend.commands == []
+
+
+def test_new_plan_requires_precommitted_before_execution_and_exact_name():
+    value, _ = make_plan()
+    del value["preservation"]["before_execution"]
+    with pytest.raises(q.Refusal, match="preservation"):
+        q.Plan.parse(q.encode(value), q.sha(q.encode(value)))
+    value, _ = make_plan()
+    value["preservation"]["before_execution"]["path"] = str(INPUT / "other-proof.json")
+    with pytest.raises(q.Refusal, match="before-execution"):
+        q.Plan.parse(q.encode(value), q.sha(q.encode(value)))
+
+
+def test_old_addenda_cannot_silently_inherit_completion_gate():
+    value, _ = make_plan()
+    value["addenda_sha256"].remove(q.completion.ADDENDUM_SHA256)
+    with pytest.raises(q.Refusal):
+        q.Plan.parse(q.encode(value), q.sha(q.encode(value)))
+
+
+@pytest.mark.parametrize("shadow", [False, True])
+def test_actual_driver_origin_is_joined_before_source_byte_admission(
+    monkeypatch, shadow
+):
+    from scripts import strength_freshness_cpu_driver as driver
+    from scripts import strength_freshness_cpu_capture_request as requests
+    from scripts import strength_freshness_cpu_lifecycle as lifecycle
+    from scripts import qualify_cloud_gpu_window as system_host
+
+    modules = (
+        q,
+        driver,
+        q.linux,
+        q.support,
+        q.linux.core,
+        lifecycle,
+        system_host,
+        q.completion,
+        requests,
+        requests.records,
+        requests.supports,
+        requests.supports.identity_module,
+        requests.supports.facts,
+        requests.supports.identity_module.readonly,
+        requests.preservation,
+    )
+    files = {str(Path(cast(str, module.__file__)).resolve()) for module in modules}
+    source_pins = [artifact(path, Path(path).read_bytes()) for path in sorted(files)]
+    value, _ = make_plan()
+    value.update(
+        control_root=str(Path(cast(str, q.__file__)).resolve().parent.parent),
+        source_pins=source_pins,
+    )
+    driver_path = str(Path(cast(str, driver.__file__)).resolve())
+    if shadow:
+        monkeypatch.setattr(
+            driver, "__file__", "/shadow/strength_freshness_cpu_driver.py"
+        )
+    seen = []
+
+    class EndOfOriginCheck(Exception):
+        pass
+
+    def pin(item, deadline):
+        assert deadline == 120
+        if item == value["python"]:
+            raise EndOfOriginCheck
+        seen.append(item["path"])
+
+    facts = SimpleNamespace(record=lambda event, data: None)
+    with pytest.raises(
+        q.Refusal if shadow else EndOfOriginCheck,
+        match="executing-module-unpinned" if shadow else None,
+    ):
+        q.verify_sources(
+            cast(q.Plan, SimpleNamespace(value=value)),
+            cast(q.linux.LinuxIO, SimpleNamespace(pin=pin)),
+            cast(q.RawFacts, facts),
+            120,
+        )
+    if shadow:
+        assert not (set(seen) & files)
+    else:
+        assert driver_path in seen and set(files) <= set(seen)

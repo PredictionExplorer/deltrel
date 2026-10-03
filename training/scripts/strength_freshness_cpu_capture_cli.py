@@ -122,6 +122,7 @@ def custom_modules():
     return (
         sys.modules[__name__],
         requests,
+        requests.completion,
         requests.records,
         requests.lifecycle,
         preservation,

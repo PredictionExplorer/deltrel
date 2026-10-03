@@ -5,12 +5,15 @@ from __future__ import annotations
 from dataclasses import asdict
 from decimal import Decimal
 import re
+import math
 import os
 from pathlib import Path
 import stat
 import time
 from typing import Any, Mapping
 
+from scripts import strength_freshness_cpu_completion as completion
+from scripts import strength_freshness_cpu_capture_request as requests
 from scripts import strength_freshness_cpu_lifecycle as life
 from scripts import strength_freshness_cpu_qualification as q
 
@@ -28,6 +31,21 @@ class TargetIO(q.linux.LinuxIO):
 
     def wall_ns(self) -> int:
         return time.time_ns()
+
+    def directory_metadata(self, path: Path, deadline: float) -> dict[str, int]:
+        q.require(
+            self.now() < deadline and path.resolve() == path, "completion-parent-path"
+        )
+        info = path.lstat()
+        q.require(
+            stat.S_ISDIR(info.st_mode) and self.now() < deadline,
+            "completion-parent-kind",
+        )
+        return {
+            "uid": info.st_uid,
+            "gid": info.st_gid,
+            "mode": stat.S_IMODE(info.st_mode),
+        }
 
     def unlink_file(
         self, path: Path, expected: Mapping[str, Any], deadline: float
@@ -822,26 +840,181 @@ def run_role(context: q.AuthorizedContext) -> None:
         raise
 
 
-def load_preservation(context: q.AuthorizedContext) -> dict[str, Any]:
-    from scripts.strength_freshness_cpu_preservation import verify_preservation
+class CompletionReader:
+    """Closed observer reads only; evidence grants no commands or process access."""
 
-    p = context.plan.value["preservation"]
+    def __init__(self, context, deadline):
+        self.context, self.deadline = context, deadline
+        self.seen = {}
+        self.consumed = 0
 
-    def ready(deadline):
-        path = Path(p["after_path"])
-        return path if context.io.exists(path) else None
+    def fixed(self, path, maximum=completion.MAX_RECEIPT):
+        path = q.canonical(str(path))
+        if str(path) not in {
+            item["path"] for item in self.context.plan.value["source_pins"]
+        }:
+            self.context.io.completion_directory(path.parent, self.deadline)
+        q.require(
+            self.context.io.file_metadata(path, self.deadline)
+            == {"uid": 0, "gid": 0, "mode": 0o444},
+            "execution-input-protection",
+        )
+        raw = self.context.io.read(path, maximum, self.deadline)
+        self.consumed += len(raw)
+        q.require(self.consumed <= 24 * 2**20, "execution-read-budget")
+        q.require(
+            self.context.io.file_metadata(path, self.deadline)
+            == {"uid": 0, "gid": 0, "mode": 0o444},
+            "execution-input-protection",
+        )
+        observed = {"path": str(path), "sha256": q.sha(raw), "bytes": len(raw)}
+        q.require(
+            str(path) not in self.seen or self.seen[str(path)] == observed,
+            "execution-input-raced",
+        )
+        self.seen[str(path)] = observed
+        return raw
 
-    path = poll(context, "observer", ready)
-    end = context.anchor.effective_deadline("observer", context.clock())
-    for key in ("policy", "before"):
-        context.io.pin(p[key], end)
-    policy = context.io.json(Path(p["policy"]["path"]), end)
-    before = context.io.json(Path(p["before"]["path"]), end)
-    metadata = context.io.file_metadata(path, end)
-    q.require(
-        metadata == {"uid": 0, "gid": 0, "mode": 0o444}, "external-r3-facts-protection"
+    def read(self, expected, *, root=None, limit=completion.MAX_RECEIPT):
+        checked = completion.pin(expected, limit)
+        path = q.canonical(checked["path"])
+        q.require(root is None or path.parent == root, "execution-input-parent")
+        raw = self.fixed(path, limit)
+        q.require(self.seen[str(path)] == checked, "execution-input-pin")
+        return raw
+
+    def recheck(self):
+        for item in list(self.seen.values()):
+            self.read(item, limit=max(completion.MAX_RECEIPT, item["bytes"]))
+
+
+def ns_clock(now):
+    return {
+        "boot_id": now.boot_id,
+        "monotonic_ns": math.floor(now.monotonic * 1e9),
+        "wall_ns": now.wall_ns,
+    }
+
+
+def completed_capture(context, deadline):
+    """No measurement admission until both producer families naturally closed."""
+    p = context.plan.value
+    preserved = p["preservation"]
+    reader = CompletionReader(context, deadline)
+    anchor_clock = {
+        "boot_id": context.anchor.boot_id,
+        "monotonic_ns": math.floor(context.anchor.started_monotonic * 1e9),
+        "wall_ns": context.anchor.started_wall_ns,
+    }
+    before = requests.validate_committed_before(
+        preserved,
+        nonce=p["nonce"],
+        boot_id=p["boot_id"],
+        source_pins=p["source_pins"],
+        control_root=p["control_root"],
+        reader=reader,
+        now_clock=anchor_clock,
+        python=p["python"]["path"],
     )
-    envelope = context.io.json(path, end)
+    after_path = Path(preserved["after_path"])
+    raw = reader.fixed(after_path.with_name("r3-after.execution.json"))
+    value = completion.parse(raw)
+    artifacts = completion.shape(
+        value.get("artifacts"), completion.ARTIFACTS, "execution-artifacts"
+    )
+    expected_paths = {
+        "capture": after_path,
+        "receipt": after_path.with_name("r3-after.receipt.json"),
+        **{
+            k: after_path.parent / "capture-inputs" / (k + ".json")
+            for k in ("launch", "request", "registration")
+        },
+    }
+    for name, path in expected_paths.items():
+        q.require(
+            completion.pin(artifacts[name])["path"] == str(path),
+            "execution-artifact-location",
+        )
+    q.require(
+        completion.pin(artifacts["provenance"], 4 * 2**20)["path"]
+        == str(
+            after_path.parent
+            / ("r3-after.provenance-" + artifacts["provenance"]["sha256"] + ".json")
+        ),
+        "execution-provenance-location",
+    )
+    bodies = {
+        name: reader.read(item, limit=4 * 2**20 if name == "provenance" else 2**20)
+        for name, item in artifacts.items()
+    }
+    launch = completion.parse(bodies["launch"])
+    request = requests.request(bodies["request"])
+    registration = completion.parse(bodies["registration"])
+    envelope = completion.parse(bodies["capture"])
+    receipt = completion.parse(bodies["receipt"])
+    provenance = completion.parse(bodies["provenance"], 4 * 2**20)
+    q.exact(
+        launch,
+        {
+            "format",
+            "schema_version",
+            "phase",
+            "request",
+            "registration",
+            "physical_kind",
+            "plan",
+            "anchor",
+        },
+        "execution-launch-fields",
+    )
+    q.require(
+        launch["format"] == "strength-preservation-capture-launch-v1"
+        and type(launch["schema_version"]) is int
+        and launch["schema_version"] == 1
+        and launch["phase"] == request["phase"] == "after"
+        and launch["request"] == artifacts["request"]
+        and launch["registration"] == artifacts["registration"]
+        and launch["physical_kind"] in {"learner_metrics", "actor_broker"},
+        "execution-launch-binding",
+    )
+    q.require(
+        launch["plan"]["path"] == context.authorization["plan_path"]
+        and launch["anchor"]["path"] == context.authorization["anchor_path"]
+        and launch["plan"]["sha256"] == context.plan.checksum,
+        "execution-launch-authority",
+    )
+    q.require(
+        completion.parse(reader.read(launch["plan"])) == p
+        and completion.parse(reader.read(launch["anchor"])) == context.anchor.as_dict(),
+        "execution-plan-anchor-bytes",
+    )
+    q.require(
+        request["nonce"] == p["nonce"]
+        and request["plan_sha256"] == context.plan.checksum
+        and request["anchor_sha256"] == life.digest(context.anchor.as_dict())
+        and request["registration_sha256"] == artifacts["registration"]["sha256"]
+        and all(
+            artifacts["registration"][k] == before.artifacts["registration"][k]
+            for k in ("sha256", "bytes")
+        )
+        and all(x in p["source_pins"] for x in request["source_pins"]),
+        "execution-request-binding",
+    )
+    requests.validate_registration(request, bodies["registration"])
+    requests.executed_sources(request)
+    for name in ("before", "policy", "before_request", "before_receipt"):
+        q.require(request[name + "_pin"] == preserved[name], "execution-before-binding")
+    q.require(
+        request["cleanup_pin"] == find_one(context.log, "cleanup-complete"),
+        "execution-cleanup-binding",
+    )
+    start = request["limits"]["started"]
+    budget = completion.after_budget(start, context.anchor.as_dict())
+    q.require(
+        request["limits"]["deadline_monotonic_ns"] == budget["work"]["monotonic_ns"]
+        and request["limits"]["deadline_wall_ns"] == budget["work"]["wall_ns"],
+        "execution-original-work-deadline",
+    )
     q.exact(
         envelope,
         {"format", "plan_sha256", "anchor_sha256", "capture"},
@@ -853,6 +1026,145 @@ def load_preservation(context: q.AuthorizedContext) -> dict[str, Any]:
         and envelope["anchor_sha256"] == life.digest(context.anchor.as_dict()),
         "external-capture-attempt",
     )
+    q.exact(receipt, requests.RECEIPT_FIELDS, "execution-receipt-fields")
+    q.require(
+        receipt["format"] == requests.RECEIPT
+        and receipt["schema_version"] == 2
+        and receipt["status"] == "complete"
+        and receipt["refusals"] == []
+        and receipt["request_sha256"] == artifacts["request"]["sha256"]
+        and receipt["registration_sha256"] == artifacts["registration"]["sha256"]
+        and receipt["capture_pin"] == artifacts["capture"]
+        and receipt["source_pins"] == request["source_pins"]
+        and receipt["derivations"]["launch_sha256"] == artifacts["launch"]["sha256"]
+        and receipt["derivations"]["provenance_pin"] == artifacts["provenance"],
+        "execution-output-binding",
+    )
+    completion.order(start, receipt["read_start"])
+    completion.order(receipt["read_start"], receipt["read_end"])
+    completion.limit(receipt["read_end"], budget["work"], strict=True)
+    capture_clock = envelope["capture"]["clock"]
+    q.require(
+        capture_clock
+        == {
+            "boot_id": receipt["read_end"]["boot_id"],
+            "monotonic": receipt["read_end"]["monotonic_ns"] / 1e9,
+            "wall_ns": receipt["read_end"]["wall_ns"],
+        },
+        "execution-capture-clock",
+    )
+    expected_binding = {
+        "phase": "after",
+        "request_sha256": artifacts["request"]["sha256"],
+        "registration_file_sha256": artifacts["registration"]["sha256"],
+        "encoding_contract_sha256": registration["encoding_contract_sha256"],
+        "source_pins": request["source_pins"],
+        "capture_pin": artifacts["capture"],
+        "read_start": receipt["read_start"],
+        "read_end": receipt["read_end"],
+    }
+    q.require(
+        provenance["format"] == "strength-preservation-capture-provenance-bundle-v1"
+        and provenance["schema_version"] == 1
+        and provenance["binding"] == expected_binding
+        and receipt["encoding_contract_sha256"]
+        == registration["encoding_contract_sha256"]
+        and provenance["raw_inventory_sha256"]
+        == receipt["raw_inventory_sha256"]
+        == requests.preservation.digest(provenance["raw_inventory"])
+        and provenance["support_witnesses"]
+        == receipt["derivations"]["support_witnesses"],
+        "execution-provenance-binding",
+    )
+    expected = {
+        **completion.expected_from(value),
+        **{
+            k: before.value[k]
+            for k in (
+                "nonce",
+                "boot_id",
+                "outer_intent_sha256",
+                "qualified_outer_source_sha256",
+                "enclosing",
+            )
+        },
+        "phase_start": start,
+        "budget": budget,
+        "plan_sha256": context.plan.checksum,
+        "anchor_sha256": life.digest(context.anchor.as_dict()),
+        "before_execution_pin": preserved["before_execution"],
+        "exec_contracts": {
+            "guardian": before.value["exec_contracts"]["guardian"],
+            "collector": completion.collector_contract_sha256(
+                p["python"]["path"],
+                p["control_root"],
+                artifacts["launch"],
+                budget["work"]["monotonic_ns"],
+            ),
+        },
+    }
+    evidence_pins = completion.evidence_pins(raw)
+    evidence_root = after_path.parent / "execution-evidence"
+    for name, item in evidence_pins.items():
+        q.require(
+            item["path"]
+            == str(evidence_root / ("after-" + name.replace("_", "-") + ".json")),
+            "execution-evidence-location",
+        )
+    evidence = {
+        name: reader.read(item, limit=completion.MAX_EVIDENCE, root=evidence_root)
+        for name, item in evidence_pins.items()
+    }
+    collector_family = completion.parse(evidence["collector_family"])
+    completion.order(collector_family["child_released"]["clock"], receipt["read_start"])
+    collector_terminal = collector_family["child_terminal"]["clock"]
+    completion.order(receipt["read_end"], collector_terminal)
+    reader.recheck()
+    checked = completion.validate_after(
+        raw,
+        expected,
+        ns_clock(context.clock()),
+        evidence=evidence,
+        anchor=context.anchor.as_dict(),
+    )
+    context.log.record(
+        "external-capture-completion",
+        {
+            "execution": reader.seen[
+                str(after_path.with_name("r3-after.execution.json"))
+            ],
+            "before_execution": preserved["before_execution"],
+            "terminal_clock": checked.terminal_clock,
+            "artifacts": checked.artifacts,
+            "scope": "collector and guardian natural exit only; enclosing owners still live",
+        },
+    )
+    return envelope
+
+
+def load_preservation(context: q.AuthorizedContext) -> dict[str, Any]:
+    from scripts.strength_freshness_cpu_preservation import verify_preservation
+
+    p = context.plan.value["preservation"]
+
+    def ready(deadline):
+        path = Path(p["after_path"])
+        return (
+            path
+            if (
+                context.io.exists(path)
+                and context.io.exists(path.with_name("r3-after.execution.json"))
+            )
+            else None
+        )
+
+    poll(context, "observer", ready)
+    end = context.anchor.effective_deadline("observer", context.clock())
+    for key in ("policy", "before"):
+        context.io.pin(p[key], end)
+    policy = context.io.json(Path(p["policy"]["path"]), end)
+    before = context.io.json(Path(p["before"]["path"]), end)
+    envelope = completed_capture(context, end)
     after = envelope["capture"]
     context.log.record(
         "raw-r3-preservation-inputs",

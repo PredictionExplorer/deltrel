@@ -2,8 +2,9 @@
 
 from dataclasses import asdict
 import os
+from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -871,3 +872,429 @@ def test_owned_stop_is_still_attempted_when_disablement_fails(tmp_path):
         d.cleanup_resources(cast(q.AuthorizedContext, c), "cleanup-workloads", 120)
     assert ("stop", names[0]) in actions
     assert removed == []
+
+
+def completion_context(tmp_path, monkeypatch):
+    """Real AFTER pure gate + private byte reader; committed-before admission is a seam.
+
+    The request suite separately exercises real precommit admission. No Linux
+    observation or target qualification is implied by these synthetic families.
+    """
+    import copy
+    from pathlib import Path
+    from scripts import strength_freshness_cpu_completion as cp
+    from scripts import strength_freshness_cpu_capture_request as rq
+    from test_strength_freshness_cpu_completion import valid_completion
+
+    raw, expected, now, evidence, anchor_value = valid_completion("after")
+    assert anchor_value is not None
+    anchor = life.Anchor.from_dict(anchor_value)
+    parent = Path(expected["artifacts"]["capture"]["path"]).parent
+    data = {}
+
+    def put(path, value):
+        body = value if isinstance(value, bytes) else cp.encoded(value)
+        data[str(path)] = body
+        return {"path": str(path), "sha256": cp.sha(body), "bytes": len(body)}
+
+    sources = sorted(
+        [
+            put(
+                Path(cast(str, module.__file__)).resolve(),
+                Path(cast(str, module.__file__)).read_bytes(),
+            )
+            for module in (
+                rq,
+                rq.records,
+                rq.supports,
+                rq.completion,
+                rq.lifecycle,
+                rq.preservation,
+            )
+        ],
+        key=lambda p: p["path"],
+    )
+    registration = {
+        "source_pins": {
+            str(i): {k: item[k] for k in ("sha256", "bytes")}
+            for i, item in enumerate(sources)
+        },
+        "scope": {
+            "files": {str(i): {"path": item["path"]} for i, item in enumerate(sources)}
+        },
+        "birth_reference": {"boot_id": anchor.boot_id},
+        "encoding_contract_sha256": "8" * 64,
+    }
+    registration_pin = put(parent / "capture-inputs/registration.json", registration)
+    before_raw, before_expected, before_now, before_evidence, _ = valid_completion()
+    before_value = cp.parse(before_raw)
+    before_expected["artifacts"]["registration"].update(
+        sha256=registration_pin["sha256"], bytes=registration_pin["bytes"]
+    )
+    before_value["artifacts"] = before_expected["artifacts"]
+    before_raw = cp.encoded(before_value)
+    verified_before = cp.validate_before(
+        before_raw, before_expected, before_now, evidence=before_evidence
+    )
+    before_pin = put("/input/before-execution.json", before_raw)
+    preserved: dict[str, Any] = {
+        k: put("/input/" + k + ".json", {})
+        for k in ("before", "before_request", "before_receipt", "policy")
+    }
+    preserved.update(
+        before_execution=before_pin,
+        after_path=str(parent / "r3-after.json"),
+        verified_champions={},
+    )
+    p = {
+        "nonce": anchor.nonce,
+        "boot_id": anchor.boot_id,
+        "source_pins": sources,
+        "control_root": "/control/training",
+        "python": {"path": "/venv/bin/python"},
+        "preservation": preserved,
+    }
+    plan_pin = put("/input/plan.json", p)
+    anchor_value["plan_sha256"] = plan_pin["sha256"]
+    anchor = life.Anchor.from_dict(anchor_value)
+    anchor_pin = put("/input/anchor.json", anchor.as_dict())
+    log = d.EvidenceLog(tmp_path / "completion", anchor)
+    cleanup = log.record(
+        "cleanup-complete",
+        {
+            "clock": {
+                "boot_id": anchor.boot_id,
+                "monotonic": 639.0,
+                "wall_ns": now["wall_ns"] - 16 * 10**9,
+            }
+        },
+    )
+    start = expected["phase_start"]
+    budget = cp.after_budget(start, anchor.as_dict())
+    request = {
+        "format": rq.FORMAT,
+        "schema_version": 2,
+        "phase": "after",
+        "nonce": anchor.nonce,
+        "registration_sha256": registration_pin["sha256"],
+        "source_pins": sources,
+        "plan_sha256": plan_pin["sha256"],
+        "anchor_sha256": life.digest(anchor.as_dict()),
+        "cleanup_pin": cleanup,
+        **{
+            k + "_pin": preserved[k]
+            for k in ("before", "policy", "before_request", "before_receipt")
+        },
+        "limits": {
+            "started": start,
+            "deadline_monotonic_ns": budget["work"]["monotonic_ns"],
+            "deadline_wall_ns": budget["work"]["wall_ns"],
+            "metadata_bytes": rq.METADATA_BUDGET,
+            "runtime_bytes": rq.RUNTIME_BUDGET,
+        },
+    }
+    request_pin = put(parent / "capture-inputs/request.json", request)
+    launch = {
+        "format": "strength-preservation-capture-launch-v1",
+        "schema_version": 1,
+        "phase": "after",
+        "request": request_pin,
+        "registration": registration_pin,
+        "physical_kind": "learner_metrics",
+        "plan": plan_pin,
+        "anchor": anchor_pin,
+    }
+    launch_pin = put(parent / "capture-inputs/launch.json", launch)
+    read_start = {
+        **start,
+        "monotonic_ns": start["monotonic_ns"] + 6 * 10**9,
+        "wall_ns": start["wall_ns"] + 6 * 10**9,
+    }
+    read_end = {
+        **start,
+        "monotonic_ns": start["monotonic_ns"] + 8 * 10**9,
+        "wall_ns": start["wall_ns"] + 8 * 10**9,
+    }
+    envelope = {
+        "format": "strength-freshness-cpu-r3-after-v1",
+        "plan_sha256": plan_pin["sha256"],
+        "anchor_sha256": life.digest(anchor.as_dict()),
+        "capture": {
+            "clock": {
+                "boot_id": read_end["boot_id"],
+                "monotonic": read_end["monotonic_ns"] / 1e9,
+                "wall_ns": read_end["wall_ns"],
+            }
+        },
+    }
+    capture_pin = put(parent / "r3-after.json", envelope)
+    provenance = {
+        "format": "strength-preservation-capture-provenance-bundle-v1",
+        "schema_version": 1,
+        "binding": {
+            "phase": "after",
+            "request_sha256": request_pin["sha256"],
+            "registration_file_sha256": registration_pin["sha256"],
+            "encoding_contract_sha256": registration["encoding_contract_sha256"],
+            "source_pins": sources,
+            "capture_pin": capture_pin,
+            "read_start": read_start,
+            "read_end": read_end,
+        },
+        "raw_inventory": [],
+        "raw_inventory_sha256": rq.preservation.digest([]),
+        "support_witnesses": {},
+    }
+    provenance_body = cp.encoded(provenance)
+    provenance_pin = put(
+        parent / ("r3-after.provenance-" + cp.sha(provenance_body) + ".json"),
+        provenance_body,
+    )
+    receipt = {
+        "format": rq.RECEIPT,
+        "schema_version": 2,
+        "status": "complete",
+        "request_sha256": request_pin["sha256"],
+        "registration_sha256": registration_pin["sha256"],
+        "encoding_contract_sha256": registration["encoding_contract_sha256"],
+        "source_pins": sources,
+        "read_start": read_start,
+        "read_end": read_end,
+        "capture_pin": capture_pin,
+        "raw_inventory_sha256": provenance["raw_inventory_sha256"],
+        "restart_counter_scopes": {},
+        "refusals": [],
+        "derivations": {
+            "launch_sha256": launch_pin["sha256"],
+            "provenance_pin": provenance_pin,
+            "support_witnesses": {},
+        },
+    }
+    receipt_pin = put(parent / "r3-after.receipt.json", receipt)
+    value = cp.parse(raw)
+    value.update(
+        plan_sha256=plan_pin["sha256"],
+        anchor_sha256=life.digest(anchor.as_dict()),
+        before_execution_pin=before_pin,
+        artifacts={
+            "launch": launch_pin,
+            "request": request_pin,
+            "registration": registration_pin,
+            "capture": capture_pin,
+            "receipt": receipt_pin,
+            "provenance": provenance_pin,
+        },
+    )
+    value["exec_contracts"]["collector"] = cp.collector_contract_sha256(
+        p["python"]["path"],
+        p["control_root"],
+        launch_pin,
+        budget["work"]["monotonic_ns"],
+    )
+    doc = cp.parse(evidence["collector_family"])
+    for key in ("child_started", "child_released"):
+        doc[key]["exec_contract_sha256"] = value["exec_contracts"]["collector"]
+    evidence["collector_family"] = cp.encoded(doc)
+    for name, body in evidence.items():
+        value["evidence_pins"][name] = put(value["evidence_pins"][name]["path"], body)
+    gate = parent / "r3-after.execution.json"
+    put(gate, value)
+    reads = []
+
+    class IO:
+        def exists(self, path):
+            return str(path) in data
+
+        def read(self, path, maximum, deadline):
+            reads.append(str(path))
+            assert now["monotonic_ns"] / 1e9 < deadline
+            body = data[str(path)]
+            assert len(body) <= maximum
+            return body
+
+        def completion_directory(self, path, deadline):
+            assert path in {
+                Path("/input"),
+                parent,
+                parent / "capture-inputs",
+                parent / "execution-evidence",
+            }
+
+        def file_metadata(self, path, deadline):
+            assert str(path) in data
+            return {"uid": 0, "gid": 0, "mode": 0o444}
+
+    ctx = SimpleNamespace(
+        plan=SimpleNamespace(value=p, checksum=plan_pin["sha256"]),
+        anchor=anchor,
+        log=log,
+        io=IO(),
+        clock=lambda: life.Clock(
+            now["boot_id"], now["monotonic_ns"] / 1e9, now["wall_ns"]
+        ),
+        authorization={
+            "plan_path": plan_pin["path"],
+            "anchor_path": anchor_pin["path"],
+        },
+    )
+    monkeypatch.setattr(
+        rq, "validate_committed_before", lambda *args, **kwargs: verified_before
+    )
+    return ctx, data, value, put, reads, copy.deepcopy(envelope), now
+
+
+def test_completed_capture_joins_real_pure_after_gate_before_return(
+    tmp_path, monkeypatch
+):
+    ctx, _, _, _, _, envelope, _ = completion_context(tmp_path, monkeypatch)
+    assert d.completed_capture(ctx, 670) == envelope
+    assert d.find_one(ctx.log, "external-capture-completion")
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["outer_intent_sha256", "qualified_outer_source_sha256", "guardian", "collector"],
+)
+def test_consumer_never_trusts_rehashed_gate_authority(tmp_path, monkeypatch, key):
+    ctx, _, value, put, _, _, _ = completion_context(tmp_path, monkeypatch)
+    if key in {"guardian", "collector"}:
+        value["exec_contracts"][key] = "7" * 64
+    else:
+        value[key] = "7" * 64
+    put(
+        Path(ctx.plan.value["preservation"]["after_path"]).with_name(
+            "r3-after.execution.json"
+        ),
+        value,
+    )
+    with pytest.raises(
+        d.completion.CompletionRefusal, match="completion-expectation-mismatch"
+    ):
+        d.completed_capture(ctx, 670)
+
+
+def test_capture_marker_without_execution_proof_never_becomes_ready(
+    tmp_path, monkeypatch
+):
+    ctx, data, _, _, reads, _, _ = completion_context(tmp_path, monkeypatch)
+    gate = Path(ctx.plan.value["preservation"]["after_path"]).with_name(
+        "r3-after.execution.json"
+    )
+    del data[str(gate)]
+
+    def poll_once(c, phase, ready):
+        assert phase == "observer" and ready(670) is None
+        raise q.Refusal("still-pending")
+
+    monkeypatch.setattr(d, "poll", poll_once)
+    with pytest.raises(q.Refusal, match="still-pending"):
+        d.load_preservation(cast(q.AuthorizedContext, ctx))
+    assert not reads
+
+
+def test_live_guardian_or_forced_collector_refuses_even_when_hashes_match(
+    tmp_path, monkeypatch
+):
+    ctx, data, value, put, _, _, _ = completion_context(tmp_path, monkeypatch)
+    p = value["evidence_pins"]["guardian_family"]
+    doc = d.completion.parse(data[p["path"]])
+    doc["family_closed"]["direct_children"] = [30]
+    value["evidence_pins"]["guardian_family"] = put(p["path"], doc)
+    put(
+        Path(ctx.plan.value["preservation"]["after_path"]).with_name(
+            "r3-after.execution.json"
+        ),
+        value,
+    )
+    with pytest.raises(
+        d.completion.CompletionRefusal, match="completion-family-not-empty"
+    ):
+        d.completed_capture(ctx, 670)
+
+
+def test_consumer_original_observer_deadline_cannot_be_extended(tmp_path, monkeypatch):
+    ctx, _, _, _, _, _, now = completion_context(tmp_path, monkeypatch)
+    now["monotonic_ns"] = 670 * 10**9
+    now["wall_ns"] += 15 * 10**9
+    with pytest.raises(d.completion.CompletionRefusal, match="completion-late"):
+        d.completed_capture(ctx, 680)
+
+
+def test_real_closedio_completion_reader_admits_only_exact_pinned_control_source(
+    tmp_path,
+):
+    ctx = context(tmp_path)
+    ctx.io._backend.metadata = {"uid": 0, "gid": 0, "mode": 0o444}
+    source = ctx.plan.value["source_pins"][0]
+    ctx.io._backend.data[source["path"]] = b"fixture source"
+    source.update(sha256=q.sha(b"fixture source"), bytes=len(b"fixture source"))
+    reader = d.CompletionReader(ctx, 120)
+    assert reader.read(source) == ctx.io._backend.data[source["path"]]
+    outside = Path(source["path"]).with_name("unregistered-neighbor.py")
+    ctx.io._backend.data[str(outside)] = b"private unrelated code"
+    with pytest.raises(q.Refusal, match="completion-parent-scope"):
+        reader.fixed(outside)
+    assert ctx.io._backend.actions == [] and ctx.io._backend.commands == []
+
+
+@pytest.mark.parametrize("kind", ["provenance", "collector_family"])
+def test_evidence_sibling_location_refuses_before_unrelated_read(
+    tmp_path, monkeypatch, kind
+):
+    ctx, data, value, put, reads, _, _ = completion_context(tmp_path, monkeypatch)
+    pin = (
+        value["artifacts"][kind]
+        if kind == "provenance"
+        else value["evidence_pins"][kind]
+    )
+    unrelated = "/input/unrelated.json"
+    data[unrelated] = data[pin["path"]]
+    pin["path"] = unrelated
+    put(
+        Path(ctx.plan.value["preservation"]["after_path"]).with_name(
+            "r3-after.execution.json"
+        ),
+        value,
+    )
+    with pytest.raises(q.Refusal, match="execution-.*-location"):
+        d.completed_capture(ctx, 670)
+    assert unrelated not in reads
+
+
+def test_completion_reader_detects_changed_bytes_on_final_recheck(tmp_path):
+    ctx = context(tmp_path)
+    ctx.io._backend.metadata = {"uid": 0, "gid": 0, "mode": 0o444}
+    source = ctx.plan.value["source_pins"][0]
+    ctx.io._backend.data[source["path"]] = b"fixture source"
+    source.update(sha256=q.sha(b"fixture source"), bytes=len(b"fixture source"))
+    reader = d.CompletionReader(ctx, 120)
+    reader.read(source)
+    ctx.io._backend.data[source["path"]] += b"changed"
+    with pytest.raises(q.Refusal, match="execution-input-raced"):
+        reader.recheck()
+
+
+def test_completion_reader_rejects_writable_or_foreign_input_before_read(tmp_path):
+    ctx = context(tmp_path)
+    source = ctx.plan.value["source_pins"][0]
+    ctx.io._backend.data[source["path"]] = b"fixture source"
+    source.update(sha256=q.sha(b"fixture source"), bytes=len(b"fixture source"))
+    with pytest.raises(q.Refusal, match="execution-input-protection"):
+        d.CompletionReader(ctx, 120).read(source)
+
+
+def test_closed_reader_protected_parent_is_checked_without_mutation(
+    tmp_path, monkeypatch
+):
+    ctx = context(tmp_path)
+    expected = ctx.plan.value["preservation"]["before_execution"]
+    ctx.io._backend.metadata = {"uid": 0, "gid": 0, "mode": 0o444}
+    monkeypatch.setattr(
+        ctx.io._backend,
+        "directory_metadata",
+        lambda path, deadline: {"uid": 0, "gid": 0, "mode": 0o755},
+        raising=False,
+    )
+    with pytest.raises(q.Refusal, match="completion-parent-protection"):
+        d.CompletionReader(ctx, 120).read(expected)
+    assert not ctx.io._backend.actions and not ctx.io._backend.commands

@@ -25,11 +25,13 @@ from typing import Any, Mapping, Protocol, cast
 
 from scripts import strength_freshness_linux as linux
 from scripts import strength_freshness_units as support
+from scripts import strength_freshness_cpu_completion as completion
 
 FORMAT = "strength-freshness-cpu-plan-v1"
 RESULT = "strength-freshness-linux-target-cpu-evidence-v1"
 PROTOCOL_SHA = "62a7712654b2c08fb8d04f74cb9da8cad1a538d3d3df5913566f99c3d99c58a0"
 ADDENDA = (
+    completion.ADDENDUM_SHA256,
     "3dc0d39e1b55522fdd3615456ffa5a766f7b383a3acf324b703b6a6f031f2093",
     "713339a63dd10af56a5cf45f345ba387b077ac508d1203c01b3623460407d423",
     "bd8bb22a630a4a4e2054d3ecfcfcc5b2bd828850d074b4f297b9d1533ebc5ff4",
@@ -73,7 +75,13 @@ LIMITS = {
     "audit": 600,
 }
 ROLES = {"dispatcher", "observer", "publisher", "cleanup", "watchdog", "workload"}
-PRESERVATION_INPUTS = ("policy", "before", "before_request", "before_receipt")
+PRESERVATION_INPUTS = (
+    "policy",
+    "before",
+    "before_request",
+    "before_receipt",
+    "before_execution",
+)
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 HEX32 = re.compile(r"[0-9a-f]{32}\Z")
 MAX_OUTPUT = 32 * 2**20
@@ -323,6 +331,14 @@ class Plan:
             "strength_freshness_cpu_support_case.py",
             "strength_freshness_cpu_preservation.py",
             "strength_freshness_cpu_fixture.py",
+            "strength_freshness_cpu_completion.py",
+            "strength_freshness_cpu_capture_request.py",
+            "strength_freshness_cpu_collect_records.py",
+            "strength_freshness_cpu_collect_support.py",
+            "strength_freshness_cpu_collect_identity.py",
+            "strength_freshness_cpu_collect_facts.py",
+            "strength_freshness_cpu_readonly.py",
+            "strength_freshness_cpu_outer.py",
         }
         require(
             required <= {Path(x["path"]).name for x in pins},
@@ -634,6 +650,11 @@ class Plan:
         require(
             len(set(preservation_paths)) == len(PRESERVATION_INPUTS),
             "preservation-input-alias",
+        )
+        require(
+            canonical(preservation["before_execution"]["path"])
+            == inputs / "before-execution.json",
+            "preservation-before-execution-path",
         )
         require(
             canonical(preservation["after_path"])
@@ -1247,9 +1268,33 @@ class ClosedIO:
         p = self.plan.value
         require(
             str(path) in p["files"]
+            or str(path) in {item["path"] for item in p["source_pins"]}
             or path.is_relative_to(Path(p["scratch_root"]))
             or path.is_relative_to(Path(p["input_root"])),
             "path-outside-dummy",
+        )
+
+    def completion_directory(self, path: Path, deadline: float) -> None:
+        """Read-only exact completion parents; never authorize generic traversal."""
+        p = self.plan.value
+        inputs = Path(p["input_root"])
+        external = Path(p["preservation"]["after_path"]).parent
+        require(
+            path
+            in {
+                inputs,
+                inputs / "execution-evidence",
+                external,
+                external / "capture-inputs",
+                external / "execution-evidence",
+            },
+            "completion-parent-scope",
+        )
+        end = self._deadline(deadline)
+        value = self._backend.directory_metadata(path, end)
+        self.facts.record("completion-parent.raw", {"path": str(path), **value})
+        require(
+            value == {"uid": 0, "gid": 0, "mode": 0o700}, "completion-parent-protection"
         )
 
     def file_metadata(self, path: Path, deadline: float) -> dict[str, int]:
@@ -1478,7 +1523,25 @@ def verify_sources(
     from scripts import strength_freshness_cpu_lifecycle as lifecycle
     from scripts import qualify_cloud_gpu_window as system_host
 
-    modules = (linux, support, linux.core, lifecycle, system_host)
+    from scripts import strength_freshness_cpu_capture_request as requests
+    from scripts import strength_freshness_cpu_driver as driver
+
+    modules = (
+        linux,
+        support,
+        linux.core,
+        lifecycle,
+        system_host,
+        completion,
+        driver,
+        requests,
+        requests.records,
+        requests.supports,
+        requests.supports.identity_module,
+        requests.supports.facts,
+        requests.supports.identity_module.readonly,
+        requests.preservation,
+    )
     actual = {
         str(Path(__file__).resolve()),
         *(str(Path(cast(str, m.__file__)).resolve()) for m in modules),

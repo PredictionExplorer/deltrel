@@ -8,6 +8,7 @@ import time
 import runpy
 import subprocess
 import sys
+from typing import Any
 
 import pytest
 
@@ -33,6 +34,107 @@ def pinned(path, raw):
     return {"path": str(path), "sha256": m.digest(raw), "bytes": len(raw)}
 
 
+def commit_before_execution(
+    plan, files, registration, before_request, receipt, *, now_ns
+):
+    """Real semantic consumer input with explicitly synthetic kernel families."""
+    from test_strength_freshness_cpu_completion import valid_completion
+
+    c = m.completion
+    raw, _expected, _now, evidence, _anchor = valid_completion()
+    value = c.parse(raw)
+    control = str(Path(m.__file__).resolve().parents[1])
+    plan["control_root"] = control
+    plan["python"] = {"path": "/qualified/.venv/bin/python"}
+    pins = plan["preservation"]
+
+    def add(path, data):
+        raw = data if isinstance(data, bytes) else encoded(data)
+        files[str(path)] = raw
+        return pinned(path, raw)
+
+    outer = next(
+        p
+        for p in plan["source_pins"]
+        if p["path"].endswith("/strength_freshness_cpu_outer.py")
+    )
+    registration_pin = add("/input/registration.json", registration)
+    launch = {
+        "format": "strength-preservation-capture-launch-v1",
+        "schema_version": 1,
+        "phase": "before",
+        "physical_kind": "actor_broker",
+        "input_root": "/input",
+        "request": pins["before_request"],
+        "registration": registration_pin,
+        "verified_champions": pins["verified_champions"],
+    }
+    launch_pin = add("/input/before-launch.json", launch)
+    receipt["derivations"]["launch_sha256"] = launch_pin["sha256"]
+    pins["before_receipt"].update(add(pins["before_receipt"]["path"], receipt))
+    times = {
+        0: 98,
+        1: 98.1,
+        2: 98.2,
+        3: 98.3,
+        4: 98.4,
+        5: 98.5,
+        6: 98.6,
+        10: 100.1,
+        11: 100.2,
+        12: 100.3,
+        13: 100.4,
+        14: 100.5,
+        15: 100.6,
+    }
+
+    def clocks(item: Any) -> Any:
+        if isinstance(item, dict):
+            if set(item) == {"boot_id", "monotonic_ns", "wall_ns"}:
+                mono = round(times[item["monotonic_ns"] // 10**9 - 100] * 10**9)
+                return {
+                    "boot_id": "boot",
+                    "monotonic_ns": mono,
+                    "wall_ns": now_ns + mono - 100 * 10**9,
+                }
+            return {k: clocks(v) for k, v in item.items()}
+        if isinstance(item, list):
+            return [clocks(v) for v in item]
+        return item
+
+    value = clocks(value)
+    value["budget"] = c.before_budget(value["phase_start"])
+    value["qualified_outer_source_sha256"] = outer["sha256"]
+    value["artifacts"] = {
+        "launch": launch_pin,
+        "registration": registration_pin,
+        "request": pins["before_request"],
+        "capture": pins["before"],
+        "receipt": pins["before_receipt"],
+        "provenance": receipt["derivations"]["provenance_pin"],
+    }
+    collector_hash = c.collector_contract_sha256(
+        plan["python"]["path"],
+        control,
+        launch_pin,
+        before_request["limits"]["deadline_monotonic_ns"],
+    )
+    value["exec_contracts"]["collector"] = collector_hash
+    for name, raw_doc in evidence.items():
+        doc = clocks(c.parse(raw_doc))
+        if name != "supervisor_admission":
+            doc["budget"] = value["budget"]
+            doc["binding"]["qualified_outer_source_sha256"] = outer["sha256"]
+        if name == "collector_family":
+            for event in ("child_started", "child_released"):
+                doc[event]["exec_contract_sha256"] = collector_hash
+        value["evidence_pins"][name] = add(
+            value["evidence_pins"][name]["path"], c.encoded(doc)
+        )
+    pins["before_execution"] = add("/input/before-execution.json", c.encoded(value))
+    return value
+
+
 def request_value(phase="before"):
     return {
         "format": m.FORMAT,
@@ -53,6 +155,179 @@ def request_value(phase="before"):
             "runtime_bytes": m.RUNTIME_BUDGET,
         },
     }
+
+
+def committed_arguments(admitted):
+    args, files, plan, anchor, _receipt, _request = admitted
+    return {
+        "committed": plan["preservation"],
+        "nonce": anchor.nonce,
+        "boot_id": anchor.boot_id,
+        "source_pins": plan["source_pins"],
+        "control_root": plan["control_root"],
+        "reader": args["reader"],
+        "now_clock": {
+            "boot_id": anchor.boot_id,
+            "monotonic_ns": int(anchor.started_monotonic * 10**9),
+            "wall_ns": anchor.started_wall_ns,
+        },
+        "registration": args["registration"],
+        "python": plan["python"]["path"],
+    }, files
+
+
+def test_committed_before_is_consumed_at_original_anchor_not_current_clock(
+    admitted, monkeypatch
+):
+    args, _files, _plan, anchor, *_ = admitted
+    calls = []
+    original = m.completion.validate_before
+
+    def observe(raw, expected, now, *, evidence):
+        calls.append(now)
+        return original(raw, expected, now, evidence=evidence)
+
+    monkeypatch.setattr(m.completion, "validate_before", observe)
+    result = m.admit_after(**args)
+    assert result.anchor == anchor
+    assert calls == [
+        {
+            "boot_id": "boot",
+            "monotonic_ns": 103 * 10**9,
+            "wall_ns": anchor.started_wall_ns,
+        }
+    ]
+    assert args["now"]["monotonic_ns"] == 107 * 10**9
+
+
+def test_prework_pin_cache_charges_once_but_keeps_original_actual_deadline(admitted):
+    values, _ = committed_arguments(admitted)
+    underlying = values["reader"]
+    values["reader"] = m._PreworkReader(underlying)
+    first = m.validate_committed_before(**values)
+    consumed = underlying.consumed
+    assert consumed > 0
+    assert m.validate_committed_before(**values) == first
+    assert underlying.consumed == consumed
+    underlying.deadline = 106
+    with pytest.raises(m.RequestRefusal, match="metadata-deadline"):
+        m.validate_committed_before(**values)
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "nonce",
+        "boot",
+        "outer-source",
+        "missing-outer",
+        "evidence-path",
+        "evidence-byte",
+        "forced-guardian",
+        "residual-child",
+        "wrong-launch",
+        "source-byte",
+        "wrong-registration",
+        "sidecar-provenance",
+        "sidecar-launch",
+        "measurement-after-exit",
+        "capture-clock",
+        "expired-original-window",
+        "collector-contract",
+        "missing-completion-origin",
+    ],
+)
+def test_committed_before_rejects_hash_valid_but_unjoined_or_incomplete_proof(
+    admitted, fault
+):
+    values, files = committed_arguments(admitted)
+    proof_pin = values["committed"]["before_execution"]
+    proof = m.completion.parse(files[proof_pin["path"]])
+    if fault == "nonce":
+        values["nonce"] = "b" * 32
+    elif fault == "boot":
+        values["boot_id"] = "other"
+    elif fault == "outer-source":
+        proof["qualified_outer_source_sha256"] = "f" * 64
+    elif fault == "missing-outer":
+        values["source_pins"] = [
+            p for p in values["source_pins"] if not p["path"].endswith("cpu_outer.py")
+        ]
+    elif fault in {
+        "evidence-path",
+        "evidence-byte",
+        "forced-guardian",
+        "residual-child",
+    }:
+        entry = proof["evidence_pins"]["guardian_family"]
+        raw = files[entry["path"]]
+        if fault == "evidence-path":
+            entry["path"] = "/input/unrelated.json"
+            files[entry["path"]] = raw
+        elif fault == "evidence-byte":
+            files[entry["path"]] = raw + b"changed"
+        else:
+            doc = m.completion.parse(raw)
+            if fault == "forced-guardian":
+                doc["child_terminal"]["waitid"].update(code="CLD_KILLED", status=15)
+            else:
+                doc["family_closed"]["direct_children"] = [900]
+            data = m.completion.encoded(doc)
+            files[entry["path"]] = data
+            entry.update(sha256=m.digest(data), bytes=len(data))
+    elif fault in {
+        "wrong-launch",
+        "sidecar-provenance",
+        "sidecar-launch",
+        "measurement-after-exit",
+        "capture-clock",
+    }:
+        kind = (
+            "launch"
+            if fault == "wrong-launch"
+            else "capture"
+            if fault == "capture-clock"
+            else "receipt"
+        )
+        entry = proof["artifacts"][kind]
+        doc = json.loads(files[entry["path"]])
+        if fault == "wrong-launch":
+            doc["request"] = dict(doc["request"], sha256="f" * 64)
+        elif fault == "sidecar-provenance":
+            doc["derivations"]["provenance_pin"]["sha256"] = "f" * 64
+        elif fault == "sidecar-launch":
+            doc["derivations"]["launch_sha256"] = "f" * 64
+        elif fault == "measurement-after-exit":
+            doc["read_end"]["monotonic_ns"] += 50 * 10**9
+            doc["read_end"]["wall_ns"] += 50 * 10**9
+        else:
+            doc["clock"]["wall_ns"] -= 1
+        data = encoded(doc)
+        files[entry["path"]] = data
+        entry.update(sha256=m.digest(data), bytes=len(data))
+        if kind != "launch":
+            values["committed"]["before" if kind == "capture" else "before_receipt"] = (
+                dict(entry)
+            )
+    elif fault == "source-byte":
+        files[values["source_pins"][0]["path"]] += b"changed"
+    elif fault == "wrong-registration":
+        values["registration"] = dict(values["registration"], policy={})
+    elif fault == "expired-original-window":
+        values["now_clock"] = {"boot_id": "boot", **proof["budget"]["gate"]}
+    elif fault == "collector-contract":
+        values["python"] = "/different/python"
+    else:
+        values["source_pins"] = [
+            p
+            for p in values["source_pins"]
+            if p["path"] != str(Path(m.completion.__file__).resolve())
+        ]
+    data = m.completion.encoded(proof)
+    files[proof_pin["path"]] = data
+    proof_pin.update(sha256=m.digest(data), bytes=len(data))
+    with pytest.raises((m.RequestRefusal, m.completion.CompletionRefusal)):
+        m.validate_committed_before(**values)
 
 
 def test_before_is_plan_free_and_integer_clocks_survive():
@@ -272,12 +547,16 @@ def admitted(observations, request):
     scratch = Path("/run") / ("edgeconnect-cpuqual-" + nonce)
     files = {}
     sources = []
-    for module in (m, m.records, m.supports, m.lifecycle, m.preservation):
+    for module in (m, m.records, m.supports, m.lifecycle, m.preservation, m.completion):
         assert isinstance(module.__file__, str)
         path = Path(module.__file__).resolve()
         raw = path.read_bytes()
         sources.append(pinned(path, raw))
         files[str(path)] = raw
+    path = Path(m.__file__).with_name("strength_freshness_cpu_outer.py").resolve()
+    raw = path.read_bytes()
+    sources.append(pinned(path, raw))
+    files[str(path)] = raw
     sources.sort(key=lambda x: x["path"])
     registration = {
         "policy": policy,
@@ -304,7 +583,7 @@ def admitted(observations, request):
         files[str(path)] = raw
         return pinned(path, raw)
 
-    before_pin = add(root / "before.json", before)
+    before_pin = add(root / "r3-before.json", before)
     policy_pin = add(root / "policy.json", policy)
     b = request_value()
     b["source_pins"] = sources
@@ -363,10 +642,10 @@ def admitted(observations, request):
     }
     bundle_raw = encoded(bundle)
     bundle_pin = add(
-        root / ("before.provenance-" + m.digest(bundle_raw) + ".json"), bundle_raw
+        root / ("r3-before.provenance-" + m.digest(bundle_raw) + ".json"), bundle_raw
     )
     br["derivations"]["provenance_pin"] = bundle_pin
-    brp = add(root / "before-receipt.json", br)
+    brp = add(root / "r3-before.receipt.json", br)
     prefix = "edgeconnect-cpuqual-" + nonce + "-"
     dispatcher = prefix + "dispatcher.service"
     props: dict[str, str] = dict.fromkeys(m.DUMMY_STATIC, "")
@@ -393,7 +672,7 @@ def admitted(observations, request):
         "nonce": nonce,
         "attempt_id": "trial",
         "boot_id": "boot",
-        "addenda_sha256": [m.ADDENDUM],
+        "addenda_sha256": [m.ADDENDUM, m.completion.ADDENDUM_SHA256],
         "input_root": str(root),
         "scratch_root": str(scratch),
         "source_pins": sources,
@@ -407,6 +686,7 @@ def admitted(observations, request):
             "verified_champions": champions,
         },
     }
+    commit_before_execution(plan, files, registration, b, br, now_ns=now_ns)
     pp = add(root / "plan.json", plan)
     anchor = life.Anchor(
         "trial", nonce, pp["sha256"], "boot", 103.0, now_ns + 3 * 10**9
@@ -744,7 +1024,7 @@ def test_before_provenance_is_read_and_bound(admitted, fault):
     raw = encoded(body)
     parent = "/outside" if fault == "outside-parent" else "/input"
     updated = pinned(
-        Path(parent) / ("before.provenance-" + m.digest(raw) + ".json"), raw
+        Path(parent) / ("r3-before.provenance-" + m.digest(raw) + ".json"), raw
     )
     files[updated["path"]] = raw
     receipt["derivations"]["provenance_pin"] = updated
@@ -850,7 +1130,9 @@ def test_authenticated_witness_has_real_shape_and_prework_window(admitted, fault
         ]
     )
     raw = encoded(value)
-    pp = pinned(Path("/input") / ("before.provenance-" + m.digest(raw) + ".json"), raw)
+    pp = pinned(
+        Path("/input") / ("r3-before.provenance-" + m.digest(raw) + ".json"), raw
+    )
     files[pp["path"]] = raw
     receipt["derivations"]["provenance_pin"] = pp
     kwargs = dict(

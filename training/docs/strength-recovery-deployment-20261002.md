@@ -596,8 +596,9 @@ The proposed external installer design keeps the twelve dummy units and their
 device sandboxes unchanged. A separately supervised read-only metadata process
 needs NVML access to observe GPU owners. The reviewed design uses nested Linux
 subreapers and pidfds to retain owned descendants across detached sessions; it
-is not implemented or Linux-qualified yet. A before producer-completion proof
-would be precommitted, and the observer would require an after execution gate
+now has locally tested process primitives; the full executable composition and
+Linux qualification remain outstanding. A before producer-completion proof
+is precommitted, and the observer requires an after execution gate
 in addition to the capture marker. The separate preflight allowance is 120
 seconds including setup and cleanup; the dummy envelope remains 600 seconds
 including all dummy setup. This is a 120-plus-600 allowance, not 600 overall.
@@ -620,3 +621,59 @@ forms, empty or duplicate words, invalid unit names and oversized input refuse.
 The raw property observations remain unchanged. The source-backed encoding
 addendum and actual safe fixture are retained; 196 affected local tests and
 static checks passed. Historical f269/d6 bundles remain separately identified.
+
+
+The external-process preparation now includes a bounded subreaper/pidfd library,
+pure producer-completion checks and deterministic setup-artifact rendering.
+The library keeps a forked capture child behind an exec gate until its direct
+ownership, PID birth and pidfd are joined. It rechecks the supervising parent
+before release and retains wait/reap evidence, adopted descendants and original
+deadlines. Local fault tests use an explicit fake kernel; actual Linux launch
+admission refuses. A runnable supervisor/operator/guardian composition, durable
+failure publication, higher-parent takeover and actual caller/session survival
+still need implementation and independent target qualification.
+
+The completion contract admits only natural zero exits and reaping of both the
+collector and its phase guardian, with empty owned families and exact source,
+intent, process, artifact and clock bindings. It never certifies the future exit
+of a still-running operator or supervisor. The plan commits `before_execution`,
+and an after capture needs the fixed `r3-after.execution.json` gate in addition
+to its commit marker. The after collector contract is reconstructed from admitted
+inputs; its guardian program/resource contract remains the one committed by the
+before proof. A future phase-specific guardian command requires another reviewed
+contract, rather than accepting a new claim from the after receipt.
+
+The pure renderer checks the before completion proof and approved template,
+changes only the absolute watchdog deadline in supplied unit definitions, and
+produces the plan, original Anchor and fixed role authorizations. Both support
+stages must have exact environment variants and complete pinned source bytes.
+File aliases, ancestor collisions and overlap with preserved or protected inputs
+refuse. This has no filesystem/systemd backend or CLI. Its final template digest
+is a separate post-BEFORE admission: embedding that digest in the earlier intent
+would create a hash cycle. The actual outer template-finalization authority is
+an explicit remaining implementation gate; hashing a proposal is not approval.
+
+Read-only evidence supports all twelve current process identities but does not
+qualify historical wall-clock birth bounds for the eleven runtime producers.
+The registration's missing qualification stays null. A separately named
+prospective observation-window design is retained for review; it has narrower
+historical claims, does not replace the current contract and cannot fill that
+null. Neither local tests nor preserved source bundles admit a target experiment
+or live R4 transition. The prior legacy bundle predates these new sources and
+cannot inherit their qualification.
+
+Committed `c4ef7173` passed all six CI jobs on its first attempt: 6,199
+Python/native tests, 1,023 web tests and 107 clean browser E2E tests plus five
+skips, all 28 coverage floors, Rust/WASM, audits and container checks. Its final
+logs are independently preserved off-host. The external-process revision has a
+separate final local check and latest-head CI gate.
+
+
+The final joint check for this revision passed 1,121 CPU/fault tests with two
+workers, zero failures/skips, unchanged source bytes, Ruff, formatting and
+Pyright. Eight brand-audit tests and the complete 938-file audit also passed.
+The earlier 1,119-case packet is retained separately; the final run includes the
+actual imported-driver origin check and its positive/shadowed-origin cases.
+Request-side, process-family and renderer reviews retain their explicit synthetic
+and pure-function limits. These counts do not qualify a Linux target, hardware
+execution, the missing outer installer or a live training transition.

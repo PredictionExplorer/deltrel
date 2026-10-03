@@ -21,6 +21,7 @@ from typing import Any, Mapping, cast
 
 from scripts import strength_freshness_cpu_collect_records as records
 from scripts import strength_freshness_cpu_collect_support as supports
+from scripts import strength_freshness_cpu_completion as completion
 from scripts import strength_freshness_cpu_lifecycle as lifecycle
 from scripts import strength_freshness_cpu_preservation as preservation
 
@@ -516,7 +517,7 @@ def _sources(reader, value):
 def executed_sources(value, *, modules=()):
     """Bind actual custom module origins, not merely same-named disk copies."""
     expected = {str(Path(__file__).resolve())}
-    for module in (records, supports, lifecycle, preservation, *modules):
+    for module in (records, supports, lifecycle, preservation, completion, *modules):
         origin = getattr(module, "__file__", None)
         require(isinstance(origin, str), "executed-module-file")
         assert isinstance(origin, str)
@@ -524,6 +525,228 @@ def executed_sources(value, *, modules=()):
     pins = {p["path"]: p for p in value["source_pins"]}
     require(expected <= set(pins), "executed-module-origin")
     return {name: pins[name] for name in sorted(expected)}
+
+
+class _PreworkReader:
+    """Reuse already pinned immutable bytes only within one admission.
+
+    The original reader still owns all deadlines, byte charging and physical
+    admission. Fresh source and lifecycle-log rechecks use that reader directly.
+    """
+
+    def __init__(self, reader):
+        self.reader = reader
+        self.cache = {}
+
+    def check(self):
+        self.reader.check()
+
+    def read(self, expected, *, root=None, limit=FILE_LIMIT):
+        expected = pin(expected, limit=limit)
+        if root is not None:
+            require(canonical(expected["path"]).parent == root, "proof-parent")
+        self.check()
+        key = (expected["path"], expected["sha256"], expected["bytes"])
+        if key not in self.cache:
+            self.cache[key] = self.reader.read(expected, root=root, limit=limit)
+        self.check()
+        return self.cache[key]
+
+
+def validate_committed_before(
+    committed,
+    *,
+    nonce,
+    boot_id,
+    source_pins,
+    control_root,
+    reader,
+    now_clock,
+    registration=None,
+    python=None,
+):
+    """Check a plan-committed historical BEFORE producer completion.
+
+    ``now_clock`` is the actual recorded Anchor start, not a fabricated fresh
+    observation. Original intent/enclosing/guardian claims are already committed
+    by the proof pin; actual source and artifact bytes are independently joined
+    here. The reader must enforce protected root-owned0444 input admission.
+    """
+    proof_pin = pin(committed["before_execution"])
+    inputs = canonical(proof_pin["path"]).parent
+    require(
+        canonical(proof_pin["path"]) == inputs / "before-execution.json",
+        "committed-before-location",
+    )
+    raw = reader.read(proof_pin, root=inputs)
+    value = completion.parse(raw)
+    expected = completion.expected_from(value)
+    require(
+        expected["nonce"] == nonce and expected["boot_id"] == boot_id,
+        "committed-before-identity",
+    )
+    source_map = {pin(x)["path"]: pin(x) for x in source_pins}
+    require(len(source_map) == len(source_pins), "committed-before-source-alias")
+    outer_path = str(
+        canonical(control_root) / "scripts/strength_freshness_cpu_outer.py"
+    )
+    require(outer_path in source_map, "committed-before-outer-source")
+    require(
+        expected["qualified_outer_source_sha256"] == source_map[outer_path]["sha256"],
+        "committed-before-outer-source",
+    )
+    reader.read(source_map[outer_path])
+    artifacts = expected["artifacts"]
+    require(set(artifacts) == completion.ARTIFACTS, "committed-before-artifacts")
+    for artifact, key in (
+        ("capture", "before"),
+        ("request", "before_request"),
+        ("receipt", "before_receipt"),
+    ):
+        require(pin(artifacts[artifact]) == pin(committed[key]), "committed-before-pin")
+    require(
+        canonical(artifacts["capture"]["path"]) == inputs / "r3-before.json"
+        and canonical(artifacts["receipt"]["path"])
+        == inputs / "r3-before.receipt.json",
+        "committed-before-output-location",
+    )
+    # All six artifacts have fixed sibling placement. The pure completion
+    # validator additionally binds the provenance content-addressed basename.
+    artifact_bytes = {
+        name: reader.read(
+            pin(item, limit=PROVENANCE_LIMIT if name == "provenance" else FILE_LIMIT),
+            root=inputs,
+            limit=PROVENANCE_LIMIT if name == "provenance" else FILE_LIMIT,
+        )
+        for name, item in artifacts.items()
+    }
+    before_request = request(artifact_bytes["request"])
+    require(
+        before_request["phase"] == "before"
+        and before_request["nonce"] == nonce
+        and before_request["limits"]["started"]["boot_id"] == boot_id
+        and all(item in source_pins for item in before_request["source_pins"]),
+        "committed-before-request",
+    )
+    executed_sources(before_request)
+    actual_registration = validate_registration(
+        before_request, artifact_bytes["registration"]
+    )
+    require(
+        registration is None or registration == actual_registration,
+        "committed-before-registration",
+    )
+    require(
+        records.parse_json(reader.read(pin(committed["policy"])))
+        == actual_registration["policy"],
+        "committed-before-policy",
+    )
+    for item in before_request["source_pins"]:
+        reader.read(item)
+    launch = records.parse_json(artifact_bytes["launch"])
+    require(
+        set(launch)
+        == {
+            "format",
+            "schema_version",
+            "phase",
+            "request",
+            "registration",
+            "physical_kind",
+            "input_root",
+            "verified_champions",
+        }
+        and launch["format"] == "strength-preservation-capture-launch-v1"
+        and type(launch["schema_version"]) is int
+        and launch["schema_version"] == 1
+        and launch["phase"] == "before"
+        and launch["request"] == artifacts["request"]
+        and launch["registration"] == artifacts["registration"]
+        and canonical(launch["input_root"]) == inputs
+        and launch["physical_kind"] in {"learner_metrics", "actor_broker"}
+        and launch["verified_champions"] == committed["verified_champions"],
+        "committed-before-launch",
+    )
+    receipt = records.parse_json(artifact_bytes["receipt"])
+    require(
+        receipt["format"] == RECEIPT
+        and type(receipt["schema_version"]) is int
+        and receipt["schema_version"] == 2
+        and receipt["status"] == "complete"
+        and receipt["refusals"] == []
+        and receipt["capture_pin"] == artifacts["capture"]
+        and receipt["request_sha256"] == artifacts["request"]["sha256"]
+        and receipt["registration_sha256"] == artifacts["registration"]["sha256"]
+        and receipt["source_pins"] == before_request["source_pins"]
+        and receipt["derivations"]["provenance_pin"] == artifacts["provenance"],
+        "committed-before-sidecar",
+    )
+    require(
+        receipt["derivations"].get("launch_sha256") == artifacts["launch"]["sha256"],
+        "committed-before-launch-sidecar",
+    )
+    require(
+        all(
+            before_request["limits"]["started"][k] >= value["phase_start"][k]
+            for k in ("monotonic_ns", "wall_ns")
+        )
+        and before_request["limits"]["deadline_monotonic_ns"]
+        <= value["budget"]["work"]["monotonic_ns"]
+        and before_request["limits"]["deadline_wall_ns"]
+        <= value["budget"]["work"]["wall_ns"],
+        "committed-before-request-clock",
+    )
+    require(isinstance(python, str), "committed-before-python")
+    require(
+        value["exec_contracts"]["collector"]
+        == completion.collector_contract_sha256(
+            python,
+            control_root,
+            artifacts["launch"],
+            before_request["limits"]["deadline_monotonic_ns"],
+        ),
+        "committed-before-collector-contract",
+    )
+    evidence_pins = completion.evidence_pins(raw)
+    evidence_root = inputs / "execution-evidence"
+    evidence = {}
+    for name, item in evidence_pins.items():
+        require(
+            canonical(item["path"])
+            == evidence_root / ("before-" + name.replace("_", "-") + ".json"),
+            "committed-before-evidence-location",
+        )
+        evidence[name] = reader.read(item, root=evidence_root, limit=PROOF_LIMIT)
+    verified = completion.validate_before(
+        raw, expected, clock(now_clock), evidence=evidence
+    )
+    family = completion.parse(evidence["collector_family"], PROOF_LIMIT)
+    first, last = clock(receipt["read_start"]), clock(receipt["read_end"])
+    completion.order(family["child_released"]["clock"], first)
+    completion.order(first, last)
+    completion.order(last, family["child_terminal"]["clock"])
+    capture = records.parse_json(artifact_bytes["capture"])
+    require(
+        capture["clock"]
+        == {
+            "boot_id": last["boot_id"],
+            "monotonic": last["monotonic_ns"] / 1e9,
+            "wall_ns": last["wall_ns"],
+        },
+        "committed-before-measurement-clock",
+    )
+    for axis, deadline in (
+        ("monotonic_ns", "deadline_monotonic_ns"),
+        ("wall_ns", "deadline_wall_ns"),
+    ):
+        require(
+            before_request["limits"]["started"][axis]
+            <= first[axis]
+            <= last[axis]
+            < before_request["limits"][deadline],
+            "committed-before-measurement-window",
+        )
+    return verified
 
 
 def dummy_static(
@@ -826,6 +1049,10 @@ def admit_after(
         and ADDENDUM in plan["addenda_sha256"],
         "prospective-plan-binding",
     )
+    require(
+        completion.ADDENDUM_SHA256 in plan["addenda_sha256"],
+        "producer-completion-addendum",
+    )
     raw_anchor = records.parse_json(reader.read(anchor_pin))
     anchor = lifecycle.Anchor.from_dict(raw_anchor)
     require(
@@ -872,6 +1099,7 @@ def admit_after(
             "before",
             "before_request",
             "before_receipt",
+            "before_execution",
             "after_path",
             "verified_champions",
         },
@@ -894,7 +1122,14 @@ def admit_after(
         canonical(p["after_path"]) == scratch / "external" / "r3-after.json",
         "after-output-path",
     )
-    before_request = request(reader.read(p["before_request"]))
+    require(
+        canonical(pin(p["before_execution"])["path"])
+        == inputs / "before-execution.json"
+        and p["before_execution"]["path"] not in {p[k]["path"] for k in pairs},
+        "precommitted-before-execution",
+    )
+    prework = _PreworkReader(reader)
+    before_request = request(prework.read(p["before_request"]))
     require(
         before_request["phase"] == "before"
         and all(
@@ -903,10 +1138,10 @@ def admit_after(
         ),
         "prework-request-binding",
     )
-    before = records.parse_json(reader.read(p["before"]))
-    policy = records.parse_json(reader.read(p["policy"]))
+    before = records.parse_json(prework.read(p["before"]))
+    policy = records.parse_json(prework.read(p["policy"]))
     require(policy == registration["policy"], "registered-policy-binding")
-    receipt = records.parse_json(reader.read(p["before_receipt"]))
+    receipt = records.parse_json(prework.read(p["before_receipt"]))
     witnesses = validate_before_receipt(
         receipt,
         before_request=before_request,
@@ -917,7 +1152,7 @@ def admit_after(
         anchor=anchor,
     )
     provenance = read_before_provenance(
-        reader,
+        prework,
         receipt=receipt,
         receipt_pin=p["before_receipt"],
         before_request_pin=p["before_request"],
@@ -928,6 +1163,21 @@ def admit_after(
         provenance["core_provenance"]["verified_champions_sha256"]
         == preservation.digest(p["verified_champions"]),
         "prework-champion-proof-map",
+    )
+    validate_committed_before(
+        p,
+        nonce=anchor.nonce,
+        boot_id=anchor.boot_id,
+        source_pins=plan["source_pins"],
+        control_root=plan["control_root"],
+        reader=prework,
+        now_clock={
+            "boot_id": anchor.boot_id,
+            "monotonic_ns": math.floor(anchor.started_monotonic * 10**9),
+            "wall_ns": anchor.started_wall_ns,
+        },
+        registration=registration,
+        python=plan["python"]["path"],
     )
     units = plan["units"]
     require(isinstance(units, dict) and len(units) == 12, "plan-unit-count")
