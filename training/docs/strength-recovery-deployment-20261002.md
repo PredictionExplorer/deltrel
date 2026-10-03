@@ -404,32 +404,47 @@ use explicitly inventoried copies of the original R4 modules; learner, actor
 and probe imports must still use the original immutable release. Local absence
 of the legacy native extension remains a target qualification prerequisite.
 
-The reviewed target CPU protocol has a 600-second total window, independent
-cleanup and a surviving observer/publisher. Work stops at 390 seconds, cleanup
-must be established by 540, and terminal auditing ends by 600. It uses only
-isolated dummy units and does not authorize production execution or CUDA work.
-The dummy harness separates workload, cleanup, observer and publisher authority.
-Its local fault tests exercise interrupted support writes, process exit and
-receipt preservation. Training preservation requires the same owners and pinned
-configuration plus fresh physical-work progress; an unchanged learner step
-during an update-to-data wait is allowed. These local checks do not qualify
-actual Linux unit installation, boot links, resource exclusion or CUDA.
+The reviewed target CPU protocol has a 600-second total window and twelve
+registered dummy units. A separate dispatcher owns all case work and fixture
+children; the observer only reads facts and appends evidence. One fixed oneshot
+sleep unit serves sequentially as the queued-start barrier and the support
+transaction specimen. Its authorization never changes, and its queued duties
+must finish and drain before the registered support file variants are applied.
 
-The exact target rendering and source/import/environment inventory still require
-independent review before installation. Ordinary dummy payloads have only a
-scratch write path. The controller roles need a narrowly reviewed shared
-`/etc/systemd/system` write path for atomic unit replacement and removal; closed
-dispatch still admits only the fixed dummy unit names, known bytes and owned
-links. That mount and systemd behavior must be demonstrated on the target.
-Observer and publisher definitions remain inert, without boot links, so the
-external reader can verify their natural exits. The cleanup timer is bound to
-the original monotonic deadline with `OnBootSec`; setup delay never renews the
-390-second work window. The current driver runs its case loop inside the
-observer and enforces that cutoff as a capability deadline. A separately timed
-dispatcher lifetime and its terminal boundary remain an explicit protocol
-integration gate before target arming; local tests do not prove termination by
-405 seconds. The target installer, after-cleanup collector and complete immutable
-legacy rendering also remain prospective work.
+Dispatcher admission checks the actual process start and independent systemd
+runtime/stop limits against the original 390/405-second endpoints. A result must
+be produced before the work cutoff; the observer checks natural exit and seals
+that source-bound proof by 405. Later consumers validate the recorded proof
+without presenting its old observation time as current. Cleanup independently
+stops and drains the dispatcher before workload file removal. A missing or
+failed dispatcher barrier still permits bounded stop attempts for known owned
+workloads, but never permits deletion or aggregate success. Cleanup remains due
+by 540, observer termination by 575, publisher termination by 595, and external
+read-only auditing by 600. Setup delay never renews any endpoint.
+
+Dispatcher, observer and publisher definitions remain as three explicitly
+inventoried inert inputs, disabled and without boot links. The observer has
+only scratch/evidence write access. The dispatcher, cleanup, publisher and fixed
+support guard retain narrowly reviewed `/etc/systemd/system` parent access for
+atomic replacement and removal of their fixed dummy resources. Closed dispatch
+still checks exact unit names, paths, known bytes and owned links. Actual mount,
+unit, job, descendant and retirement behavior remain target qualification gates.
+The installer, immutable legacy rendering, complete source/import/environment
+inventory, actual collector and frozen target plan still require independent
+review before any target arming. No production unit or GPU experiment is enabled.
+
+Preservation schema v2 corrects two unsupported telemetry assumptions. A
+periodically rewritten heartbeat is not an inference completion timestamp, and
+a long-lived cohort search need not refresh its semantic progress timestamp
+every 120 seconds. The new pure verifier instead requires two ordered finite
+learner metric events after cleanup, or condition-locked broker phase/counter
+pairs proving subsequent physical inference for all six actors. Exact R3 source
+ordering and the one-broker-per-process entrypoint bind these alternatives.
+Heartbeat freshness, ownership, source/profile/native pins, finite metrics,
+recipe/EMA/replay credit, known teachers and nondecreasing counters remain
+required. Counter resets cannot be hidden with offsets or champion changes.
+This does not qualify the actual collector: job-age provenance, raw observation
+joins and origin/environment/boot digest encodings remain separate requirements.
 
 Read-only host inspection also explained why persistent Inductor compiler
 workers carry a different import path from their parents: Torch materializes
@@ -439,7 +454,23 @@ compiler command and parent checks succeed. Other child types still require
 strict parent inheritance. Saved R3 observations and pure matcher tests do not
 qualify the future R4 process environment or package closure.
 
-The final joint local check passed 459 CPU/native cases across the new harness
+The initial `75b8799` joint local check passed 459 CPU/native cases across the harness
 and affected adapter, proof, support and compiler-policy tests, with no skips.
 Ruff, formatting and Pyright also passed on the same unchanged source bytes.
 This is the preparation code milestone, not an actual target-host experiment.
+
+Full CI on `75b8799` passed five jobs but stopped the Python/native job after
+4,677 passes on one real-fork fixture that inherited a non-default SIGCHLD
+handler from its shared test process. The production guard correctly refused
+that state. The fixture now runs in a fresh bounded interpreter, with an
+explicit foreign-handler regression and no weakening of the runtime guard.
+The browser job recorded 106 clean passes, one successful WebKit setup-reload
+retry and five skips; the saved error preceded the gameplay/persistence body,
+so no persistence bug is established and its assertions remain unchanged.
+
+The separate-dispatcher and preservation-v2 update passed a final joint run of
+560 CPU/native tests with two workers, zero failures and zero skips. Ruff,
+formatting and Pyright passed on the same source bytes. Independent reviews
+closed the dispatcher terminal-grace mismatch and verified the source-backed
+work proof. These results qualify local preparation only; actual target
+rendering, collection, Linux behavior and CUDA remain unqualified.

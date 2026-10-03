@@ -17,6 +17,11 @@ CASES = {
 
 
 def run_bound_fixtures(context: q.AuthorizedContext) -> dict[str, Any]:
+    q.require(
+        context.authorization["role"] == "dispatcher"
+        and context.io._purpose == "dispatcher",
+        "fixture-dispatcher-only",
+    )
     p = context.plan.value
     argv = [
         p["python"]["path"],
@@ -57,7 +62,7 @@ def run_bound_fixtures(context: q.AuthorizedContext) -> dict[str, Any]:
 
 def run_worker(context: q.AuthorizedContext) -> dict[str, Any]:
     p = context.plan.value
-    q.require(context.authorization["role"] == "observer", "fixture-owner-role")
+    q.require(context.authorization["role"] == "dispatcher", "fixture-owner-role")
     root = Path(p["control_root"])
     output = Path(p["scratch_root"]) / "fixtures"
     q.require(

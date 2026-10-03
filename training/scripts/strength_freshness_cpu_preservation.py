@@ -290,7 +290,11 @@ def _snapshot(
             "unverified-teacher",
         )
         _fresh(row["heartbeat_ns"], now, age)
-        _fresh(row["progress_ns"], now, age)
+        require(
+            integer(row["progress_ns"], 1)
+            and row["progress_ns"] <= row["heartbeat_ns"],
+            "cohort-progress-time",
+        )
         require(integer(row["games"]), "cohort-games")
     progress = snap["progress"]
     require(
@@ -305,8 +309,10 @@ def _snapshot(
         <= snap["processes"]["learner"]["heartbeat_ns"],
         "learner-heartbeat-lifetime-join",
     )
-    _fresh(progress["neural_heartbeat_ns"], now, age)
-    require(integer(progress["neural_rows"], 1), "no-physical-neural-work")
+    require(
+        not {"neural_heartbeat_ns", "neural_rows"}.intersection(progress),
+        "legacy-physical-fields",
+    )
     metrics = progress["metrics"]
     require(
         isinstance(metrics, list) and 2 <= len(metrics) <= 100, "finite-metric-window"
@@ -406,6 +412,182 @@ def _snapshot(
     }
 
 
+PHYSICAL_WORK_CONTRACT = (
+    "78e3f2b0c128e7b6e06836d75e98e7192d4aab61c0cdc9c0e44144459d2bd91b"
+)
+R3_SOURCE_COMMIT = "7e77c135bb101f08d1534f0ca5406cb309e2e3d2"
+ACTOR_ROLES = {f"actor-gpu-{i}" for i in range(1, 7)}
+
+
+def _physical_work(
+    policy: Mapping[str, Any],
+    after: Mapping[str, Any],
+    cleanup: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Apply the reviewed producer ordering; heartbeat emission is not GPU time.
+
+    The collector must independently qualify the pinned process command/source
+    and raw ownership joins. Under R3's one-broker-per-process call path, fixed
+    boot/PID/birth/Invocation/origin is the counter generation. No reset offset
+    or sum can hide one actor's loss of progress.
+    """
+    require(
+        policy.get("physical_work_contract_sha256") == PHYSICAL_WORK_CONTRACT
+        and policy["static"]["source_commit"] == R3_SOURCE_COMMIT
+        and set(policy["gpu_roles"].values())
+        == {"learner", "arena-promotion", *ACTOR_ROLES},
+        "physical-contract-or-source",
+    )
+    work = after.get("physical_work")
+    require(isinstance(work, dict), "physical-work-required")
+    assert isinstance(work, dict)
+    kind = work.get("kind")
+    if kind == "learner_metrics":
+        require(set(work) == {"kind"}, "learner-work-shape")
+        # _snapshot already validated every raw metric's worker, lifetime,
+        # timestamp order, finite tensors, recipe, EMA, credit and supervision.
+        records = [
+            row
+            for row in after["progress"]["metrics"]
+            if row["timestamp_ns"] > cleanup["wall_ns"]
+        ]
+        require(len(records) >= 2, "two-post-cleanup-learner-events-required")
+        require(records[-1]["step"] > records[0]["step"], "learner-work-not-advancing")
+        return {
+            "kind": kind,
+            "records_sha256": digest(records),
+            "producer_interval_ns": [
+                records[0]["timestamp_ns"],
+                records[-1]["timestamp_ns"],
+            ],
+            "claim": "Intervening serial optimizer work after first producer event; not a GPU event timestamp.",
+        }
+    require(
+        kind == "actor_broker" and set(work) == {"kind", "actors"}, "physical-work-kind"
+    )
+    actors = work["actors"]
+    require(
+        isinstance(actors, dict) and set(actors) == ACTOR_ROLES,
+        "all-six-physical-actors-required",
+    )
+    proofs = {}
+    for role, pair in actors.items():
+        require(
+            isinstance(pair, dict) and set(pair) == {"first", "second"},
+            "physical-sample-pair",
+        )
+        owner = after["processes"][role]
+        previous_clock = cleanup
+        readings = []
+        for label in ("first", "second"):
+            sample = pair[label]
+            require(
+                isinstance(sample, dict) and set(sample) == {"clock", "heartbeat"},
+                "physical-sample-shape",
+            )
+            clock, raw = sample["clock"], sample["heartbeat"]
+            require(
+                isinstance(clock, dict)
+                and set(clock) == {"boot_id", "monotonic", "wall_ns"},
+                "physical-clock-shape",
+            )
+            _clock(clock)
+            require(
+                clock["boot_id"] == cleanup["boot_id"] == after["clock"]["boot_id"],
+                "physical-boot",
+            )
+            require(
+                all(
+                    previous_clock[k] < clock[k] <= after["clock"][k]
+                    for k in ("monotonic", "wall_ns")
+                ),
+                "physical-sample-order",
+            )
+            previous_clock = clock
+            require(
+                isinstance(raw, dict)
+                and {"worker", "pid", "heartbeat_ns", "phase", "inference"} <= set(raw),
+                "physical-raw-fields",
+            )
+            require(
+                raw["worker"] == role
+                and integer(raw["pid"], 1)
+                and raw["pid"] == owner["pid"]
+                and raw["phase"] == "shared_cohorts",
+                "physical-owner-or-phase",
+            )
+            _fresh(raw["heartbeat_ns"], clock["wall_ns"], policy["maximum_age_ns"])
+            require(
+                raw["heartbeat_ns"] <= owner["heartbeat_ns"],
+                "physical-heartbeat-owner-join",
+            )
+            inference = raw["inference"]
+            require(
+                isinstance(inference, dict)
+                and {
+                    "worker_phase",
+                    "worker_phase_since_ns",
+                    "physical_inference",
+                    "failed_requests",
+                    "worker_failures",
+                }
+                <= set(inference),
+                "physical-broker-fields",
+            )
+            require(
+                all(
+                    integer(inference[k]) and inference[k] == 0
+                    for k in ("failed_requests", "worker_failures")
+                ),
+                "physical-producer-failure",
+            )
+            allowed = {"idle", "waiting_for_device", "inference"} | (
+                {"batching"} if label == "second" else set()
+            )
+            stamp = inference["worker_phase_since_ns"]
+            require(
+                inference["worker_phase"] in allowed
+                and integer(stamp, 1)
+                and cleanup["wall_ns"] < stamp <= raw["heartbeat_ns"],
+                "physical-producer-phase-time",
+            )
+            counters = inference["physical_inference"]
+            require(
+                isinstance(counters, dict)
+                and {"neural_calls", "neural_rows"} <= set(counters)
+                and all(integer(counters[k]) for k in ("neural_calls", "neural_rows")),
+                "physical-neural-counters",
+            )
+            readings.append((raw, inference, counters))
+        first, second = readings
+        require(
+            second[0]["heartbeat_ns"] > first[0]["heartbeat_ns"]
+            and second[1]["worker_phase_since_ns"] >= first[1]["worker_phase_since_ns"]
+            and all(
+                second[2][k] > first[2][k] for k in ("neural_calls", "neural_rows")
+            ),
+            "physical-work-not-proved-or-counter-reset",
+        )
+        proofs[role] = {
+            "samples_sha256": digest(pair),
+            "generation_sha256": digest(
+                {
+                    "boot_id": cleanup["boot_id"],
+                    "process": {k: owner[k] for k in PROCESS_FIELDS},
+                    "source_commit": R3_SOURCE_COMMIT,
+                }
+            ),
+            "phase_anchor_ns": first[1]["worker_phase_since_ns"],
+            "neural_calls_delta": second[2]["neural_calls"] - first[2]["neural_calls"],
+            "neural_rows_delta": second[2]["neural_rows"] - first[2]["neural_rows"],
+        }
+    return {
+        "kind": kind,
+        "actors": proofs,
+        "claim": "Later physical inference after source-stamped broker phase; not heartbeat completion time.",
+    }
+
+
 def verify_preservation(
     policy: Mapping[str, Any],
     before: Mapping[str, Any],
@@ -424,8 +606,8 @@ def verify_preservation(
     telemetry is refused without a timing tolerance. The learner birth upper
     bound must derive from the predeclared kernel process identity, not from
     a self-reported metric or heartbeat field.
-    A legitimate physical-counter reset conservatively refuses this CPU gate
-    until its real counter-generation mapping is qualified. Such refusal is
+    A physical-counter reset refuses this CPU gate; generations derive only from
+    the reviewed R3 process/source lifetime, never a champion pointer. Such refusal is
     not a declaration that production training failed and authorizes no action.
     """
     require(set(policy["static"]) == STATIC_FIELDS, "static-policy-scope")
@@ -504,22 +686,21 @@ def verify_preservation(
         "production-progress-reversed",
     )
     teacher_changed = before["champion_identity"] != after["champion_identity"]
-    require(
-        new["neural_rows"] > old["neural_rows"]
-        and new["neural_heartbeat_ns"] > old["neural_heartbeat_ns"]
-        and new["neural_heartbeat_ns"] > cleanup_clock["wall_ns"],
-        "physical-work-not-proved-or-counter-reset",
-    )
+    work = _physical_work(policy, after, cleanup_clock)
     require(
         all(
             after["cohorts"][k]["games"] >= before["cohorts"][k]["games"]
+            and after["cohorts"][k]["progress_ns"]
+            >= before["cohorts"][k]["progress_ns"]
             for k in policy["cohorts"]
         ),
         "cohort-progress-reversed",
     )
     return {
-        "format": "strength-freshness-cpu-r3-preservation-v1",
+        "format": "strength-freshness-cpu-r3-preservation-v2",
         "status": "passed",
+        "physical_work": work,
+        "physical_work_contract_sha256": PHYSICAL_WORK_CONTRACT,
         "owners_unchanged": True,
         "productive": True,
         "observed_monotonic": b["monotonic"],

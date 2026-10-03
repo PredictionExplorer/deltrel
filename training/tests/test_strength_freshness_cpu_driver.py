@@ -94,7 +94,7 @@ def test_observer_can_read_after_work_cutoff_but_never_mutate(tmp_path):
     c.io._backend.time = 491
     c.io._backend.response = "multi-user.target\n"
     assert c.io.command(["systemctl", "get-default"], 600) == "multi-user.target\n"
-    with pytest.raises(q.Refusal, match="original-boot-deadline"):
+    with pytest.raises(q.Refusal, match="read-only-capability"):
         c.io.action("stop", PREFIX + "-worker.service", 600)
     assert not c.io._backend.actions
 
@@ -122,7 +122,7 @@ def test_arm_receipt_from_other_attempt_is_rejected(tmp_path):
 
 
 def test_old_arm_does_not_bypass_current_watchdog_health(tmp_path, monkeypatch):
-    c = context(tmp_path)
+    c = context(tmp_path, purpose="dispatcher")
     from test_strength_freshness_cpu_lifecycle import arm_facts
 
     pin = life.acknowledge_arm(c.log, c.clock(), arm_facts(c.anchor))
@@ -151,10 +151,25 @@ def test_shared_directory_is_for_fixed_control_roles_only():
     )
     with pytest.raises(q.Refusal, match="write-sandbox"):
         q.validate_unit_text(plan, name, unsafe)
+    dispatcher = next(n for n, u in p["units"].items() if u["role"] == "dispatcher")
+    raw = data[p["units"][dispatcher]["installed_path"]]
+    with pytest.raises(q.Refusal, match="write-sandbox"):
+        q.validate_unit_text(
+            plan, dispatcher, raw.replace(b" /etc/systemd/system", b"")
+        )
     observer = next(n for n, u in p["units"].items() if u["role"] == "observer")
     raw = data[p["units"][observer]["installed_path"]]
     with pytest.raises(q.Refusal, match="write-sandbox"):
-        q.validate_unit_text(plan, observer, raw.replace(b" /etc/systemd/system", b""))
+        q.validate_unit_text(
+            plan,
+            observer,
+            raw.replace(
+                ("ReadWritePaths=" + p["scratch_root"]).encode(),
+                (
+                    "ReadWritePaths=" + p["scratch_root"] + " /etc/systemd/system"
+                ).encode(),
+            ),
+        )
 
 
 def test_workload_cannot_indirectly_start_observer_via_requires():
@@ -203,7 +218,7 @@ def test_natural_owner_uses_exact_observed_systemd_start(tmp_path):
 
 
 def test_prior_pid_registration_never_confers_signal_authority(tmp_path):
-    c = context(tmp_path)
+    c = context(tmp_path, purpose="dispatcher")
     name = c.plan.value["bindings"]["support_guard"]
     c.io.remember_prior_process(name, q.linux.core.Process(42, 100))
     c.io._backend.processes[42] = {
@@ -248,10 +263,30 @@ def test_cleanup_role_confusion_refuses_before_any_host_call(
     assert list(c.log.root.glob("*.json")) == []
 
 
-def cleanup_fixture(tmp_path, *, remaining_member=False, remaining_link=False):
+def cleanup_fixture(
+    tmp_path,
+    *,
+    remaining_member=False,
+    remaining_link=False,
+    dispatcher_alive=False,
+    dispatcher_foreign=False,
+):
     c = context(tmp_path, purpose="cleanup")
     p = c.plan.value
     names = [n for n, spec in p["units"].items() if spec["role"] == "workload"]
+    dispatcher = next(n for n, v in p["units"].items() if v["role"] == "dispatcher")
+    life.role_started(
+        c.log,
+        c.clock(),
+        "dispatcher",
+        {
+            "unit": dispatcher,
+            "pid": os.getpid(),
+            "invocation_id": "4" * 32,
+            "start_monotonic_us": 100000000,
+            "cgroup": "/system.slice/" + dispatcher,
+        },
+    )
     actions, removed = [], []
     files = {spec["installed_path"] for spec in p["units"].values()}
     files.update(
@@ -271,8 +306,19 @@ def cleanup_fixture(tmp_path, *, remaining_member=False, remaining_link=False):
             if remaining_member and n == names[0]
             else (),
         )
-        for n in names
+        for n in names + [dispatcher]
     }
+    if dispatcher_alive:
+        units[dispatcher] = q.linux.core.Unit(
+            dispatcher,
+            "a" * 64,
+            "/system.slice/" + dispatcher,
+            "4" * 32,
+            q.linux.core.Process(os.getpid(), 9),
+            (q.linux.core.Process(os.getpid(), 9),),
+            active="active",
+            substate="running",
+        )
     io = SimpleNamespace(
         _purpose="cleanup",
         _backend=backend,
@@ -284,8 +330,16 @@ def cleanup_fixture(tmp_path, *, remaining_member=False, remaining_link=False):
                 "SubState": "dead",
                 "MainPID": "0",
                 "Job": "0",
+                "ControlGroup": "/system.slice/" + n,
+                "InvocationID": "5" * 32
+                if dispatcher_foreign and n == dispatcher
+                else "4" * 32,
+                "ExecMainPID": str(os.getpid()),
+                "ExecMainStartTimestampMonotonic": "100000000",
+                "Result": "success",
+                "ExecMainStatus": "0",
             }
-            for n in names
+            for n in names + [dispatcher]
         },
         action=lambda verb, name, deadline: actions.append((verb, name)),
         boot_links=lambda name, deadline: (
@@ -293,7 +347,11 @@ def cleanup_fixture(tmp_path, *, remaining_member=False, remaining_link=False):
         ),
         members=lambda group, deadline: (),
         exists=lambda path: str(path) in files,
-        command=lambda argv, deadline: actions.append(tuple(argv)),
+        command=lambda argv, deadline: (
+            "ExecMainCode=1\nExecMainExitTimestampMonotonic=101000000\n"
+            if argv[:2] == ["systemctl", "show"]
+            else actions.append(tuple(argv))
+        ),
     )
 
     def remove(path, owners, deadline):
@@ -302,6 +360,9 @@ def cleanup_fixture(tmp_path, *, remaining_member=False, remaining_link=False):
 
     io.remove_owned_file = remove
     c.io = io
+    c.clock = lambda: life.Clock(
+        BOOT, backend.time, 10**18 + int((backend.time - 100) * 1e9)
+    )
     c.host = SimpleNamespace(
         snapshot=lambda name, deadline, partial=False: (units[name], {}),
         _jobs=lambda deadline: {},
@@ -314,7 +375,15 @@ def test_cleanup_retires_only_registered_workload_files_and_keeps_inert_control(
 ):
     c, names, actions, removed, files = cleanup_fixture(tmp_path)
     result = d.cleanup_resources(cast(q.AuthorizedContext, c), "cleanup-workloads", 120)
-    assert {name for verb, name in actions if verb in {"stop", "disable"}} == set(names)
+    dispatcher = next(
+        n for n, u in c.plan.value["units"].items() if u["role"] == "dispatcher"
+    )
+    assert actions[0] == ("stop", dispatcher)
+    assert {name for verb, name in actions if verb == "stop"} == set(names) | {
+        dispatcher
+    }
+    assert {name for verb, name in actions if verb == "disable"} == set(names)
+    assert result["dispatcher_barrier"]["unit"]["Id"] == dispatcher
     assert {n for n in result["units"]} == set(names)
     assert result["members"] == result["links"] == result["leftovers"] == []
     assert removed and all(set(owners) == set(names) for _, owners in removed)
@@ -338,11 +407,13 @@ def test_unremoved_boot_link_prevents_definition_removal(tmp_path):
     assert removed == []
 
 
-def test_observer_failure_records_raw_failure_without_candidate_or_publication(
+def test_dispatcher_failure_records_raw_failure_without_candidate_or_publication(
     tmp_path, monkeypatch
 ):
-    c = context(tmp_path)
-    name = next(n for n, u in c.plan.value["units"].items() if u["role"] == "observer")
+    c = context(tmp_path, purpose="dispatcher")
+    name = next(
+        n for n, u in c.plan.value["units"].items() if u["role"] == "dispatcher"
+    )
     c.unit = q.linux.core.Unit(
         name,
         "a" * 64,
@@ -444,7 +515,7 @@ def test_arm_receipt_consumes_actual_duration_fields_and_keeps_original_cutoff(
 def test_sacrificial_restart_waits_for_and_joins_only_new_owner(
     tmp_path, monkeypatch, drift, pending_has_owner
 ):
-    c = context(tmp_path)
+    c = context(tmp_path, purpose="dispatcher")
     name = c.plan.value["bindings"]["holder"]
     group = "/system.slice/" + name
     old_start = ({"sha256": "a" * 64}, {"owner": {"invocation_id": "1" * 32}})
@@ -529,3 +600,274 @@ def test_sacrificial_restart_waits_for_and_joins_only_new_owner(
             d.restart_holder_for_sacrifice(cast(q.AuthorizedContext, c))
     assert not c.io._backend.actions and not c.io._backend.commands
     assert old_start[1]["owner"]["invocation_id"] == "1" * 32
+
+
+@pytest.mark.parametrize("fault", ["alive", "foreign", "late", "stop-error"])
+def test_dispatcher_barrier_failure_still_requests_owned_stops_without_deleting(
+    tmp_path, fault
+):
+    c, names, actions, removed, files = cleanup_fixture(
+        tmp_path,
+        dispatcher_alive=fault == "alive",
+        dispatcher_foreign=fault == "foreign",
+    )
+    dispatcher = next(
+        n for n, u in c.plan.value["units"].items() if u["role"] == "dispatcher"
+    )
+    if fault == "late":
+        c.io._backend.time = c.anchor.deadline("dispatcher_terminal") + 1
+    if fault == "stop-error":
+        original = c.io.action
+
+        def fail_dispatcher(verb, name, deadline):
+            if name == dispatcher:
+                raise OSError("dispatcher-observation-unavailable")
+            original(verb, name, deadline)
+
+        c.io.action = fail_dispatcher
+    with pytest.raises(q.Refusal):
+        d.cleanup_resources(
+            cast(q.AuthorizedContext, c),
+            "cleanup-workloads",
+            c.anchor.deadline("cleanup"),
+        )
+    assert set(names) <= {name for verb, name in actions if verb == "stop"}
+    assert removed == []
+    assert all(c.plan.value["units"][name]["installed_path"] in files for name in names)
+    assert not d.entries(c.log, "cleanup-complete")
+
+
+def test_observer_cannot_dispatch_case_or_fixture_children(tmp_path):
+    from scripts import strength_freshness_cpu_fixture as fixtures
+
+    c = context(tmp_path)
+    with pytest.raises(q.Refusal, match="case-dispatcher-only"):
+        d.run_cases(cast(q.AuthorizedContext, c))
+    with pytest.raises(q.Refusal, match="fixture-dispatcher-only"):
+        fixtures.run_bound_fixtures(cast(q.AuthorizedContext, c))
+    with pytest.raises(q.Refusal, match="fixture-owner-role"):
+        fixtures.run_worker(cast(q.AuthorizedContext, c))
+    assert c.io._backend.actions == [] and c.io._backend.commands == []
+
+
+def test_real_dispatcher_observer_publisher_receipt_chain_composes(
+    tmp_path, monkeypatch
+):
+    """Production receipt APIs + role driver, with explicitly simulated Linux facts."""
+    c = context(tmp_path, purpose="dispatcher")
+    p = c.plan.value
+    names = {
+        role: next(n for n, v in p["units"].items() if v["role"] == role)
+        for role in ("dispatcher", "observer", "publisher", "cleanup")
+    }
+    owner_by_role = {}
+    fake_pid = [110]
+    monkeypatch.setattr(life.os, "getpid", lambda: fake_pid[0])
+
+    def at(t):
+        c.io._backend.time = t
+        return life.Clock(BOOT, t, 10**18 + int((t - 100) * 1e9))
+
+    def configure(role, t):
+        fake_pid[0] = {
+            "dispatcher": 110,
+            "observer": 220,
+            "cleanup": 330,
+            "publisher": 440,
+        }[role]
+        at(t)
+        io = q.ClosedIO(
+            c.plan,
+            c.anchor,
+            c.io._backend,
+            c.log,
+            purpose="finalizer" if role == "publisher" else role,
+        )
+        process = q.linux.core.Process(os.getpid(), round(t * 100))
+        invocation = {
+            "dispatcher": "1",
+            "observer": "2",
+            "publisher": "3",
+            "cleanup": "4",
+        }[role] * 32
+        unit = q.linux.core.Unit(
+            names[role],
+            "a" * 64,
+            "/system.slice/" + names[role],
+            invocation,
+            process,
+            (process,),
+            active="active",
+            substate="running",
+            entered_monotonic=t,
+        )
+        io.raw_units[names[role]] = {
+            "ExecMainStartTimestampMonotonic": str(round(t * 1e6))
+        }
+        child = SimpleNamespace(
+            plan=c.plan,
+            anchor=c.anchor,
+            log=c.log,
+            io=io,
+            host=q.DummyReadHost(io),
+            unit=unit,
+            authorization={"role": role},
+            clock=io.clock,
+        )
+        owner_by_role[role] = d.owner(cast(q.AuthorizedContext, child))
+        return child
+
+    def observed(role, end, seen):
+        o = owner_by_role[role]
+        return {
+            "Id": names[role],
+            "InvocationID": o["invocation_id"],
+            "MainPID": "0",
+            "ExecMainPID": str(o["pid"]),
+            "ExecMainStartTimestampMonotonic": str(o["start_monotonic_us"]),
+            "ExecMainExitTimestampMonotonic": str(round(end * 1e6)),
+            "ExecMainCode": "1",
+            "ExecMainStatus": "0",
+            "Result": "success",
+            "ActiveState": "inactive",
+            "SubState": "dead",
+            "Job": "0",
+            "ControlGroup": o["cgroup"],
+            "members": [],
+            "observed_boot_id": BOOT,
+            "observed_monotonic": seen,
+        }
+
+    cases = {
+        name: {
+            "status": "pending-independent-cleanup"
+            if name == "cleanup-and-retirement"
+            else "passed"
+        }
+        for name in q.CASES
+    }
+
+    def simulated_cases(_):
+        at(110)
+        return cases
+
+    monkeypatch.setattr(d, "run_cases", simulated_cases)
+    dispatcher = configure("dispatcher", 100)
+    d.run_role(cast(q.AuthorizedContext, dispatcher))
+    result = d.find_one(c.log, "dispatcher-result")
+    assert (
+        c.log.load(result, "dispatcher-result")["cases"]["cleanup-and-retirement"][
+            "status"
+        ]
+        == "pending-independent-cleanup"
+    )
+    real_poll = d.poll
+
+    def poll_with_cleanup(ctx, phase, predicate):
+        if phase == "observer" and not d.entries(c.log, "cleanup-complete"):
+            cleanup = configure("cleanup", 490)
+            life.role_started(
+                c.log, cleanup.clock(), "cleanup", owner_by_role["cleanup"]
+            )
+            at(500)
+            facts = {
+                "units": {
+                    n: {
+                        "Id": n,
+                        "ActiveState": "inactive",
+                        "SubState": "dead",
+                        "MainPID": 0,
+                        "Job": 0,
+                        "members": [],
+                    }
+                    for n, v in p["units"].items()
+                    if v["role"] == "workload"
+                },
+                "jobs": [],
+                "members": [],
+                "links": [],
+                "leftovers": [],
+                "dispatcher_barrier": {
+                    "started": d.find_one(c.log, "dispatcher-started"),
+                    "unit": observed("dispatcher", 112, 500),
+                    "clock": asdict(cleanup.clock()),
+                },
+            }
+            life.cleanup_complete(c.log, cleanup.clock(), facts, set(facts["units"]))
+            fake_pid[0] = 220
+        return real_poll(ctx, phase, predicate)
+
+    monkeypatch.setattr(d, "poll", poll_with_cleanup)
+    ends = {"dispatcher": 112, "observer": 525, "cleanup": 501}
+    monkeypatch.setattr(
+        d,
+        "terminal",
+        lambda ctx, name, deadline: observed(
+            next(r for r, n in names.items() if n == name),
+            ends[next(r for r, n in names.items() if n == name)],
+            ctx.clock().monotonic,
+        ),
+    )
+
+    def preservation(_):
+        at(520)
+        return {
+            "status": "passed",
+            "owners_unchanged": True,
+            "productive": True,
+            "observed_monotonic": 520,
+        }
+
+    monkeypatch.setattr(d, "load_preservation", preservation)
+    observer = configure("observer", 115)
+    d.run_role(cast(q.AuthorizedContext, observer))
+    completion = d.find_one(c.log, "dispatcher-complete")
+    assert c.log.load(completion, "dispatcher-complete")["clock"]["monotonic"] == 115
+    candidate = d.find_one(c.log, "observer-candidate")
+    assert (
+        life.checked_observer_candidate(c.log, candidate)["cases"][
+            "cleanup-and-retirement"
+        ]["status"]
+        == "passed"
+    )
+    retired = []
+
+    def retire(ctx, purpose, deadline):
+        retired.append((ctx.authorization["role"], purpose, deadline))
+        return {"jobs": [], "members": [], "links": [], "leftovers": []}
+
+    monkeypatch.setattr(d, "cleanup_resources", retire)
+    publisher = configure("publisher", 540)
+    d.run_role(cast(q.AuthorizedContext, publisher))
+    assert retired == [
+        ("publisher", "retire-cleanup-watchdog", c.anchor.deadline("publisher"))
+    ]
+    at(699)
+    receipt = life.audit(
+        c.log,
+        publisher.clock(),
+        d.find_one(c.log, "published-candidate"),
+        d.find_one(c.log, "publisher-started"),
+        observed("publisher", 565, 699),
+    )
+    final = c.log.load(receipt, "cpu-scope-result")
+    assert all(value is False for value in final["claims"].values())
+    assert (
+        life.checked_dispatcher_complete(c.log, completion)["clock"]["monotonic"] == 115
+    )
+
+
+def test_owned_stop_is_still_attempted_when_disablement_fails(tmp_path):
+    c, names, actions, removed, _ = cleanup_fixture(tmp_path)
+    action = c.io.action
+
+    def fail_disable(verb, name, deadline):
+        if name == names[0] and verb == "disable":
+            raise OSError("owned-disable-failed")
+        action(verb, name, deadline)
+
+    c.io.action = fail_disable
+    with pytest.raises(q.Refusal, match="owned-stop-incomplete"):
+        d.cleanup_resources(cast(q.AuthorizedContext, c), "cleanup-workloads", 120)
+    assert ("stop", names[0]) in actions
+    assert removed == []

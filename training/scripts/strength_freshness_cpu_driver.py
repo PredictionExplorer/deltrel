@@ -173,12 +173,83 @@ def cleanup_resources(
     )
     roles = {"workload"} if purpose == "cleanup-workloads" else {"cleanup", "watchdog"}
     names = [n for n, v in p["units"].items() if v["role"] in roles]
-    actual = {}
+    actual, stop_errors = {}, []
+    barrier = None
+    dispatcher = (
+        role_name(context, "dispatcher") if purpose == "cleanup-workloads" else None
+    )
+
+    def request_stop(name: str, *, disable: bool, action_deadline: float) -> None:
+        try:
+            context.host.snapshot(name, action_deadline, partial=True)
+        except Exception as error:
+            stop_errors.append(
+                {
+                    "unit": name,
+                    "operation": "observe",
+                    "error": type(error).__name__,
+                    "reason": str(error)[:256],
+                }
+            )
+            return  # No stop authority is inferred for an unproved resource.
+        for verb in ["disable", "stop"] if disable else ["stop"]:
+            try:
+                # Each action independently rechecks the registered bytes/links.
+                # Failed disablement must not hide a still-useful owned stop.
+                io.action(verb, name, action_deadline)
+            except Exception as error:
+                stop_errors.append(
+                    {
+                        "unit": name,
+                        "operation": verb,
+                        "error": type(error).__name__,
+                        "reason": str(error)[:256],
+                    }
+                )
+
+    barrier_error = None
+    if dispatcher is not None:
+        try:
+            barrier_end = min(
+                deadline,
+                context.anchor.effective_deadline(
+                    "dispatcher_terminal", context.clock()
+                ),
+            )
+            request_stop(dispatcher, disable=False, action_deadline=barrier_end)
+            _drain(context, dispatcher, barrier_end)
+            barrier = {
+                "started": find_one(context.log, "dispatcher-started"),
+                "unit": terminal(context, dispatcher, barrier_end),
+                "clock": asdict(context.clock()),
+            }
+            context.log.record("raw-dispatcher-cleanup-barrier", barrier)
+            life.checked_dispatcher_barrier(context.log, barrier)
+        except Exception as error:
+            barrier_error = error
+            stop_errors.append(
+                {
+                    "unit": dispatcher,
+                    "operation": "drain-proof",
+                    "error": type(error).__name__,
+                    "reason": str(error)[:256],
+                }
+            )
+    # The dispatcher proof is attempted first within405. Even if it fails,
+    # independently known workloads still receive bounded stop requests within
+    # the unchanged cleanup reserve. No deletion occurs on an unproved barrier.
     for name in names:
-        # Observe known full/partial metadata and all current members before action.
-        context.host.snapshot(name, deadline, partial=True)
-        io.action("disable", name, deadline)
-        io.action("stop", name, deadline)
+        request_stop(name, disable=True, action_deadline=deadline)
+    if barrier_error is not None:
+        context.log.record(
+            "cleanup-stop-errors", {"errors": stop_errors, "deletion_admitted": False}
+        )
+        raise q.Refusal("dispatcher-drain-unproved-no-deletion") from barrier_error
+    context.log.record(
+        "cleanup-stop-errors",
+        {"errors": stop_errors, "deletion_admitted": not stop_errors},
+    )
+    q.require(not stop_errors, "owned-stop-incomplete-no-deletion")
     for name in names:
         unit = _drain(context, name, deadline)
         raw: dict[str, Any] = dict(io.raw_units[name])
@@ -220,6 +291,8 @@ def cleanup_resources(
         "links": links,
         "leftovers": leftovers,
     }
+    if barrier is not None:
+        facts["dispatcher_barrier"] = barrier
     context.log.record("cleanup-inventory", facts)
     return facts
 
@@ -437,6 +510,11 @@ def case_observation(
 
 def run_cases(context: q.AuthorizedContext) -> dict[str, Any]:
     """Fixed case sequence; actual systemd facts cannot be supplied by a callback."""
+    q.require(
+        context.authorization["role"] == "dispatcher"
+        and context.io._purpose == "dispatcher",
+        "case-dispatcher-only",
+    )
     p, io, cases = context.plan.value, context.io, {}
     b = p["bindings"]
     runner = q.CaseRunner(io)
@@ -534,6 +612,8 @@ def run_cases(context: q.AuthorizedContext) -> dict[str, Any]:
     )
     from scripts.strength_freshness_cpu_support_case import verify_support_case
 
+    shared = runner.wait_drained(b["barrier"], end)
+    context.log.record("shared-barrier-support-drained", shared)
     support_result = verify_support_case(context)
     cases["support-partial-transaction"] = case_observation(
         context,
@@ -629,10 +709,15 @@ def run_fixture_cases(context: q.AuthorizedContext) -> dict[str, Any]:
 
 def run_role(context: q.AuthorizedContext) -> None:
     role = context.authorization["role"]
-    q.require(role in {"cleanup", "observer", "publisher"}, "driver-role")
-    life.role_started(context.log, context.clock(), role, owner(context))
+    q.require(role in {"dispatcher", "cleanup", "observer", "publisher"}, "driver-role")
+    started = life.role_started(context.log, context.clock(), role, owner(context))
     try:
-        if role == "cleanup":
+        if role == "dispatcher":
+            cases = run_cases(context)
+            life.dispatcher_result(
+                context.log, context.clock(), started, cases, set(q.CASES)
+            )
+        elif role == "cleanup":
             expected = {
                 n
                 for n, v in context.plan.value["units"].items()
@@ -645,7 +730,32 @@ def run_role(context: q.AuthorizedContext) -> None:
                 lambda purpose, deadline: cleanup_resources(context, purpose, deadline),
             )
         elif role == "observer":
-            cases = run_cases(context)
+
+            def dispatched(deadline):
+                starts = entries(context.log, "dispatcher-started")
+                results = entries(context.log, "dispatcher-result")
+                q.require(
+                    len(starts) <= 1 and len(results) <= 1, "ambiguous-dispatcher-proof"
+                )
+                if not starts or not results:
+                    return None
+                raw = terminal(context, role_name(context, "dispatcher"), deadline)
+                if (
+                    raw["members"]
+                    or raw["MainPID"] != "0"
+                    or raw["Job"] not in ("", "0", 0)
+                ):
+                    return None
+                return life.dispatcher_complete(
+                    context.log,
+                    context.clock(),
+                    starts[0][0],
+                    results[0][0],
+                    raw,
+                    set(q.CASES),
+                )
+
+            completed = poll(context, "dispatcher_terminal", dispatched)
             cleanup = poll(
                 context,
                 "observer",
@@ -656,14 +766,8 @@ def run_role(context: q.AuthorizedContext) -> None:
                 ),
             )
             after = load_preservation(context)
-            cases["cleanup-and-retirement"] = case_observation(
-                context,
-                "cleanup-and-retirement",
-                {"cleanup": cleanup},
-                scope="actual independent scheduled cleanup after sacrificial main death; final retirement still publisher-gated",
-            )
             life.observer_candidate(
-                context.log, context.clock(), cleanup, cases, set(q.CASES), after
+                context.log, context.clock(), cleanup, completed, set(q.CASES), after
             )
         else:
             candidate = poll(
@@ -770,7 +874,7 @@ def load_preservation(context: q.AuthorizedContext) -> dict[str, Any]:
 
 
 def external_audit(context: q.AuthorizedContext) -> dict[str, Any]:
-    """Final read-only closure, including the two explicitly retained definitions."""
+    """Final read-only closure, including the three explicitly retained definitions."""
     q.require(
         context.io._purpose == "read"
         and context.authorization["role"] == "external-read-only-auditor",
@@ -779,7 +883,7 @@ def external_audit(context: q.AuthorizedContext) -> dict[str, Any]:
     end = context.anchor.effective_deadline("audit", context.clock())
     p = context.plan.value
     retained = {}
-    for role in ("observer", "publisher"):
+    for role in ("dispatcher", "observer", "publisher"):
         name = role_name(context, role)
         unit, _ = context.host.snapshot(name, end)
         q.require(

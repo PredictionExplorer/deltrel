@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import signal
+import subprocess
+import sys
 import time
 
 import pytest
@@ -63,8 +65,19 @@ def events(log):
 def owner(anchor, role):
     return {
         "unit": "edgeconnect-cpuqual-" + anchor.nonce + "-" + role + ".service",
-        "invocation_id": {"cleanup": "c", "observer": "d", "publisher": "e"}[role] * 32,
-        "pid": {"cleanup": 101, "observer": 102, "publisher": 103}[role],
+        "invocation_id": {
+            "dispatcher": "b",
+            "cleanup": "c",
+            "observer": "d",
+            "publisher": "e",
+        }[role]
+        * 32,
+        "pid": {
+            "dispatcher": os.getpid(),
+            "cleanup": 101,
+            "observer": 102,
+            "publisher": 103,
+        }[role],
         "start_monotonic_us": int((anchor.started_monotonic + 1) * 1e6),
         "cgroup": "/system.slice/dummy-" + role + ".service",
     }
@@ -103,8 +116,45 @@ def terminal(anchor, role, observed, ended):
     }
 
 
-def cleanup_facts():
+def start_dispatcher(log, anchor):
+    paths = list(log.root.glob("dispatcher-started-*.json"))
+    if paths:
+        assert len(paths) == 1
+        data = paths[0].read_bytes()
+        return {
+            "path": str(paths[0]),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "bytes": len(data),
+        }
+    return life.role_started(
+        log, clock(anchor, 2), "dispatcher", owner(anchor, "dispatcher")
+    )
+
+
+def dispatcher_proof(log, anchor):
+    begun = start_dispatcher(log, anchor)
+    cases = {
+        "case": {"status": "passed"},
+        "cleanup-and-retirement": {"status": "pending-independent-cleanup"},
+    }
+    result = life.dispatcher_result(log, clock(anchor, 100), begun, cases, set(cases))
+    return life.dispatcher_complete(
+        log,
+        clock(anchor, 101),
+        begun,
+        result,
+        terminal(anchor, "dispatcher", 101, 100.5),
+        set(cases),
+    )
+
+
+def cleanup_facts(log, anchor):
     return {
+        "dispatcher_barrier": {
+            "started": start_dispatcher(log, anchor),
+            "unit": terminal(anchor, "dispatcher", 400, 100.5),
+            "clock": life.asdict(clock(anchor, 400)),
+        },
         "units": {
             "dummy.service": {
                 "Id": "dummy.service",
@@ -123,15 +173,16 @@ def cleanup_facts():
 
 
 def candidate(log, anchor):
+    dispatched = dispatcher_proof(log, anchor)
     cleaned = life.cleanup_complete(
-        log, clock(anchor, 539), cleanup_facts(), {"dummy.service"}
+        log, clock(anchor, 539), cleanup_facts(log, anchor), {"dummy.service"}
     )
     return life.observer_candidate(
         log,
         clock(anchor, 545),
         cleaned,
-        {"case": {"status": "passed", "scope": "synthetic-local"}},
-        {"case"},
+        dispatched,
+        {"case", "cleanup-and-retirement"},
         {
             "status": "passed",
             "owners_unchanged": True,
@@ -143,6 +194,269 @@ def candidate(log, anchor):
 
 def retired():
     return {"jobs": [], "members": [], "links": [], "leftovers": []}
+
+
+def dispatched_result(log, anchor):
+    begun = start_dispatcher(log, anchor)
+    cases = {
+        "case": {"status": "passed"},
+        "cleanup-and-retirement": {"status": "pending-independent-cleanup"},
+    }
+    result = life.dispatcher_result(log, clock(anchor, 100), begun, cases, set(cases))
+    return begun, result, set(cases)
+
+
+@pytest.mark.parametrize(
+    "change,observed,ended",
+    [
+        ({"Result": "timeout"}, 101, 100.5),
+        ({"ExecMainCode": "2", "ExecMainStatus": "15"}, 101, 100.5),
+        ({"Job": "1"}, 101, 100.5),
+        ({"members": [1]}, 101, 100.5),
+        ({"MainPID": "1"}, 101, 100.5),
+        ({"InvocationID": "f" * 32}, 101, 100.5),
+        ({"ExecMainPID": "1"}, 101, 100.5),
+        ({"ExecMainStartTimestampMonotonic": "1002000000"}, 101, 100.5),
+        ({"observed_boot_id": "foreign"}, 101, 100.5),
+        ({"observed_monotonic": 1090}, 101, 100.5),
+        ({}, 405, 100.5),
+        ({}, 407, 406),
+        ({}, 101, 99),
+    ],
+)
+def test_dispatcher_completion_needs_real_natural_owner_and_original_window(
+    log, anchor, change, observed, ended
+):
+    begun, result, expected = dispatched_result(log, anchor)
+    facts = terminal(anchor, "dispatcher", observed, ended) | change
+    with pytest.raises(life.Refusal):
+        life.dispatcher_complete(
+            log, clock(anchor, observed), begun, result, facts, expected
+        )
+    assert "raw-dispatcher-terminal" in events(log)
+    assert "dispatcher-complete" not in events(log)
+
+
+@pytest.mark.parametrize("fault", ["missing", "extra", "premature-cleanup", "failed"])
+def test_dispatcher_producer_cannot_change_required_cases_or_claim_cleanup(
+    log, anchor, fault
+):
+    begun = start_dispatcher(log, anchor)
+    cases = {
+        "case": {"status": "passed"},
+        "cleanup-and-retirement": {"status": "pending-independent-cleanup"},
+    }
+    expected = set(cases)
+    if fault == "missing":
+        del cases["case"]
+    elif fault == "extra":
+        cases["unrequested"] = {"status": "passed"}
+    elif fault == "premature-cleanup":
+        cases["cleanup-and-retirement"]["status"] = "passed"
+    else:
+        cases["case"]["status"] = "failed"
+    with pytest.raises(life.Refusal, match="case-set-or-status"):
+        life.dispatcher_result(log, clock(anchor, 100), begun, cases, expected)
+    assert "dispatcher-result" not in events(log)
+
+
+def test_dispatcher_completion_is_once_only_and_can_be_read_later_without_backdating(
+    log, anchor, monkeypatch
+):
+    proof = dispatcher_proof(log, anchor)
+    saved = Path(proof["path"]).read_bytes()
+    value = life.checked_dispatcher_complete(log, proof)
+    with pytest.raises(life.Refusal, match="duplicate-dispatcher-complete"):
+        life.dispatcher_complete(
+            log,
+            clock(anchor, 102),
+            value["started"],
+            value["result"],
+            terminal(anchor, "dispatcher", 102, 100.5),
+            set(value["expected_cases"]),
+        )
+    assert Path(proof["path"]).read_bytes() == saved
+
+    def fresh_validator_must_not_be_called(*_args, **_kwargs):
+        raise AssertionError("old check clock was presented as current")
+
+    monkeypatch.setattr(life, "natural_exit", fresh_validator_must_not_be_called)
+    historical = life.checked_dispatcher_complete(log, proof)
+    assert historical["clock"]["monotonic"] == anchor.started_monotonic + 101
+    clean = life.cleanup_complete(
+        log, clock(anchor, 539), cleanup_facts(log, anchor), {"dummy.service"}
+    )
+    observed = life.observer_candidate(
+        log,
+        clock(anchor, 545),
+        clean,
+        proof,
+        set(historical["expected_cases"]),
+        {
+            "status": "passed",
+            "owners_unchanged": True,
+            "productive": True,
+            "observed_monotonic": anchor.started_monotonic + 544,
+        },
+    )
+    checked = life.checked_observer_candidate(log, observed)
+    assert checked["cases"]["cleanup-and-retirement"] == {
+        "status": "passed",
+        "cleanup": clean,
+    }
+    assert (
+        historical["cases"]["cleanup-and-retirement"]["status"]
+        == "pending-independent-cleanup"
+    )
+
+
+def test_work_result_389_natural_exit_391_retains_terminal_grace_and_history(
+    log, anchor
+):
+    begun = start_dispatcher(log, anchor)
+    cases = {
+        "case": {"status": "passed"},
+        "cleanup-and-retirement": {"status": "pending-independent-cleanup"},
+    }
+    result = life.dispatcher_result(log, clock(anchor, 389), begun, cases, set(cases))
+    proof = life.dispatcher_complete(
+        log,
+        clock(anchor, 392),
+        begun,
+        result,
+        terminal(anchor, "dispatcher", 392, 391),
+        set(cases),
+    )
+    historical = life.checked_dispatcher_complete(log, proof)
+    assert historical["clock"] == life.asdict(clock(anchor, 392))
+    assert (
+        life._integer(historical["terminal"]["ExecMainExitTimestampMonotonic"]) / 1e6
+        == anchor.started_monotonic + 391
+    )
+    facts = cleanup_facts(log, anchor)
+    facts["dispatcher_barrier"]["unit"] = terminal(anchor, "dispatcher", 400, 391)
+    cleaned = life.cleanup_complete(log, clock(anchor, 539), facts, {"dummy.service"})
+    candidate_pin = life.observer_candidate(
+        log,
+        clock(anchor, 545),
+        cleaned,
+        proof,
+        set(cases),
+        {
+            "status": "passed",
+            "owners_unchanged": True,
+            "productive": True,
+            "observed_monotonic": anchor.started_monotonic + 544,
+        },
+    )
+    assert life.checked_observer_candidate(log, candidate_pin)["dispatcher"] == proof
+    assert life.checked_dispatcher_complete(log, proof)["clock"] == historical["clock"]
+
+
+def test_dispatcher_late_work_result_does_not_use_terminal_grace(log, anchor):
+    begun = start_dispatcher(log, anchor)
+    cases = {
+        "case": {"status": "passed"},
+        "cleanup-and-retirement": {"status": "pending-independent-cleanup"},
+    }
+    with pytest.raises(life.Refusal, match="deadline-work"):
+        life.dispatcher_result(log, clock(anchor, 391), begun, cases, set(cases))
+    assert "dispatcher-result" not in events(log)
+
+
+def test_forced_dispatcher_death_allows_safe_cleanup_barrier_but_not_aggregate_success(
+    log, anchor
+):
+    begun, result, expected = dispatched_result(log, anchor)
+    dead = terminal(anchor, "dispatcher", 400, 399) | {
+        "ActiveState": "failed",
+        "SubState": "failed",
+        "Result": "timeout",
+        "ExecMainCode": "2",
+        "ExecMainStatus": "9",
+    }
+    facts = cleanup_facts(log, anchor)
+    facts["dispatcher_barrier"]["unit"] = dead
+    life.checked_dispatcher_barrier(log, facts["dispatcher_barrier"])
+    clean = life.cleanup_complete(log, clock(anchor, 539), facts, {"dummy.service"})
+    assert log.load(clean, "cleanup-complete")
+    with pytest.raises(life.Refusal):
+        life.dispatcher_complete(log, clock(anchor, 400), begun, result, dead, expected)
+    assert "dispatcher-complete" not in events(log)
+    assert "observer-candidate" not in events(log)
+
+
+@pytest.mark.parametrize("fault", ["late", "job", "member", "foreign", "source"])
+def test_cleanup_dispatcher_barrier_refuses_late_or_unknown_authority(
+    log, anchor, fault
+):
+    facts = cleanup_facts(log, anchor)
+    barrier = facts["dispatcher_barrier"]
+    if fault == "late":
+        barrier["clock"] = life.asdict(clock(anchor, 406))
+    elif fault == "job":
+        barrier["unit"]["Job"] = "9"
+    elif fault == "member":
+        barrier["unit"]["members"] = [1]
+    elif fault == "foreign":
+        barrier["unit"]["InvocationID"] = "e" * 32
+    else:
+        path = Path(barrier["started"]["path"])
+        value = json.loads(path.read_bytes())
+        value["data"]["source_sha256"] = "0" * 64
+        path.chmod(0o600)
+        raw = life.encoded(value)
+        path.write_bytes(raw)
+        path.chmod(0o444)
+        barrier["started"] = {
+            "path": str(path),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "bytes": len(raw),
+        }
+    with pytest.raises(life.Refusal):
+        life.cleanup_complete(log, clock(anchor, 539), facts, {"dummy.service"})
+    assert "cleanup-complete" not in events(log)
+
+
+def test_missing_or_forged_dispatcher_completion_cannot_feed_observer(log, anchor):
+    clean = life.cleanup_complete(
+        log, clock(anchor, 539), cleanup_facts(log, anchor), {"dummy.service"}
+    )
+    fake = log.record_once("dispatcher-complete", {"claims": life.FALSE_CLAIMS})
+    with pytest.raises((KeyError, life.Refusal)):
+        life.observer_candidate(
+            log,
+            clock(anchor, 545),
+            clean,
+            fake,
+            {"case", "cleanup-and-retirement"},
+            {"status": "passed"},
+        )
+    assert "observer-candidate" not in events(log)
+
+
+def test_dispatcher_proof_from_another_attempt_is_not_adopted(log, anchor):
+    proof = dispatcher_proof(log, anchor)
+    other = life.RawLog(log.root, replace(anchor, nonce="c" * 32))
+    with pytest.raises(life.Refusal, match="receipt-binding"):
+        life.checked_dispatcher_complete(other, proof)
+
+
+def test_dispatcher_producer_is_its_own_started_process_and_cannot_renew_work(
+    log, anchor, monkeypatch
+):
+    begun = start_dispatcher(log, anchor)
+    cases = {
+        "case": {"status": "passed"},
+        "cleanup-and-retirement": {"status": "pending-independent-cleanup"},
+    }
+    with pytest.raises(life.Refusal, match="deadline-work"):
+        life.dispatcher_result(log, clock(anchor, 390), begun, cases, set(cases))
+    actual = os.getpid()
+    monkeypatch.setattr(life.os, "getpid", lambda: actual + 1)
+    with pytest.raises(life.Refusal, match="producer-owner"):
+        life.dispatcher_result(log, clock(anchor, 100), begun, cases, set(cases))
+    assert "dispatcher-result" not in events(log)
 
 
 def test_original_clock_roundtrip_and_late_arming_do_not_reset_window(anchor):
@@ -218,7 +532,7 @@ def test_real_host_nonzero_timer_slack_is_retained(log, anchor):
 
 @pytest.mark.parametrize("field", ["jobs", "members", "links", "leftovers"])
 def test_cleanup_leftovers_never_become_success(log, anchor, field):
-    facts = cleanup_facts()
+    facts = cleanup_facts(log, anchor)
     facts[field] = ["still-present"]
     with pytest.raises(life.Refusal, match="cleanup-incomplete"):
         life.cleanup_complete(log, clock(anchor, 530), facts, {"dummy.service"})
@@ -231,7 +545,7 @@ def test_cleanup_leftovers_never_become_success(log, anchor, field):
     [{"Job": "7"}, {"members": [88]}, {"MainPID": 88}, {"Id": "foreign.service"}],
 )
 def test_cleanup_joins_exact_units_and_actual_death(log, anchor, change):
-    facts = cleanup_facts()
+    facts = cleanup_facts(log, anchor)
     facts["units"]["dummy.service"].update(change)
     with pytest.raises(life.Refusal):
         life.cleanup_complete(log, clock(anchor, 530), facts, {"dummy.service"})
@@ -242,7 +556,7 @@ def test_independent_cleanup_survives_absent_aggregate_observer(log, anchor):
 
     def action(purpose, deadline):
         calls.append((purpose, deadline))
-        return cleanup_facts()
+        return cleanup_facts(log, anchor)
 
     result = life.run_cleanup(
         log, lambda: clock(anchor, 520), {"dummy.service"}, action
@@ -578,39 +892,73 @@ def test_role_started_binds_own_process_and_original_clock(log, anchor):
         )
 
 
-def test_real_tiny_descendant_is_reaped_and_sigterm_handler_restored(
-    tmp_path, anchor, monkeypatch
-):
-    monkeypatch.setenv("INVOCATION_ID", "f" * 32)
-    monkeypatch.setattr(
-        life,
-        "_self_identity",
-        lambda unit, invocation: {
-            "unit": unit,
-            "invocation_id": invocation,
-            "pid": os.getpid(),
+def test_real_tiny_descendant_is_reaped_and_sigterm_handler_restored(tmp_path):
+    # The pytest/xdist worker may legitimately own SIGCHLD. Never reset that
+    # handler. An isolated parent proves refusal, then exec gives its child the
+    # default disposition without changing either pytest or production guards.
+    child_script = r"""
+import json, os, signal, sys, time
+from pathlib import Path
+from scripts import strength_freshness_cpu_lifecycle as life
+assert signal.getsignal(signal.SIGCHLD) == signal.SIG_DFL
+root = Path(sys.argv[1])
+anchor = life.Anchor('isolated-child', 'a'*32, 'b'*64, 'local-test', time.monotonic(), time.time_ns())
+log = life.RawLog(root, anchor)
+os.environ['INVOCATION_ID'] = 'f'*32
+life._self_identity = lambda unit, invocation: {'unit':unit, 'invocation_id':invocation, 'pid':os.getpid()}
+old = signal.getsignal(signal.SIGTERM)
+now = lambda: life.Clock(anchor.boot_id, time.monotonic(), time.time_ns())
+life.run_payload({'unit':'dummy.service','mode':'term_tree','payload':{'seconds':0.03}}, anchor, log, now)
+assert signal.getsignal(signal.SIGTERM) == old
+row = json.loads(next(root.glob('payload-descendant-*.json')).read_bytes())
+try:
+    os.waitpid(row['data']['pid'], os.WNOHANG)
+except ChildProcessError:
+    pass
+else:
+    raise AssertionError('owned descendant was not reaped')
+assert len(list(root.glob('payload-result-*.json'))) == 1
+print('isolated-fork-reaped')
+"""
+    parent_script = r"""
+import os, signal, subprocess, sys, time
+from pathlib import Path
+from scripts import strength_freshness_cpu_lifecycle as life
+root = Path(sys.argv[1])
+anchor = life.Anchor('foreign-handler', 'a'*32, 'b'*64, 'local-test', time.monotonic(), time.time_ns())
+log = life.RawLog(root/'refused', anchor)
+os.environ['INVOCATION_ID'] = 'f'*32
+life._self_identity = lambda unit, invocation: {'unit':unit, 'invocation_id':invocation, 'pid':os.getpid()}
+def foreign_handler(signum, frame): pass
+signal.signal(signal.SIGCHLD, foreign_handler)
+try:
+    life.run_payload({'unit':'dummy.service','mode':'term_tree','payload':{'seconds':0.03}}, anchor, log, lambda:life.Clock(anchor.boot_id,time.monotonic(),time.time_ns()))
+except life.Refusal as error:
+    assert str(error) == 'payload-child-handler'
+else:
+    raise AssertionError('foreign SIGCHLD handler was silently accepted')
+assert signal.getsignal(signal.SIGCHLD) is foreign_handler
+assert not list((root/'refused').glob('payload-descendant-*.json'))
+result = subprocess.run([sys.executable,'-c',sys.argv[2],str(root/'actual')],capture_output=True,text=True,check=True,timeout=5)
+assert result.stdout.strip() == 'isolated-fork-reaped'
+assert signal.getsignal(signal.SIGCHLD) is foreign_handler
+print('foreign-refused-and-fresh-child-passed')
+"""
+    existing_handler = signal.getsignal(signal.SIGCHLD)
+    completed = subprocess.run(
+        [sys.executable, "-c", parent_script, str(tmp_path), child_script],
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(life.__file__).resolve().parents[1]),
+            "CUDA_VISIBLE_DEVICES": "",
         },
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
     )
-    anchor = replace(
-        anchor, started_monotonic=time.monotonic(), started_wall_ns=time.time_ns()
-    )
-    log = life.RawLog(tmp_path / "descendant-raw", anchor)
-    old = signal.getsignal(signal.SIGTERM)
-
-    def now():
-        return life.Clock(anchor.boot_id, time.monotonic(), time.time_ns())
-
-    life.run_payload(
-        {"unit": "dummy.service", "mode": "term_tree", "payload": {"seconds": 0.03}},
-        anchor,
-        log,
-        now,
-    )
-    assert signal.getsignal(signal.SIGTERM) == old
-    receipt = json.loads(next(log.root.glob("payload-descendant-*.json")).read_bytes())
-    with pytest.raises(ChildProcessError):
-        os.waitpid(receipt["data"]["pid"], os.WNOHANG)
-    assert "payload-result" in events(log)
+    assert completed.stdout.strip() == "foreign-refused-and-fresh-child-passed"
+    assert signal.getsignal(signal.SIGCHLD) == existing_handler
 
 
 def test_actual_flock_holder_releases_owned_fd(log, anchor, tmp_path, monkeypatch):
@@ -753,9 +1101,57 @@ def test_raw_log_busy_is_bounded_and_cannot_publish(log):
 
 
 @pytest.mark.parametrize("mode", ["lock_holder", "term_tree"])
-def test_real_sigterm_holder_exits_zero_and_tree_still_ignores_it(
-    mode, tmp_path, anchor, monkeypatch
-):
+def test_real_sigterm_holder_exits_zero_and_tree_still_ignores_it(mode, tmp_path):
+    # A caught SIGCHLD handler in the isolated launcher is reset by exec, while
+    # the actual pytest worker's handler is untouched throughout this test.
+    child_script = r"""
+import importlib.util, os, signal, sys
+from pathlib import Path
+import pytest
+assert signal.getsignal(signal.SIGCHLD) == signal.SIG_DFL
+spec = importlib.util.spec_from_file_location('isolated_lifecycle_case', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+anchor = module.life.Anchor('isolated-signals', 'a'*32, 'b'*64, 'local-test', 0.0, 1)
+with pytest.MonkeyPatch.context() as patch:
+    module._real_sigterm_case(sys.argv[3], Path(sys.argv[2]), anchor, patch)
+print('isolated-signal-case-passed')
+"""
+    launcher = r"""
+import signal, subprocess, sys
+def foreign_handler(signum, frame): pass
+signal.signal(signal.SIGCHLD, foreign_handler)
+result = subprocess.run([sys.executable, '-c', *sys.argv[1:]], capture_output=True, text=True, check=True, timeout=6)
+assert result.stdout.strip() == 'isolated-signal-case-passed'
+assert signal.getsignal(signal.SIGCHLD) is foreign_handler
+print(result.stdout.strip())
+"""
+    old = signal.getsignal(signal.SIGCHLD)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            launcher,
+            child_script,
+            str(Path(__file__).resolve()),
+            str(tmp_path),
+            mode,
+        ],
+        env={
+            **os.environ,
+            "PYTHONPATH": str(Path(life.__file__).resolve().parents[1]),
+            "CUDA_VISIBLE_DEVICES": "",
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    assert result.stdout.strip() == "isolated-signal-case-passed"
+    assert signal.getsignal(signal.SIGCHLD) == old
+
+
+def _real_sigterm_case(mode, tmp_path, anchor, monkeypatch):
     """Signals only our unreaped fork child; all identity metadata is local-fixture scope."""
     monkeypatch.setenv("INVOCATION_ID", "f" * 32)
     monkeypatch.setattr(

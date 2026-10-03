@@ -26,6 +26,7 @@ from typing import Any, Callable, Iterator, Mapping
 
 ENDS = {
     "work": 390,
+    "dispatcher_terminal": 405,
     "cleanup": 540,
     "observer": 570,
     "observer_terminal": 575,
@@ -201,6 +202,14 @@ class RawLog:
         )
 
     def record(self, event: str, data: Mapping[str, Any]) -> dict[str, Any]:
+        return self._record(event, data, once=False)
+
+    def record_once(self, event: str, data: Mapping[str, Any]) -> dict[str, Any]:
+        return self._record(event, data, once=True)
+
+    def _record(
+        self, event: str, data: Mapping[str, Any], *, once: bool
+    ) -> dict[str, Any]:
         self._directory()
         require(re.fullmatch(r"[a-z][a-z0-9_-]{0,47}", event), "event-name")
         body = {
@@ -214,6 +223,10 @@ class RawLog:
         raw = encoded(body)
         require(len(raw) <= 262144, "raw-evidence-size")
         with self._append_lock():
+            if once:
+                require(
+                    not list(self.root.glob(event + "-*.json")), "duplicate-" + event
+                )
             return self._publish(event, raw)
 
     @contextmanager
@@ -325,6 +338,34 @@ def _drained(unit: Mapping[str, Any]) -> bool:
     )
 
 
+def _source_sha256() -> str:
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
+
+def _recorded_clock(anchor: Anchor, value: Mapping[str, Any], phase: str) -> Clock:
+    """Validate an immutable recorded time, without calling it a current clock."""
+    require(set(value) == {"boot_id", "monotonic", "wall_ns"}, "recorded-clock-fields")
+    recorded = Clock(**value)
+    require(
+        recorded.boot_id == anchor.boot_id
+        and finite(recorded.monotonic)
+        and type(recorded.wall_ns) is int
+        and 0 <= recorded.monotonic - anchor.started_monotonic < ENDS[phase]
+        and 0 <= recorded.wall_ns - anchor.started_wall_ns < ENDS[phase] * 10**9,
+        "recorded-clock-window",
+    )
+    return recorded
+
+
+def _single(log: RawLog, pin: Mapping[str, Any], event: str) -> dict[str, Any]:
+    data = log.load(pin, event)
+    require(
+        [str(p) for p in log.root.glob(event + "-*.json")] == [pin["path"]],
+        "nonunique-" + event,
+    )
+    return data
+
+
 def role_started(
     log: RawLog, now: Clock, role: str, owner: Mapping[str, Any]
 ) -> dict[str, Any]:
@@ -332,8 +373,8 @@ def role_started(
     raw = log.record(
         "raw-role-start", {"clock": asdict(now), "role": role, "owner": dict(owner)}
     )
-    require(role in ("cleanup", "observer", "publisher"), "start-role")
-    log.anchor.remaining(role, now)
+    require(role in ("dispatcher", "cleanup", "observer", "publisher"), "start-role")
+    log.anchor.remaining("work" if role == "dispatcher" else role, now)
     require(
         type(owner["pid"]) is int
         and owner["pid"] == os.getpid()
@@ -349,8 +390,14 @@ def role_started(
         and owner["cgroup"] != "/",
         "start-owner",
     )
-    return log.record(
-        role + "-started", {"raw": raw, "owner": dict(owner), "clock": asdict(now)}
+    return log.record_once(
+        role + "-started",
+        {
+            "raw": raw,
+            "owner": dict(owner),
+            "clock": asdict(now),
+            "source_sha256": _source_sha256(),
+        },
     )
 
 
@@ -362,14 +409,46 @@ def natural_exit(
     phase: str,
 ) -> None:
     """Join actual terminal fields to the previously qualified start identity."""
-    require(phase in ("cleanup", "observer", "publisher"), "terminal-role")
-    anchor.remaining("audit" if phase == "publisher" else "publisher", now)
+    require(
+        phase in ("dispatcher", "cleanup", "observer", "publisher"), "terminal-role"
+    )
+    anchor.remaining(
+        "dispatcher_terminal"
+        if phase == "dispatcher"
+        else "audit"
+        if phase == "publisher"
+        else "publisher",
+        now,
+    )
+    _terminal_observation(anchor, now, unit)
+    _terminal_fields(
+        anchor,
+        owner,
+        unit,
+        "dispatcher_terminal" if phase == "dispatcher" else phase,
+        natural=True,
+    )
+
+
+def _terminal_observation(
+    anchor: Anchor, checked: Clock, unit: Mapping[str, Any]
+) -> None:
     require(
         unit["observed_boot_id"] == anchor.boot_id
         and finite(unit["observed_monotonic"])
-        and 0 <= now.monotonic - unit["observed_monotonic"] <= 5,
+        and 0 <= checked.monotonic - unit["observed_monotonic"] <= 5,
         "terminal-observation-time",
     )
+
+
+def _terminal_fields(
+    anchor: Anchor,
+    owner: Mapping[str, Any],
+    unit: Mapping[str, Any],
+    end_phase: str,
+    *,
+    natural: bool,
+) -> None:
     require(
         unit["Id"] == owner["unit"]
         and unit["ControlGroup"] == owner["cgroup"]
@@ -386,16 +465,26 @@ def natural_exit(
     ended = _integer(unit["ExecMainExitTimestampMonotonic"]) / 1e6
     require(
         anchor.started_monotonic <= started <= ended <= unit["observed_monotonic"]
-        and ended <= anchor.deadline(phase),
+        and ended <= anchor.deadline(end_phase),
         "terminal-lifetime",
     )
-    require(
-        _drained(unit)
-        and unit["Result"] == "success"
-        and _integer(unit["ExecMainCode"]) == 1
-        and _integer(unit["ExecMainStatus"]) == 0,
-        "terminal-not-natural-success",
-    )
+    if natural:
+        require(
+            _drained(unit)
+            and unit["Result"] == "success"
+            and _integer(unit["ExecMainCode"]) == 1
+            and _integer(unit["ExecMainStatus"]) == 0,
+            "terminal-not-natural-success",
+        )
+    else:
+        require(
+            unit["ActiveState"] in {"inactive", "failed"}
+            and unit["SubState"] in {"dead", "failed"}
+            and _integer(unit["MainPID"]) == 0
+            and unit["Job"] in ("", "0", 0)
+            and unit["members"] == [],
+            "dispatcher-barrier-not-drained",
+        )
 
 
 def acknowledge_arm(
@@ -450,6 +539,193 @@ def require_work(log: RawLog, now: Clock, armed: Mapping[str, Any]) -> float:
     return log.anchor.effective_deadline("work", now)
 
 
+def _dispatcher_started(log: RawLog, pin: Mapping[str, Any]) -> dict[str, Any]:
+    value = _single(log, pin, "dispatcher-started")
+    raw = log.load(value["raw"], "raw-role-start")
+    require(
+        value["source_sha256"] == _source_sha256()
+        and raw["role"] == "dispatcher"
+        and raw["owner"] == value["owner"]
+        and raw["clock"] == value["clock"],
+        "dispatcher-start-binding",
+    )
+    _recorded_clock(log.anchor, value["clock"], "work")
+    return value
+
+
+def _dispatcher_cases(cases: Mapping[str, Any], expected_cases: set[str]) -> None:
+    require(
+        1 < len(expected_cases) <= 32
+        and "cleanup-and-retirement" in expected_cases
+        and set(cases) == expected_cases
+        and all(
+            isinstance(v, dict)
+            and v.get("status")
+            == (
+                "pending-independent-cleanup"
+                if name == "cleanup-and-retirement"
+                else "passed"
+            )
+            for name, v in cases.items()
+        ),
+        "dispatcher-case-set-or-status",
+    )
+
+
+def dispatcher_result(
+    log: RawLog,
+    now: Clock,
+    started: Mapping[str, Any],
+    cases: Mapping[str, Any],
+    expected_cases: set[str],
+) -> dict[str, Any]:
+    raw = log.record(
+        "raw-dispatcher-result",
+        {
+            "clock": asdict(now),
+            "started": dict(started),
+            "cases": dict(cases),
+        },
+    )
+    log.anchor.remaining("work", now)
+    owner = _dispatcher_started(log, started)
+    require(
+        owner["owner"]["pid"] == os.getpid()
+        and owner["clock"]["monotonic"] <= now.monotonic,
+        "dispatcher-producer-owner",
+    )
+    _dispatcher_cases(cases, expected_cases)
+    return log.record_once(
+        "dispatcher-result",
+        {
+            "started": dict(started),
+            "cases": dict(cases),
+            "expected_cases": sorted(expected_cases),
+            "clock": asdict(now),
+            "raw": raw,
+            "source_sha256": _source_sha256(),
+            "claims": FALSE_CLAIMS,
+        },
+    )
+
+
+def _dispatcher_result(
+    log: RawLog,
+    pin: Mapping[str, Any],
+    started: Mapping[str, Any],
+    expected_cases: set[str],
+) -> dict[str, Any]:
+    value = _single(log, pin, "dispatcher-result")
+    raw = log.load(value["raw"], "raw-dispatcher-result")
+    require(
+        value["source_sha256"] == _source_sha256()
+        and value["started"] == started == raw["started"]
+        and value["cases"] == raw["cases"]
+        and value["clock"] == raw["clock"]
+        and value["expected_cases"] == sorted(expected_cases)
+        and value["claims"] == FALSE_CLAIMS
+        and all(v is False for v in value["claims"].values()),
+        "dispatcher-result-binding",
+    )
+    _recorded_clock(log.anchor, value["clock"], "work")
+    _dispatcher_cases(value["cases"], expected_cases)
+    return value
+
+
+def dispatcher_complete(
+    log: RawLog,
+    now: Clock,
+    started: Mapping[str, Any],
+    result: Mapping[str, Any],
+    terminal: Mapping[str, Any],
+    expected_cases: set[str],
+) -> dict[str, Any]:
+    """Observer seals a *fresh* terminal observation once, no later than405."""
+    raw = log.record(
+        "raw-dispatcher-terminal",
+        {
+            "clock": asdict(now),
+            "started": dict(started),
+            "result": dict(result),
+            "terminal": dict(terminal),
+        },
+    )
+    log.anchor.remaining("dispatcher_terminal", now)
+    start = _dispatcher_started(log, started)
+    produced = _dispatcher_result(log, result, started, expected_cases)
+    natural_exit(log.anchor, now, start["owner"], terminal, "dispatcher")
+    require(
+        start["clock"]["monotonic"]
+        <= produced["clock"]["monotonic"]
+        <= _integer(terminal["ExecMainExitTimestampMonotonic"]) / 1e6,
+        "dispatcher-result-after-exit",
+    )
+    return log.record_once(
+        "dispatcher-complete",
+        {
+            "started": dict(started),
+            "result": dict(result),
+            "terminal": dict(terminal),
+            "clock": asdict(now),
+            "expected_cases": sorted(expected_cases),
+            "raw": raw,
+            "source_sha256": _source_sha256(),
+            "claims": FALSE_CLAIMS,
+        },
+    )
+
+
+def checked_dispatcher_complete(log: RawLog, pin: Mapping[str, Any]) -> dict[str, Any]:
+    """Read immutable checked history; never present the old clock as current."""
+    value = _single(log, pin, "dispatcher-complete")
+    raw = log.load(value["raw"], "raw-dispatcher-terminal")
+    require(
+        value["source_sha256"] == _source_sha256()
+        and all(value[k] == raw[k] for k in ("started", "result", "terminal", "clock"))
+        and value["claims"] == FALSE_CLAIMS
+        and all(v is False for v in value["claims"].values()),
+        "dispatcher-complete-binding",
+    )
+    recorded = _recorded_clock(log.anchor, value["clock"], "dispatcher_terminal")
+    start = _dispatcher_started(log, value["started"])
+    result = _dispatcher_result(
+        log, value["result"], value["started"], set(value["expected_cases"])
+    )
+    _terminal_observation(log.anchor, recorded, value["terminal"])
+    _terminal_fields(
+        log.anchor,
+        start["owner"],
+        value["terminal"],
+        "dispatcher_terminal",
+        natural=True,
+    )
+    require(
+        start["clock"]["monotonic"]
+        <= result["clock"]["monotonic"]
+        <= _integer(value["terminal"]["ExecMainExitTimestampMonotonic"]) / 1e6,
+        "dispatcher-result-after-exit",
+    )
+    return {**value, "cases": result["cases"]}
+
+
+def checked_dispatcher_barrier(log: RawLog, facts: Mapping[str, Any]) -> dict[str, Any]:
+    """Read-only proof of safe death by405; forced failure is not a pass."""
+    require(set(facts) == {"started", "unit", "clock"}, "dispatcher-barrier-fields")
+    started = _dispatcher_started(log, facts["started"])
+    recorded = _recorded_clock(log.anchor, facts["clock"], "dispatcher_terminal")
+    _terminal_observation(log.anchor, recorded, facts["unit"])
+    # Cleanup may establish safe death after a forced failure; such a barrier
+    # never substitutes for the separate natural dispatcher-complete proof.
+    _terminal_fields(
+        log.anchor,
+        started["owner"],
+        facts["unit"],
+        "dispatcher_terminal",
+        natural=False,
+    )
+    return dict(facts)
+
+
 def cleanup_complete(
     log: RawLog,
     now: Clock,
@@ -458,6 +734,11 @@ def cleanup_complete(
 ) -> dict[str, Any]:
     raw = log.record("raw-cleanup", {"clock": asdict(now), "facts": dict(facts)})
     log.anchor.remaining("cleanup", now)
+    checked_dispatcher_barrier(log, facts["dispatcher_barrier"])
+    require(
+        facts["dispatcher_barrier"]["clock"]["monotonic"] <= now.monotonic,
+        "cleanup-before-dispatcher-barrier",
+    )
     require(
         expected_workloads
         and set(facts["units"]) == expected_workloads
@@ -470,7 +751,38 @@ def cleanup_complete(
         and facts["leftovers"] == [],
         "cleanup-incomplete",
     )
-    return log.record("cleanup-complete", {"raw": raw, "clock": asdict(now)})
+    return log.record_once(
+        "cleanup-complete",
+        {
+            "raw": raw,
+            "clock": asdict(now),
+            "expected_workloads": sorted(expected_workloads),
+            "source_sha256": _source_sha256(),
+        },
+    )
+
+
+def _checked_cleanup(log: RawLog, pin: Mapping[str, Any]) -> dict[str, Any]:
+    value = _single(log, pin, "cleanup-complete")
+    raw = log.load(value["raw"], "raw-cleanup")
+    require(
+        value["source_sha256"] == _source_sha256() and raw["clock"] == value["clock"],
+        "cleanup-binding",
+    )
+    recorded = _recorded_clock(log.anchor, value["clock"], "cleanup")
+    facts = raw["facts"]
+    checked_dispatcher_barrier(log, facts["dispatcher_barrier"])
+    require(
+        facts["dispatcher_barrier"]["clock"]["monotonic"] <= recorded.monotonic
+        and value["expected_workloads"]
+        and set(facts["units"]) == set(value["expected_workloads"])
+        and all(
+            u.get("Id") == name and _drained(u) for name, u in facts["units"].items()
+        )
+        and all(facts[k] == [] for k in ("jobs", "members", "links", "leftovers")),
+        "cleanup-incomplete",
+    )
+    return {**value, "facts": facts}
 
 
 def run_cleanup(
@@ -495,21 +807,28 @@ def observer_candidate(
     log: RawLog,
     now: Clock,
     cleanup: Mapping[str, Any],
-    cases: Mapping[str, Any],
+    dispatcher_complete_pin: Mapping[str, Any],
     expected_cases: set[str],
     r3_gate: Mapping[str, Any],
 ) -> dict[str, Any]:
     raw = log.record(
         "raw-observer",
-        {"clock": asdict(now), "cases": dict(cases), "r3_gate": dict(r3_gate)},
+        {
+            "clock": asdict(now),
+            "dispatcher": dict(dispatcher_complete_pin),
+            "r3_gate": dict(r3_gate),
+        },
     )
     log.anchor.remaining("observer", now)
-    cleaned = log.load(cleanup, "cleanup-complete")
+    dispatched = checked_dispatcher_complete(log, dispatcher_complete_pin)
     require(
-        expected_cases
-        and set(cases) == expected_cases
-        and all(v.get("status") == "passed" for v in cases.values()),
-        "case-incomplete",
+        dispatched["expected_cases"] == sorted(expected_cases),
+        "observer-dispatcher-case-set",
+    )
+    cleaned = _checked_cleanup(log, cleanup)
+    require(
+        cleaned["facts"]["dispatcher_barrier"]["started"] == dispatched["started"],
+        "cleanup-dispatcher-owner",
     )
     require(
         r3_gate.get("status") == "passed"
@@ -526,13 +845,21 @@ def observer_candidate(
         {
             "raw": raw,
             "cleanup": dict(cleanup),
+            "dispatcher": dict(dispatcher_complete_pin),
             "expected_cases": sorted(expected_cases),
+            "cases": {
+                **dispatched["cases"],
+                "cleanup-and-retirement": {
+                    "status": "passed",
+                    "cleanup": dict(cleanup),
+                },
+            },
             "claims": FALSE_CLAIMS,
         },
     )
 
 
-def _candidate_chain(log: RawLog, pin: Mapping[str, Any]) -> None:
+def checked_observer_candidate(log: RawLog, pin: Mapping[str, Any]) -> dict[str, Any]:
     value = log.load(pin, "observer-candidate")
     require(
         value["claims"] == FALSE_CLAIMS
@@ -540,17 +867,31 @@ def _candidate_chain(log: RawLog, pin: Mapping[str, Any]) -> None:
         "candidate-claims",
     )
     raw = log.load(value["raw"], "raw-observer")
-    cleaned = log.load(value["cleanup"], "cleanup-complete")
-    log.load(cleaned["raw"], "raw-cleanup")
+    dispatched = checked_dispatcher_complete(log, value["dispatcher"])
+    cleaned = _checked_cleanup(log, value["cleanup"])
+    recorded = _recorded_clock(log.anchor, raw["clock"], "observer")
     require(
-        value["expected_cases"]
-        and set(raw["cases"]) == set(value["expected_cases"])
-        and all(v["status"] == "passed" for v in raw["cases"].values())
+        value["dispatcher"] == raw["dispatcher"]
+        and dispatched["expected_cases"] == value["expected_cases"]
+        and cleaned["facts"]["dispatcher_barrier"]["started"] == dispatched["started"]
+        and value["cases"]
+        == {
+            **dispatched["cases"],
+            "cleanup-and-retirement": {"status": "passed", "cleanup": value["cleanup"]},
+        }
         and raw["r3_gate"]["status"] == "passed"
         and raw["r3_gate"]["owners_unchanged"] is True
         and raw["r3_gate"]["productive"] is True,
         "candidate-evidence",
     )
+    require(
+        finite(raw["r3_gate"]["observed_monotonic"])
+        and cleaned["clock"]["monotonic"]
+        <= raw["r3_gate"]["observed_monotonic"]
+        <= recorded.monotonic,
+        "r3-gate",
+    )
+    return value
 
 
 def publish(
@@ -574,7 +915,7 @@ def publish(
             "cleanup_terminal": dict(cleanup_terminal),
         },
     )
-    _candidate_chain(log, candidate)
+    checked_observer_candidate(log, candidate)
     observer_owner = log.load(observer_started, "observer-started")["owner"]
     cleanup_owner = log.load(cleanup_started, "cleanup-started")["owner"]
     require(
@@ -637,7 +978,7 @@ def audit(
         and all(v is False for v in value["claims"].values()),
         "published-candidate-schema",
     )
-    _candidate_chain(log, value["candidate"])
+    checked_observer_candidate(log, value["candidate"])
     retirement = log.load(value["retirement"], "raw-retirement")
     require(
         all(retirement.get(k) == [] for k in ("jobs", "members", "links", "leftovers")),

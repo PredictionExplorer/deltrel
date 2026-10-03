@@ -36,6 +36,8 @@ ADDENDA = (
     "51eeeecf1b1c892c56482cba33263eb746e258a0d338e09074cf999e576ff657",
     "d44a31609e2c0645e0810a6e0da83a8b01d9c69752a778a53f9f171615de2e60",
     "c0dd13d6df6a7639550975c6c0e22139e9256ed3d29341a8a40318e83392acda",
+    "7174bf8635293651dcc8319b631822923c23d9baaa94031a1822dd7a9a887dc9",
+    "1ad97635c45a780a3dd472634dad0c2ec04629b2fa4674ba2a85338496b4f7f5",
 )
 CASES = (
     "typed-properties",
@@ -61,6 +63,7 @@ CLAIMS = dict.fromkeys(
 )
 LIMITS = {
     "work": 390,
+    "dispatcher_terminal": 405,
     "cleanup": 540,
     "observer": 570,
     "observer_terminal": 575,
@@ -68,7 +71,7 @@ LIMITS = {
     "publisher_terminal": 595,
     "audit": 600,
 }
-ROLES = {"observer", "publisher", "cleanup", "watchdog", "workload"}
+ROLES = {"dispatcher", "observer", "publisher", "cleanup", "watchdog", "workload"}
 HASH = re.compile(r"[0-9a-f]{64}\Z")
 HEX32 = re.compile(r"[0-9a-f]{32}\Z")
 MAX_OUTPUT = 32 * 2**20
@@ -403,7 +406,7 @@ class Plan:
                 isinstance(unit["boot_links"], dict) and len(unit["boot_links"]) <= 2,
                 "boot-links",
             )
-            if unit["role"] in {"observer", "publisher"}:
+            if unit["role"] in {"dispatcher", "observer", "publisher"}:
                 require(unit["boot_links"] == {}, "inert-control-has-no-boot-edge")
             for link, target in unit["boot_links"].items():
                 path = canonical(link)
@@ -493,7 +496,7 @@ class Plan:
         require(
             all(
                 roles.count(x) == 1
-                for x in ("observer", "publisher", "cleanup", "watchdog")
+                for x in ("dispatcher", "observer", "publisher", "cleanup", "watchdog")
             ),
             "control-roles",
         )
@@ -575,9 +578,11 @@ class Plan:
             "case-unit-bindings",
         )
         require(
-            len(set(bindings.values())) == 8
+            len(set(bindings.values())) == 7
+            and bindings["barrier"] == bindings["support_service"]
+            and len({v for k, v in bindings.items() if k != "support_service"}) == 7
             and set(bindings.values()) <= set(p["units"]),
-            "distinct-case-units",
+            "exact-barrier-support-alias",
         )
         modes = {
             "holder": "lock_holder",
@@ -595,6 +600,21 @@ class Plan:
                 and p["units"][name]["mode"] == modes[binding],
                 "case-payload-binding",
             )
+        require(
+            all(
+                p["units"][bindings["barrier"]][side]["properties"]["Type"] == "oneshot"
+                for side in ("before", "after")
+            ),
+            "shared-barrier-fixed-oneshot",
+        )
+        dispatcher = next(v for v in p["units"].values() if v["role"] == "dispatcher")
+        require(
+            all(
+                dispatcher[side]["properties"]["Type"] == "exec"
+                for side in ("before", "after")
+            ),
+            "dispatcher-fixed-exec",
+        )
         preservation = exact(
             p["preservation"],
             {"policy", "before", "after_path", "verified_champions"},
@@ -791,7 +811,7 @@ def validate_unit_text(plan: Plan, name: str, data: bytes) -> None:
     rw = shlex.split(values.get("ReadWritePaths", ""))
     writable = {p["scratch_root"]}
     if (
-        role in {"observer", "publisher", "cleanup"}
+        role in {"dispatcher", "publisher", "cleanup"}
         or name == p["bindings"]["support_guard"]
     ):
         writable.add("/etc/systemd/system")
@@ -814,9 +834,14 @@ def validate_unit_text(plan: Plan, name: str, data: bytes) -> None:
         "resource-bounds",
     )
     require(
-        linux.systemd_seconds(values.get("TimeoutStopSec", "infinity")) <= 5,
+        linux.systemd_seconds(values.get("TimeoutStopSec", "infinity"))
+        <= (15 if role == "dispatcher" else 5),
         "definition-stop-bound",
     )
+    if role == "dispatcher":
+        require(values["Type"] == "exec", "dispatcher-definition-exec")
+    if name == p["bindings"]["barrier"]:
+        require(values["Type"] == "oneshot", "barrier-definition-oneshot")
     if values["Type"] == "oneshot":
         require(
             "RuntimeMaxSec" not in values
@@ -859,7 +884,8 @@ class ClosedIO:
         purpose: str = "workload",
     ):
         require(
-            purpose in {"workload", "observer", "cleanup", "finalizer", "read"},
+            purpose
+            in {"dispatcher", "workload", "observer", "cleanup", "finalizer", "read"},
             "capability-purpose",
         )
         self.plan, self.anchor, self._backend, self.facts = plan, anchor, backend, facts
@@ -891,8 +917,9 @@ class ClosedIO:
 
     def _deadline(self, deadline: float, *, mutation: bool = False) -> float:
         phase = {
+            "dispatcher": "work",
             "workload": "work",
-            "observer": "work" if mutation else "observer",
+            "observer": "observer",
             "cleanup": "cleanup",
             "finalizer": "publisher",
             "read": "audit",
@@ -913,7 +940,7 @@ class ClosedIO:
             "original-boot-deadline",
         )
         if mutation:
-            require(self._purpose != "read", "read-only-capability")
+            require(self._purpose not in {"read", "observer"}, "read-only-capability")
         return end
 
     def _call(self, event: str, inputs: Any, callback):
@@ -955,7 +982,7 @@ class ClosedIO:
             "finalizer-bound-log",
         )
         assert isinstance(self.facts, life.RawLog)
-        self.facts.load(candidate, "observer-candidate")
+        life.checked_observer_candidate(self.facts, candidate)
         now = self.clock()
         original = life.Anchor.from_dict(self.anchor.as_dict())
         for role, started, terminal in (
@@ -970,13 +997,16 @@ class ClosedIO:
         p = self.plan.value
         require(name in p["units"], "unregistered-unit")
         role = p["units"][name]["role"]
-        if self._purpose in {"workload", "observer", "cleanup"}:
+        if self._purpose == "cleanup" and role == "dispatcher":
+            require(verb == "stop", "cleanup-dispatcher-stop-only")
+            return
+        if self._purpose in {"dispatcher", "workload", "cleanup"}:
             require(role == "workload", "protected-observer-cleanup-role")
             require(
                 verb
                 in (
                     {"start", "stop", "enable", "disable"}
-                    if self._purpose in {"workload", "observer"}
+                    if self._purpose in {"dispatcher", "workload"}
                     else {"stop", "disable"}
                 ),
                 "purpose-verb",
@@ -1389,6 +1419,30 @@ class DummyReadHost:
         raise Refusal("dummy-observation-changing")
 
 
+def validate_shared_support_bindings(plan: Plan, scenario: Mapping[str, Any]) -> None:
+    p = plan.value
+    bindings = p["bindings"]
+    synthetic = scenario["synthetic_plan"]
+    expected = {
+        "guard": bindings["support_guard"],
+        "r3": bindings["holder"],
+        "r4": bindings["contender"],
+        "probe": bindings["dependent"],
+    }
+    require(
+        scenario["guard_unit"] == bindings["support_guard"]
+        and {k: v["name"] for k, v in synthetic["units"].items()} == expected,
+        "shared-support-synthetic-roles",
+    )
+    require(
+        all(
+            set(synthetic["support_transition"][side]) == {bindings["barrier"]}
+            for side in ("before", "after")
+        ),
+        "shared-support-single-specimen",
+    )
+
+
 def verify_sources(
     plan: Plan, io: linux.LinuxIO, facts: RawFacts, deadline: float
 ) -> None:
@@ -1437,6 +1491,11 @@ def verify_sources(
         == runtime["source_commit"],
         "runtime-marker-identity",
     )
+    guard = p["units"][p["bindings"]["support_guard"]]
+    scenario_pin = guard["payload"]["scenario"]
+    io.pin(scenario_pin, deadline)
+    scenario = io.json(Path(scenario_pin["path"]), deadline)
+    validate_shared_support_bindings(plan, scenario)
     facts.record(
         "runtime-input-pins",
         {
@@ -1486,7 +1545,7 @@ class CaseRunner:
     """
 
     def __init__(self, io: ClosedIO):
-        require(io._purpose in {"workload", "observer"}, "case-workload-capability")
+        require(io._purpose == "dispatcher", "case-workload-capability")
         self.io, self.host = io, DummyReadHost(io)
 
     def _end(self, deadline: float) -> float:
@@ -1747,25 +1806,35 @@ def validate_actor_bounds(
     anchor: Budget,
 ) -> None:
     """Systemd's independent lifetime must fit the *original* role endpoint."""
-    require(role in {"observer", "publisher", "cleanup", "workload"}, "actor-role")
+    require(
+        role in {"dispatcher", "observer", "publisher", "cleanup", "workload"},
+        "actor-role",
+    )
     stop = linux.systemd_seconds(properties["TimeoutStopUSec"])
     if properties["Type"] == "oneshot":
         duration = linux.systemd_seconds(start_timeout)
     else:
         duration = linux.systemd_seconds(properties["RuntimeMaxUSec"])
     terminal_phase = {
+        "dispatcher": "dispatcher_terminal",
         "observer": "observer_terminal",
         "publisher": "publisher_terminal",
         "cleanup": "cleanup",
         "workload": "cleanup",
     }[role]
     require(
-        0 <= stop <= 5
+        0 <= stop <= (15 if role == "dispatcher" else 5)
         and 0 < duration < float("inf")
         and unit.entered_monotonic >= anchor.as_dict()["started_monotonic"]
         and unit.entered_monotonic + duration + stop <= anchor.deadline(terminal_phase),
         "actor-original-lifetime-cap",
     )
+    if role == "dispatcher":
+        require(
+            properties["Type"] == "exec"
+            and unit.entered_monotonic + duration <= anchor.deadline("work"),
+            "dispatcher-original-work-cap",
+        )
 
 
 @dataclass
@@ -1847,7 +1916,7 @@ def authorized_context(
         "authorization-plan-binding",
     )
     require(
-        auth["role"] in {"observer", "publisher", "cleanup", "workload"}
+        auth["role"] in {"dispatcher", "observer", "publisher", "cleanup", "workload"}
         and (expected_role is None or auth["role"] == expected_role)
         and (expected_mode is None or auth["mode"] == expected_mode),
         "authorization-role",
@@ -1873,6 +1942,7 @@ def authorized_context(
     backend = TargetIO()
     log = EvidenceLog(Path(p["scratch_root"]) / "evidence", anchor)
     purpose = {
+        "dispatcher": "dispatcher",
         "observer": "observer",
         "workload": "workload",
         "cleanup": "cleanup",
@@ -1897,7 +1967,7 @@ def authorized_context(
             )
             or (
                 child
-                and auth["role"] == "observer"
+                and auth["role"] == "dispatcher"
                 and unit.main.pid == os.getppid()
                 and process["ppid"] == unit.main.pid
                 and process["start_ticks"] >= unit.main.start_ticks
@@ -1933,7 +2003,7 @@ def authorized_context(
         timeout_fields["TimeoutStartUSec"],
         anchor,
     )
-    if auth["role"] in {"observer", "workload"}:
+    if auth["role"] in {"dispatcher", "workload"}:
         armed = find_one(log, "cleanup-armed")
         io.acknowledge_arm(armed)
     return AuthorizedContext(plan, anchor, log, io, host, unit, auth)
@@ -2051,7 +2121,7 @@ def main() -> None:
                 json.dumps(
                     run_worker(
                         authorized_context(
-                            args.authorization, expected_role="observer", child=True
+                            args.authorization, expected_role="dispatcher", child=True
                         )
                     ),
                     sort_keys=True,

@@ -68,7 +68,7 @@ def make_plan():
                 "dependent": "dependent.service",
                 "stubborn": "stubborn.service",
                 "support_guard": "supportguard.service",
-                "support_service": "supportservice.service",
+                "support_service": "barrier.service",
                 "timer": "timer.timer",
             }.items()
         },
@@ -96,6 +96,7 @@ def make_plan():
         )
     data = {}
     for suffix, role, kind in (
+        ("dispatcher", "dispatcher", "service"),
         ("observer", "observer", "service"),
         ("publisher", "publisher", "service"),
         ("cleanup", "cleanup", "service"),
@@ -107,7 +108,6 @@ def make_plan():
         ("dependent", "workload", "service"),
         ("stubborn", "workload", "service"),
         ("supportguard", "workload", "service"),
-        ("supportservice", "workload", "service"),
     ):
         name = PREFIX + "-" + suffix + "." + kind
         installed = "/etc/systemd/system/" + name
@@ -135,7 +135,7 @@ def make_plan():
                 "/etc/systemd/system/multi-user.target.wants/" + name: installed
             },
         }
-        if role in {"observer", "publisher"}:
+        if role in {"dispatcher", "observer", "publisher"}:
             unit["boot_links"] = {}
         if mode == "support_transaction":
             unit["payload"]["scenario"] = artifact(INPUT / "scenario.json", b"{}")
@@ -145,7 +145,7 @@ def make_plan():
         if kind == "service":
             props.update(
                 User="root",
-                Type="oneshot" if suffix in {"cleanup", "fast"} else "exec",
+                Type="oneshot" if suffix in {"cleanup", "fast", "barrier"} else "exec",
                 Restart="no",
                 KillMode="control-group",
                 SendSIGKILL="yes",
@@ -205,7 +205,7 @@ def make_plan():
                 + str(SCRATCH)
                 + (
                     " /etc/systemd/system"
-                    if role in {"observer", "publisher", "cleanup"}
+                    if role in {"dispatcher", "publisher", "cleanup"}
                     or unit["mode"] == "support_transaction"
                     else ""
                 )
@@ -314,7 +314,7 @@ def fixture():
 
     anchor = Anchor("case-one", NONCE, plan.checksum, BOOT, 100.0, 10**18)
     backend, facts = Backend(data), Facts()
-    io = q.ClosedIO(plan, cast(q.Budget, anchor), backend, facts)
+    io = q.ClosedIO(plan, cast(q.Budget, anchor), backend, facts, purpose="dispatcher")
     return SimpleNamespace(
         value=value,
         plan=plan,
@@ -413,7 +413,9 @@ def test_no_work_before_independent_cleanup_ack(fixture):
     assert fixture.backend.actions == []
 
 
-@pytest.mark.parametrize("role", ["observer", "publisher", "cleanup", "watchdog"])
+@pytest.mark.parametrize(
+    "role", ["dispatcher", "observer", "publisher", "cleanup", "watchdog"]
+)
 @pytest.mark.parametrize("verb", ["start", "stop", "enable", "disable"])
 def test_workload_cannot_touch_control_plane(fixture, role, verb):
     name = next(n for n, u in fixture.value["units"].items() if u["role"] == role)
@@ -561,3 +563,129 @@ def test_independent_unit_caps_do_not_renew_absolute_deadlines(
     else:
         with pytest.raises(q.Refusal, match="original-lifetime"):
             q.validate_actor_bounds(phase, unit, props, duration, fixture.anchor)
+
+
+def test_exact_alias_frees_only_one_unit_for_dispatcher(fixture):
+    p = fixture.plan.value
+    assert len(p["units"]) == 12
+    assert len({v for v in p["bindings"].values()}) == 7
+    assert p["bindings"]["barrier"] == p["bindings"]["support_service"]
+    shared = p["units"][p["bindings"]["barrier"]]
+    assert shared["role"] == "workload" and shared["mode"] == "sleep"
+    assert all(
+        shared[side]["properties"]["Type"] == "oneshot" for side in ("before", "after")
+    )
+
+
+@pytest.mark.parametrize(
+    "key", ["holder", "contender", "dependent", "stubborn", "support_guard", "timer"]
+)
+def test_no_other_binding_alias_is_admitted(key):
+    p, _ = make_plan()
+    p["bindings"][key] = p["bindings"]["barrier"]
+    with pytest.raises(q.Refusal, match="exact-barrier-support-alias"):
+        q.Plan.parse(q.encode(p), q.sha(q.encode(p)))
+
+
+@pytest.mark.parametrize("side", ["before", "after"])
+def test_shared_specimen_cannot_switch_to_exec(side):
+    p, _ = make_plan()
+    p["units"][p["bindings"]["barrier"]][side]["properties"]["Type"] = "exec"
+    with pytest.raises(q.Refusal, match="shared-barrier-fixed-oneshot"):
+        q.Plan.parse(q.encode(p), q.sha(q.encode(p)))
+
+
+@pytest.mark.parametrize("role", ["dispatcher", "observer", "publisher"])
+def test_all_three_control_definitions_are_inert(role):
+    p, _ = make_plan()
+    name = next(n for n, v in p["units"].items() if v["role"] == role)
+    p["units"][name]["boot_links"] = {
+        "/etc/systemd/system/multi-user.target.wants/" + name: p["units"][name][
+            "installed_path"
+        ]
+    }
+    with pytest.raises(q.Refusal, match="inert-control"):
+        q.Plan.parse(q.encode(p), q.sha(q.encode(p)))
+
+
+@pytest.mark.parametrize(
+    "start,runtime,stop,passed",
+    [
+        (100, "390s", "15s", True),
+        (105, "385s", "15s", True),
+        (105, "390s", "10s", False),
+        (100, "390s", "16s", False),
+        (99, "390s", "15s", False),
+    ],
+)
+def test_dispatcher_actual_start_charges_original_work_and_terminal_bounds(
+    fixture, start, runtime, stop, passed
+):
+    unit = q.linux.core.Unit(
+        "dummy", "a" * 64, "/system.slice/dummy", entered_monotonic=start
+    )
+    props = {"Type": "exec", "RuntimeMaxUSec": runtime, "TimeoutStopUSec": stop}
+    if passed:
+        q.validate_actor_bounds("dispatcher", unit, props, "5s", fixture.anchor)
+    else:
+        with pytest.raises(q.Refusal):
+            q.validate_actor_bounds("dispatcher", unit, props, "5s", fixture.anchor)
+
+
+def test_observer_has_neither_unit_nor_file_mutation_capability(fixture):
+    io = q.ClosedIO(
+        fixture.plan, fixture.anchor, fixture.backend, fixture.facts, purpose="observer"
+    )
+    for verb in ("start", "stop", "enable", "disable"):
+        with pytest.raises(q.Refusal, match="read-only-capability"):
+            io.action(verb, fixture.worker, 120)
+    with pytest.raises(q.Refusal, match="read-only-capability"):
+        io.atomic(SCRATCH / "synthetic-support-state/state.json", b"{}")
+    with pytest.raises(q.Refusal, match="case-workload-capability"):
+        q.CaseRunner(io)
+    assert not fixture.backend.actions
+
+
+def test_cleanup_can_only_stop_dispatcher_not_start_or_disable_it(fixture):
+    io = q.ClosedIO(
+        fixture.plan, fixture.anchor, fixture.backend, fixture.facts, purpose="cleanup"
+    )
+    name = next(
+        n for n, u in fixture.plan.value["units"].items() if u["role"] == "dispatcher"
+    )
+    io.action("stop", name, 120)
+    for verb in ("start", "enable", "disable"):
+        with pytest.raises(q.Refusal, match="cleanup-dispatcher-stop-only"):
+            io.action(verb, name, 120)
+    assert fixture.backend.actions == [("stop", name)]
+
+
+@pytest.mark.parametrize("fault", [None, "shared-as-runtime", "extra-support"])
+def test_shared_support_scenario_keeps_runtime_roles_disjoint(fixture, fault):
+    b = fixture.plan.value["bindings"]
+    scenario = {
+        "guard_unit": b["support_guard"],
+        "synthetic_plan": {
+            "units": {
+                key: {"name": name}
+                for key, name in {
+                    "guard": b["support_guard"],
+                    "r3": b["holder"],
+                    "r4": b["contender"],
+                    "probe": b["dependent"],
+                }.items()
+            },
+            "support_transition": {
+                side: {b["barrier"]: {}} for side in ("before", "after")
+            },
+        },
+    }
+    if fault == "shared-as-runtime":
+        scenario["synthetic_plan"]["units"]["r3"]["name"] = b["barrier"]
+    elif fault == "extra-support":
+        scenario["synthetic_plan"]["support_transition"]["after"][b["holder"]] = {}
+    if fault is None:
+        q.validate_shared_support_bindings(fixture.plan, scenario)
+    else:
+        with pytest.raises(q.Refusal, match="shared-support"):
+            q.validate_shared_support_bindings(fixture.plan, scenario)

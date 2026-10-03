@@ -7,6 +7,8 @@ import pytest
 
 from scripts.strength_freshness_cpu_preservation import (
     PROCESS_FIELDS,
+    PHYSICAL_WORK_CONTRACT,
+    R3_SOURCE_COMMIT,
     STATIC_FIELDS,
     PreservationViolation,
     verify_preservation,
@@ -27,7 +29,7 @@ def observations():
     static.update(
         run_id="run",
         generation_family="family",
-        source_commit="b" * 40,
+        source_commit=R3_SOURCE_COMMIT,
         continuation_started_ns=now - 10**12,
         runtime_name="training.service",
         runtime_cgroup="/system.slice/training.service",
@@ -100,6 +102,7 @@ def observations():
     }
     policy = {
         "static": static,
+        "physical_work_contract_sha256": PHYSICAL_WORK_CONTRACT,
         "workers": workers,
         "cohorts": cohorts,
         "gpu_uuids": list(gpu_roles),
@@ -178,15 +181,45 @@ def observations():
             "step": 1020,
             "phase": "update_to_data_wait",
             "heartbeat_ns": now - 10**9,
-            "neural_heartbeat_ns": now - 10**9,
-            "neural_rows": 10000,
             "metrics": metrics,
         },
     }
     before["support"]["monitor.service"]["process"] = copy.deepcopy(monitor)
     after = copy.deepcopy(before)
     after["clock"].update(monotonic=110.0, wall_ns=now + 10 * 10**9)
-    after["progress"].update(neural_rows=12000, neural_heartbeat_ns=now + 9 * 10**9)
+    actors = {}
+    for role in [f"actor-gpu-{i}" for i in range(1, 7)]:
+        pair = {}
+        for label, seconds, calls, rows in [
+            ("first", 7, 100, 10000),
+            ("second", 9, 102, 11024),
+        ]:
+            pair[label] = {
+                "clock": {
+                    "boot_id": "boot",
+                    "monotonic": 100 + seconds + 0.5,
+                    "wall_ns": now + int((seconds + 0.5) * 10**9),
+                },
+                "heartbeat": {
+                    "worker": role,
+                    "pid": processes[role]["pid"],
+                    "phase": "shared_cohorts",
+                    "heartbeat_ns": now + seconds * 10**9,
+                    "inference": {
+                        "worker_phase": "idle",
+                        "worker_phase_since_ns": now + (seconds - 1) * 10**9,
+                        "failed_requests": 0,
+                        "worker_failures": 0,
+                        "physical_inference": {
+                            "neural_calls": calls,
+                            "neural_rows": rows,
+                        },
+                    },
+                },
+            }
+        actors[role] = pair
+        after["processes"][role]["heartbeat_ns"] = now + 9 * 10**9
+    after["physical_work"] = {"kind": "actor_broker", "actors": actors}
     for row in after["cohorts"].values():
         row["games"] += 1
     return policy, before, after, {champion: "f" * 64}
@@ -422,7 +455,9 @@ def test_clock_liveness_and_progress_cannot_be_replayed(observations, fault):
     elif fault == "step":
         after["progress"]["step"] -= 1
     elif fault == "neural-reset":
-        after["progress"]["neural_rows"] = 1
+        actor_pair(observations)["second"]["heartbeat"]["inference"][
+            "physical_inference"
+        ]["neural_rows"] = 1
     else:
         after["cohorts"]["cohort-0"]["games"] = 0
     with pytest.raises(PreservationViolation):
@@ -443,9 +478,16 @@ def test_identical_snapshots_do_not_prove_post_cleanup_work(observations):
         verify(observations, **bounds)
 
 
-@pytest.mark.parametrize("field", ["neural_rows", "neural_heartbeat_ns"])
+def actor_pair(observations):
+    return observations[2]["physical_work"]["actors"]["actor-gpu-1"]
+
+
+@pytest.mark.parametrize("field", ["neural_rows", "neural_calls"])
 def test_positive_old_physical_counters_must_actually_advance(observations, field):
-    observations[2]["progress"][field] = observations[1]["progress"][field]
+    pair = actor_pair(observations)
+    pair["second"]["heartbeat"]["inference"]["physical_inference"][field] = pair[
+        "first"
+    ]["heartbeat"]["inference"]["physical_inference"][field]
     with pytest.raises(PreservationViolation, match="physical-work-not-proved"):
         verify(observations)
 
@@ -455,18 +497,20 @@ def test_verified_promotion_does_not_invent_a_physical_counter_epoch(observation
     new = "sha256-" + "b" * 64
     verified[new] = "a" * 64
     after["champion_identity"] = new
-    after["progress"]["neural_rows"] = 10
+    actor_pair(observations)["second"]["heartbeat"]["inference"]["physical_inference"][
+        "neural_rows"
+    ] = 10
     with pytest.raises(PreservationViolation, match="counter-reset"):
         verify(observations)
 
 
-def test_fresh_but_precleanup_neural_activity_is_not_post_cleanup_work(observations):
-    bounds = window(observations)
-    observations[2]["progress"]["neural_heartbeat_ns"] = (
-        bounds["cleanup_clock"]["wall_ns"] - 1
+def test_fresh_periodic_heartbeat_cannot_replace_precleanup_phase(observations):
+    pair = actor_pair(observations)
+    pair["first"]["heartbeat"]["inference"]["worker_phase_since_ns"] = (
+        window(observations)["cleanup_clock"]["wall_ns"] - 1
     )
-    with pytest.raises(PreservationViolation, match="physical-work-not-proved"):
-        verify(observations, **bounds)
+    with pytest.raises(PreservationViolation, match="physical-producer-phase-time"):
+        verify(observations)
 
 
 @pytest.mark.parametrize(
@@ -550,24 +594,66 @@ def test_verified_preservation_is_consumable_by_observer_without_invented_clock(
     observations, tmp_path
 ):
     from scripts import strength_freshness_cpu_lifecycle as life
-    from test_strength_freshness_cpu_lifecycle import cleanup_facts
+    from test_strength_freshness_cpu_lifecycle import owner, terminal
 
     timestamps = window(observations)
     anchor = life.Anchor.from_dict(timestamps["attempt"])
     log = life.RawLog(tmp_path / "observer", anchor)
-    cleaned = life.cleanup_complete(
+
+    def clock(elapsed):
+        return life.Clock(
+            anchor.boot_id,
+            anchor.started_monotonic + elapsed,
+            anchor.started_wall_ns + int(elapsed * 10**9),
+        )
+
+    begun = life.role_started(
+        log, clock(1.05), "dispatcher", owner(anchor, "dispatcher")
+    )
+    cases = {
+        "fixture": {"status": "passed"},
+        "cleanup-and-retirement": {"status": "pending-independent-cleanup"},
+    }
+    produced = life.dispatcher_result(log, clock(1.2), begun, cases, set(cases))
+    dispatched = life.dispatcher_complete(
         log,
-        life.Clock(**timestamps["cleanup_clock"]),
-        cleanup_facts(),
-        {"dummy.service"},
+        clock(1.4),
+        begun,
+        produced,
+        terminal(anchor, "dispatcher", 1.4, 1.3),
+        set(cases),
+    )
+    facts = {
+        "dispatcher_barrier": {
+            "started": begun,
+            "unit": terminal(anchor, "dispatcher", 2, 1.3),
+            "clock": life.asdict(clock(2)),
+        },
+        "units": {
+            "dummy.service": {
+                "Id": "dummy.service",
+                "ActiveState": "inactive",
+                "SubState": "dead",
+                "MainPID": 0,
+                "Job": "0",
+                "members": [],
+            }
+        },
+        "jobs": [],
+        "members": [],
+        "links": [],
+        "leftovers": [],
+    }
+    cleaned = life.cleanup_complete(
+        log, life.Clock(**timestamps["cleanup_clock"]), facts, {"dummy.service"}
     )
     result = verify(observations)
     candidate = life.observer_candidate(
         log,
         life.Clock(**timestamps["audit_clock"]),
         cleaned,
-        {"fixture": {"status": "passed"}},
-        {"fixture"},
+        dispatched,
+        set(cases),
         result,
     )
     proof = log.load(candidate, "observer-candidate")
@@ -577,3 +663,205 @@ def test_verified_preservation_is_consumable_by_observer_without_invented_clock(
     assert observed["observed_monotonic"] != timestamps["audit_clock"]["monotonic"]
     assert observed["step_before"] == observed["step_after"]
     assert all(value is False for value in proof["claims"].values())
+
+
+def test_old_cohort_search_progress_is_valid_with_fresh_heartbeats_and_all_actor_work(
+    observations,
+):
+    for snap in observations[1:3]:
+        snap["cohorts"]["cohort-0"]["progress_ns"] = (
+            observations[1]["clock"]["wall_ns"] - 500 * 10**9
+        )
+    result = verify(observations)
+    assert result["physical_work"]["kind"] == "actor_broker"
+    assert len(result["physical_work"]["actors"]) == 6
+    assert result["step_after"] == result["step_before"]
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "missing-actor",
+        "role",
+        "pid",
+        "owner-generation",
+        "parent-draining",
+        "missing-phase",
+        "old-phase",
+        "phase-regression",
+        "future-phase",
+        "failed-request",
+        "worker-failure",
+        "rows-reset",
+        "calls-reset",
+        "warmup-only",
+        "periodic-rewrite",
+        "read-order",
+        "read-boot",
+        "pre-cleanup-read",
+        "future-read",
+        "future-heartbeat",
+        "unjoined-heartbeat",
+        "legacy-field",
+        "contract",
+        "source",
+        "cohort-future",
+    ],
+)
+def test_physical_proof_faults_do_not_become_preservation(observations, fault):
+    policy, before, after, _ = observations
+    pair = actor_pair(observations)
+    first, second = pair["first"], pair["second"]
+    raw = second["heartbeat"]
+    inference = raw["inference"]
+    if fault == "missing-actor":
+        after["physical_work"]["actors"].pop("actor-gpu-6")
+    elif fault == "role":
+        raw["worker"] = "actor-gpu-2"
+    elif fault == "pid":
+        raw["pid"] += 1
+    elif fault == "owner-generation":
+        after["processes"]["actor-gpu-1"]["start_ticks"] += 1
+    elif fault == "parent-draining":
+        raw["phase"] = "cohort_draining"
+    elif fault == "missing-phase":
+        inference.pop("worker_phase_since_ns")
+    elif fault == "old-phase":
+        first["heartbeat"]["inference"]["worker_phase_since_ns"] = before["clock"][
+            "wall_ns"
+        ]
+    elif fault == "phase-regression":
+        inference["worker_phase_since_ns"] = (
+            first["heartbeat"]["inference"]["worker_phase_since_ns"] - 1
+        )
+    elif fault == "future-phase":
+        inference["worker_phase_since_ns"] = raw["heartbeat_ns"] + 1
+    elif fault == "failed-request":
+        inference["failed_requests"] = 1
+    elif fault == "worker-failure":
+        inference["worker_failures"] = 1
+    elif fault == "rows-reset":
+        inference["physical_inference"]["neural_rows"] = 0
+    elif fault == "calls-reset":
+        inference["physical_inference"]["neural_calls"] = 0
+    elif fault == "warmup-only":
+        inference["physical_inference"] = {
+            **first["heartbeat"]["inference"]["physical_inference"],
+            "total_neural_rows": 1000000,
+            "graph_warmup_rows": 1000000,
+        }
+    elif fault == "periodic-rewrite":
+        inference["physical_inference"] = copy.deepcopy(
+            first["heartbeat"]["inference"]["physical_inference"]
+        )
+    elif fault == "read-order":
+        second["clock"] = copy.deepcopy(first["clock"])
+    elif fault == "read-boot":
+        second["clock"]["boot_id"] = "other"
+    elif fault == "pre-cleanup-read":
+        first["clock"] = copy.deepcopy(before["clock"])
+    elif fault == "future-read":
+        second["clock"]["wall_ns"] = after["clock"]["wall_ns"] + 1
+    elif fault == "future-heartbeat":
+        raw["heartbeat_ns"] = second["clock"]["wall_ns"] + 1
+    elif fault == "unjoined-heartbeat":
+        after["processes"]["actor-gpu-1"]["heartbeat_ns"] = raw["heartbeat_ns"] - 1
+    elif fault == "legacy-field":
+        after["progress"]["neural_heartbeat_ns"] = after["clock"]["wall_ns"]
+    elif fault == "contract":
+        policy["physical_work_contract_sha256"] = "e" * 64
+    elif fault == "source":
+        for value in (policy["static"], before["static"], after["static"]):
+            value["source_commit"] = "e" * 40
+    else:
+        after["cohorts"]["cohort-0"]["progress_ns"] = after["clock"]["wall_ns"] + 1
+    with pytest.raises(PreservationViolation):
+        verify(observations)
+
+
+def learner_route(observations):
+    _, before, after, _ = observations
+    now = before["clock"]["wall_ns"]
+    after["physical_work"] = {"kind": "learner_metrics"}
+    after["progress"]["step"] = 1040
+    after["progress"]["heartbeat_ns"] = now + 9 * 10**9
+    after["processes"]["learner"]["heartbeat_ns"] = now + 9 * 10**9
+    for row, step, elapsed in zip(after["progress"]["metrics"], [1030, 1040], [6, 8]):
+        row["step"] = step
+        row["ema"]["num_updates"] = step - 1000
+        row["timestamp_ns"] = now + elapsed * 10**9
+    return after
+
+
+def test_two_producer_learner_events_prove_intervening_post_cleanup_work(observations):
+    learner_route(observations)
+    result = verify(observations)
+    assert result["physical_work"]["kind"] == "learner_metrics"
+    assert result["step_after"] > result["step_before"]
+    assert result["format"].endswith("-v2") and not result["cuda_qualified"]
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "one-after",
+        "none-after",
+        "same-step",
+        "nan",
+        "wrong-worker",
+        "extra-fields",
+        "fake-source",
+    ],
+)
+def test_learner_route_cannot_relabel_old_or_invalid_work(observations, fault):
+    after = learner_route(observations)
+    metrics = after["progress"]["metrics"]
+    cleanup = window(observations)["cleanup_clock"]["wall_ns"]
+    if fault == "one-after":
+        metrics[0]["timestamp_ns"] = cleanup - 1
+    elif fault == "none-after":
+        metrics[0]["timestamp_ns"] = cleanup - 2
+        metrics[1]["timestamp_ns"] = cleanup - 1
+    elif fault == "same-step":
+        metrics[1]["step"] = metrics[0]["step"]
+    elif fault == "nan":
+        metrics[1]["losses"]["policy"] = float("nan")
+    elif fault == "wrong-worker":
+        metrics[1]["worker"] = "actor-gpu-1"
+    elif fault == "extra-fields":
+        after["physical_work"]["invented_completion_ns"] = cleanup + 1
+    else:
+        for value in (
+            observations[0]["static"],
+            observations[1]["static"],
+            after["static"],
+        ):
+            value["source_commit"] = "d" * 40
+    with pytest.raises(PreservationViolation):
+        verify(observations)
+
+
+def test_later_batching_phase_and_same_inference_phase_remain_source_ordered(
+    observations,
+):
+    pair = actor_pair(observations)
+    pair["second"]["heartbeat"]["inference"]["worker_phase"] = "batching"
+    assert verify(observations)["productive"]
+    for sample in pair.values():
+        sample["heartbeat"]["inference"]["worker_phase"] = "inference"
+    pair["second"]["heartbeat"]["inference"]["worker_phase_since_ns"] = pair["first"][
+        "heartbeat"
+    ]["inference"]["worker_phase_since_ns"]
+    assert verify(observations)["productive"]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("neural_calls", True), ("neural_rows", float("nan")), ("neural_rows", -1)],
+)
+def test_physical_counters_have_integer_source_semantics(observations, field, value):
+    actor_pair(observations)["second"]["heartbeat"]["inference"]["physical_inference"][
+        field
+    ] = value
+    with pytest.raises(PreservationViolation, match="physical-neural-counters"):
+        verify(observations)
