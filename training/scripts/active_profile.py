@@ -198,6 +198,15 @@ def validate_profile_for_monitor(
         if selected.sha256 != plan["profile_sha256"] or config != original:
             raise ValueError("active screen profile differs from its registration")
         classification = "registered_recovery_screen"
+    elif selected.path == root / "profile-strength-freshness.yaml":
+        from deltreltrain.strength_freshness import validate_installed
+
+        freshness, expected = validate_installed(root)
+        if selected.sha256 != freshness["target_profile"]["sha256"] or digest(
+            config.as_dict()
+        ) != digest(expected.as_dict()):
+            raise ValueError("active freshness profile differs from its registration")
+        classification = "registered_champion_only_freshness"
     else:
         continuation = _json(root / "strength-continuation-plan.json")
         if (

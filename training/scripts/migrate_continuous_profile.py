@@ -85,6 +85,9 @@ _ALLOWED_PROFILE_PATHS = {
     ("learner", "protected_champion_fraction"),
     ("learner", "protected_champion_max_age_seconds"),
     ("learner", "protected_champion_after_ns"),
+    # Parsing this recorded field does not admit an activation: the exact
+    # registered post-screen transition below is mandatory for profile changes.
+    ("learner", "champion_only_replay_freshness"),
     ("learner", "candidate_interval_examples"),
     ("learner", "selfplay_snapshot_interval_examples"),
     ("learner", "selfplay_snapshot_warmup_interval_examples"),
@@ -645,12 +648,32 @@ def _validate_profile_pair(
                 f"{label} profile is not a resumable non-autonomous continuous profile"
             )
 
+    from deltreltrain.strength_freshness import validate_transition
+
+    freshness_change = (
+        old.learner.champion_only_replay_freshness
+        != new.learner.champion_only_replay_freshness
+        or (
+            old.learner.champion_only_replay_freshness
+            or new.learner.champion_only_replay_freshness
+        )
+        and old.learner.protected_champion_after_ns
+        != new.learner.protected_champion_after_ns
+    )
+    registered_freshness = freshness_change and validate_transition(old, new, run_root)
+    if freshness_change and not registered_freshness:
+        raise MigrationError(
+            "champion-only freshness requires its exact sealed transition"
+        )
+
     try:
         validate_continuous_config(new)
     except ValueError as exc:
         from deltreltrain.strength_recovery import validate_continuation_transition
 
-        if not validate_continuation_transition(old, new, run_root):
+        if not registered_freshness and not validate_continuation_transition(
+            old, new, run_root
+        ):
             raise MigrationError(
                 f"new profile fails continuous validation: {exc}"
             ) from exc
@@ -1664,6 +1687,20 @@ def plan_migration(request: MigrationRequest) -> MigrationPlan:
     from_source_commit, to_source_commit, source_commit_data = _resolve_source_commits(
         request, run_root=run_root, chain=chain
     )
+    if (
+        old_config.learner.champion_only_replay_freshness
+        != new_config.learner.champion_only_replay_freshness
+    ):
+        from deltreltrain.strength_freshness import validate_registration
+
+        freshness, _, _ = validate_registration(run_root)
+        if (
+            from_source_commit != freshness["original_source_commit"]
+            or to_source_commit != freshness["runtime"]["source_commit"]
+        ):
+            raise MigrationError(
+                "freshness migration source revision differs from its qualified plan"
+            )
     if source_only:
         if not chain and source_commit_data is None:
             raise MigrationError(
@@ -2411,7 +2448,9 @@ def _rollback_outputs(
     return tuple(failures)
 
 
-def apply_migration(plan: MigrationPlan) -> dict[str, object]:
+def apply_migration(
+    plan: MigrationPlan, *, rollback_on_failure: bool = True
+) -> dict[str, object]:
     """Apply a validated migration atomically under coordinator exclusion."""
 
     _assert_inputs_unchanged(plan, check_lock=True)
@@ -2473,6 +2512,12 @@ def apply_migration(plan: MigrationPlan) -> dict[str, object]:
                 overwrite=True,
             )
         except Exception as exc:
+            if not rollback_on_failure:
+                # A separately authorized durable forward journal owns recovery.
+                # Never truncate its append or restore obsolete profile authority.
+                raise MigrationError(
+                    f"migration apply failed; retained for forward recovery: {exc}"
+                ) from exc
             rollback_failures = _rollback_outputs(
                 plan,
                 states,

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import replace
 import fcntl
@@ -230,9 +231,21 @@ def require_idle_gpus() -> None:
 
 
 def supervise_continuation(
-    root: Path, profile: Path, plan: dict[str, Any], orchestrator: str
+    root: Path,
+    profile: Path,
+    plan: dict[str, Any],
+    orchestrator: str,
+    *,
+    interpreter: str | None = None,
+    environment: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     executable = _resolve_executable(orchestrator)
+    command = [executable, "--config", str(profile)]
+    if interpreter is not None:
+        # Validate the resolved binary but execute the literal venv path: Python
+        # uses that path to discover pyvenv.cfg and the qualified site-packages.
+        _resolve_executable(interpreter)
+        command.insert(0, str(Path(interpreter).absolute()))
     config = load_config(profile)
     validate_production_ring_allocations(config, _fresh=True)
     state_path = root / STATE
@@ -273,11 +286,13 @@ def supervise_continuation(
             atomic_json(state_path, state)
             with (root / "logs/strength-continuation.log").open("ab") as output:
                 process = subprocess.Popen(
-                    [executable, "--config", str(profile)],
+                    command,
                     stdout=output,
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
-                    env=qualified_environment(),
+                    env=qualified_environment()
+                    if environment is None
+                    else dict(environment),
                 )
                 attempt.update(pid=process.pid, status="running")
                 atomic_json(state_path, state)

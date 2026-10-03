@@ -20,6 +20,23 @@ CONTINUATION_PLAN = "strength-continuation-plan.json"
 CONTINUATION_FORMAT = "deltreltrain.strength-continuation"
 CONTINUATION_INPUT = "strength-continuation-input.yaml"
 INSTALLED_PROFILE = "profile-elo-ablation.yaml"
+FRESHNESS_PLAN = "strength-freshness-plan.json"
+FRESHNESS_FORMAT = "deltreltrain.strength-freshness-transition"
+FRESHNESS_INPUT = "strength-freshness-input.yaml"
+FRESHNESS_INSTALLED = "profile-strength-freshness.yaml"
+FRESHNESS_SOURCE = "profile-strength-continuation.yaml"
+FRESHNESS_MIGRATIONS = "strength-freshness-source-migrations.jsonl"
+FRESHNESS_PROVENANCE = "strength-freshness-provenance"
+FRESHNESS_BOUNDARY = "strength-freshness-boundary.json"
+FRESHNESS_RECEIPT = "strength-freshness-receipt.json"
+FRESHNESS_FILES = {
+    FRESHNESS_PLAN,
+    FRESHNESS_INPUT,
+    FRESHNESS_INSTALLED,
+    FRESHNESS_MIGRATIONS,
+    FRESHNESS_BOUNDARY,
+    FRESHNESS_RECEIPT,
+}
 
 
 def _entries(plan: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -82,10 +99,16 @@ def validate_archive(
     Catalog callers apply their declared payload verification policy first.
     Stat identities alone are never acceptable fingerprints for live files.
     """
+    freshness_present = bool(available & FRESHNESS_FILES) or any(
+        name.startswith(FRESHNESS_PROVENANCE + "/") for name in available
+    )
+    if freshness_present and FRESHNESS_PLAN not in available:
+        raise ValueError("freshness artifacts lack their immutable plan")
     if PLAN_NAME not in available:
         if (
             PROVENANCE in available
             or CONTINUATION_PLAN in available
+            or freshness_present
             or any(path.startswith(SNAPSHOTS + "/") for path in available)
         ):
             raise ValueError("recovery artifacts lack their immutable plan")
@@ -154,6 +177,7 @@ def validate_archive(
         if installed_profile != INSTALLED_PROFILE:
             raise ValueError("recovery installed profile name is invalid")
         pinned({**plan["profile"], "path": installed_profile})
+    continuation: dict[str, Any] | None = None
     if CONTINUATION_PLAN in available:
         continuation = document(CONTINUATION_PLAN)
         if (
@@ -171,6 +195,156 @@ def validate_archive(
         if relative != CONTINUATION_INPUT:
             raise ValueError("continuation target escaped its immutable input path")
         pinned({**target, "path": relative})
+    if freshness_present:
+        if continuation is None:
+            raise ValueError("freshness artifacts lack their continuation plan")
+        freshness = document(FRESHNESS_PLAN)
+        if (
+            freshness.get("format") != FRESHNESS_FORMAT
+            or type(freshness.get("schema_version")) is not int
+            or freshness["schema_version"] != 1
+            or freshness.get("plan_sha256")
+            != digest({k: v for k, v in freshness.items() if k != "plan_sha256"})
+            or freshness.get("run_root") != plan["run_root"]
+            or not source_root.is_absolute()
+            or source_root.as_posix() != plan["run_root"]
+            or ".." in source_root.parts
+            or freshness.get("recovery_plan_sha256") != plan["plan_sha256"]
+            or freshness.get("continuation_plan_sha256") != continuation["plan_sha256"]
+            or freshness.get("target_profile_name") != FRESHNESS_INSTALLED
+            or type(freshness.get("activation_after_ns")) is not int
+            or type(freshness.get("continuation_started_ns")) is not int
+            or type(freshness.get("created_ns")) is not int
+            or not 0
+            < freshness["continuation_started_ns"]
+            <= freshness["activation_after_ns"]
+            <= freshness["created_ns"]
+        ):
+            raise ValueError("freshness plan checksum, root or identity differs")
+
+        def relocated_pin(entry: Mapping[str, Any], *, exact=None, parent=None):
+            raw = entry.get("path")
+            if not isinstance(raw, str):
+                raise ValueError("freshness artifact path is invalid")
+            original = Path(raw)
+            if (
+                not original.is_absolute()
+                or original.as_posix() != raw
+                or ".." in original.parts
+            ):
+                raise ValueError("freshness artifact path is not canonical")
+            relative = original.relative_to(source_root).as_posix()
+            if (exact is not None and relative != exact) or (
+                parent is not None
+                and not PurePosixPath(relative).is_relative_to(parent)
+            ):
+                raise ValueError("freshness artifact escaped its registered path")
+            if type(entry.get("bytes")) is not int or entry["bytes"] < 0:
+                raise ValueError("freshness artifact byte count is invalid")
+            pinned({**entry, "path": relative})
+            return relative
+
+        for field, filename in (
+            ("source_profile", FRESHNESS_SOURCE),
+            ("target_profile", FRESHNESS_INPUT),
+            ("source_migrations", FRESHNESS_MIGRATIONS),
+        ):
+            relocated_pin(freshness[field], exact=filename)
+        if any(
+            freshness["source_profile"][field] != continuation["target_profile"][field]
+            for field in ("sha256", "bytes")
+        ):
+            raise ValueError("freshness source is not the registered continuation")
+        if FRESHNESS_INSTALLED in available:
+            if FRESHNESS_BOUNDARY not in available:
+                raise ValueError("installed freshness lacks its stopped boundary")
+            pinned({**freshness["target_profile"], "path": FRESHNESS_INSTALLED})
+        artifacts = freshness.get("artifacts")
+        if not isinstance(artifacts, list) or not artifacts:
+            raise ValueError("freshness provenance artifact set is invalid")
+        declared = set()
+        for entry in artifacts:
+            relative = relocated_pin(entry, parent=FRESHNESS_PROVENANCE)
+            if relative in declared:
+                raise ValueError("duplicate freshness provenance artifact")
+            declared.add(relative)
+        # Dependencies referenced by the admission chain must be preserved,
+        # rather than silently retaining only their former external filenames.
+        for entry in [
+            freshness["runtime"]["qualification"],
+            freshness["runtime"]["source_checksums"],
+            *freshness["original_controls"].values(),
+        ]:
+            if entry not in artifacts:
+                raise ValueError("freshness proof dependency is not preserved")
+        if FRESHNESS_BOUNDARY in available:
+            boundary = document(FRESHNESS_BOUNDARY)
+            if (
+                type(boundary.get("schema_version")) is not int
+                or boundary["schema_version"] != 1
+                or boundary.get("plan_sha256") != freshness["plan_sha256"]
+                or boundary.get("continuation_started_ns")
+                != freshness["continuation_started_ns"]
+                or boundary.get("sha256")
+                != digest({k: v for k, v in boundary.items() if k != "sha256"})
+            ):
+                raise ValueError("freshness boundary checksum or identity differs")
+            checkpoint = boundary["checkpoint"]
+            relative = relocated_pin(
+                checkpoint, parent=FRESHNESS_PROVENANCE + "/checkpoints"
+            )
+            if str(
+                PurePosixPath(relative).parent
+            ) != FRESHNESS_PROVENANCE + "/checkpoints" or PurePosixPath(
+                relative
+            ).name not in {
+                checkpoint["sha256"] + ".pt",
+                "sha256-" + checkpoint["sha256"] + ".pt",
+            }:
+                raise ValueError("freshness checkpoint is not content addressed")
+            declared.add(relative)
+            cuda = boundary.get("cuda_qualification")
+            if not isinstance(cuda, dict):
+                raise ValueError("freshness stopped boundary lacks CUDA qualification")
+            declared.add(
+                relocated_pin(
+                    cuda,
+                    exact=FRESHNESS_PROVENANCE + "/r4-cuda-qualification.json",
+                )
+            )
+            controls = boundary.get("controls")
+            if not isinstance(controls, list) or not controls:
+                raise ValueError("freshness stopped controls are missing")
+            for entry in controls:
+                relative = relocated_pin(
+                    entry, parent=FRESHNESS_PROVENANCE + "/boundary"
+                )
+                if relative in declared:
+                    raise ValueError("duplicate freshness stopped artifact")
+                declared.add(relative)
+        if FRESHNESS_RECEIPT in available:
+            receipt = document(FRESHNESS_RECEIPT)
+            if (
+                FRESHNESS_BOUNDARY not in checksums
+                or receipt.get("schema_version") != 1
+                or receipt.get("status") != "committed-recover-forward-only"
+                or receipt.get("plan_sha256") != freshness["plan_sha256"]
+                or receipt.get("boundary_sha256") != checksums[FRESHNESS_BOUNDARY]
+                or receipt.get("continuation_started_ns")
+                != freshness["continuation_started_ns"]
+                or receipt.get("original_source_commit")
+                != freshness["original_source_commit"]
+                or receipt.get("active_source_commit")
+                != freshness["runtime"]["source_commit"]
+                or receipt.get("sha256")
+                != digest({k: v for k, v in receipt.items() if k != "sha256"})
+            ):
+                raise ValueError("freshness commit receipt differs from its boundary")
+        if any(
+            name.startswith(FRESHNESS_PROVENANCE + "/") and name not in declared
+            for name in available
+        ):
+            raise ValueError("orphan freshness provenance artifact")
     for seconds in plan["schedule_seconds"]:
         logical = f"{SNAPSHOTS}/{seconds}/snapshot.json"
         if logical not in available:
@@ -221,10 +395,12 @@ def backup_files(root: Path) -> dict[str, str]:
             CONTINUATION_PLAN,
             CONTINUATION_INPUT,
             INSTALLED_PROFILE,
+            FRESHNESS_SOURCE,
+            *FRESHNESS_FILES,
         )
         if (root / name).exists()
     }
-    for name in ("strength-recovery-provenance", SNAPSHOTS):
+    for name in ("strength-recovery-provenance", SNAPSHOTS, FRESHNESS_PROVENANCE):
         folder = root / name
         if folder.is_symlink():
             raise ValueError("recovery backup cannot follow symbolic links")
