@@ -9,6 +9,7 @@ adapter must prove its deadline/ownership/host-wide lease semantics separately.
 from __future__ import annotations
 
 from contextlib import contextmanager
+import copy
 from dataclasses import asdict, dataclass, field
 import fcntl
 import hashlib
@@ -367,6 +368,22 @@ class Process:
 
 
 @dataclass(frozen=True)
+class GuardReentryEvidence:
+    """Independent self identity and old PID observation from the qualified host.
+
+    ``None`` means the previous PID is absent. A present process must retain
+    that PID and report its actual start ticks; a different process is not an
+    absence assertion. The adapter must read these facts, not infer them from
+    a changed systemd InvocationID.
+    """
+
+    clock: Clock
+    executing_process: Process
+    executing_invocation_id: str
+    previous_pid_process: Process | None
+
+
+@dataclass(frozen=True)
 class Unit:
     name: str
     definition_sha256: str
@@ -444,6 +461,10 @@ class Host(Protocol):
     adapter_qualification_sha256: str
 
     def clock(self) -> Clock: ...
+    def guard_reentry_evidence(
+        self, previous: Process, deadline: float
+    ) -> GuardReentryEvidence: ...
+    def guard_boot_evidence(self, deadline: float) -> GuardReentryEvidence: ...
     def observe(self, deadline: float) -> Observation: ...
     def perform(self, kind: str, details: dict[str, Any], deadline: float) -> None: ...
     def verify_inputs(self, plan: dict[str, Any], deadline: float) -> None: ...
@@ -678,6 +699,294 @@ class Controller:
             host,
         )
 
+    def admit_guard_reentry(self) -> dict[str, Any]:
+        """Admit this replacement guardian on the same boot, recovery only.
+
+        This is not a launcher or a lease transfer. The independently executing
+        pinned guardian must already own the exclusion lease. Reboot handling
+        and retirement-only cleanup continue through their existing paths.
+        No runtime ownership, start intent, history or budget is reset here.
+        """
+        with self.journal.locked():
+            require(
+                digest(self.plan) == self.plan_sha
+                and self.plan["guard_source_sha256"] == source_sha256(),
+                "guard-reentry-plan-or-source-drift",
+            )
+            state = self.journal.read("state.json")
+            require(
+                state.get("format") == STATE_FORMAT
+                and state.get("plan_sha256") == self.plan_sha,
+                "state-plan-mismatch",
+            )
+            require(
+                not state.get("finished")
+                and not state.get("runtime_authority_retired")
+                and not state.get("handoff_complete"),
+                "guard-reentry-authority-retired",
+            )
+            anchor = self.journal.read("anchor.json")
+            require(
+                hashlib.sha256(
+                    (self.journal.directory / "anchor.json").read_bytes()
+                ).hexdigest()
+                == state.get("anchor_sha256")
+                and all(
+                    state.get(k) == anchor[k]
+                    for k in ("plan_sha256", "attempt_id", "nonce", "deadline_wall_ns")
+                ),
+                "guard-anchor-changed",
+            )
+            require(
+                state["started_monotonic"] == anchor["initial_clock"]["monotonic"]
+                and finite(state["deadline"])
+                and finite(state["last_monotonic"])
+                and 0 <= state["remaining_ns"] <= int(TOTAL * 1e9)
+                and abs(
+                    state["deadline"]
+                    - state["last_monotonic"]
+                    - state["remaining_ns"] / 1e9
+                )
+                <= 1e-6,
+                "guard-budget-state",
+            )
+            if state["active_boot_id"] == anchor["initial_clock"]["boot_id"]:
+                require(
+                    state["deadline"] == anchor["initial_clock"]["monotonic"] + TOTAL,
+                    "deadline-extended",
+                )
+            previous_owner = state["owners"].get("guard")
+            require(previous_owner is not None, "guard-reentry-no-previous-owner")
+            previous = Process(**previous_owner["main"])
+            now = self.host.clock()
+            require(
+                now.boot_id == state["active_boot_id"] == previous_owner["boot_id"],
+                "guard-reentry-requires-same-boot",
+            )
+            require(
+                finite(now.monotonic)
+                and state["last_monotonic"] <= now.monotonic < state["deadline"]
+                and state["last_wall_ns"] <= now.wall_ns < state["deadline_wall_ns"],
+                "guard-reentry-original-deadline",
+            )
+            deadline = min(now.monotonic + 10, state["deadline"])
+            evidence = self.host.guard_reentry_evidence(previous, deadline)
+            require(
+                evidence.clock.boot_id == now.boot_id
+                and finite(evidence.clock.monotonic)
+                and now.monotonic <= evidence.clock.monotonic < deadline
+                and now.wall_ns <= evidence.clock.wall_ns < state["deadline_wall_ns"],
+                "guard-reentry-evidence-clock",
+            )
+            require(
+                evidence.previous_pid_process is None
+                or (
+                    evidence.previous_pid_process.pid == previous.pid
+                    and evidence.previous_pid_process.start_ticks
+                    != previous.start_ticks
+                    and evidence.previous_pid_process.start_ticks > 0
+                ),
+                "guard-reentry-previous-process-present",
+            )
+            require(
+                evidence.executing_process != previous
+                and evidence.executing_process.pid > 0
+                and evidence.executing_process.start_ticks > 0
+                and re.fullmatch(r"[0-9a-f]{32}", evidence.executing_invocation_id)
+                and evidence.executing_invocation_id != previous_owner["invocation_id"],
+                "guard-reentry-executing-identity",
+            )
+            new_owner = {
+                "invocation_id": evidence.executing_invocation_id,
+                "main": asdict(evidence.executing_process),
+                "boot_id": evidence.clock.boot_id,
+            }
+            # Validate every current unit/GPU/support owner using a disposable
+            # state. _observe may adopt newly started runtime owners or advance
+            # clocks; none of those changes belong to this re-entry transaction.
+            candidate = copy.deepcopy(state)
+            candidate["owners"]["guard"] = new_owner
+            observed = self._observe(candidate, read_deadline=deadline)
+            unit = observed.units["guard"]
+            require(
+                observed.clock.boot_id == evidence.clock.boot_id
+                and evidence.clock.monotonic <= observed.clock.monotonic < deadline
+                and evidence.clock.wall_ns
+                <= observed.clock.wall_ns
+                < state["deadline_wall_ns"],
+                "guard-reentry-observation-clock",
+            )
+            require(
+                unit.active == "active"
+                and unit.job is None
+                and unit.enabled
+                and unit.main == evidence.executing_process
+                and unit.main in unit.members
+                and unit.invocation_id == evidence.executing_invocation_id
+                and state["last_monotonic"]
+                <= unit.entered_monotonic
+                <= observed.clock.monotonic,
+                "guard-reentry-pinned-unit",
+            )
+            self._lease(candidate, observed)
+            state["owners"]["guard"] = new_owner
+            state.setdefault("guard_reentries", []).append(
+                {
+                    "previous_owner": previous_owner,
+                    "new_owner": new_owner,
+                    "evidence": asdict(evidence),
+                    "observation_clock": asdict(observed.clock),
+                }
+            )
+            state.update(recovery_requested=True, recovery_mode=True)
+            self._save(state, "same-boot-guard-reentry-recovery-only")
+            return state
+
+    def admit_guard_boot(self) -> dict[str, Any]:
+        """Admit a new-boot guardian without dispatching recovery or any action.
+
+        The original wall expiry caps the rebased monotonic budget. Empty
+        runtime/probe resources and actual guardian self/lease identity are
+        mandatory. Phase, action, anchor and event history stay unchanged;
+        phase/terminal deadlines retain their original remaining wall bounds.
+        Subsequent normal ticks own all runtime recovery decisions.
+        """
+        with self.journal.locked():
+            require(
+                digest(self.plan) == self.plan_sha
+                and self.plan["guard_source_sha256"] == source_sha256(),
+                "guard-boot-plan-or-source-drift",
+            )
+            state = self.journal.read("state.json")
+            require(
+                state.get("format") == STATE_FORMAT
+                and state.get("plan_sha256") == self.plan_sha,
+                "state-plan-mismatch",
+            )
+            require(
+                not state.get("finished")
+                and not state.get("runtime_authority_retired")
+                and not state.get("handoff_complete"),
+                "guard-boot-authority-retired",
+            )
+            anchor = self.journal.read("anchor.json")
+            require(
+                hashlib.sha256(
+                    (self.journal.directory / "anchor.json").read_bytes()
+                ).hexdigest()
+                == state.get("anchor_sha256")
+                and all(
+                    state.get(k) == anchor[k]
+                    for k in ("plan_sha256", "attempt_id", "nonce", "deadline_wall_ns")
+                ),
+                "guard-anchor-changed",
+            )
+            require(
+                state["started_monotonic"] == anchor["initial_clock"]["monotonic"]
+                and finite(state["deadline"])
+                and finite(state["last_monotonic"])
+                and 0 < state["remaining_ns"] <= int(TOTAL * 1e9)
+                and abs(
+                    state["deadline"]
+                    - state["last_monotonic"]
+                    - state["remaining_ns"] / 1e9
+                )
+                <= 1e-6,
+                "guard-budget-state",
+            )
+            if state["active_boot_id"] == anchor["initial_clock"]["boot_id"]:
+                require(
+                    state["deadline"] == anchor["initial_clock"]["monotonic"] + TOTAL,
+                    "deadline-extended",
+                )
+            now = self.host.clock()
+            require(
+                now.boot_id != state["active_boot_id"], "guard-boot-requires-new-boot"
+            )
+            require(
+                finite(now.monotonic)
+                and now.monotonic >= 0
+                and state["last_wall_ns"] <= now.wall_ns < state["deadline_wall_ns"],
+                "guard-boot-original-deadline",
+            )
+            remaining = (
+                min(state["deadline_wall_ns"] - now.wall_ns, state["remaining_ns"])
+                / 1e9
+            )
+            deadline = now.monotonic + min(10, remaining)
+            evidence = self.host.guard_boot_evidence(deadline)
+            require(
+                evidence.clock.boot_id == now.boot_id
+                and finite(evidence.clock.monotonic)
+                and now.monotonic <= evidence.clock.monotonic < deadline
+                and now.wall_ns <= evidence.clock.wall_ns < state["deadline_wall_ns"]
+                and evidence.previous_pid_process is None,
+                "guard-boot-evidence-clock",
+            )
+            require(
+                type(evidence.executing_process.pid) is int
+                and evidence.executing_process.pid > 0
+                and type(evidence.executing_process.start_ticks) is int
+                and evidence.executing_process.start_ticks > 0
+                and re.fullmatch(r"[0-9a-f]{32}", evidence.executing_invocation_id),
+                "guard-boot-executing-identity",
+            )
+            candidate = copy.deepcopy(state)
+            observed = self._observe(candidate, read_deadline=deadline)
+            unit = observed.units["guard"]
+            require(
+                observed.clock.boot_id == evidence.clock.boot_id
+                and evidence.clock.monotonic <= observed.clock.monotonic < deadline
+                and evidence.clock.wall_ns
+                <= observed.clock.wall_ns
+                < state["deadline_wall_ns"],
+                "guard-boot-observation-clock",
+            )
+            require(
+                unit.active == "active"
+                and unit.job is None
+                and unit.enabled
+                and unit.main == evidence.executing_process
+                and unit.main in unit.members
+                and unit.invocation_id == evidence.executing_invocation_id
+                and 0 <= unit.entered_monotonic <= observed.clock.monotonic,
+                "guard-boot-pinned-unit",
+            )
+            self._lease(candidate, observed)
+            previous_boot = state["active_boot_id"]
+            for key in (
+                "active_boot_id",
+                "deadline",
+                "last_monotonic",
+                "last_wall_ns",
+                "remaining_ns",
+                "owners",
+                "starts",
+                "recovery_requested",
+                "boot_recovery",
+                "phase_deadline",
+                "boot_clock_rebases",
+            ):
+                state[key] = candidate[key]
+            if "terminal_deadline" in candidate:
+                state["terminal_deadline"] = candidate["terminal_deadline"]
+            state["recovery_mode"] = True
+            state.setdefault("guard_boot_admissions", []).append(
+                {
+                    "previous_boot_id": previous_boot,
+                    "evidence": asdict(evidence),
+                    "observation_clock": asdict(observed.clock),
+                    "deadline": state["deadline"],
+                    "remaining_ns": state["remaining_ns"],
+                }
+            )
+            state["revision"] += 1
+            # Preserve the original event/action history exactly. Boot admission
+            # is audited separately and grants no action before the caller's
+            # pending-support recovery finishes.
+            self.journal.save("state.json", state)
+            return state
+
     def _save(self, state: dict[str, Any], event: str) -> None:
         state["revision"] += 1
         jobs = {
@@ -758,12 +1067,16 @@ class Controller:
             deadline,
         )
 
-    def _observe(self, state: dict[str, Any]) -> Observation:
+    def _observe(
+        self, state: dict[str, Any], *, read_deadline: float | None = None
+    ) -> Observation:
         now = self.host.clock().monotonic
         require(finite(now), "observation-clock")
         # A reboot can reset monotonic time. Read-only observation still has
         # its own short bound before the original absolute expiry is applied.
-        observed = self.host.observe(now + 5)
+        deadline = now + 5 if read_deadline is None else min(now + 5, read_deadline)
+        require(now < deadline, "observation-deadline")
+        observed = self.host.observe(deadline)
         clock = observed.clock
         require(finite(clock.monotonic) and type(clock.wall_ns) is int, "invalid-clock")
         require(clock.wall_ns >= state["last_wall_ns"], "wall-clock-reversed")
@@ -775,6 +1088,22 @@ class Controller:
                 / 1e9
             )
             require(remaining > 0, "original-deadline-expired-after-boot")
+            new_deadline = clock.monotonic + remaining
+            original_deadlines = {
+                key: state[key]
+                for key in ("deadline", "phase_deadline", "terminal_deadline")
+                if key in state
+            }
+            rebased = {}
+            for key, value in original_deadlines.items():
+                require(finite(value), "original-phase-deadline-invalid")
+                wall_expiry = state["last_wall_ns"] + int(
+                    (value - state["last_monotonic"]) * 1e9
+                )
+                rebased[key] = min(
+                    new_deadline,
+                    clock.monotonic + (wall_expiry - clock.wall_ns) / 1e9,
+                )
             require(
                 all(observed.units[r].dead for r in ("r3", "r4", "probe"))
                 and not observed.owners,
@@ -810,12 +1139,26 @@ class Controller:
                 }
             state.update(
                 active_boot_id=clock.boot_id,
-                deadline=clock.monotonic + remaining,
+                deadline=new_deadline,
                 recovery_requested=True,
                 boot_recovery=True,
                 owners=owners,
                 starts={},
             )
+            state.setdefault("boot_clock_rebases", []).append(
+                {
+                    "prior_clock": {
+                        "wall_ns": state["last_wall_ns"],
+                        "monotonic": state["last_monotonic"],
+                    },
+                    "clock": asdict(clock),
+                    "original_deadlines": original_deadlines,
+                    "effective_deadlines": {**rebased, "deadline": new_deadline},
+                }
+            )
+            for key in ("phase_deadline", "terminal_deadline"):
+                if key in rebased:
+                    state[key] = rebased[key]
         else:
             require(
                 clock.monotonic >= state["last_monotonic"], "monotonic-clock-reversed"
@@ -1173,6 +1516,14 @@ class Controller:
         if unit.active != "active" or unit.job is not None or unit.main is None:
             return False
         progress = obs.progress
+        if progress is not None and "contract_failure" in progress:
+            require(
+                progress.get("role") == role
+                and isinstance(progress["contract_failure"], str)
+                and bool(progress["contract_failure"]),
+                "invalid-progress-contract-failure",
+            )
+            raise Refusal("runtime-contract-failed")
         if not progress or progress.get("role") != role:
             return False
         require(
@@ -1205,7 +1556,83 @@ class Controller:
             and progress.get("step", -1) > state["boundary"]["step"]
         )
 
+    def _pin_canary_processes(
+        self, state: dict[str, Any], obs: Observation, role: str
+    ) -> None:
+        progress = obs.progress
+        require(progress is not None, "canary-progress-missing")
+        assert progress is not None
+        workers = progress.get("worker_processes")
+        coordinator = progress.get("coordinator_process")
+        require(
+            isinstance(workers, dict)
+            and set(workers) == set(self.plan["expected_workers"])
+            and isinstance(coordinator, dict),
+            "canary-process-proof",
+        )
+        assert isinstance(workers, dict) and isinstance(coordinator, dict)
+        processes = []
+        for value in [coordinator, *workers.values()]:
+            require(
+                isinstance(value, dict)
+                and set(value) == {"pid", "start_ticks"}
+                and all(type(x) is int and x > 0 for x in value.values()),
+                "canary-process-proof",
+            )
+            processes.append(Process(**value))
+        require(
+            len(set(processes)) == len(processes)
+            and all(p in obs.units[role].members for p in processes)
+            and obs.units[role].main not in processes,
+            "canary-process-membership",
+        )
+        state["canary_processes"] = {
+            "runtime_owner": copy.deepcopy(state["owners"][role]),
+            "required": [asdict(p) for p in processes],
+            "worker_processes": copy.deepcopy(workers),
+            "coordinator_process": copy.deepcopy(coordinator),
+        }
+
+    def _backup_observation(
+        self, state: dict[str, Any], obs: Observation, role: str
+    ) -> str:
+        """Separate missing telemetry from a lost, replaced or invalid runtime."""
+        require(obs.authority.phase == role, "runtime-authority-mismatch")
+        unit = obs.units[role]
+        pinned = state["canary_processes"]
+        current_owner = {
+            "invocation_id": unit.invocation_id,
+            "main": asdict(unit.main) if unit.main is not None else None,
+            "boot_id": obs.clock.boot_id,
+        }
+        if (
+            unit.active != "active"
+            or unit.job is not None
+            or current_owner != pinned["runtime_owner"]
+            or any(Process(**p) not in unit.members for p in pinned["required"])
+        ):
+            raise Refusal("runtime-failed-during-backup")
+        if obs.progress is None:
+            return "pending"
+        if not self._productive(state, obs, role):
+            raise Refusal("runtime-failed-during-backup")
+        if (
+            obs.progress.get("worker_processes") != pinned["worker_processes"]
+            or obs.progress.get("coordinator_process") != pinned["coordinator_process"]
+        ):
+            raise Refusal("runtime-failed-during-backup")
+        return "fresh"
+
     def _recover(self, state: dict[str, Any], obs: Observation) -> None:
+        # Guardian replacement cannot turn proof-only retirement back into a
+        # startup attempt, or turn terminal owned cleanup into a runtime retry.
+        if state["phase"] in {"proof-incomplete", "terminal-cleanup"}:
+            state["recovery_requested"] = False
+            if state["phase"] == "proof-incomplete":
+                self._proof_incomplete(state, obs)
+            else:
+                self._terminal_cleanup(state, obs)
+            return
         target = "r3" if obs.authority.phase == "r3" else "r4"
         state["recovery_target"] = (
             target  # Always derive from current durable authority.
@@ -1387,7 +1814,11 @@ class Controller:
             except Refusal as error:
                 code = str(error)
                 if (
-                    code == "backup-timeout-productive-proof-incomplete"
+                    code
+                    in {
+                        "backup-timeout-productive-proof-incomplete",
+                        "backup-timeout-owned-runtime-pending-telemetry",
+                    }
                     and obs is not None
                 ):
                     state.update(
@@ -1405,6 +1836,8 @@ class Controller:
                 elif obs is not None and code in {
                     "phase-timeout-no-implicit-retry",
                     "runtime-failed-during-backup",
+                    "runtime-contract-failed",
+                    "runtime-authority-mismatch",
                 }:
                     state.update(
                         phase="terminal-cleanup",
@@ -1448,9 +1881,7 @@ class Controller:
         """A backup delay cannot justify stopping an already qualified canary."""
         self._lease(state, obs)
         role = state["first_progress"]["role"]
-        require(obs.authority.phase == role, "runtime-authority-mismatch")
-        if not self._productive(state, obs, role):
-            raise Refusal("runtime-failed-during-backup")
+        observation = self._backup_observation(state, obs, role)
         deadline = state["terminal_deadline"]
         require(obs.clock.monotonic < deadline, "incomplete-proof-retirement-timeout")
         other = "r3" if role == "r4" else "r4"
@@ -1474,17 +1905,23 @@ class Controller:
                     support_transition=self.plan["support_transition"],
                     support_stage=stage,
                     proof_closure=str(self.journal.directory / "proof-closure.json"),
-                    proof_closure_sha256=state["proof_closure_sha256"],
-                    required_proof_sha256=state["required_proof_sha256"],
+                    proof_closure_sha256=state.get("proof_closure_sha256")
+                    or state.get("existing_proof_closure", {}).get("observed_sha256"),
+                    required_proof_sha256=state.get("required_proof_sha256", []),
                 )
             return
         state.update(
             phase="retiring",
             runtime_authority_retired=True,
-            outcome="productive-" + role + "-proof-incomplete",
+            outcome=(
+                "owned-" + role + "-pending-telemetry"
+                if observation == "pending"
+                else "productive-" + role + "-proof-incomplete"
+            ),
             recovery_required=True,
+            proof_closure_required=True,
         )
-        self._save(state, "productive-runtime-preserved-backup-not-certified")
+        self._save(state, "owned-runtime-preserved-backup-not-certified")
 
     def _terminal_cleanup(self, state: dict[str, Any], obs: Observation) -> None:
         """Drain proven owners with the reserved tail; never restart or rollback."""
@@ -1601,8 +2038,13 @@ class Controller:
     def _advance(self, state: dict[str, Any], obs: Observation) -> None:
         now, phase = obs.clock.monotonic, state["phase"]
         if now >= state["phase_deadline"]:
-            if phase.startswith("backup-") and self._productive(state, obs, phase[-2:]):
-                raise Refusal("backup-timeout-productive-proof-incomplete")
+            if phase.startswith("backup-"):
+                observation = self._backup_observation(state, obs, phase[-2:])
+                raise Refusal(
+                    "backup-timeout-owned-runtime-pending-telemetry"
+                    if observation == "pending"
+                    else "backup-timeout-productive-proof-incomplete"
+                )
             if phase.startswith(("starting-", "canary-", "backup-")):
                 raise Refusal("phase-timeout-no-implicit-retry")
             state.update(recovery_requested=True, recovery_mode=True)
@@ -1737,6 +2179,7 @@ class Controller:
                 state.update(recovery_requested=True, recovery_mode=True)
                 return
             if self._productive(state, obs, role):
+                self._pin_canary_processes(state, obs, role)
                 state.update(
                     phase="canary-" + role,
                     phase_deadline=min(now + CANARY, state["deadline"] - STOP),
@@ -1751,6 +2194,36 @@ class Controller:
                 and obs.progress.get("neural_work", 0)
                 > state["first_progress"].get("neural_work", 0)
             ):
+                proof_path = self.journal.directory / "proof-closure.json"
+                if (
+                    proof_path.exists()
+                    or proof_path.is_symlink()
+                    or "proof_closure_sha256" in state
+                ):
+                    # A previous action or crash may have published this file.
+                    # Preserve it; it cannot certify this recovered runtime.
+                    # A fresh canary permits only explicit incomplete closure.
+                    observed_hash = None
+                    if proof_path.exists() or proof_path.is_symlink():
+                        observed_hash = hashlib.sha256(
+                            _proof_file(
+                                self.journal.directory, "proof-closure.json", 2**20
+                            )
+                        ).hexdigest()
+                    state.update(
+                        phase="proof-incomplete",
+                        failure="prior-proof-preserved-no-new-backup",
+                        recovery_requested=False,
+                        recovery_mode=True,
+                        terminal_deadline=min(now + STOP, state["deadline"]),
+                        existing_proof_closure={
+                            "observed_sha256": observed_hash,
+                            "journaled_sha256": state.get("proof_closure_sha256"),
+                            "status": "diagnostic-only-not-completed-proof",
+                        },
+                    )
+                    self._save(state, "prior-proof-preserved-after-fresh-canary")
+                    return
                 state.update(
                     phase="backup-" + role,
                     phase_deadline=min(now + TAIL, state["deadline"] - STOP),
@@ -1822,9 +2295,8 @@ class Controller:
                 )
         elif phase in ("backup-r3", "backup-r4"):
             role = phase[-2:]
-            require(obs.authority.phase == role, "runtime-authority-mismatch")
-            if not self._productive(state, obs, role):
-                raise Refusal("runtime-failed-during-backup")
+            if self._backup_observation(state, obs, role) == "pending":
+                return
             backup = obs.backup
             if backup is not None:
                 require(

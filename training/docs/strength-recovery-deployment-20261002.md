@@ -280,9 +280,9 @@ v3 WASM assets while retaining exact deployed legacy bytes for existing clients.
 The parsed manifest and executable bytes are hash-bound before use. Chromium,
 Firefox and WebKit passed real CPU/WASM Standard searches and cache/reload
 checks; these are not WebGPU qualifications. Public browser deployment remains
-pending authentication, and cloud cutover requires the separate tested
-transaction and public acceptance check. Consult current operator receipts
-before asserting what is serving.
+pending authentication and exact-model WebGPU qualification. The cloud cutover
+described below subsequently completed; consult current operator receipts before
+asserting actual serving ownership.
 
 `cutover_cloud_champion.py` implements that separate transaction. The reviewed
 initial invocation supplies an explicit plan checksum; a boot-enabled guard
@@ -308,3 +308,81 @@ referenced from its verified disaster-recovery object. A separate process read
 back every object. Its manifest SHA-256 is
 `463aba482e55edad904c7b3471fe403e64574652bf13d53c6051e4951f334163`, under
 `/lambda/nfs/texas-north-fs/edgeconnect-experiments/strength-recovery-20261002/publication-572377-qualification-01`.
+
+## Continuation and freshness recovery preparation, October 3
+
+The final cloud transaction, `572377-cutover-01`, completed in 28.55 seconds.
+Public Standard acceptance completed all 544 simulations / 16 candidates and
+returned a native-legal move. Independent closure verified champion 572377,
+the v3 runtime, service enablement, exact configuration/current-model pair,
+native mapping and sole GPU ownership. Its guard is retired and disabled;
+the completed plan must never be rerun. Browser serving still uses 566428/v2.
+
+The twelve-hour checkpoint 578551 completed 320 games / 160 pairs without a
+conclusive improvement: weighted score 55.97%, 90% interval 42.31–68.85%, and
+`reject_max_pairs` with `conclusive=false`. All 320 native histories and nine
+allocation boundaries were independently checked. Champion 572377 remains
+retained. Later candidates use their own identity-bound official results;
+asynchronous heartbeat fields can still describe a preceding evaluation.
+
+All six jobs passed at `64b108de716cb9d8ce1cf453b02849bb8779c12a`: 4,893
+Python/native tests, 1,023 web tests, 107 browser E2E tests and all 28 coverage
+floors, plus Rust/WASM, audits and container checks. See
+[CI run 37101135097](https://github.com/PredictionExplorer/deltrel/actions/runs/37101135097).
+This evidence applies to that exact commit; later changes require their own
+qualification.
+
+The R4 restored-checkpoint probe passed a separate target-host CPU run against
+step 585411 and a pinned, real 512-row batch. It restored model, optimizer,
+scheduler, EMA, clipping state and continuation metadata, with exact batch
+recollation. Independent lifecycle verification passed 54 checks. Work took
+8.06 seconds and the process lifecycle 10.32 seconds, within a 120-second work
+allowance plus 10 seconds for cleanup. CUDA remained uninitialized; this run
+performed no optimizer update or native neural inference. The checkpoint has
+its own archive-owned retention link, independent of disaster-recovery garbage
+collection.
+
+R4 remains inactive. Its transition must preserve the sealed screen, original
+continuation clock, optimizer/EMA/counters, replay credit, evaluation resumes
+and candidate cadence. The only intended profile changes are champion-only
+replay freshness and its one fixed timestamp. Actual stopped-boundary CUDA
+proof must precede durable migration intent. After intent, recovery proceeds
+forward on R4; a backup delay after a productive canary must preserve training
+and report incomplete proof rather than claim completion.
+
+The recovery helpers separate these responsibilities:
+
+- `activate_strength_freshness.py reprepare` abandons a retained pre-intent
+  boundary through an append-only, numbered receipt. It preserves previous
+  evidence and refuses any durable intent or authority drift. A new attempt
+  still needs its own exact boundary and CUDA proof.
+- The finite guard records ownership using boot identity, systemd invocation,
+  cgroup and PID/start time. Same-boot guardian re-entry preserves its original
+  deadline and phase. Boot admission rebases effective deadlines within the
+  original expiry and cannot launch a runtime. Existing proof files survive
+  recovery; a fresh recovered canary can retire with incomplete proof instead
+  of issuing a second backup. Missing telemetry alone cannot certify progress
+  or justify stopping an otherwise proven productive runtime.
+- `strength_freshness_progress.py` joins fresh telemetry to current process
+  lifetimes and externally verified champion identities. It distinguishes
+  ordinary startup and replay-credit waits from current worker failures or
+  nonfinite updates. Pending peers cannot hide attributable negative evidence.
+- `strength_freshness_auxiliary.py` recognizes closed argument forms for
+  persistent compiler and loader children of verified workers. Those children
+  never certify progress. Their package and import-environment provenance still
+  require separate qualification; unknown children remain pending.
+- `strength_freshness_linux.py` is the concrete host-adapter preparation. Its
+  execution entry points require separately pinned target-host qualification
+  and protected authorization. CPU/fault tests are not Linux/systemd, CUDA,
+  GPU-exclusion or live-handoff qualification.
+- `strength_freshness_units.py` records support-service update intent before
+  writes, checks persistent startup links and drains registered processes and
+  jobs. Recovery can finish only the recorded, known file/environment changes;
+  it preserves the original deadline and cannot authorize runtime actions.
+
+The registered operator state records exact source pins, review/test receipts,
+current service ownership and remaining execution gates. A proposed 45-minute
+handoff ceiling is an upper bound, not an armed reservation or planned outage.
+Keep R3 productive while preparing the remaining qualifications, warn at a
+teacher lag of 90,000 steps and resolve before 108,000, ahead of the 120,000-step
+fallback.

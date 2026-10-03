@@ -10,6 +10,7 @@ from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from .config import ExperimentConfig, load_config
@@ -27,6 +28,152 @@ FORMAT = "deltreltrain.strength-freshness-transition"
 CONTINUATION_PLAN = "strength-continuation-plan.json"
 CONTINUATION_STATE = "strength-continuation-state.json"
 FIELDS = ("champion_only_replay_freshness", "protected_champion_after_ns")
+BOUNDARY = "strength-freshness-boundary.json"
+ATTEMPTS = PROVENANCE + "/attempts"
+REPREPARE = "reprepare.json"
+
+
+def attempt_directory(generation: int) -> str:
+    return PROVENANCE if generation == 0 else f"{ATTEMPTS}/{generation:06d}"
+
+
+def boundary_relative_path(generation: int) -> str:
+    return (
+        BOUNDARY if generation == 0 else attempt_directory(generation) + "/" + BOUNDARY
+    )
+
+
+def validate_repreparation(
+    plan: dict[str, Any],
+    receipt: dict[str, Any],
+    *,
+    generation: int,
+    previous_receipt_sha256: str | None,
+    previous_boundary_sha256: str,
+) -> None:
+    """Validate the append-only attempt chain without following mutable pointers."""
+    prior = receipt.get("abandoned_boundary", {})
+    controls = receipt.get("source_authority", {})
+    if (
+        type(receipt.get("schema_version")) is not int
+        or receipt["schema_version"] != 1
+        or receipt.get("format") != "deltreltrain.strength-freshness-repreparation"
+        or receipt.get("status") != "abandoned-before-intent"
+        or receipt.get("plan_sha256") != plan["plan_sha256"]
+        or type(receipt.get("generation")) is not int
+        or receipt["generation"] != generation
+        or not 1 <= generation <= 999999
+        or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9_-]{0,100}", receipt.get("attempt_id", "")
+        )
+        or receipt.get("previous_receipt_sha256") != previous_receipt_sha256
+        or prior.get("path")
+        != str(Path(plan["run_root"]) / boundary_relative_path(generation - 1))
+        or prior.get("sha256") != previous_boundary_sha256
+        or receipt.get("continuation_started_ns") != plan["continuation_started_ns"]
+        or receipt.get("activation_after_ns") != plan["activation_after_ns"]
+        or type(receipt.get("created_ns")) is not int
+        or receipt["created_ns"] < plan["created_ns"]
+        or receipt.get("durable_intent_absent") is not True
+        or receipt.get("sha256")
+        != digest({k: v for k, v in receipt.items() if k != "sha256"})
+        or set(controls)
+        != {
+            "continuous-migrations.jsonl",
+            "profile.sha256",
+            "source-commit.txt",
+            "learner/recovery.json",
+        }
+    ):
+        raise ValueError("freshness re-preparation chain or authority differs")
+    for entry in controls.values():
+        data = entry["text"].encode()
+        if entry["sha256"] != hashlib.sha256(data).hexdigest() or entry["bytes"] != len(
+            data
+        ):
+            raise ValueError("freshness re-preparation control snapshot differs")
+    ledger = controls["continuous-migrations.jsonl"]
+    profile = controls["profile.sha256"]["text"].split()
+    if (
+        any(ledger[k] != plan["source_migrations"][k] for k in ("sha256", "bytes"))
+        or controls["source-commit.txt"]["text"].strip()
+        != plan["original_source_commit"]
+        or profile
+        != [plan["source_profile"]["sha256"], str(Path(plan["run_root"]) / SOURCE)]
+        or receipt["observed_migration_record"]["recovery_pointer_sha256"]
+        != controls["learner/recovery.json"]["sha256"]
+    ):
+        raise ValueError(
+            "freshness re-preparation did not preserve original R3 authority"
+        )
+
+
+def repreparations(root: Path, plan: dict[str, Any]) -> list[dict[str, Any]]:
+    folder = root / ATTEMPTS
+    if folder.resolve() != folder:
+        raise ValueError("freshness attempts may not traverse symbolic links")
+    if not folder.exists():
+        return []
+    directories = sorted(folder.iterdir())
+    result = []
+    previous = None
+    seen_ids = set()
+    for directory in directories:
+        if (
+            directory.resolve() != directory
+            or not directory.is_dir()
+            or not re.fullmatch(r"[0-9]{6}", directory.name)
+        ):
+            raise ValueError("freshness attempt directory is invalid")
+        # A crash before the one atomic receipt publication may leave an empty
+        # next-generation directory; it carries no authority and is retryable.
+        if not any(directory.iterdir()):
+            continue
+        generation = len(result) + 1
+        if directory.name != f"{generation:06d}":
+            raise ValueError("freshness attempt generations are not contiguous")
+        receipt_path = directory / REPREPARE
+        receipt = document(receipt_path)
+        prior = root / boundary_relative_path(generation - 1)
+        prior_data = read(prior)
+        if pinned(receipt["abandoned_boundary"]) != prior_data:
+            raise ValueError("abandoned freshness boundary differs")
+        boundary = json.loads(prior_data)
+        if boundary.get("plan_sha256") != plan["plan_sha256"] or boundary.get(
+            "sha256"
+        ) != digest({k: v for k, v in boundary.items() if k != "sha256"}):
+            raise ValueError("abandoned freshness boundary identity differs")
+        validate_repreparation(
+            plan,
+            receipt,
+            generation=generation,
+            previous_receipt_sha256=previous,
+            previous_boundary_sha256=hashlib.sha256(prior_data).hexdigest(),
+        )
+        if generation > 1 and (
+            boundary.get("generation") != generation - 1
+            or boundary.get("repreparation_sha256") != previous
+        ):
+            raise ValueError("abandoned freshness boundary belongs to another attempt")
+        if receipt["attempt_id"] in seen_ids:
+            raise ValueError("freshness attempt identity was reused")
+        seen_ids.add(receipt["attempt_id"])
+        result.append(receipt)
+        previous = sha256_file(receipt_path)
+    return result
+
+
+def current_boundary_path(root: Path, plan: dict[str, Any] | None = None) -> Path:
+    registered = document(root / PLAN) if plan is None else plan
+    generation = len(repreparations(root, registered))
+    path = root / boundary_relative_path(generation)
+    if generation and path.exists():
+        boundary = document(path)
+        if boundary.get("generation") != generation or boundary.get(
+            "repreparation_sha256"
+        ) != sha256_file(root / attempt_directory(generation) / REPREPARE):
+            raise ValueError("freshness boundary belongs to another attempt")
+    return path
 
 
 def read(path: Path) -> bytes:
@@ -253,7 +400,7 @@ def validate_installed(root: Path) -> tuple[dict[str, Any], ExperimentConfig]:
     if len(tail) != 1:
         raise ValueError("freshness requires exactly one additional migration")
     row = json.loads(tail[0])
-    boundary = document(root / "strength-freshness-boundary.json")
+    boundary = document(current_boundary_path(root, plan))
     if (
         boundary.get("plan_sha256") != plan["plan_sha256"]
         or boundary.get("sha256")

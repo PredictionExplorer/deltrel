@@ -7,12 +7,15 @@ history is never reversed: recovery after commitment proceeds on qualified R4.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from dataclasses import replace
 import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import tempfile
 import time
 from typing import Any
 
@@ -29,8 +32,38 @@ from scripts import run_strength_recovery_continuation as continuation
 from scripts.prepare_strength_recovery import artifact, verify_artifact
 
 JOURNAL = "strength-freshness-apply.json"
-BOUNDARY = "strength-freshness-boundary.json"
+BOUNDARY = freshness.BOUNDARY
 RECEIPT = "strength-freshness-receipt.json"
+
+
+def current_boundary_path(root: Path) -> Path:
+    return freshness.current_boundary_path(root.resolve())
+
+
+def current_journal_path(root: Path) -> Path:
+    # Any intent is irreversible across all generations.
+    return root.resolve() / JOURNAL
+
+
+def current_receipt_path(root: Path) -> Path:
+    return root.resolve() / RECEIPT
+
+
+@contextmanager
+def _operation_lock(root: Path, *, shared: bool = False):
+    # Lock the existing directory inode so read-only inspection creates no file.
+    if root.resolve() != root:
+        raise ValueError("freshness lock may not traverse symbolic links")
+    descriptor = os.open(
+        root, os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        fcntl.flock(
+            descriptor, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB
+        )
+        yield
+    finally:
+        os.close(descriptor)
 
 
 def _new(path: Path, data: bytes) -> None:
@@ -319,8 +352,11 @@ def _boundary(
     operation: migration.MigrationPlan,
     cuda: dict[str, Any],
 ) -> dict[str, Any]:
+    attempts = freshness.repreparations(root, plan)
+    generation = len(attempts)
+    prefix = root / freshness.attempt_directory(generation)
     cuda_bytes = freshness.pinned(cuda)
-    cuda_path = root / freshness.PROVENANCE / "r4-cuda-qualification.json"
+    cuda_path = prefix / "r4-cuda-qualification.json"
     if cuda_path.exists():
         if freshness.read(cuda_path) != cuda_bytes:
             raise ValueError("preserved CUDA qualification changed")
@@ -346,7 +382,7 @@ def _boundary(
     authority_before = {}
     for name in ("continuous-migrations.jsonl", "profile.sha256", "source-commit.txt"):
         original = root / name
-        target = root / freshness.PROVENANCE / "boundary" / name
+        target = prefix / "boundary" / name
         if not target.exists():
             _new(target, freshness.read(original))
         if freshness.read(target) != freshness.read(original):
@@ -360,7 +396,7 @@ def _boundary(
             and path.stat().st_size <= 1024**2
             and path.parent != root / "arena"
         ):
-            target = root / freshness.PROVENANCE / "boundary" / path.relative_to(root)
+            target = prefix / "boundary" / path.relative_to(root)
             if not target.exists():
                 _new(target, path.read_bytes())
             if target.read_bytes() != path.read_bytes():
@@ -379,8 +415,13 @@ def _boundary(
         "migration_record": dict(operation.migration_record),
         "unchanged": [artifact(path) for path in _unchanged_files(root)],
     }
+    if generation:
+        body.update(
+            generation=generation,
+            repreparation_sha256=sha256_file(prefix / freshness.REPREPARE),
+        )
     body["sha256"] = digest(body)
-    path = root / BOUNDARY
+    path = current_boundary_path(root)
     if path.exists():
         if freshness.document(path) != body:
             raise ValueError(
@@ -391,18 +432,25 @@ def _boundary(
     return body
 
 
-def _receipt(root, plan) -> dict[str, Any]:
-    freshness.validate_installed(root)
+def _receipt_payload(root, plan) -> dict[str, Any]:
     result = {
         "schema_version": 1,
         "status": "committed-recover-forward-only",
         "plan_sha256": plan["plan_sha256"],
-        "boundary_sha256": sha256_file(root / BOUNDARY),
+        "boundary_sha256": sha256_file(current_boundary_path(root)),
         "original_source_commit": plan["original_source_commit"],
         "active_source_commit": plan["runtime"]["source_commit"],
         "continuation_started_ns": plan["continuation_started_ns"],
     }
+    if current_boundary_path(root) != root / BOUNDARY:
+        result["boundary_path"] = str(current_boundary_path(root).relative_to(root))
     result["sha256"] = digest(result)
+    return result
+
+
+def _receipt(root, plan) -> dict[str, Any]:
+    freshness.validate_installed(root)
+    result = _receipt_payload(root, plan)
     path = root / RECEIPT
     if path.exists():
         if freshness.document(path) != result:
@@ -415,20 +463,12 @@ def _receipt(root, plan) -> dict[str, Any]:
 def apply(
     root: Path, *, cuda_receipt: Path | None = None, cuda_sha256: str | None = None
 ) -> dict[str, Any]:
-    root = root.resolve()
-    plan, _, _ = freshness.validate_registration(root)
-    _verify_support(plan)
-    freshness.verify_runtime(plan)
-    continuation.require_idle_gpus()
-    journal = root / JOURNAL
-    if journal.exists():
-        return repair(root)
-    if cuda_receipt is None or cuda_sha256 is None:
-        raise ValueError(
-            "reviewed actual R4 CUDA qualification is required before migration intent"
-        )
-    cuda = cuda_qualification(root, plan, cuda_receipt, cuda_sha256)
-    operation = migration.plan_migration(
+    with _operation_lock(root.resolve()):
+        return _apply(root, cuda_receipt=cuda_receipt, cuda_sha256=cuda_sha256)
+
+
+def _migration_plan(root: Path, plan: dict[str, Any]) -> migration.MigrationPlan:
+    return migration.plan_migration(
         migration.MigrationRequest(
             old_profile=root / freshness.SOURCE,
             new_profile=root / freshness.INPUT,
@@ -438,6 +478,25 @@ def apply(
             to_source_commit=plan["runtime"]["source_commit"],
         )
     )
+
+
+def _apply(
+    root: Path, *, cuda_receipt: Path | None = None, cuda_sha256: str | None = None
+) -> dict[str, Any]:
+    root = root.resolve()
+    plan, _, _ = freshness.validate_registration(root)
+    _verify_support(plan)
+    freshness.verify_runtime(plan)
+    continuation.require_idle_gpus()
+    journal = root / JOURNAL
+    if journal.exists():
+        return _repair(root)
+    if cuda_receipt is None or cuda_sha256 is None:
+        raise ValueError(
+            "reviewed actual R4 CUDA qualification is required before migration intent"
+        )
+    cuda = cuda_qualification(root, plan, cuda_receipt, cuda_sha256)
+    operation = _migration_plan(root, plan)
     if (
         operation.utd_segment_payload is not None
         or operation.strength_epoch_payload is not None
@@ -448,8 +507,9 @@ def apply(
         != operation.migration_record["recovery_pointer_sha256"]
     ):
         raise ValueError("stopped recovery boundary changed after CUDA qualification")
-    if (root / BOUNDARY).exists():
-        retained = freshness.document(root / BOUNDARY)
+    boundary_path = current_boundary_path(root)
+    if boundary_path.exists():
+        retained = freshness.document(boundary_path)
         old_record = retained["migration_record"]
 
         def without_timestamp(record):
@@ -470,17 +530,41 @@ def apply(
 
 
 def repair(root: Path) -> dict[str, Any]:
+    with _operation_lock(root.resolve()):
+        return _repair(root)
+
+
+def _repair(root: Path) -> dict[str, Any]:
     root = root.resolve()
     plan, source, target = freshness.validate_registration(root)
     _verify_support(plan)
     freshness.verify_runtime(plan)
     continuation.require_idle_gpus()
+    journal, boundary = _validate_journal(root, plan, source, target)
+    # Never bypass the live coordinator exclusion, even when every write happened
+    # before a crash. Once a committed R4 run advances, normal launch (not repair)
+    # is the restart path.
+    with migration._coordinator_write_guard(root):
+        if journal["status"] == "pending":
+            _validate_pending_boundary(root, boundary)
+        status = transaction.repair_interrupted_intent(
+            root / JOURNAL, root, forward=True
+        )
+    if status != "committed":
+        raise ValueError("freshness repair did not complete forward")
+    return _receipt(root, plan)
+
+
+def _validate_journal(root, plan, source, target):
     journal = freshness.document(root / JOURNAL)
-    boundary = freshness.document(root / BOUNDARY)
+    boundary = freshness.document(current_boundary_path(root))
     if (
         boundary.get("sha256")
         != digest({k: v for k, v in boundary.items() if k != "sha256"})
         or boundary.get("plan_sha256") != plan["plan_sha256"]
+        or type(journal.get("schema_version")) is not int
+        or journal["schema_version"] != 1
+        or journal.get("run_root") != str(root)
         or journal.get("status") not in ("pending", "committed")
         or journal.get("target_profile") != freshness.INSTALLED
         or journal.get("recovery_pointer_sha256")
@@ -534,31 +618,286 @@ def repair(root: Path) -> dict[str, Any]:
             raise ValueError(
                 "freshness repair after-bytes differ from its registration"
             )
-    # Never bypass the live coordinator exclusion, even when every write happened
-    # before a crash. Once a committed R4 run advances, normal launch (not repair)
-    # is the restart path.
-    with migration._coordinator_write_guard(root):
-        if journal["status"] == "pending":
-            for pin in boundary["unchanged"]:
-                verify_artifact(pin)
-            record = boundary["migration_record"]
-            replay = migration._read_replay_boundary(
-                root,
-                run_id=record["run_id"],
-                generation_family=record["generation_family"],
-                created_ns=freshness.document(root / "run.json")["created_ns"],
-            )
-            if (replay.committed_samples, replay.updated_ns) != (
-                record["committed_replay_samples"],
-                record["replay_counter_updated_ns"],
-            ):
-                raise ValueError("replay credit boundary changed before forward repair")
-        status = transaction.repair_interrupted_intent(
-            root / JOURNAL, root, forward=True
+        path = root / row["path"]
+        if path.resolve() != path or path.is_symlink():
+            raise ValueError("freshness journal state may not traverse symbolic links")
+        actual = freshness.read(path) if path.exists() else None
+        before_bytes, after_bytes = before[row["path"]], expected[row["path"]][0]
+        partial = (
+            row["path"] == "continuous-migrations.jsonl"
+            and actual is not None
+            and after_bytes.startswith(actual)
+            and actual.startswith(before_bytes or b"")
         )
-    if status != "committed":
-        raise ValueError("freshness repair did not complete forward")
-    return _receipt(root, plan)
+        if actual not in (before_bytes, after_bytes) and not partial:
+            raise ValueError(
+                "freshness metadata differs from authorized transaction states"
+            )
+        if journal["status"] == "committed" and actual != after_bytes:
+            raise ValueError("committed freshness metadata is incomplete")
+    return journal, boundary
+
+
+def _validate_pending_boundary(root, boundary):
+    for pin in boundary["unchanged"]:
+        verify_artifact(pin)
+    record = boundary["migration_record"]
+    replay = migration._read_replay_boundary(
+        root,
+        run_id=record["run_id"],
+        generation_family=record["generation_family"],
+        created_ns=freshness.document(root / "run.json")["created_ns"],
+    )
+    if (replay.committed_samples, replay.updated_ns) != (
+        record["committed_replay_samples"],
+        record["replay_counter_updated_ns"],
+    ):
+        raise ValueError("replay credit boundary changed before forward repair")
+
+
+def inspect_authority(root: Path) -> dict[str, Any]:
+    """Read-only, serialized authority classification; unknown bytes never mean R3."""
+    root = root.resolve()
+    with _operation_lock(root, shared=True):
+        plan, source, target = freshness.validate_registration(root)
+        _verify_support(plan)
+        boundary_path = current_boundary_path(root)
+        journal_path, receipt_path = (
+            current_journal_path(root),
+            current_receipt_path(root),
+        )
+        controls = [
+            root / name
+            for name in (
+                "continuous-migrations.jsonl",
+                "profile.sha256",
+                "source-commit.txt",
+            )
+        ]
+        if any(
+            path.resolve() != path or path.is_symlink()
+            for path in [*controls, boundary_path, journal_path, receipt_path]
+        ):
+            raise ValueError(
+                "freshness authority paths may not traverse symbolic links"
+            )
+        journal = None
+        if journal_path.exists() or journal_path.is_symlink():
+            journal, boundary = _validate_journal(root, plan, source, target)
+            if journal["status"] == "pending":
+                # Even SQLite mode=ro can update its shared-memory bookkeeping.
+                # Inspection classifies metadata authority only; stopped repair
+                # retains the mandatory replay-credit query under exclusion.
+                for pin in boundary["unchanged"]:
+                    verify_artifact(pin)
+                phase = "pending"
+            else:
+                freshness.validate_installed(root)
+                phase = "r4"
+        else:
+            if any(
+                p.exists() or p.is_symlink()
+                for p in (
+                    receipt_path,
+                    root / freshness.INSTALLED,
+                    (root / freshness.INSTALLED).with_suffix(".sha256"),
+                )
+            ):
+                raise ValueError("freshness installation lacks durable intent")
+            if (
+                not freshness.validate_transition(source, target, root)
+                or resolve_active_profile(root).path != root / freshness.SOURCE
+            ):
+                raise ValueError("unknown freshness source authority")
+            if boundary_path.exists():
+                boundary = freshness.document(boundary_path)
+                if boundary.get("plan_sha256") != plan["plan_sha256"] or boundary.get(
+                    "sha256"
+                ) != digest({k: v for k, v in boundary.items() if k != "sha256"}):
+                    raise ValueError("retained pre-intent boundary differs")
+                freshness.validate_record(
+                    plan, source, target, boundary["migration_record"]
+                )
+                freshness.pinned(boundary["cuda_qualification"])
+            phase = "r3"
+        if receipt_path.exists():
+            if phase != "r4" or freshness.document(receipt_path) != _receipt_payload(
+                root, plan
+            ):
+                raise ValueError("freshness commit receipt differs from authority")
+        names = [
+            freshness.PLAN,
+            "continuous-migrations.jsonl",
+            "profile.sha256",
+            "source-commit.txt",
+        ]
+        paths = [root / name for name in names] + [
+            boundary_path,
+            journal_path,
+            receipt_path,
+        ]
+        paths += [
+            root / freshness.attempt_directory(i) / freshness.REPREPARE
+            for i in range(1, len(freshness.repreparations(root, plan)) + 1)
+        ]
+        evidence = {str(p.relative_to(root)): artifact(p) for p in paths if p.exists()}
+        return {
+            "phase": phase,
+            "plan_sha256": plan["plan_sha256"],
+            "evidence_sha256": digest(evidence),
+            "journal_status": journal["status"] if journal else None,
+            "boundary_path": str(boundary_path),
+            "journal_path": str(journal_path),
+            "receipt_path": str(receipt_path),
+            "receipt_present": receipt_path.exists(),
+            "replay_credit_validated": False,
+        }
+
+
+def _publish_repreparation(root: Path, path: Path, data: bytes) -> None:
+    """Publish one authority receipt; interrupted staging is outside provenance."""
+    if path.resolve() != path:
+        raise ValueError("freshness attempt may not traverse symbolic links")
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=root, prefix=".freshness-reprepare-", delete=False
+        ) as stream:
+            temporary = Path(stream.name)
+            os.fchmod(stream.fileno(), 0o444)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        os.link(temporary, path)  # No clobber; this is the sole commit point.
+        for directory in (
+            path.parent,
+            path.parent.parent,
+            path.parent.parent.parent,
+            root,
+        ):
+            migration._fsync_directory(directory)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def reprepare(root: Path, *, attempt_id: str, boundary_sha256: str) -> dict[str, Any]:
+    """Abandon only a retained pre-intent boundary, at a later stopped R3 state."""
+    root = root.resolve()
+    if not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9_-]{0,100}", attempt_id
+    ) or not re.fullmatch(r"[0-9a-f]{64}", boundary_sha256):
+        raise ValueError(
+            "explicit attempt identity and prior boundary SHA are required"
+        )
+    supervisor_lock = root / ".strength-continuation.lock"
+    if supervisor_lock.resolve() != supervisor_lock:
+        raise ValueError("continuation lock may not traverse symbolic links")
+    with _operation_lock(root), supervisor_lock.open("a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        plan, source, target = freshness.validate_registration(root)
+        _verify_support(plan)
+        freshness.verify_runtime(plan)
+        for path in (
+            current_journal_path(root),
+            current_receipt_path(root),
+            root / freshness.INSTALLED,
+            (root / freshness.INSTALLED).with_suffix(".sha256"),
+        ):
+            if path.exists() or path.is_symlink():
+                raise ValueError(
+                    "freshness re-preparation is forbidden after any durable intent or installation"
+                )
+        if (
+            not freshness.validate_transition(source, target, root)
+            or resolve_active_profile(root).path != root / freshness.SOURCE
+        ):
+            raise ValueError(
+                "freshness re-preparation requires exact original R3 authority"
+            )
+        continuation.require_idle_gpus()
+        operation = _migration_plan(root, plan)
+        with migration._coordinator_write_guard(root):
+            migration._assert_inputs_unchanged(operation, check_lock=False)
+            attempts = freshness.repreparations(root, plan)
+            reused = [row for row in attempts if row["attempt_id"] == attempt_id]
+            if reused:
+                if (
+                    reused != attempts[-1:]
+                    or reused[0]["abandoned_boundary"]["sha256"] != boundary_sha256
+                ):
+                    raise ValueError(
+                        "freshness attempt identity was already used for another boundary"
+                    )
+                return reused[0]
+            prior_path = current_boundary_path(root)
+            prior_pin = artifact(prior_path)
+            if prior_pin["sha256"] != boundary_sha256:
+                raise ValueError("prior freshness boundary differs from explicit SHA")
+            prior = freshness.document(prior_path)
+            if prior.get("plan_sha256") != plan["plan_sha256"] or prior.get(
+                "sha256"
+            ) != digest({k: v for k, v in prior.items() if k != "sha256"}):
+                raise ValueError("prior freshness boundary checksum or plan differs")
+            freshness.validate_record(plan, source, target, prior["migration_record"])
+            for pin in [
+                prior["checkpoint"],
+                prior["cuda_qualification"],
+                *prior["controls"],
+            ]:
+                path = Path(pin["path"])
+                if path.resolve() != path or not path.is_relative_to(
+                    root / freshness.PROVENANCE
+                ):
+                    raise ValueError("prior stopped artifact escaped provenance")
+                verify_artifact(pin)
+            controls = {}
+            for name in (
+                "continuous-migrations.jsonl",
+                "profile.sha256",
+                "source-commit.txt",
+                "learner/recovery.json",
+            ):
+                data = freshness.read(root / name)
+                controls[name] = {
+                    "text": data.decode(),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                    "bytes": len(data),
+                }
+            generation = len(attempts) + 1
+            prefix = root / freshness.attempt_directory(generation)
+            previous = (
+                root / freshness.attempt_directory(generation - 1) / freshness.REPREPARE
+            )
+            receipt = {
+                "format": "deltreltrain.strength-freshness-repreparation",
+                "schema_version": 1,
+                "status": "abandoned-before-intent",
+                "plan_sha256": plan["plan_sha256"],
+                "generation": generation,
+                "attempt_id": attempt_id,
+                "created_ns": time.time_ns(),
+                "previous_receipt_sha256": sha256_file(previous) if attempts else None,
+                "abandoned_boundary": prior_pin,
+                "durable_intent_absent": True,
+                "continuation_started_ns": plan["continuation_started_ns"],
+                "activation_after_ns": plan["activation_after_ns"],
+                "source_authority": controls,
+                "observed_migration_record": dict(operation.migration_record),
+            }
+            receipt["sha256"] = digest(receipt)
+            freshness.validate_repreparation(
+                plan,
+                receipt,
+                generation=generation,
+                previous_receipt_sha256=receipt["previous_receipt_sha256"],
+                previous_boundary_sha256=boundary_sha256,
+            )
+            _publish_repreparation(
+                root, prefix / freshness.REPREPARE, _json_bytes(receipt)
+            )
+            return receipt
 
 
 def run(root: Path) -> dict[str, Any]:
@@ -585,7 +924,7 @@ def run(root: Path) -> dict[str, Any]:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("prepare", "apply", "repair", "run"):
+    for name in ("prepare", "apply", "repair", "run", "reprepare", "inspect"):
         command = sub.add_parser(name)
         command.add_argument("--run-root", type=Path, required=True)
         if name == "prepare":
@@ -595,6 +934,9 @@ def main():
         elif name == "apply":
             command.add_argument("--cuda-qualification", type=Path, required=True)
             command.add_argument("--cuda-sha256", required=True)
+        elif name == "reprepare":
+            command.add_argument("--attempt-id", required=True)
+            command.add_argument("--boundary-sha256", required=True)
     args = parser.parse_args()
     try:
         result = (
@@ -611,7 +953,15 @@ def main():
                 cuda_sha256=args.cuda_sha256,
             )
             if args.command == "apply"
-            else {"repair": repair, "run": run}[args.command](args.run_root)
+            else reprepare(
+                args.run_root,
+                attempt_id=args.attempt_id,
+                boundary_sha256=args.boundary_sha256,
+            )
+            if args.command == "reprepare"
+            else {"repair": repair, "run": run, "inspect": inspect_authority}[
+                args.command
+            ](args.run_root)
         )
         print(json.dumps(result, sort_keys=True))
     except (OSError, ValueError, RuntimeError, KeyError) as error:

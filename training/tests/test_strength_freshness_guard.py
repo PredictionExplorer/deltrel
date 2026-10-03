@@ -165,6 +165,9 @@ class FakeHost:
             "r3", plan["freshness_plan_sha256"], sha("old-authority")
         )
         self.behavior = {}
+        self.reentry_previous_process = None
+        self.reentry_deadlines = []
+        self.boot_evidence_deadlines = []
         self.next_pid = 200
         self.units = {
             role: g.Unit(
@@ -179,7 +182,7 @@ class FakeHost:
         self.units["r3"] = replace(
             self.units["r3"],
             main=process,
-            members=(process,),
+            members=self.runtime_members(process),
             invocation_id="1" * 32,
             active="active",
             substate="running",
@@ -215,6 +218,33 @@ class FakeHost:
     def clock(self):
         return g.Clock(self.boot, self.time, self.wall_origin + int(self.time * 1e9))
 
+    def runtime_members(self, main):
+        return (main,) + tuple(
+            g.Process(main.pid * 100 + i, main.start_ticks + i)
+            for i in range(1, len(self.plan["expected_workers"]) + 2)
+        )
+
+    def guard_reentry_evidence(self, previous, deadline):
+        assert self.time < deadline
+        self.reentry_deadlines.append((previous, deadline))
+        guard = self.units["guard"]
+        assert guard.main is not None
+        return g.GuardReentryEvidence(
+            self.clock(),
+            guard.main,
+            guard.invocation_id,
+            self.reentry_previous_process,
+        )
+
+    def guard_boot_evidence(self, deadline):
+        assert self.time < deadline
+        self.boot_evidence_deadlines.append(deadline)
+        guard = self.units["guard"]
+        assert guard.main is not None
+        return g.GuardReentryEvidence(
+            self.clock(), guard.main, guard.invocation_id, None
+        )
+
     def advance(self, seconds=1):
         self.time += seconds
         for when, callback in list(self.due):
@@ -244,6 +274,13 @@ class FakeHost:
                     "replay_committed_samples": 1000 + int(self.time),
                     "step": 100 + int(self.time),
                     "neural_work": int(self.time),
+                    "coordinator_process": asdict(self.units[role].members[1]),
+                    "worker_processes": {
+                        name: asdict(process)
+                        for name, process in zip(
+                            self.plan["expected_workers"], self.units[role].members[2:]
+                        )
+                    },
                 }
                 break
         return g.Observation(
@@ -279,7 +316,9 @@ class FakeHost:
         self.units[role] = replace(
             self.units[role],
             main=process,
-            members=(process,),
+            members=self.runtime_members(process)
+            if role in {"r3", "r4"}
+            else (process,),
             invocation_id=f"{self.next_pid:032x}",
             active="active",
             substate="running",
@@ -1043,3 +1082,672 @@ def test_frequent_observation_does_not_exhaust_bounded_action_history(setup):
     assert state["events"][-1]["observations"] >= 300
     host.auto_progress = True
     assert drive(controller, host)["outcome"] == "committed-r4"
+
+
+def prepare_guard_reentry(setup, *, phase="probing"):
+    _, journal, host, controller = setup
+    controller.begin()
+    state = until_phase(controller, host, phase)
+    previous = g.Process(**state["owners"]["guard"]["main"])
+    host.advance()
+    host.activate("guard")
+    guard = host.units["guard"]
+    host.lease.update(
+        invocation_id=guard.invocation_id,
+        owner=asdict(guard.main),
+    )
+    return journal.read("state.json"), previous
+
+
+@pytest.mark.parametrize("phase", ["probing", "starting-r4"])
+def test_same_boot_guard_reentry_preserves_runtime_state_and_budget(setup, phase):
+    _, journal, host, controller = setup
+    before, previous = prepare_guard_reentry(setup, phase=phase)
+    mutations_before = actions(host)
+    result = controller.admit_guard_reentry()
+    assert result == journal.read("state.json")
+    assert result["recovery_requested"] and result["recovery_mode"]
+    assert result["owners"]["guard"]["main"] == asdict(host.units["guard"].main)
+    assert result["owners"]["guard"] != before["owners"]["guard"]
+    assert {k: v for k, v in result["owners"].items() if k != "guard"} == {
+        k: v for k, v in before["owners"].items() if k != "guard"
+    }
+    assert result["events"][:-1] == before["events"]
+    assert result["revision"] == before["revision"] + 1
+    changed = {
+        "owners",
+        "recovery_requested",
+        "recovery_mode",
+        "events",
+        "revision",
+        "guard_reentries",
+    }
+    assert {k: v for k, v in result.items() if k not in changed} == {
+        k: v for k, v in before.items() if k not in changed
+    }
+    assert result["guard_reentries"][-1]["previous_owner"] == before["owners"]["guard"]
+    assert host.reentry_deadlines == [
+        (previous, min(host.time + 10, before["deadline"]))
+    ]
+    assert actions(host) == mutations_before
+    completed = drive(controller, host, recover=True)
+    assert completed["outcome"] == (
+        "restored-r3" if phase == "probing" else "committed-r4"
+    )
+    assert completed["deadline"] == before["deadline"]
+
+
+def test_guard_reentry_accepts_observed_old_pid_reuse_not_old_process(setup):
+    _, _, host, controller = setup
+    _, previous = prepare_guard_reentry(setup)
+    reused = g.Process(previous.pid, previous.start_ticks + 100)
+    host.reentry_previous_process = reused
+    host.units["guard"] = replace(host.units["guard"], main=reused, members=(reused,))
+    host.lease["owner"] = asdict(reused)
+    result = controller.admit_guard_reentry()
+    assert result["owners"]["guard"]["main"] == asdict(reused)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "old-alive",
+        "wrong-old-pid",
+        "same-process-new-invocation",
+        "same-invocation",
+        "self-pid",
+        "self-invocation",
+        "lease",
+        "unit-definition",
+        "unit-members",
+        "unit-job",
+        "unit-disabled",
+        "different-boot",
+        "expired",
+        "anchor",
+        "plan",
+        "extended-deadline",
+        "finished",
+        "retired",
+        "completed",
+    ],
+)
+def test_guard_reentry_refuses_unproved_identity_or_authority_without_writes(
+    setup, monkeypatch, mutation
+):
+    plan, journal, host, controller = setup
+    before, previous = prepare_guard_reentry(setup)
+    guard = host.units["guard"]
+    evidence = host.guard_reentry_evidence(previous, host.time + 10)
+    if mutation == "old-alive":
+        evidence = replace(evidence, previous_pid_process=previous)
+    elif mutation == "wrong-old-pid":
+        evidence = replace(
+            evidence, previous_pid_process=g.Process(previous.pid + 99, 99)
+        )
+    elif mutation == "same-process-new-invocation":
+        evidence = replace(evidence, executing_process=previous)
+        host.units["guard"] = replace(guard, main=previous, members=(previous,))
+        host.lease["owner"] = asdict(previous)
+    elif mutation == "same-invocation":
+        invocation = before["owners"]["guard"]["invocation_id"]
+        evidence = replace(evidence, executing_invocation_id=invocation)
+        host.units["guard"] = replace(guard, invocation_id=invocation)
+        host.lease["invocation_id"] = invocation
+    elif mutation == "self-pid":
+        evidence = replace(evidence, executing_process=g.Process(9999, 9999))
+    elif mutation == "self-invocation":
+        evidence = replace(evidence, executing_invocation_id="f" * 32)
+    elif mutation == "lease":
+        host.lease["nonce"] = "foreign"
+    elif mutation == "unit-definition":
+        host.units["guard"] = replace(guard, definition_sha256=sha("foreign"))
+    elif mutation == "unit-members":
+        host.units["guard"] = replace(guard, members=())
+    elif mutation == "unit-job":
+        host.units["guard"] = replace(guard, job={"kind": "start", "id": 9})
+    elif mutation == "unit-disabled":
+        host.units["guard"] = replace(guard, enabled=False)
+    elif mutation == "different-boot":
+        host.boot = "new-boot"
+    elif mutation == "expired":
+        host.advance(before["deadline"] - host.time)
+    elif mutation == "anchor":
+        anchor = journal.read("anchor.json")
+        anchor["nonce"] = "f" * 64
+        journal.save("anchor.json", anchor)
+    elif mutation == "plan":
+        plan["ema_decay"] = 0.9
+    else:
+        state = journal.read("state.json")
+        if mutation == "extended-deadline":
+            state["deadline"] += 1
+            state["remaining_ns"] += 1_000_000_000
+        elif mutation == "finished":
+            state["finished"] = True
+        elif mutation == "retired":
+            state["runtime_authority_retired"] = True
+        elif mutation == "completed":
+            state["handoff_complete"] = True
+        journal.save("state.json", state)
+    monkeypatch.setattr(host, "guard_reentry_evidence", lambda *_: evidence)
+    saved = (journal.directory / "state.json").read_bytes()
+    mutations_before = actions(host)
+    with pytest.raises(g.Refusal):
+        controller.admit_guard_reentry()
+    assert (journal.directory / "state.json").read_bytes() == saved
+    assert actions(host) == mutations_before
+
+
+def test_guard_reentry_stays_inside_original_deadline_during_observation(
+    setup, monkeypatch
+):
+    _, journal, host, controller = setup
+    before, _ = prepare_guard_reentry(setup)
+    host.advance(before["deadline"] - host.time - 2)
+    observe = host.observe
+    deadlines = []
+
+    def expire(deadline):
+        deadlines.append(deadline)
+        host.advance(deadline - host.time)
+        return observe(deadline)
+
+    monkeypatch.setattr(host, "observe", expire)
+    saved = (journal.directory / "state.json").read_bytes()
+    with pytest.raises(g.Refusal, match="guard-reentry-observation-clock"):
+        controller.admit_guard_reentry()
+    assert deadlines == [before["deadline"]]
+    assert (journal.directory / "state.json").read_bytes() == saved
+
+
+def test_guard_reentry_requires_exclusive_journal_lock(setup):
+    _, journal, _, controller = setup
+    prepare_guard_reentry(setup)
+    saved = (journal.directory / "state.json").read_bytes()
+    with journal.locked(), pytest.raises(g.Refusal, match="guard-state-busy"):
+        controller.admit_guard_reentry()
+    assert (journal.directory / "state.json").read_bytes() == saved
+
+
+def test_pending_backup_telemetry_cannot_seal_ready_backup_or_stop_runtime(setup):
+    _, _, host, controller = setup
+    controller.begin()
+    first = until_phase(controller, host, "backup-r4")
+    assert host.backup["status"] == "committed"
+    host.auto_progress = False
+    for _ in range(3):
+        host.advance()
+        state = controller.tick()
+        assert state["phase"] == "backup-r4" and not state["handoff_complete"]
+        assert state["first_progress"] == first["first_progress"]
+    assert "stop-r4" not in actions(host)
+    host.auto_progress = True
+    assert drive(controller, host)["outcome"] == "committed-r4"
+
+
+def test_pending_backup_timeout_preserves_owned_runtime_without_productivity_claim(
+    setup,
+):
+    _, _, host, controller = setup
+    controller.begin()
+    first = until_phase(controller, host, "backup-r4")
+    host.auto_progress = False
+    host.advance(first["phase_deadline"] - host.time)
+    state = controller.tick()
+    assert state["phase"] == "proof-incomplete"
+    result = drive(controller, host)
+    assert result["outcome"] == "owned-r4-pending-telemetry"
+    assert result["proof_closure_required"] and not result["handoff_complete"]
+    assert host.units["r4"].active == "active" and host.units["r4"].enabled
+    assert host.units["guard"].dead and "stop-r4" not in actions(host)
+    assert result["first_progress"] == first["first_progress"]
+
+
+@pytest.mark.parametrize("which", ["worker", "coordinator", "reused-pid", "authority"])
+def test_pending_telemetry_does_not_hide_required_process_or_authority_loss(
+    setup, which
+):
+    _, _, host, controller = setup
+    controller.begin()
+    state = until_phase(controller, host, "backup-r4")
+    host.auto_progress = False
+    if which == "authority":
+        host.authority = replace(host.authority, phase="r3")
+    else:
+        index = 0 if which == "coordinator" else 1
+        lost = g.Process(**state["canary_processes"]["required"][index])
+        members = tuple(p for p in host.units["r4"].members if p != lost)
+        if which == "reused-pid":
+            members += (g.Process(lost.pid, lost.start_ticks + 100),)
+        host.units["r4"] = replace(host.units["r4"], members=members)
+    result = drive(controller, host)
+    assert result["outcome"] == "failed-closed-no-runtime"
+    assert not result["handoff_complete"] and not host.owners
+    assert "stop-r4" in actions(host) and "start-r3" not in actions(host)
+
+
+@pytest.mark.parametrize("phase", ["starting-r4", "backup-r4"])
+def test_explicit_progress_contract_failure_cleans_only_proven_owners(
+    setup, monkeypatch, phase
+):
+    _, _, host, controller = setup
+    controller.begin()
+    until_phase(controller, host, phase)
+    original = host.observe
+
+    def failure(deadline):
+        return replace(
+            original(deadline),
+            progress={"role": "r4", "contract_failure": "rate-drift"},
+        )
+
+    monkeypatch.setattr(host, "observe", failure)
+    result = drive(controller, host)
+    assert result["failure"] == "runtime-contract-failed"
+    assert result["outcome"] == "failed-closed-no-runtime"
+    assert not host.owners and "start-r3" not in actions(host)
+
+
+@pytest.mark.parametrize("pending", [False, True])
+def test_guard_reentry_during_proof_retirement_never_restarts_runtime(setup, pending):
+    _, journal, host, controller = setup
+    host.behavior["restore-support-and-backup-r4"] = lambda: None
+    controller.begin()
+    first = until_phase(controller, host, "backup-r4")
+    host.auto_progress = not pending
+    host.advance(first["phase_deadline"] - host.time)
+    state = controller.tick()
+    assert state["phase"] == "proof-incomplete"
+    host.advance()
+    host.activate("guard")
+    guard = host.units["guard"]
+    host.lease.update(invocation_id=guard.invocation_id, owner=asdict(guard.main))
+    before = journal.read("state.json")
+    admitted = controller.admit_guard_reentry()
+    assert admitted["phase"] == "proof-incomplete"
+    assert admitted["first_progress"] == before["first_progress"]
+    assert admitted["terminal_deadline"] == before["terminal_deadline"]
+    result = drive(controller, host)
+    assert result["outcome"] == (
+        "owned-r4-pending-telemetry" if pending else "productive-r4-proof-incomplete"
+    )
+    assert host.units["r4"].active == "active" and "stop-r4" not in actions(host)
+    assert actions(host).count("start-r4") == 1 and "start-r3" not in actions(host)
+    assert result["deadline"] == before["deadline"]
+
+
+def test_new_fresh_worker_mapping_cannot_replace_the_pinned_canary(setup, monkeypatch):
+    _, _, host, controller = setup
+    controller.begin()
+    until_phase(controller, host, "backup-r4")
+    original = host.observe
+
+    def changed(deadline):
+        obs = original(deadline)
+        if obs.progress is None:
+            return obs
+        progress = dict(obs.progress)
+        progress["worker_processes"] = dict(progress["worker_processes"])
+        progress["worker_processes"]["learner"] = {"pid": 99999, "start_ticks": 99999}
+        return replace(obs, progress=progress)
+
+    monkeypatch.setattr(host, "observe", changed)
+    result = drive(controller, host)
+    assert result["outcome"] == "failed-closed-no-runtime"
+    assert not result["handoff_complete"]
+
+
+def prepare_guard_boot(setup, *, before_first_guard_observation=False):
+    _, journal, host, controller = setup
+    controller.begin()
+    if not before_first_guard_observation:
+        until_phase(controller, host, "backup-r4")
+    before = journal.read("state.json")
+    previous_wall = host.clock().wall_ns
+    host.boot, host.time, host.wall_origin = (
+        "boot-b",
+        1.0,
+        previous_wall + 9_000_000_000,
+    )
+    host.due.clear()
+    for role in ("r3", "r4", "probe", "guard"):
+        host.dead(role)
+    host.activate("guard")
+    guard = host.units["guard"]
+    host.lease.update(
+        boot_id=host.boot,
+        invocation_id=guard.invocation_id,
+        owner=asdict(guard.main),
+    )
+    return before
+
+
+@pytest.mark.parametrize("before_first", [False, True])
+def test_new_boot_admission_only_rebases_remaining_budget_without_actions(
+    setup, before_first
+):
+    _, journal, host, controller = setup
+    before = prepare_guard_boot(setup, before_first_guard_observation=before_first)
+    anchor_bytes = (journal.directory / "anchor.json").read_bytes()
+    previous_actions = actions(host)
+    result = controller.admit_guard_boot()
+    assert actions(host) == previous_actions
+    assert (journal.directory / "anchor.json").read_bytes() == anchor_bytes
+    assert result["active_boot_id"] == host.boot
+    assert (
+        result["recovery_requested"]
+        and result["recovery_mode"]
+        and result["boot_recovery"]
+    )
+    assert set(result["owners"]) == {"guard"} and result["starts"] == {}
+    remaining = (
+        min(before["deadline_wall_ns"] - host.clock().wall_ns, before["remaining_ns"])
+        / 1e9
+    )
+    assert result["deadline"] == host.time + remaining
+    assert result["remaining_ns"] <= before["remaining_ns"]
+    changed = {
+        "active_boot_id",
+        "deadline",
+        "last_monotonic",
+        "last_wall_ns",
+        "remaining_ns",
+        "owners",
+        "starts",
+        "recovery_requested",
+        "recovery_mode",
+        "boot_recovery",
+        "guard_boot_admissions",
+        "revision",
+        "phase_deadline",
+        "terminal_deadline",
+        "boot_clock_rebases",
+    }
+    assert {k: v for k, v in result.items() if k not in changed} == {
+        k: v for k, v in before.items() if k not in changed
+    }
+    assert result["phase"] == before["phase"]
+    assert result["last_action"] == before["last_action"]
+    assert result["events"] == before["events"]
+    assert result["deadline_wall_ns"] == before["deadline_wall_ns"]
+    assert host.boot_evidence_deadlines == [host.time + min(10, remaining)]
+    assert result == journal.read("state.json")
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "same-boot",
+        "expired",
+        "wall-reversed",
+        "anchor",
+        "plan",
+        "deadline",
+        "self-process",
+        "self-invocation",
+        "guard-members",
+        "guard-job",
+        "guard-disabled",
+        "lease",
+        "r3-active",
+        "r4-job",
+        "probe-cgroup",
+        "NVML-owner",
+        "changed-boot-evidence",
+        "finished",
+        "retired",
+        "complete",
+    ],
+)
+def test_new_boot_admission_refuses_drift_or_nonempty_resources_without_writes(
+    setup, monkeypatch, fault
+):
+    plan, journal, host, controller = setup
+    before = prepare_guard_boot(setup)
+    evidence = host.guard_boot_evidence(host.time + 10)
+    guard = host.units["guard"]
+    if fault == "same-boot":
+        host.boot = before["active_boot_id"]
+    elif fault == "expired":
+        host.wall_origin = before["deadline_wall_ns"]
+    elif fault == "wall-reversed":
+        host.wall_origin = before["last_wall_ns"] - 2_000_000_000
+    elif fault == "anchor":
+        anchor = journal.read("anchor.json")
+        anchor["nonce"] = "f" * 64
+        journal.save("anchor.json", anchor)
+    elif fault == "plan":
+        plan["ema_decay"] = 0.9
+    elif fault == "self-process":
+        evidence = replace(evidence, executing_process=g.Process(900, 900))
+    elif fault == "self-invocation":
+        evidence = replace(evidence, executing_invocation_id="f" * 32)
+    elif fault == "guard-members":
+        host.units["guard"] = replace(guard, members=())
+    elif fault == "guard-job":
+        host.units["guard"] = replace(guard, job={"id": 99, "kind": "start"})
+    elif fault == "guard-disabled":
+        host.units["guard"] = replace(guard, enabled=False)
+    elif fault == "lease":
+        host.lease["nonce"] = "foreign"
+    elif fault == "r3-active":
+        host.activate("r3")
+    elif fault == "r4-job":
+        host.units["r4"] = replace(host.units["r4"], job={"id": 99, "kind": "start"})
+    elif fault == "probe-cgroup":
+        host.units["probe"] = replace(
+            host.units["probe"], members=(g.Process(900, 900),)
+        )
+    elif fault == "NVML-owner":
+        host.owners = (
+            g.GPUOwner(
+                plan["gpu_uuids"][0],
+                g.Process(900, 900),
+                "foreign",
+                "f" * 32,
+                "/foreign",
+            ),
+        )
+    elif fault == "changed-boot-evidence":
+        evidence = replace(evidence, clock=replace(evidence.clock, boot_id="boot-c"))
+    else:
+        state = journal.read("state.json")
+        if fault == "deadline":
+            state["deadline"] += 1
+            state["remaining_ns"] += 1_000_000_000
+        elif fault == "finished":
+            state["finished"] = True
+        elif fault == "retired":
+            state["runtime_authority_retired"] = True
+        elif fault == "complete":
+            state["handoff_complete"] = True
+        journal.save("state.json", state)
+    monkeypatch.setattr(host, "guard_boot_evidence", lambda _: evidence)
+    saved = (journal.directory / "state.json").read_bytes()
+    previous_actions = actions(host)
+    with pytest.raises(g.Refusal):
+        controller.admit_guard_boot()
+    assert (journal.directory / "state.json").read_bytes() == saved
+    assert actions(host) == previous_actions
+
+
+def test_new_boot_admission_is_lock_exclusive_and_not_repeatable_on_same_boot(setup):
+    _, journal, _, controller = setup
+    prepare_guard_boot(setup)
+    with journal.locked(), pytest.raises(g.Refusal, match="guard-state-busy"):
+        controller.admit_guard_boot()
+    controller.admit_guard_boot()
+    saved = (journal.directory / "state.json").read_bytes()
+    with pytest.raises(g.Refusal, match="requires-new-boot"):
+        controller.admit_guard_boot()
+    assert (journal.directory / "state.json").read_bytes() == saved
+
+
+def test_same_boot_reentry_after_boot_admission_uses_active_boot_clock(setup):
+    _, journal, host, controller = setup
+    prepare_guard_boot(setup)
+    admitted = controller.admit_guard_boot()
+    host.advance()
+    host.activate("guard")
+    guard = host.units["guard"]
+    assert guard.entered_monotonic < admitted["started_monotonic"]
+    host.lease.update(invocation_id=guard.invocation_id, owner=asdict(guard.main))
+    result = controller.admit_guard_reentry()
+    assert result["deadline"] == admitted["deadline"]
+    assert result["deadline_wall_ns"] == admitted["deadline_wall_ns"]
+    assert result["phase"] == admitted["phase"]
+    assert result["last_action"] == admitted["last_action"]
+    assert journal.read("state.json") == result
+
+
+def test_new_boot_observation_cannot_extend_original_remaining_wall_budget(
+    setup, monkeypatch
+):
+    _, journal, host, controller = setup
+    before = prepare_guard_boot(setup)
+    host.wall_origin = before["deadline_wall_ns"] - 3_000_000_000
+    observe = host.observe
+    deadlines = []
+
+    def expire(deadline):
+        deadlines.append(deadline)
+        host.advance(deadline - host.time)
+        return observe(deadline)
+
+    monkeypatch.setattr(host, "observe", expire)
+    saved = (journal.directory / "state.json").read_bytes()
+    with pytest.raises(g.Refusal):
+        controller.admit_guard_boot()
+    assert deadlines == [3.0]
+    assert (journal.directory / "state.json").read_bytes() == saved
+
+
+@pytest.mark.parametrize("explicit_admission", [False, True])
+def test_reboot_rebases_terminal_cleanup_without_a_new_stop_window(
+    setup, explicit_admission
+):
+    _, journal, host, controller = setup
+    before = prepare_guard_boot(setup)
+    state = journal.read("state.json")
+    state.update(
+        phase="terminal-cleanup",
+        terminal_deadline=before["last_monotonic"] + 100,
+        terminal_failure="runtime-failed-during-backup",
+        recovery_requested=True,
+    )
+    journal.save("state.json", state)
+    expected = (
+        host.time
+        + (before["last_wall_ns"] + 100_000_000_000 - host.clock().wall_ns) / 1e9
+    )
+    if explicit_admission:
+        admitted = controller.admit_guard_boot()
+        assert admitted["terminal_deadline"] == expected
+        assert admitted["last_action"] == before["last_action"]
+        assert admitted["events"] == before["events"]
+    result = drive(controller, host)
+    assert result["outcome"] == "failed-closed-no-runtime"
+    assert result["terminal_deadline"] == expected
+    assert (
+        result["boot_clock_rebases"][-1]["original_deadlines"]["terminal_deadline"]
+        == state["terminal_deadline"]
+    )
+    assert "start-r3" not in actions(host)
+    assert actions(host).count("start-r4") == 1  # Only the pre-reboot instance.
+
+
+def test_expired_terminal_deadline_stays_expired_after_boot_admission(setup):
+    _, journal, host, controller = setup
+    before = prepare_guard_boot(setup)
+    state = journal.read("state.json")
+    state.update(
+        phase="terminal-cleanup",
+        terminal_deadline=before["last_monotonic"] + 1,
+        terminal_failure="runtime-failed-during-backup",
+        recovery_requested=True,
+    )
+    journal.save("state.json", state)
+    previous_actions = actions(host)
+    admitted = controller.admit_guard_boot()
+    assert admitted["terminal_deadline"] < host.time
+    result = controller.tick()
+    assert result["finished"] and result["failure"] == "terminal-owned-cleanup-timeout"
+    assert actions(host) == previous_actions
+
+
+def test_boot_recovery_after_backup_preserves_old_proof_and_never_dispatches_second_backup(
+    setup,
+):
+    _, journal, host, controller = setup
+    before = prepare_guard_boot(setup)
+    proof = (journal.directory / "proof-closure.json").read_bytes()
+    request = journal.directory / "linux-backup-request.json"
+    request.write_bytes(b'{"prior":"immutable-request"}\n')
+    host.backup = None  # Prior backup process and its in-memory observation are gone.
+    controller.admit_guard_boot()
+    # Mock adapter support recovery has exact registered after metadata; core
+    # starts only the durable R4 lineage and requires a new productive canary.
+    assert controller._support_matches(host.observe(host.time + 5), "after")
+    result = drive(controller, host)
+    assert result["outcome"] == "productive-r4-proof-incomplete"
+    assert not result["handoff_complete"] and result["proof_closure_required"]
+    assert (
+        result["existing_proof_closure"]["observed_sha256"]
+        == before["proof_closure_sha256"]
+    )
+    assert (journal.directory / "proof-closure.json").read_bytes() == proof
+    assert request.read_bytes() == b'{"prior":"immutable-request"}\n'
+    assert actions(host).count("restore-support-and-backup-r4") == 1
+    assert actions(host).count("start-r4") == 2  # Exactly one new-boot recovery.
+    assert "start-r3" not in actions(host) and host.units["r4"].active == "active"
+    assert result["deadline_wall_ns"] == before["deadline_wall_ns"]
+
+
+def test_proof_publish_crash_before_state_hash_is_diagnostic_only(setup, monkeypatch):
+    _, journal, host, controller = setup
+    controller.begin()
+    until_phase(controller, host, "canary-r4")
+    save = journal.save
+
+    def crash(name, value, **kwargs):
+        save(name, value, **kwargs)
+        if name == "proof-closure.json":
+            raise Crash()
+
+    monkeypatch.setattr(journal, "save", crash)
+    with pytest.raises(Crash):
+        until_phase(controller, host, "backup-r4")
+    monkeypatch.setattr(journal, "save", save)
+    before = journal.read("state.json")
+    assert "proof_closure_sha256" not in before
+    proof = (journal.directory / "proof-closure.json").read_bytes()
+    host.advance()
+    host.activate("guard")
+    guard = host.units["guard"]
+    host.lease.update(invocation_id=guard.invocation_id, owner=asdict(guard.main))
+    controller.admit_guard_reentry()
+    result = drive(controller, host)
+    assert result["outcome"] == "productive-r4-proof-incomplete"
+    assert result["existing_proof_closure"] == {
+        "observed_sha256": hashlib.sha256(proof).hexdigest(),
+        "journaled_sha256": None,
+        "status": "diagnostic-only-not-completed-proof",
+    }
+    assert "proof_closure_sha256" not in result and not result["handoff_complete"]
+    assert (journal.directory / "proof-closure.json").read_bytes() == proof
+    assert "restore-support-and-backup-r4" not in actions(host)
+    assert "stop-r4" not in actions(host) and host.units["r4"].active == "active"
+
+
+def test_same_boot_guard_reentry_during_backup_reuses_only_original_proof(setup):
+    _, journal, host, controller = setup
+    before, _ = prepare_guard_reentry(setup, phase="backup-r4")
+    proof = (journal.directory / "proof-closure.json").read_bytes()
+    controller.admit_guard_reentry()
+    result = drive(controller, host)
+    assert result["outcome"] == "committed-r4"
+    assert result["proof_closure_sha256"] == before["proof_closure_sha256"]
+    assert (journal.directory / "proof-closure.json").read_bytes() == proof
+    assert actions(host).count("restore-support-and-backup-r4") == 1
+    assert actions(host).count("start-r4") == 1

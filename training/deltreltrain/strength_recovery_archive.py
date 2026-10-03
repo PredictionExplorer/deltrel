@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 import shutil
 from typing import Any
 
+from . import strength_freshness as freshness_attempts
 from .checkpoint import sha256_file, verify_file
 from .runtime import atomic_json
 from .strength_recovery import FORMAT, PLAN_NAME, digest
@@ -256,8 +257,6 @@ def validate_archive(
         ):
             raise ValueError("freshness source is not the registered continuation")
         if FRESHNESS_INSTALLED in available:
-            if FRESHNESS_BOUNDARY not in available:
-                raise ValueError("installed freshness lacks its stopped boundary")
             pinned({**freshness["target_profile"], "path": FRESHNESS_INSTALLED})
         artifacts = freshness.get("artifacts")
         if not isinstance(artifacts, list) or not artifacts:
@@ -277,8 +276,50 @@ def validate_archive(
         ]:
             if entry not in artifacts:
                 raise ValueError("freshness proof dependency is not preserved")
-        if FRESHNESS_BOUNDARY in available:
-            boundary = document(FRESHNESS_BOUNDARY)
+        attempt_receipts = sorted(
+            name
+            for name in available
+            if name.startswith(freshness_attempts.ATTEMPTS + "/")
+            and name.endswith("/" + freshness_attempts.REPREPARE)
+        )
+        previous_receipt = None
+        seen_ids = set()
+        for generation, logical in enumerate(attempt_receipts, 1):
+            expected = (
+                freshness_attempts.attempt_directory(generation)
+                + "/"
+                + freshness_attempts.REPREPARE
+            )
+            if logical != expected:
+                raise ValueError(
+                    "freshness re-preparation generations are not contiguous"
+                )
+            attempt = document(logical)
+            prior = freshness_attempts.boundary_relative_path(generation - 1)
+            relocated_pin(attempt["abandoned_boundary"], exact=prior)
+            freshness_attempts.validate_repreparation(
+                freshness,
+                attempt,
+                generation=generation,
+                previous_receipt_sha256=previous_receipt,
+                previous_boundary_sha256=checksums[prior],
+            )
+            if attempt["attempt_id"] in seen_ids:
+                raise ValueError("freshness attempt identity was reused")
+            seen_ids.add(attempt["attempt_id"])
+            previous_receipt = checksums[logical]
+            declared.add(logical)
+        active_boundary = freshness_attempts.boundary_relative_path(
+            len(attempt_receipts)
+        )
+        if FRESHNESS_INSTALLED in available and active_boundary not in available:
+            raise ValueError("installed freshness lacks its stopped boundary")
+        for generation in range(len(attempt_receipts) + 1):
+            logical = freshness_attempts.boundary_relative_path(generation)
+            if logical not in available:
+                continue
+            prefix = freshness_attempts.attempt_directory(generation)
+            boundary = document(logical)
             if (
                 type(boundary.get("schema_version")) is not int
                 or boundary["schema_version"] != 1
@@ -289,6 +330,14 @@ def validate_archive(
                 != digest({k: v for k, v in boundary.items() if k != "sha256"})
             ):
                 raise ValueError("freshness boundary checksum or identity differs")
+            if generation:
+                if (
+                    boundary.get("generation") != generation
+                    or boundary.get("repreparation_sha256")
+                    != checksums[prefix + "/" + freshness_attempts.REPREPARE]
+                ):
+                    raise ValueError("freshness boundary belongs to another attempt")
+                declared.add(logical)
             checkpoint = boundary["checkpoint"]
             relative = relocated_pin(
                 checkpoint, parent=FRESHNESS_PROVENANCE + "/checkpoints"
@@ -309,27 +358,26 @@ def validate_archive(
             declared.add(
                 relocated_pin(
                     cuda,
-                    exact=FRESHNESS_PROVENANCE + "/r4-cuda-qualification.json",
+                    exact=prefix + "/r4-cuda-qualification.json",
                 )
             )
             controls = boundary.get("controls")
             if not isinstance(controls, list) or not controls:
                 raise ValueError("freshness stopped controls are missing")
             for entry in controls:
-                relative = relocated_pin(
-                    entry, parent=FRESHNESS_PROVENANCE + "/boundary"
-                )
+                relative = relocated_pin(entry, parent=prefix + "/boundary")
                 if relative in declared:
                     raise ValueError("duplicate freshness stopped artifact")
                 declared.add(relative)
         if FRESHNESS_RECEIPT in available:
             receipt = document(FRESHNESS_RECEIPT)
             if (
-                FRESHNESS_BOUNDARY not in checksums
+                active_boundary not in checksums
                 or receipt.get("schema_version") != 1
                 or receipt.get("status") != "committed-recover-forward-only"
                 or receipt.get("plan_sha256") != freshness["plan_sha256"]
-                or receipt.get("boundary_sha256") != checksums[FRESHNESS_BOUNDARY]
+                or receipt.get("boundary_sha256") != checksums[active_boundary]
+                or receipt.get("boundary_path", FRESHNESS_BOUNDARY) != active_boundary
                 or receipt.get("continuation_started_ns")
                 != freshness["continuation_started_ns"]
                 or receipt.get("original_source_commit")
