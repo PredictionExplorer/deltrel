@@ -1,0 +1,563 @@
+"""Closed capability tests use fake I/O; no host service/proc/GPU calls."""
+
+import copy
+from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
+
+import pytest
+
+from scripts import strength_freshness_cpu_qualification as q
+
+NONCE = "1" * 32
+BOOT = "11111111-1111-1111-1111-111111111111"
+PREFIX = "edgeconnect-cpuqual-" + NONCE
+INPUT = Path("/opt/cpuqual-fixture")
+SCRATCH = Path("/run") / PREFIX
+
+
+def artifact(path, data):
+    return {"path": str(path), "sha256": q.sha(data), "bytes": len(data)}
+
+
+def make_plan():
+    p = {
+        "format": q.FORMAT,
+        "schema_version": 1,
+        "attempt_id": "case-one",
+        "nonce": NONCE,
+        "boot_id": BOOT,
+        "protocol_sha256": q.PROTOCOL_SHA,
+        "addenda_sha256": list(q.ADDENDA),
+        "limits": q.LIMITS.copy(),
+        "claims": q.CLAIMS.copy(),
+        "input_root": str(INPUT),
+        "scratch_root": str(SCRATCH),
+        "protected_roots": ["/prod/run", "/prod/release", "/prod/r4"],
+        "runtime_inputs": {
+            "runtime_root": "/prod/r4",
+            "source_commit": "7dca37252714bbe0c52d35a380ec175d743d1938",
+            "source_marker": artifact(
+                "/prod/SOURCE_COMMIT", b"7dca37252714bbe0c52d35a380ec175d743d1938\n"
+            ),
+            "source_manifest": artifact("/prod/SOURCE_SHA256SUMS", b"sums"),
+            "pyvenv": artifact("/prod/r4/.venv/pyvenv.cfg", b"venv"),
+            "native_wrapper": artifact("/prod/r4/.venv/native/__init__.py", b"wrapper"),
+            "native_binary": artifact("/prod/r4/.venv/native/native.so", b"native"),
+            "qualification": artifact(INPUT / "runtime-qualification.json", b"{}"),
+        },
+        "control_root": "/control/training",
+        "source_pins": [],
+        "units": {},
+        "files": {},
+        "python": {
+            **artifact("/prod/r4/.venv/bin/python", b"python"),
+            "resolved_path": "/usr/bin/python3",
+        },
+        "boot_topology": {
+            "default_target": "multi-user.target",
+            "target_paths": {"multi-user.target": ["multi-user.target"]},
+        },
+        "cases": list(q.CASES),
+        "bindings": {
+            key: PREFIX + "-" + suffix
+            for key, suffix in {
+                "holder": "worker.service",
+                "contender": "fast.service",
+                "barrier": "barrier.service",
+                "dependent": "dependent.service",
+                "stubborn": "stubborn.service",
+                "support_guard": "supportguard.service",
+                "support_service": "supportservice.service",
+                "timer": "timer.timer",
+            }.items()
+        },
+        "preservation": {
+            "policy": artifact(INPUT / "policy.json", b"{}"),
+            "before": artifact(INPUT / "before.json", b"{}"),
+            "after_path": str(SCRATCH / "external/r3-after.json"),
+            "verified_champions": {"sha256-" + "2" * 64: "3" * 64},
+        },
+    }
+    for module in (
+        "strength_freshness_cpu_qualification.py",
+        "strength_freshness_cpu_lifecycle.py",
+        "strength_freshness_linux.py",
+        "strength_freshness_units.py",
+        "strength_freshness_guard.py",
+        "qualify_cloud_gpu_window.py",
+        "strength_freshness_cpu_driver.py",
+        "strength_freshness_cpu_support_case.py",
+        "strength_freshness_cpu_preservation.py",
+        "strength_freshness_cpu_fixture.py",
+    ):
+        p["source_pins"].append(
+            artifact(Path(p["control_root"]) / "scripts" / module, b"source")
+        )
+    data = {}
+    for suffix, role, kind in (
+        ("observer", "observer", "service"),
+        ("publisher", "publisher", "service"),
+        ("cleanup", "cleanup", "service"),
+        ("watchdog", "watchdog", "timer"),
+        ("worker", "workload", "service"),
+        ("fast", "workload", "service"),
+        ("timer", "workload", "timer"),
+        ("barrier", "workload", "service"),
+        ("dependent", "workload", "service"),
+        ("stubborn", "workload", "service"),
+        ("supportguard", "workload", "service"),
+        ("supportservice", "workload", "service"),
+    ):
+        name = PREFIX + "-" + suffix + "." + kind
+        installed = "/etc/systemd/system/" + name
+        mode = {
+            "worker": "lock_holder",
+            "fast": "lock_contender",
+            "dependent": "fast_receipt",
+            "stubborn": "term_tree",
+            "supportguard": "support_transaction",
+        }.get(suffix, "sleep")
+        unit = {
+            "role": role,
+            "mode": mode if role == "workload" and kind == "service" else None,
+            "payload": {
+                "seconds": 2,
+                "output_dir": str(SCRATCH / "payloads" / name),
+                "lock_path": str(SCRATCH / "qualification.lock")
+                if mode.startswith("lock_") or mode == "support_transaction"
+                else None,
+            }
+            if role == "workload" and kind == "service"
+            else None,
+            "installed_path": installed,
+            "boot_links": {
+                "/etc/systemd/system/multi-user.target.wants/" + name: installed
+            },
+        }
+        if role in {"observer", "publisher"}:
+            unit["boot_links"] = {}
+        if mode == "support_transaction":
+            unit["payload"]["scenario"] = artifact(INPUT / "scenario.json", b"{}")
+        p["units"][name] = unit
+        props = dict.fromkeys(set(q.linux.property_names(name)) - q.linux.VARIABLE, "")
+        props.update(Id=name, FragmentPath=installed, LoadState="loaded")
+        if kind == "service":
+            props.update(
+                User="root",
+                Type="oneshot" if suffix in {"cleanup", "fast"} else "exec",
+                Restart="no",
+                KillMode="control-group",
+                SendSIGKILL="yes",
+                TimeoutStopUSec="5s",
+                Environment=q.environment_string(p),
+            )
+        unit["before"] = unit["after"] = {"properties": props, "environment_files": []}
+    for name, unit in p["units"].items():
+        role = unit["role"]
+        header = (
+            "[Unit]\nDescription=CPU fixture\nConditionPathExists="
+            + str(SCRATCH / "attempt-armed")
+            + "\n"
+        )
+        if name.endswith(".timer"):
+            target = PREFIX + (
+                "-cleanup.service" if role == "watchdog" else "-worker.service"
+            )
+            body = (
+                (
+                    "[Timer]\n"
+                    + ("OnBootSec=490s" if role == "watchdog" else "OnActiveSec=1s")
+                    + "\nAccuracySec=1s\nRandomizedDelaySec=0\nPersistent=false\nUnit="
+                )
+                + target
+                + "\n"
+            )
+        else:
+            entry = (
+                "strength_freshness_cpu_support_case.py"
+                if unit["mode"] == "support_transaction"
+                else "strength_freshness_cpu_lifecycle.py"
+                if role == "workload"
+                else "strength_freshness_cpu_qualification.py"
+            )
+            argv = (
+                p["python"]["path"]
+                + " -s "
+                + p["control_root"]
+                + "/scripts/"
+                + entry
+                + " --authorization "
+                + str(INPUT / (name + ".authorization.json"))
+            )
+            body = (
+                "[Service]\nType="
+                + unit["before"]["properties"]["Type"]
+                + "\nUser=root\nGroup=root\nWorkingDirectory="
+                + str(SCRATCH)
+                + "\nExecStart="
+                + argv
+                + "\nRestart=no\nTimeoutStartSec=5s\nTimeoutStopSec=5s\nKillMode=control-group\nSendSIGKILL=yes\n"
+                "PrivateDevices=yes\nDevicePolicy=closed\nNoNewPrivileges=yes\nProtectSystem=strict\nProtectHome=read-only\n"
+                "Nice=19\nCPUQuota=100%\nMemoryMax=134217728\nTasksMax=8\nEnvironment="
+                + q.environment_string(p)
+                + "\nReadWritePaths="
+                + str(SCRATCH)
+                + (
+                    " /etc/systemd/system"
+                    if role in {"observer", "publisher", "cleanup"}
+                    or unit["mode"] == "support_transaction"
+                    else ""
+                )
+                + "\n"
+            )
+            if unit["before"]["properties"]["Type"] != "oneshot":
+                body += "RuntimeMaxSec=30s\n"
+        raw = (
+            header
+            + body
+            + ("[Install]\nWantedBy=multi-user.target\n" if unit["boot_links"] else "")
+        ).encode()
+        pin = artifact(INPUT / name, raw)
+        for side in ("before", "after"):
+            unit[side]["unit"] = pin
+        p["files"][unit["installed_path"]] = [
+            {"source": pin, "mode": 0o644, "uid": 0, "gid": 0}
+        ]
+        data[unit["installed_path"]] = raw
+        data[pin["path"]] = raw
+    return p, data
+
+
+class Facts:
+    def __init__(self):
+        self.events = []
+
+    def record(self, event, data):
+        self.events.append((event, copy.deepcopy(data)))
+        return {
+            "path": str(len(self.events)),
+            "sha256": q.sha(q.encode(data)),
+            "bytes": len(q.encode(data)),
+        }
+
+
+class Backend:
+    def __init__(self, data):
+        self.time, self.boot, self.data = 100.0, BOOT, data
+        self.actions, self.commands, self.links = [], [], {}
+        self.processes = {}
+        self.response = ""
+        self.metadata = {"uid": 0, "gid": 0, "mode": 0o644}
+        self.overrun = False
+
+    def now(self):
+        return self.time
+
+    def boot_id(self):
+        return self.boot
+
+    def wall_ns(self):
+        return 10**18 + int((self.time - 100) * 1e9)
+
+    def read(self, path, maximum, deadline):
+        assert self.time < deadline
+        if str(path) not in self.data:
+            raise FileNotFoundError(path)
+        return self.data[str(path)]
+
+    def file_metadata(self, path, deadline):
+        return self.metadata
+
+    def command(self, argv, deadline):
+        self.commands.append(argv)
+        if self.overrun:
+            self.time = deadline + 1
+        return self.response
+
+    def action(self, verb, name, deadline):
+        self.actions.append((verb, name))
+        if self.overrun:
+            self.time = deadline + 1
+
+    def boot_links(self, name, deadline):
+        return self.links
+
+    def exists(self, path):
+        return str(path) in self.data
+
+    def members(self, path, deadline):
+        return tuple(
+            q.linux.core.Process(v["pid"], v["start_ticks"])
+            for v in self.processes.values()
+        )
+
+    def process(self, pid, deadline):
+        return self.processes.get(pid)
+
+    def process_origin(self, pid, deadline):
+        return {"exe": "/usr/bin/python3", "cwd": str(SCRATCH)}
+
+    def sleep(self, seconds):
+        self.time += seconds
+
+    def atomic(self, path, data, *, overwrite=False, mode=0o600):
+        self.data[str(path)] = data
+
+
+@pytest.fixture
+def fixture():
+    value, data = make_plan()
+    raw = q.encode(value)
+    plan = q.Plan.parse(raw, q.sha(raw))
+    from scripts.strength_freshness_cpu_lifecycle import Anchor
+
+    anchor = Anchor("case-one", NONCE, plan.checksum, BOOT, 100.0, 10**18)
+    backend, facts = Backend(data), Facts()
+    io = q.ClosedIO(plan, cast(q.Budget, anchor), backend, facts)
+    return SimpleNamespace(
+        value=value,
+        plan=plan,
+        backend=backend,
+        io=io,
+        facts=facts,
+        anchor=anchor,
+        worker=PREFIX + "-worker.service",
+    )
+
+
+def test_original_plan_and_definition_are_closed(fixture):
+    for name, unit in fixture.value["units"].items():
+        q.validate_unit_text(
+            fixture.plan, name, fixture.backend.data[unit["installed_path"]]
+        )
+    assert not any(fixture.plan.value["claims"].values())
+    changed = fixture.plan.value
+    changed["limits"]["work"] = 999
+    assert fixture.plan.value["limits"]["work"] == 390
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("limits", {**q.LIMITS, "work": 391}),
+        ("claims", {**q.CLAIMS, "execution_qualified": True}),
+        ("scratch_root", "/prod/run"),
+        ("cases", list(q.CASES[:-1])),
+        ("protocol_sha256", "0" * 64),
+        ("nonce", "../evil"),
+    ],
+)
+def test_bad_plan_refuses(field, value):
+    p, _ = make_plan()
+    p[field] = value
+    with pytest.raises(q.Refusal):
+        q.Plan.parse(q.encode(p), q.sha(q.encode(p)))
+
+
+def test_duplicate_json_key_and_byte_drift_refuse(fixture):
+    raw = fixture.plan.data
+    with pytest.raises(q.Refusal, match="byte-pin"):
+        q.Plan.parse(raw + b" ", fixture.plan.checksum)
+    raw = raw.replace(
+        b'"schema_version": 1', b'"schema_version": 1, "schema_version": 1'
+    )
+    with pytest.raises(q.Refusal, match="duplicate-json"):
+        q.Plan.parse(raw, q.sha(raw))
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        "ExecStart=/bin/sh -c evil",
+        "ExecStart=/usr/bin/systemctl stop prod.service",
+        "ExecStartPre=/usr/bin/true",
+        "BindPaths=/prod/run",
+        "DeviceAllow=/dev/nvidia0",
+        "RootDirectory=/prod",
+        "PermissionsStartOnly=true",
+    ],
+)
+def test_pinned_unit_cannot_escape_systemd(fixture, replacement):
+    raw = fixture.backend.data[fixture.value["units"][fixture.worker]["installed_path"]]
+    if replacement.startswith("ExecStart="):
+        lines = raw.decode().splitlines()
+        lines = [replacement if x.startswith("ExecStart=") else x for x in lines]
+        raw = ("\n".join(lines) + "\n").encode()
+    else:
+        raw = raw.replace(b"[Service]\n", b"[Service]\n" + replacement.encode() + b"\n")
+    with pytest.raises(q.Refusal):
+        q.validate_unit_text(fixture.plan, fixture.worker, raw)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["sh", "-c", "true"],
+        ["nvidia-smi"],
+        ["systemctl", "stop", "prod.service"],
+        ["systemctl", "stop", PREFIX + "-*"],
+        ["systemctl", "set-default", "rescue.target"],
+        ["systemctl", "isolate", "rescue.target"],
+    ],
+)
+def test_arbitrary_commands_never_reach_backend(fixture, argv):
+    with pytest.raises(q.Refusal, match="command-not-allowed"):
+        fixture.io.command(argv, 120)
+    assert fixture.backend.commands == []
+
+
+def test_no_work_before_independent_cleanup_ack(fixture):
+    with pytest.raises(q.Refusal, match="cleanup-not-acknowledged"):
+        fixture.io.action("start", fixture.worker, 120)
+    assert fixture.backend.actions == []
+
+
+@pytest.mark.parametrize("role", ["observer", "publisher", "cleanup", "watchdog"])
+@pytest.mark.parametrize("verb", ["start", "stop", "enable", "disable"])
+def test_workload_cannot_touch_control_plane(fixture, role, verb):
+    name = next(n for n, u in fixture.value["units"].items() if u["role"] == role)
+    with pytest.raises(q.Refusal, match="protected-observer"):
+        fixture.io.action(verb, name, 120)
+    assert fixture.backend.actions == []
+
+
+def test_cutoff_and_boot_change_refuse_before_action(fixture):
+    fixture.backend.time = 490
+    with pytest.raises(q.Refusal, match="original-boot-deadline"):
+        fixture.io.action("stop", fixture.worker, 700)
+    fixture.backend.time = 100
+    fixture.backend.boot = "other"
+    with pytest.raises(q.Refusal, match="original-boot-deadline"):
+        fixture.io.action("stop", fixture.worker, 120)
+    assert fixture.backend.actions == []
+
+
+def test_unknown_file_mode_and_alias_refuse_before_stop(fixture):
+    fixture.backend.metadata = {"uid": 1000, "gid": 0, "mode": 0o644}
+    with pytest.raises(q.Refusal, match="unknown-file-variant"):
+        fixture.io.action("stop", fixture.worker, 120)
+    assert fixture.backend.actions == []
+    assert any(name == "owned-file.raw" for name, _ in fixture.facts.events)
+
+
+def test_foreign_boot_edge_is_not_silently_removed(fixture):
+    fixture.backend.links = {
+        "/etc/systemd/system/multi-user.target.wants/foreign.service": "/prod/unit"
+    }
+    with pytest.raises(q.Refusal, match="foreign-boot-edge"):
+        fixture.io.action("stop", fixture.worker, 120)
+    assert fixture.backend.actions == []
+
+
+def test_raw_overrun_is_saved_before_refusal(fixture):
+    fixture.backend.response = "multi-user.target\n"
+    fixture.backend.overrun = True
+    with pytest.raises(q.Refusal, match="command-output-bound"):
+        fixture.io.command(["systemctl", "get-default"], 110)
+    assert fixture.facts.events[-1] == ("command.raw", "multi-user.target\n")
+
+
+def test_process_reuse_cannot_be_certified(fixture):
+    group = "/system.slice/" + fixture.worker
+    fixture.backend.processes[1] = {
+        "pid": 1,
+        "start_ticks": 10,
+        "cgroup": "0::" + group,
+        "ppid": 0,
+    }
+    fixture.io.members(group, 120)
+    fixture.backend.processes[1]["start_ticks"] = 11
+    with pytest.raises(q.Refusal, match="reuse"):
+        fixture.io.process(1, 120)
+    assert fixture.facts.events[-1][0] == "process.raw"
+
+
+def test_unregistered_process_and_cgroup_are_not_read(fixture):
+    with pytest.raises(q.Refusal, match="not-observed"):
+        fixture.io.process(987654, 120)
+    with pytest.raises(q.Refusal, match="cgroup-scope"):
+        fixture.io.members("/system.slice/production.service", 120)
+
+
+def test_candidate_never_manufactures_missing_cases(fixture):
+    result = q.Driver(q.CaseRunner(fixture.io)).candidate()
+    assert result["status"] == "incomplete" and result["missing_cases"] == sorted(
+        q.CASES
+    )
+    assert result["execution_qualified"] is False
+
+
+def test_finalizer_and_cleanup_have_distinct_authority(fixture):
+    io = q.ClosedIO(
+        fixture.plan, fixture.anchor, fixture.backend, fixture.facts, purpose="cleanup"
+    )
+    with pytest.raises(q.Refusal, match="purpose-verb"):
+        io.action("start", fixture.worker, 120)
+    io = q.ClosedIO(
+        fixture.plan,
+        fixture.anchor,
+        fixture.backend,
+        fixture.facts,
+        purpose="finalizer",
+    )
+    with pytest.raises(q.Refusal, match="finalizer-not-admitted"):
+        io.action("stop", fixture.worker, 120)
+
+
+def test_cli_validation_cannot_be_execution_qualification(tmp_path, fixture):
+    path = tmp_path / "plan.json"
+    path.write_bytes(fixture.plan.data)
+    result = q.validate_file(path, fixture.plan.checksum)
+    assert result["status"] == "plan-validated-no-target-execution"
+    assert result["execution_qualified"] is False
+
+
+def test_runtime_inputs_cannot_be_removed_or_point_to_another_release():
+    p, _ = make_plan()
+    p["runtime_inputs"]["source_commit"] = "0" * 40
+    with pytest.raises(q.Refusal, match="immutable-r4-source"):
+        q.Plan.parse(q.encode(p), q.sha(q.encode(p)))
+    p, _ = make_plan()
+    p["runtime_inputs"]["native_binary"]["path"] = "/unqualified/native.so"
+    with pytest.raises(q.Refusal, match="native-locations"):
+        q.Plan.parse(q.encode(p), q.sha(q.encode(p)))
+
+
+def test_control_sources_and_runtime_artifacts_have_distinct_size_limits():
+    p, _ = make_plan()
+    p["source_pins"][0]["bytes"] = 2**20 + 1
+    with pytest.raises(q.Refusal, match="control-source-size"):
+        q.Plan.parse(q.encode(p), q.sha(q.encode(p)))
+    p, _ = make_plan()
+    p["runtime_inputs"]["native_binary"]["bytes"] = 2**20 + 1
+    q.Plan.parse(q.encode(p), q.sha(q.encode(p)))
+
+
+@pytest.mark.parametrize(
+    "phase,start,duration,allowed",
+    [
+        ("observer", 100, "570s", True),
+        ("observer", 101, "570s", False),
+        ("publisher", 100, "590s", True),
+        ("publisher", 110, "590s", False),
+        ("cleanup", 491, "120s", True),
+        ("cleanup", 516, "120s", False),
+    ],
+)
+def test_independent_unit_caps_do_not_renew_absolute_deadlines(
+    fixture, phase, start, duration, allowed
+):
+    unit = q.linux.core.Unit(
+        "dummy", "a" * 64, "/system.slice/dummy", entered_monotonic=start
+    )
+    props = {
+        "Type": "oneshot" if phase == "cleanup" else "exec",
+        "RuntimeMaxUSec": duration,
+        "TimeoutStopUSec": "5s",
+    }
+    if allowed:
+        q.validate_actor_bounds(phase, unit, props, duration, fixture.anchor)
+    else:
+        with pytest.raises(q.Refusal, match="original-lifetime"):
+            q.validate_actor_bounds(phase, unit, props, duration, fixture.anchor)

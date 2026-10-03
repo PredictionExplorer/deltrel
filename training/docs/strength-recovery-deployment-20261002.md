@@ -386,3 +386,60 @@ handoff ceiling is an upper bound, not an armed reservation or planned outage.
 Keep R3 productive while preparing the remaining qualifications, warn at a
 teacher lag of 90,000 steps and resolve before 108,000, ahead of the 120,000-step
 fallback.
+
+The corrected head `6b5d88ffa763c80dfece3a1948469fc8cf6def17` passed all six CI
+jobs: 5,186 Python/native tests, 1,023 web tests and 107 browser E2E tests, plus
+coverage floors, Rust/WASM, audits and container checks. The preceding run
+exposed two test fixtures that resolved fake process IDs through real Linux
+`/proc` paths. The correction supplies explicit fake origins and a regression
+that forbids those reads; production validation is unchanged. See
+[CI run 37113784678](https://github.com/PredictionExplorer/deltrel/actions/runs/37113784678).
+
+The local legacy control bundle contains 627 files: 600 unchanged R4 base files,
+17 explicit control/proof overlays and 10 test files. Its namespace rendering
+passed 403 CPU tests with 30 native-dependent skips, followed by 31 affected
+tests after an AST-identical formatting correction. An independent reader checked
+the complete tar inventory and namespace/source bindings. Control imports may
+use explicitly inventoried copies of the original R4 modules; learner, actor
+and probe imports must still use the original immutable release. Local absence
+of the legacy native extension remains a target qualification prerequisite.
+
+The reviewed target CPU protocol has a 600-second total window, independent
+cleanup and a surviving observer/publisher. Work stops at 390 seconds, cleanup
+must be established by 540, and terminal auditing ends by 600. It uses only
+isolated dummy units and does not authorize production execution or CUDA work.
+The dummy harness separates workload, cleanup, observer and publisher authority.
+Its local fault tests exercise interrupted support writes, process exit and
+receipt preservation. Training preservation requires the same owners and pinned
+configuration plus fresh physical-work progress; an unchanged learner step
+during an update-to-data wait is allowed. These local checks do not qualify
+actual Linux unit installation, boot links, resource exclusion or CUDA.
+
+The exact target rendering and source/import/environment inventory still require
+independent review before installation. Ordinary dummy payloads have only a
+scratch write path. The controller roles need a narrowly reviewed shared
+`/etc/systemd/system` write path for atomic unit replacement and removal; closed
+dispatch still admits only the fixed dummy unit names, known bytes and owned
+links. That mount and systemd behavior must be demonstrated on the target.
+Observer and publisher definitions remain inert, without boot links, so the
+external reader can verify their natural exits. The cleanup timer is bound to
+the original monotonic deadline with `OnBootSec`; setup delay never renews the
+390-second work window. The current driver runs its case loop inside the
+observer and enforces that cutoff as a capability deadline. A separately timed
+dispatcher lifetime and its terminal boundary remain an explicit protocol
+integration gate before target arming; local tests do not prove termination by
+405 seconds. The target installer, after-cleanup collector and complete immutable
+legacy rendering also remain prospective work.
+
+Read-only host inspection also explained why persistent Inductor compiler
+workers carry a different import path from their parents: Torch materializes
+`sys.path` into `PYTHONPATH` and an unset library path into an empty string. An
+optional policy now pins those two exact compiler values after the closed
+compiler command and parent checks succeed. Other child types still require
+strict parent inheritance. Saved R3 observations and pure matcher tests do not
+qualify the future R4 process environment or package closure.
+
+The final joint local check passed 459 CPU/native cases across the new harness
+and affected adapter, proof, support and compiler-policy tests, with no skips.
+Ruff, formatting and Pyright also passed on the same unchanged source bytes.
+This is the preparation code milestone, not an actual target-host experiment.

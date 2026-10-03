@@ -210,3 +210,86 @@ def test_inputs_are_never_modified(observed):
     before = copy.deepcopy(observed)
     assert classify(observed) == "torch-inductor-pool"
     assert observed == before
+
+
+def expanded_environment(observed):
+    policy, _, child = observed
+    environment = {
+        "PYTHONPATH": "/qualified/training:/qualified/training:/qualified/lib/python311.zip:/qualified/lib/python3.11:/qualified/training/.venv/site-packages",
+        "LD_LIBRARY_PATH": "",
+    }
+    child["environment"].update(environment)
+    return policy, child, environment
+
+
+def test_torch_expansion_requires_an_explicit_exact_policy(observed):
+    policy, _, environment = expanded_environment(observed)
+    assert classify(observed) is None
+    policy["compile_environment"] = environment
+    assert classify(observed) == "torch-inductor-pool"
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("PYTHONPATH", "/qualified/training"),
+        ("PYTHONPATH", "/qualified/training:/unqualified"),
+        ("LD_LIBRARY_PATH", "/unqualified"),
+        ("LD_PRELOAD", "/unqualified.so"),
+        ("CUDA_VISIBLE_DEVICES", "7"),
+        ("PYTHONHOME", "/unqualified"),
+    ],
+)
+def test_compiler_policy_does_not_admit_other_import_changes(observed, key, value):
+    policy, child, environment = expanded_environment(observed)
+    policy["compile_environment"] = dict(environment)
+    child["environment"][key] = value
+    assert classify(observed) is None
+
+
+def test_explicit_empty_library_path_is_not_absence(observed):
+    policy, child, environment = expanded_environment(observed)
+    policy["compile_environment"] = dict(environment)
+    del child["environment"]["LD_LIBRARY_PATH"]
+    assert classify(observed) is None
+
+
+@pytest.mark.parametrize(
+    "code,tail",
+    [
+        ("from multiprocessing.resource_tracker import main;main(70)", []),
+        (
+            "from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=71, pipe_handle=75)",
+            ["--multiprocessing-fork"],
+        ),
+    ],
+)
+def test_compiler_overrides_never_apply_to_tracker_or_loader(observed, code, tail):
+    policy, child, environment = expanded_environment(observed)
+    policy["compile_environment"] = environment
+    child["argv"] = [policy["python_argv0"], "-B", "-c", code, *tail]
+    assert classify(observed) is None
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {},
+        {"PYTHONPATH": "/qualified/training"},
+        {
+            "PYTHONPATH": "/qualified/training",
+            "LD_LIBRARY_PATH": "",
+            "CUDA_VISIBLE_DEVICES": "0",
+        },
+        {"PYTHONPATH": "", "LD_LIBRARY_PATH": ""},
+        {"PYTHONPATH": "/different:/qualified/training", "LD_LIBRARY_PATH": ""},
+        {"PYTHONPATH": "/qualified/training:", "LD_LIBRARY_PATH": ""},
+        {"PYTHONPATH": "/qualified/training:relative", "LD_LIBRARY_PATH": ""},
+        {"PYTHONPATH": "/qualified/training:/x/../y", "LD_LIBRARY_PATH": ""},
+        {"PYTHONPATH": "/qualified/training", "LD_LIBRARY_PATH": "relative"},
+    ],
+)
+def test_compiler_override_policy_is_closed(observed, override):
+    observed[0]["compile_environment"] = override
+    with pytest.raises(ValueError):
+        validate_policy(observed[0])

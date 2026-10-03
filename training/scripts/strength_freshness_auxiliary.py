@@ -36,7 +36,7 @@ def validate_policy(policy: Mapping[str, Any]) -> None:
         "torch_key",
         "compile_parent_roles",
     }
-    if set(policy) != expected:
+    if set(policy) not in (expected, expected | {"compile_environment"}):
         raise ValueError("auxiliary policy fields differ")
     for key in ("python_argv0", "executable", "cwd", "compile_worker_script"):
         value = policy[key]
@@ -70,6 +70,30 @@ def validate_policy(policy: Mapping[str, Any]) -> None:
         or len(roles) != len(set(roles))
     ):
         raise ValueError("auxiliary policy parent roles differ")
+    if "compile_environment" in policy:
+        environment = policy["compile_environment"]
+        if (
+            not isinstance(environment, dict)
+            or set(environment) != {"PYTHONPATH", "LD_LIBRARY_PATH"}
+            or not all(isinstance(v, str) for v in environment.values())
+        ):
+            raise ValueError("auxiliary compiler environment fields differ")
+        # Torch may materialize sys.path and an absent library path. These are
+        # explicit qualified values, never wildcard prefixes or an implicit
+        # equivalence between an unset and empty environment variable.
+        for name, value in environment.items():
+            if name == "LD_LIBRARY_PATH" and value == "":
+                continue
+            paths = value.split(":")
+            if (name == "PYTHONPATH" and paths[0] != policy["cwd"]) or any(
+                not p
+                or not PurePosixPath(p).is_absolute()
+                or PurePosixPath(p).as_posix() != p
+                or ".." in PurePosixPath(p).parts
+                or "\0" in p
+                for p in paths
+            ):
+                raise ValueError("auxiliary compiler search path is not canonical")
 
 
 def _positive(value: object) -> bool:
@@ -113,8 +137,13 @@ def classify_auxiliary(
     ):
         return None
     assert isinstance(child_env, Mapping) and isinstance(parent_env, Mapping)
-    if any(child_env.get(k) != parent_env.get(k) for k in IMPORT_ENVIRONMENT):
-        return None
+
+    def environment_matches(*, compiler: bool = False) -> bool:
+        expected = {key: parent_env.get(key) for key in IMPORT_ENVIRONMENT}
+        if compiler:
+            expected.update(policy.get("compile_environment", {}))
+        return all(child_env.get(key) == value for key, value in expected.items())
+
     args = process.get("argv")
     if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
         return None
@@ -136,6 +165,7 @@ def classify_auxiliary(
             and read
             and write
             and _fds(read[1], write[1])
+            and environment_matches(compiler=True)
         ):
             return "torch-inductor-pool"
     if parent_role != "learner" or args[1:3] != ["-B", "-c"]:
@@ -145,13 +175,13 @@ def classify_auxiliary(
             r"from multiprocessing\.resource_tracker import main;main\(([0-9]+)\)",
             args[3],
         )
-        if match and _fds(match[1]):
+        if match and _fds(match[1]) and environment_matches():
             return "multiprocessing-resource-tracker"
     if len(args) == 5 and args[4] == "--multiprocessing-fork":
         match = re.fullmatch(
             r"from multiprocessing\.spawn import spawn_main; spawn_main\(tracker_fd=([0-9]+), pipe_handle=([0-9]+)\)",
             args[3],
         )
-        if match and _fds(match[1], match[2]):
+        if match and _fds(match[1], match[2]) and environment_matches():
             return "multiprocessing-spawn"
     return None
