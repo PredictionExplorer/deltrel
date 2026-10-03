@@ -236,3 +236,75 @@ operator state and copied evidence live in the ignored
 checks actual service ownership and receipts before acting, avoids overlapping
 GPU experiments, and reports meaningful results or failures. A positive Elo
 claim requires completed paired games under a matched search contract.
+
+## Completed screen and publication qualification
+
+The two-hour checkpoint, step 568263, exhausted its 320-game allocation without
+promotion: weighted score 55.09%, with a 90% global anytime interval of
+41.98–68.53%. The six-hour checkpoint, step 572377, earned promotion against
+566428 at 152 games / 76 reversed-seat pairs: weighted score 73.96%, interval
+52.94–93.91%, promotion evidence 93.79 above the required 20, and no cell vetoes.
+All 152 native winner histories, four allocation plans, exact R3 statistics and
+the champion pointer were independently checked. The relative logistic Elo
+estimate is +181, with a wide +20 to +475 interval under this arena contract;
+it is not an absolute rating or an isolated causal effect of one change.
+
+The twelve-hour endpoint was retained at step 578551. The qualified completion
+helper handled the expected clean exit 78, sealed the screen, and restarted the
+same immutable R3. Twenty receipt, seal, profile and clock checks passed. Only
+candidate cadence changed to three million examples; weights, optimizer, EMA,
+counters, replay credit and original experiment time were preserved. The
+registered continuation profile SHA-256 is
+`605ceefef88e9606a7ff3e9305b9c9a0f6418de59ebad5225fb3f0830ff55f1a`.
+All 24 GPU actor cohorts became productive on champion 572377 after cached replay
+validation, without worker restarts. Normal update-to-data waits remain expected.
+
+The proof-preserving publication bridge migrated the promoted checkpoint to
+`sha256-255dbca3a0ee33fbcc6916b961430c39903471b3bb75bc1de2662949a78b160d`.
+Independent verification compared all 956 tensor leaves and training metadata
+against the fixed historical rename map, and passed strict loading and
+relocation. The original checkpoint and promotion proof remain intact.
+
+The separately qualified cloud runtime uses main `2c00a32` and v3 search. Its
+CPU stage passed 16 real semantic cases. Exclusive GPU qualification attempt 02
+passed the same 16 cases, one and eight concurrent Standard requests, and one
+Deep request. The operator restored the previous production service in 92.47
+seconds total. Optional eight-way Deep was skipped by its conservative budget
+guard. Attempt 01 had refused before any outage; the narrow systemd empty-field
+adapter correction was reviewed and tested before the distinct second attempt.
+These checks establish functional runtime qualification, not additional Elo or
+general capacity. They do not perform the final public cutover.
+
+The browser release adds a runtime-bound manifest, migrated ONNX and immutable
+v3 WASM assets while retaining exact deployed legacy bytes for existing clients.
+The parsed manifest and executable bytes are hash-bound before use. Chromium,
+Firefox and WebKit passed real CPU/WASM Standard searches and cache/reload
+checks; these are not WebGPU qualifications. Public browser deployment remains
+pending authentication, and cloud cutover requires the separate tested
+transaction and public acceptance check. Consult current operator receipts
+before asserting what is serving.
+
+`cutover_cloud_champion.py` implements that separate transaction. The reviewed
+initial invocation supplies an explicit plan checksum; a boot-enabled guard
+uses the checksum recorded in its protected prepared state. Guard startup is
+verified before disabling production autostart or changing the YAML and current
+symlink. It restores the exact old pair unless a complete acceptance commit
+proves the new pair, authenticated/public health and one full public Standard
+request. Original service enablement is restored before retiring the guard.
+Unknown owners or file contents are never overwritten. The same-boot budget is
+900 seconds, with guard recovery beginning by 540 seconds; a fresh boot records
+a separate recovery budget and never resumes the old clock or trusts old PIDs.
+The controller and acceptance checker passed 46 and 52 focused CPU tests,
+including native v3 legality, with independent implementation review. The
+acceptance checker verifies its helper bytes before execution and sends no
+bearer token, redirects or environment proxy traffic.
+
+All six CI jobs passed at `071a5d4`: 4,654 Python/native tests, 1,023 web tests,
+107 browser E2E tests, coverage floors, Rust/WASM, audits and container checks.
+See [CI run 37076251006](https://github.com/PredictionExplorer/deltrel/actions/runs/37076251006).
+The publication qualification archive contains 257 logical files in 235 unique
+objects, totaling 303,065,030 bytes, with the original champion checkpoint
+referenced from its verified disaster-recovery object. A separate process read
+back every object. Its manifest SHA-256 is
+`463aba482e55edad904c7b3471fe403e64574652bf13d53c6051e4951f334163`, under
+`/lambda/nfs/texas-north-fs/edgeconnect-experiments/strength-recovery-20261002/publication-572377-qualification-01`.
