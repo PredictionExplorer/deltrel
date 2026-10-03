@@ -545,3 +545,79 @@ def test_known_worker_restart_scope_is_coordinator_owned(role):
         f.origin_digest(value)
     value["restart_counter_scope"] = "coordinator-worker:restart_count"
     assert f.origin_digest(value)
+
+
+def test_saved_systemd_quoted_mount_preserves_unit_escape_identity():
+    logical = r"lambda-nfs-texas\x2dnorth\x2dfs.mount"
+    printed = '"' + logical.replace("\\", "\\\\") + '"'
+    assert f.unit_list_tokens(printed) == (logical,)
+    assert "\\x2d" in f.unit_list_tokens(printed)[0]
+    assert f.unit_list_tokens('"name\\\\x2fpart.mount"') == (r"name\x2fpart.mount",)
+    a = definition()
+    a["loaded_stable_properties"]["After"] = "sysinit.target " + printed
+    b = copy.deepcopy(a)
+    b["loaded_stable_properties"]["After"] = logical + " sysinit.target"
+    old = copy.deepcopy(a)
+    assert f.definition_digest(a) == f.definition_digest(b)
+    assert a == old
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        '""',
+        '"plain.service"',
+        "'plain.service'",
+        "$'plain.service'",
+        '"bad\\x2d.mount"',
+        '"bad\\u002f.mount"',
+        '"bad\\134x2d.mount"',
+        '"bad\\n.mount"',
+        '"bad\\$.service"',
+        '"bad\\\\q.mount"',
+        '"bad\\\\x2d.mount',
+        '"bad\\\\x2d.mount"suffix',
+        '"bad\\\\x2d.mount""other"',
+        '"bad name.mount"',
+        "a.target  b.target",
+        " a.target",
+        "a.target ",
+        "a.target\tb.target",
+        "a.target\nb.target",
+        "not-a-unit",
+        "unit.unknown",
+        "/etc/x.service",
+        '"a\\\\x2d.mount" a\\x2d.mount',
+        "a.target a.target",
+        "a" * 256 + ".service",
+    ],
+)
+def test_unknown_or_malformed_unit_list_representation_refuses(value):
+    with pytest.raises(f.FactViolation):
+        f.unit_list_tokens(value)
+
+
+def test_empty_lists_allowed_but_loaded_names_cannot_be_empty():
+    assert f.unit_list_tokens("") == ()
+    value = definition()
+    value["loaded_stable_properties"]["Names"] = ""
+    with pytest.raises(f.FactViolation, match="loaded-unit-names"):
+        f.definition_digest(value)
+
+
+def test_actual_saved_systemd255_properties_decode_without_changing_raw():
+    from pathlib import Path
+
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures/systemd255-unit-lists.json").read_text()
+    )
+    original = copy.deepcopy(fixture)
+    mount = r"lambda-nfs-texas\x2dnorth\x2dfs.mount"
+    for name, props in fixture["units"].items():
+        assert name in f.unit_list_tokens(props["Names"])
+        for value in props.values():
+            f.unit_list_tokens(value)
+        if name.endswith("-disaster-backup.service"):
+            assert mount in f.unit_list_tokens(props["After"])
+            assert mount in f.unit_list_tokens(props["Requires"])
+    assert fixture == original

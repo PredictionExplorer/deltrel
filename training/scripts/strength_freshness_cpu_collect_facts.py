@@ -144,6 +144,51 @@ def _exec_static(value: str) -> str:
     )
 
 
+def unit_list_tokens(value: str) -> tuple[str, ...]:
+    """Decode only systemd255's outer quoting of valid unit-name tokens.
+
+    String-array properties use shell_maybe_quote(..., 0). For the accepted
+    unit-name alphabet its only escaped character is a literal backslash:
+    two printed backslashes become one. Unit-level \\xHH is never unescaped.
+    """
+    _require(isinstance(value, str) and len(value) <= 65536, "unit-list-bound")
+    if not value:
+        return ()
+    _require(not any(c.isspace() and c != " " for c in value), "unit-list-space")
+    words = value.split(" ")
+    _require(len(words) <= 4096 and all(words), "unit-list-empty-or-count")
+    result = []
+    for word in words:
+        if word.startswith('"'):
+            _require(len(word) > 2 and word.endswith('"'), "unit-list-quote")
+            inner = word[1:-1]
+            decoded = []
+            i = 0
+            while i < len(inner):
+                char = inner[i]
+                if char == "\\":
+                    _require(
+                        i + 1 < len(inner) and inner[i + 1] == "\\",
+                        "unit-list-escape",
+                    )
+                    decoded.append("\\")
+                    i += 2
+                else:
+                    _require(char not in {'"', "'"}, "unit-list-quote")
+                    decoded.append(char)
+                    i += 1
+            token = "".join(decoded)
+            _require("\\" in token, "unit-list-unnecessary-quote")
+        else:
+            _require('"' not in word and "'" not in word, "unit-list-quote")
+            token = word
+        _require(0 < len(token) <= 255, "unit-token-bound")
+        _unit(token)
+        result.append(token)
+    _require(len(result) == len(set(result)), "duplicate-unit-name")
+    return tuple(result)
+
+
 def definition_digest(material: Mapping[str, Any]) -> str:
     row = _shape(
         material, "unit fragment dropins loaded_stable_properties need_daemon_reload"
@@ -167,10 +212,9 @@ def definition_digest(material: Mapping[str, Any]) -> str:
     )
     normalized = dict(props)
     for key in ("Names", "After", "Before", "Wants", "Requires"):
-        names = props[key].split()
-        _require(len(set(names)) == len(names), "duplicate-unit-name")
-        for name in names:
-            _unit(name)
+        names = unit_list_tokens(props[key])
+        if key == "Names":
+            _require(row["unit"] in names, "loaded-unit-names")
         normalized[key] = " ".join(sorted(names))
     for key in ("ExecStart", "ExecStartPre", "ExecStop", "ExecStopPost"):
         if key in normalized:

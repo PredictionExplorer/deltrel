@@ -609,3 +609,14 @@ cgroup, device-policy relaxation or GPU reservation is authorized by this design
 Committed `f269d4a` passed all six CI jobs: 6,099 Python/native tests, 1,023 web
 and 107 clean browser E2E tests plus five skips, with all other gates passing.
 The optional-property correction has its own subsequent CI gate.
+
+
+The same host inspection exposed systemd's quoted rendering of a mount-unit
+identifier containing literal `\xHH` escapes. The selected dependency-list
+normalizer now decodes only the manager's outer double-quote/backslash form,
+then validates and sorts unit identities. It does not decode unit-level hex
+escapes into characters or path separators. Malformed/unknown quote and escape
+forms, empty or duplicate words, invalid unit names and oversized input refuse.
+The raw property observations remain unchanged. The source-backed encoding
+addendum and actual safe fixture are retained; 196 affected local tests and
+static checks passed. Historical f269/d6 bundles remain separately identified.
