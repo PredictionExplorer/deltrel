@@ -98,6 +98,113 @@ def gpu_records(
     return sorted(result, key=lambda r: r["uuid"])
 
 
+def _current_process_fields(identity, role, pid, raw, props):
+    """Private kernel/origin facts only; no reporter restart or birth verdict."""
+    require(raw["cgroup"] == props["ControlGroup"], "process-cgroup-drift")
+    return {
+        "pid": pid,
+        "start_ticks": raw["start_ticks"],
+        "cgroup": raw["cgroup"],
+        "invocation_id": props["InvocationID"],
+        "origin_sha256": identity.origin(role, raw),
+    }
+
+
+def _current_monitor(identity, name, props, expected):
+    """Private one-monitor observation, shared without weakening old admission."""
+    take, io = identity.take, identity.io
+    require(
+        props["ActiveState"] == "active" and props["SubState"] == "running",
+        "monitor-not-running",
+    )
+    members = take(io.members(name))
+    require(
+        len(members) == 1
+        and members[0].pid == natural(props["MainPID"], minimum=1) == expected["pid"],
+        "monitor-cgroup-owner",
+    )
+    raw = take(io.process(members[0]))
+    row = {
+        "pid": raw["pid"],
+        "start_ticks": raw["start_ticks"],
+        "cgroup": raw["cgroup"],
+        "invocation_id": props["InvocationID"],
+        "restarts": natural(props["NRestarts"]),
+        "origin_sha256": identity.origin("monitor", raw),
+    }
+    require(
+        row == expected and row["cgroup"] == props["ControlGroup"],
+        "predeclared-monitor-drift",
+    )
+    return row, members[0], raw
+
+
+def _current_auxiliaries(reg, private, roles):
+    pending = set(private).difference(roles.values())
+    known = {pid: role for role, pid in roles.items()}
+    normalized = {pid: private_process(raw) for pid, raw in private.items()}
+    output = []
+    while pending:
+        advanced = False
+        for pid in sorted(pending):
+            child = normalized[pid]
+            parent_pid = child["ppid"]
+            if parent_pid not in known:
+                continue
+            parent_role = known[parent_pid]
+            kind = auxiliary.classify_auxiliary(
+                reg["auxiliary_policy"],
+                child,
+                parent=normalized[parent_pid],
+                parent_role=parent_role,
+            )
+            require(kind is not None, "unclassified-runtime-child")
+            # The matcher owns known compiler exceptions. All other import
+            # overrides must inherit; an extra PYTHON*/loader flag refuses.
+            prefixes = (
+                "PYTHON",
+                "LD_",
+                "DYLD_",
+                "CUDA_",
+                "TORCH",
+                "TRITON",
+                "OMP_",
+                "MKL_",
+                "OPENBLAS_",
+            )
+            parent_env, child_env = (
+                normalized[parent_pid]["environment"],
+                child["environment"],
+            )
+            exceptions = (
+                reg["auxiliary_policy"].get("compile_environment", {})
+                if kind == "torch-inductor-pool"
+                else {}
+            )
+            relevant = {k for k in {*parent_env, *child_env} if k.startswith(prefixes)}
+            require(
+                all(
+                    child_env.get(k) == exceptions.get(k, parent_env.get(k))
+                    for k in relevant
+                ),
+                "auxiliary-import-environment",
+            )
+            output.append(
+                {
+                    "pid": pid,
+                    "start_ticks": child["start_ticks"],
+                    "ppid": parent_pid,
+                    "parent_role": parent_role,
+                    "kind": kind,
+                }
+            )
+            known[pid] = parent_role
+            pending.remove(pid)
+            advanced = True
+        require(advanced, "unowned-runtime-child")
+    return sorted(output, key=lambda r: r["pid"])
+
+
 class ProcessCollector:
     def __init__(self, identity: Any):
         self.identity = identity
@@ -243,13 +350,14 @@ class ProcessCollector:
                 )
                 require(raw["ppid"] == roles["coordinator"], "worker-parent")
                 heartbeat = beat["heartbeat_ns"]
+            current = _current_process_fields(self.identity, role, pid, raw, props)
             result = {
                 "pid": pid,
-                "start_ticks": raw["start_ticks"],
-                "cgroup": raw["cgroup"],
-                "invocation_id": props["InvocationID"],
+                "start_ticks": current["start_ticks"],
+                "cgroup": current["cgroup"],
+                "invocation_id": current["invocation_id"],
                 "restarts": restarts,
-                "origin_sha256": self.identity.origin(role, raw),
+                "origin_sha256": current["origin_sha256"],
             }
             require(
                 result == self.policy["expected_processes"][role],
@@ -264,31 +372,8 @@ class ProcessCollector:
         auxiliary_rows = self._auxiliaries(private, roles)
         monitors = {}
         for name, expected in self.policy["expected_monitors"].items():
-            p = unit_properties[name]
-            require(
-                p["ActiveState"] == "active" and p["SubState"] == "running",
-                "monitor-not-running",
-            )
-            members = take(self.io.members(name))
-            require(
-                len(members) == 1
-                and members[0].pid
-                == natural(p["MainPID"], minimum=1)
-                == expected["pid"],
-                "monitor-cgroup-owner",
-            )
-            raw = take(self.io.process(members[0]))
-            row = {
-                "pid": raw["pid"],
-                "start_ticks": raw["start_ticks"],
-                "cgroup": raw["cgroup"],
-                "invocation_id": p["InvocationID"],
-                "restarts": natural(p["NRestarts"]),
-                "origin_sha256": self.identity.origin("monitor", raw),
-            }
-            require(
-                row == expected and row["cgroup"] == p["ControlGroup"],
-                "predeclared-monitor-drift",
+            row, _, _ = _current_monitor(
+                self.identity, name, unit_properties[name], expected
             )
             monitors[name] = row
         births = self._births(admissions, processes)
@@ -318,71 +403,7 @@ class ProcessCollector:
         }
 
     def _auxiliaries(self, private, roles):
-        pending = set(private).difference(roles.values())
-        known = {pid: role for role, pid in roles.items()}
-        normalized = {pid: private_process(raw) for pid, raw in private.items()}
-        output = []
-        while pending:
-            advanced = False
-            for pid in sorted(pending):
-                child = normalized[pid]
-                parent_pid = child["ppid"]
-                if parent_pid not in known:
-                    continue
-                parent_role = known[parent_pid]
-                kind = auxiliary.classify_auxiliary(
-                    self.reg["auxiliary_policy"],
-                    child,
-                    parent=normalized[parent_pid],
-                    parent_role=parent_role,
-                )
-                require(kind is not None, "unclassified-runtime-child")
-                # The matcher owns known compiler exceptions. All other import
-                # overrides must inherit; an extra PYTHON*/loader flag refuses.
-                prefixes = (
-                    "PYTHON",
-                    "LD_",
-                    "DYLD_",
-                    "CUDA_",
-                    "TORCH",
-                    "TRITON",
-                    "OMP_",
-                    "MKL_",
-                    "OPENBLAS_",
-                )
-                parent_env, child_env = (
-                    normalized[parent_pid]["environment"],
-                    child["environment"],
-                )
-                exceptions = (
-                    self.reg["auxiliary_policy"].get("compile_environment", {})
-                    if kind == "torch-inductor-pool"
-                    else {}
-                )
-                relevant = {
-                    k for k in {*parent_env, *child_env} if k.startswith(prefixes)
-                }
-                require(
-                    all(
-                        child_env.get(k) == exceptions.get(k, parent_env.get(k))
-                        for k in relevant
-                    ),
-                    "auxiliary-import-environment",
-                )
-                output.append(
-                    {
-                        "pid": pid,
-                        "start_ticks": child["start_ticks"],
-                        "ppid": parent_pid,
-                        "parent_role": parent_role,
-                        "kind": kind,
-                    }
-                )
-                known[pid] = parent_role
-                pending.remove(pid)
-                advanced = True
-            require(advanced, "unowned-runtime-child")
-        return sorted(output, key=lambda r: r["pid"])
+        return _current_auxiliaries(self.reg, private, roles)
 
 
 def same_owners(first, second) -> None:

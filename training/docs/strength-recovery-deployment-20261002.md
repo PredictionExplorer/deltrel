@@ -915,3 +915,43 @@ pause-fixture author runs are not added to that count. Historical birth gates,
 the old collector/CLI admission and all target execution requirements remain
 unchanged. Current-kernel and publication-renewal composition is still pending;
 there was no target staging, service/profile/runtime change or GPU work.
+
+The `6b68ef21` run passed five CI jobs, including 1,023 web tests and 107 clean
+browser E2E passes plus five skips. Python/native stopped after 2,877 passes at
+another pause-suspension case that still used real wall time in the shared
+fixture. The exact timeout branch was not logged. The fixture now defaults all
+unit cases to one explicit wall clock for requests, heartbeats and coordinator
+observations. A regression forbids subsequent real wall-clock reads in those
+helpers, while the actual threaded actor-gate integration explicitly retains
+real time and its existing deadlines. All 34 suspension tests pass; the expiry
+boundary tests and production guards remain unchanged. The failed CI head is
+preserved without a retry.
+
+The separate current-kernel observer now measures the twelve registered owners
+from actual process, parent, cgroup, manager, origin, credential and namespace
+facts. It reads no coordinator or worker telemetry to establish those owners.
+Original approved registration bytes are reparsed before IO; contradictory typed
+fields cannot replace them. Issued snapshots remain bound to the same observer,
+IO instance, external premises and original window. Observed clock regressions
+refuse, and the final owner scan follows the final source/static scan. Existing
+historical birth admission and the old capture order remain mandatory.
+
+The publication tracker observes all 34 registered streams on every round. A
+publication must change coherently in version and bytes and advance its producer
+stamp under the same qualified writer premise. Failures remain sticky, including
+IO refusals and later negative records after an earlier renewal. Atomic inode
+replacement between complete reads is supported; old cohort progress during a
+long search is preserved. Finishing requires a later issued owner snapshot. GPU cohorts and the CPU
+self-play worker must report verified champion teachers.
+The bounded safe transcript retains actual clocks, file facts, producer stamps,
+counters and verified teacher commitments without raw rows or private process
+material. It is source-attested measurement, not independent raw-data replay.
+
+The final combined check passed 625 affected local CPU/fault cases with two
+workers, zero failures/skips and stable source bytes, plus Ruff, formatting,
+Pyright and the full 964-file brand audit. Earlier 608/622 combined runs and kernel, renewal and fixture
+author runs remain separate revision evidence. These components prove neither inference
+completion nor full preservation. Profile/run/continuation semantics, support
+job health and age, metric work and the complete tagged consumer path remain
+separate requirements. No target staging, runtime/profile/GPU change or R4
+activation occurred.

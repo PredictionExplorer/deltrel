@@ -484,8 +484,8 @@ def validate_common_registration(
         raise CollectionRefusal("registration-shape") from None
 
 
-class IdentityCollector:
-    """Registered static/origin checks; no capture orchestration or CLI."""
+class _IdentityMeasurements:
+    """Private reusable operations; constructors must provide separate admission."""
 
     def __init__(
         self,
@@ -500,74 +500,6 @@ class IdentityCollector:
         self.cached_measurements: dict[str, dict[str, Any]] = {}
         self.derivations: dict[str, Any] = {}
         self.absences: dict[str, Any] = {}
-        try:
-            self._validate_registration()
-        except (KeyError, TypeError, AttributeError):
-            raise CollectionRefusal("registration-shape") from None
-
-    def _validate_registration(self):
-        r = self.reg
-        require(
-            set(r)
-            == {
-                "format",
-                "schema_version",
-                "encoding_contract_sha256",
-                "timer_addendum_sha256",
-                "timer_environment_addendum_sha256",
-                "scope",
-                "policy",
-                "keys",
-                "units",
-                "heartbeats",
-                "cohorts",
-                "origins",
-                "auxiliary_policy",
-                "cached_references",
-                "source_pins",
-                "birth_reference",
-                "boot",
-                "empty_property_rules",
-                "counter_scopes",
-            },
-            "registration-fields",
-        )
-        require(
-            r["format"] == FORMAT
-            and type(r["schema_version"]) is int
-            and r["schema_version"] == 1,
-            "registration-format",
-        )
-        p = r["policy"]
-        roles = {"controller", "coordinator", *WORKERS}
-        birth = shape(
-            r["birth_reference"],
-            "boot_id qualification_sha256 offset_lower_ns offset_upper_ns max_bracket_ns bounds",
-            "birth-reference-fields",
-        )
-        require(
-            isinstance(birth["boot_id"], str)
-            and birth["boot_id"]
-            and preservation.sha(birth["qualification_sha256"]),
-            "birth-reference-binding",
-        )
-        require(
-            all(
-                integer(birth[k], 1)
-                for k in ("offset_lower_ns", "offset_upper_ns", "max_bracket_ns")
-            )
-            and birth["offset_lower_ns"] <= birth["offset_upper_ns"],
-            "birth-reference-bounds",
-        )
-        require(
-            set(birth["bounds"]) == roles
-            and all(integer(v, 1) for v in birth["bounds"].values())
-            and birth["bounds"]["learner"] == p["learner_birth_upper_ns"],
-            "birth-role-bounds",
-        )
-        validate_common_registration(
-            {key: r[key] for key in COMMON_FIELDS}, self.io.scope
-        )
 
     def take(self, observation):
         self.audit.append(dict(observation.audit))
@@ -956,4 +888,85 @@ class IdentityCollector:
                 "native_mappings": native,
                 "restart_counter_scope": spec["restart_counter_scope"],
             }
+        )
+
+
+class IdentityCollector(_IdentityMeasurements):
+    """Registered static/origin checks; no capture orchestration or CLI."""
+
+    def __init__(
+        self,
+        registration: Mapping[str, Any],
+        io: readonly.ReadOnlyIO,
+        *,
+        sleep: Callable[[float], None] = time.sleep,
+    ):
+        super().__init__(registration, io, sleep=sleep)
+        try:
+            self._validate_registration()
+        except (KeyError, TypeError, AttributeError):
+            raise CollectionRefusal("registration-shape") from None
+
+    def _validate_registration(self):
+        r = self.reg
+        require(
+            set(r)
+            == {
+                "format",
+                "schema_version",
+                "encoding_contract_sha256",
+                "timer_addendum_sha256",
+                "timer_environment_addendum_sha256",
+                "scope",
+                "policy",
+                "keys",
+                "units",
+                "heartbeats",
+                "cohorts",
+                "origins",
+                "auxiliary_policy",
+                "cached_references",
+                "source_pins",
+                "birth_reference",
+                "boot",
+                "empty_property_rules",
+                "counter_scopes",
+            },
+            "registration-fields",
+        )
+        require(
+            r["format"] == FORMAT
+            and type(r["schema_version"]) is int
+            and r["schema_version"] == 1,
+            "registration-format",
+        )
+        p = r["policy"]
+        roles = {"controller", "coordinator", *WORKERS}
+        birth = shape(
+            r["birth_reference"],
+            "boot_id qualification_sha256 offset_lower_ns offset_upper_ns max_bracket_ns bounds",
+            "birth-reference-fields",
+        )
+        require(
+            isinstance(birth["boot_id"], str)
+            and birth["boot_id"]
+            and preservation.sha(birth["qualification_sha256"]),
+            "birth-reference-binding",
+        )
+        require(
+            all(
+                integer(birth[k], 1)
+                for k in ("offset_lower_ns", "offset_upper_ns", "max_bracket_ns")
+            )
+            and birth["offset_lower_ns"] <= birth["offset_upper_ns"],
+            "birth-reference-bounds",
+        )
+        require(
+            set(birth["bounds"]) == roles
+            and all(integer(v, 1) for v in birth["bounds"].values())
+            and birth["bounds"]["learner"] == p["learner_birth_upper_ns"],
+            "birth-role-bounds",
+        )
+        validate_common_registration(
+            {key: r[key] for key in COMMON_FIELDS}, self.io.scope
         )
