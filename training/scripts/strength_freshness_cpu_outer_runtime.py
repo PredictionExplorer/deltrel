@@ -188,7 +188,9 @@ def file_identity(st) -> dict:
 def validate_interpreter_metadata(value: dict, size: int) -> dict:
     shape(value, INTERPRETER_STAT_FIELDS, "interpreter-metadata-fields")
     require(
-        all(type(v) is int and v >= 0 for v in value.values())
+        type(size) is int
+        and 1 <= size <= 64 * 2**20
+        and all(type(v) is int and v >= 0 for v in value.values())
         and value["size"] == size
         and value["mode"] <= 0o777
         and value["mode"] & 0o111 != 0,
@@ -199,67 +201,95 @@ def validate_interpreter_metadata(value: dict, size: int) -> dict:
 
 def current_interpreter(reader, registered: dict, *, hash_image: bool = True) -> None:
     """Exact registered mutable host image; never an immutable-interpreter claim."""
-    value = shape(
-        registered,
-        {"path", "resolved_path", "sha256", "bytes", "metadata"},
-        "runtime-python-pin",
-    )
-    metadata = validate_interpreter_metadata(value["metadata"], value["bytes"])
-    literal, resolved = _path(value["path"]), _path(value["resolved_path"])
-    require(
-        literal.name == "python"
-        and str(Path(sys.executable).resolve()) == str(resolved)
-        and literal.resolve() == resolved
-        and resolved.resolve() == resolved,
-        "runtime-interpreter-origin",
-    )
-    # Fixed proc link joins the running image, including deleted/replaced-image refusal.
-    require(
-        os.readlink("/proc/self/exe") == str(resolved), "runtime-executed-image-path"
-    )
-    fd = os.open("/proc/self/exe", os.O_RDONLY | os.O_NONBLOCK)
     try:
-        before = file_identity(os.fstat(fd))
-        require(
-            before == metadata and file_identity(resolved.stat()) == metadata,
-            "runtime-executed-image-identity",
+        value = shape(
+            registered,
+            {"path", "resolved_path", "sha256", "bytes", "metadata"},
+            "runtime-python-pin",
         )
-        if not hash_image:
-            reader.check()
-            require(
-                file_identity(resolved.stat()) == metadata, "runtime-launch-image-drift"
-            )
-            return
-        digest = hashlib.sha256()
-        count = 0
-        while True:
-            reader.check()
-            chunk = os.read(fd, 65536)
-            if not chunk:
-                break
-            count += len(chunk)
-            require(
-                count <= value["bytes"] <= 64 * 2**20, "runtime-executed-image-bound"
-            )
-            digest.update(chunk)
+        metadata = validate_interpreter_metadata(value["metadata"], value["bytes"])
+        literal, resolved = _path(value["path"]), _path(value["resolved_path"])
+        image_pin = _pin(
+            {k: value[k] for k in ("sha256", "bytes")} | {"path": str(resolved)},
+            64 * 2**20,
+        )
         require(
-            count == value["bytes"]
-            and digest.hexdigest() == value["sha256"]
-            and file_identity(os.fstat(fd)) == before
-            and file_identity(resolved.stat()) == before
-            and os.readlink("/proc/self/exe") == str(resolved),
-            "runtime-executed-image-drift",
+            literal.name == "python"
+            and str(Path(sys.executable).resolve()) == str(resolved)
+            and literal.resolve() == resolved
+            and resolved.resolve() == resolved,
+            "runtime-interpreter-origin",
+        )
+        # Fixed proc link joins the running image, including deleted/replaced-image refusal.
+        require(
+            os.readlink("/proc/self/exe") == str(resolved),
+            "runtime-executed-image-path",
+        )
+        fd = os.open("/proc/self/exe", os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            before = file_identity(os.fstat(fd))
+            require(
+                before == metadata and file_identity(resolved.stat()) == metadata,
+                "runtime-executed-image-identity",
+            )
+            if not hash_image:
+                reader.check()
+                require(
+                    file_identity(resolved.stat()) == metadata,
+                    "runtime-launch-image-drift",
+                )
+                return
+            digest = hashlib.sha256()
+            count = 0
+            while count < value["bytes"]:
+                permit = reader._interpreter_allowance(value["bytes"] - count)
+                try:
+                    chunk = os.read(fd, permit.amount)
+                except BaseException:
+                    reader._abort_interpreter_read(permit)
+                    raise
+                reader._charge_interpreter(permit, chunk)
+                reader.check()
+                require(bool(chunk), "runtime-executed-image-short")
+                count += len(chunk)
+                digest.update(chunk)
+            require(
+                count == value["bytes"]
+                and digest.hexdigest() == value["sha256"]
+                and file_identity(os.fstat(fd)) == before
+                and file_identity(resolved.stat()) == before
+                and os.readlink("/proc/self/exe") == str(resolved)
+                and literal.resolve() == resolved
+                and resolved.resolve() == resolved
+                and Path(sys.executable).resolve() == resolved,
+                "runtime-executed-image-drift",
+            )
+            reader.check()
+        finally:
+            os.close(fd)
+        reader.read(
+            image_pin,
+            source=True,
+            maximum=64 * 2**20,
+            interpreter=True,
+            expected_metadata=metadata,
+        )
+        require(
+            os.readlink("/proc/self/exe") == str(resolved)
+            and file_identity(os.stat("/proc/self/exe")) == metadata
+            and file_identity(resolved.stat()) == metadata
+            and literal.resolve() == resolved
+            and resolved.resolve() == resolved
+            and Path(sys.executable).resolve() == resolved,
+            "runtime-interpreter-final-identity",
         )
         reader.check()
-    finally:
-        os.close(fd)
-    reader.read(
-        {k: value[k] for k in ("sha256", "bytes")} | {"path": str(resolved)},
-        source=True,
-        maximum=64 * 2**20,
-        interpreter=True,
-        expected_metadata=metadata,
-    )
+    except BaseException as error:
+        if hash_image:
+            reader._fail_interpreter("interpreter-verification-failed")
+            if not isinstance(error, RuntimeRefusal):
+                raise RuntimeRefusal("runtime-interpreter-read-failed") from None
+        raise
 
 
 def current_site_inventory(reader, site: dict) -> None:
@@ -383,6 +413,13 @@ def current_site_inventory(reader, site: dict) -> None:
             reader.check()
 
 
+@dataclass(eq=False, frozen=True, repr=False)
+class _InterpreterReadPermit:
+    owner: Any
+    counter_before: int
+    amount: int
+
+
 @dataclass(eq=False, repr=False)
 class _MetadataView:
     owner: Any
@@ -416,6 +453,10 @@ class ProtectedStore:
         self.monotonic_ns = monotonic_ns
         self.consumed = 0
         self.interpreter_consumed = 0
+        self._interpreter_accounted = 0
+        self._interpreter_pending: _InterpreterReadPermit | None = None
+        self._interpreter_pending_key: tuple = ()
+        self._interpreter_failure: str | None = None
         self.original_clock: outer.Clock | None = None
         self.deadline_wall_ns: int | None = None
         self.clock_source = actual_clock
@@ -436,6 +477,91 @@ class ProtectedStore:
         self._ledger_context: tuple = ()
         self._ledger_deadlines: tuple = ()
         self._ledger_last_clock: bytes | None = None
+
+    def _fail_interpreter(self, reason: str) -> None:
+        self._interpreter_failure = self._interpreter_failure or reason
+
+    def _interpreter_coherent(self) -> None:
+        require(
+            type(self.interpreter_consumed) is int
+            and type(self._interpreter_accounted) is int
+            and self.interpreter_consumed == self._interpreter_accounted
+            and self.interpreter_consumed >= 0,
+            "interpreter-account-changed",
+        )
+
+    def _interpreter_allowance(self, literal_remaining: int) -> _InterpreterReadPermit:
+        """One interpreter payload block; no path/FD or execution authority."""
+        try:
+            self._interpreter_coherent()
+            require(self._interpreter_failure is None, "interpreter-account-failed")
+            require(
+                self._interpreter_pending is None and not self._interpreter_pending_key,
+                "interpreter-read-overlap",
+            )
+            require(
+                type(literal_remaining) is int and literal_remaining > 0,
+                "interpreter-read-size",
+            )
+            self.check()
+            self._interpreter_coherent()
+            amount = min(
+                65536, literal_remaining, 64 * 2**20 - self.interpreter_consumed
+            )
+            require(amount > 0, "interpreter-byte-budget")
+            permit = _InterpreterReadPermit(self, self.interpreter_consumed, amount)
+            self._interpreter_pending = permit
+            self._interpreter_pending_key = (
+                permit,
+                self,
+                permit.counter_before,
+                amount,
+            )
+            return permit
+        except BaseException:
+            self._fail_interpreter("interpreter-allowance-failed")
+            raise
+
+    def _interpreter_permit(self, permit: _InterpreterReadPermit) -> None:
+        self._interpreter_coherent()
+        require(
+            type(permit) is _InterpreterReadPermit
+            and permit is self._interpreter_pending
+            and permit.owner is self
+            and type(permit.counter_before) is int
+            and permit.counter_before == self.interpreter_consumed
+            and type(permit.amount) is int
+            and 0 < permit.amount <= 65536
+            and self._interpreter_pending_key
+            == (permit, self, permit.counter_before, permit.amount),
+            "interpreter-permit-mismatch",
+        )
+
+    def _charge_interpreter(self, permit: _InterpreterReadPermit, block: bytes) -> None:
+        try:
+            self._interpreter_permit(permit)
+            require(type(block) is bytes, "interpreter-return-type")
+            # Known bytes are counted even when a faulty read exceeded its request.
+            self.interpreter_consumed += len(block)
+            self._interpreter_accounted = self.interpreter_consumed
+            self._interpreter_pending = None
+            self._interpreter_pending_key = ()
+            require(
+                len(block) <= permit.amount and self.interpreter_consumed <= 64 * 2**20,
+                "interpreter-read-overrun",
+            )
+            require(self._interpreter_failure is None, "interpreter-account-failed")
+        except BaseException:
+            self._fail_interpreter("interpreter-settlement-failed")
+            raise
+
+    def _abort_interpreter_read(self, permit: _InterpreterReadPermit) -> None:
+        try:
+            self._interpreter_permit(permit)
+            self._interpreter_pending = None
+            self._interpreter_pending_key = ()
+        finally:
+            self._fail_interpreter("interpreter-read-aborted")
 
     def bind_deadline(
         self, original: outer.Clock, mono: int, wall: int, clock_source
@@ -825,96 +951,91 @@ class ProtectedStore:
         expected_metadata: dict | None = None,
         qualified_metadata: dict | None = None,
     ) -> bytes:
-        p = _pin(pin, maximum)
-        path = _path(p["path"])
-        self.check()
-        require(path.resolve() == path, "store-input-alias")
-        if not source:
-            self.directory(path.parent)
-        if not interpreter:
-            data = self._read_ordinary(
-                path,
-                p["bytes"],
-                source=source,
-                expected_metadata=expected_metadata,
-                qualified_metadata=qualified_metadata,
+        try:
+            p = _pin(pin, maximum)
+            path = _path(p["path"])
+            self.check()
+            require(path.resolve() == path, "store-input-alias")
+            if not source:
+                self.directory(path.parent)
+            if not interpreter:
+                data = self._read_ordinary(
+                    path,
+                    p["bytes"],
+                    source=source,
+                    expected_metadata=expected_metadata,
+                    qualified_metadata=qualified_metadata,
+                )
+                require(sha(data) == p["sha256"], "store-input-hash")
+                self.check()
+                return data
+            require(source and maximum == 64 * 2**20, "interpreter-byte-budget")
+            named_before = file_identity(path.lstat())
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+            try:
+                before = os.fstat(fd)
+                require(file_identity(before) == named_before, "store-input-raced")
+                require(
+                    stat.S_ISREG(before.st_mode)
+                    and (
+                        (
+                            interpreter
+                            and expected_metadata is not None
+                            and file_identity(before) == expected_metadata
+                        )
+                        or (
+                            source
+                            and qualified_metadata is not None
+                            and file_identity(before) == qualified_metadata
+                        )
+                        or (
+                            expected_metadata is None
+                            and qualified_metadata is None
+                            and before.st_uid == self.owner_uid
+                            and stat.S_IMODE(before.st_mode)
+                            in ((0o444, 0o555) if source else (0o444,))
+                        )
+                    )
+                    and before.st_size == p["bytes"],
+                    "store-input-protection",
+                )
+                chunks = []
+                count = 0
+                while count < p["bytes"]:
+                    permit = self._interpreter_allowance(p["bytes"] - count)
+                    try:
+                        block = os.read(fd, permit.amount)
+                    except BaseException:
+                        self._abort_interpreter_read(permit)
+                        raise
+                    self._charge_interpreter(permit, block)
+                    self.check()
+                    require(bool(block), "interpreter-short-read")
+                    count += len(block)
+                    chunks.append(block)
+                after = os.fstat(fd)
+            finally:
+                os.close(fd)
+            require(
+                named_before
+                == file_identity(before)
+                == file_identity(after)
+                == file_identity(path.lstat())
+                and path.resolve() == path,
+                "store-input-raced",
             )
-            require(sha(data) == p["sha256"], "store-input-hash")
+            data = b"".join(chunks)
+            require(
+                len(data) == p["bytes"] and sha(data) == p["sha256"], "store-input-hash"
+            )
             self.check()
             return data
-        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
-        try:
-            before = os.fstat(fd)
-            require(
-                stat.S_ISREG(before.st_mode)
-                and (
-                    (
-                        interpreter
-                        and expected_metadata is not None
-                        and file_identity(before) == expected_metadata
-                    )
-                    or (
-                        source
-                        and qualified_metadata is not None
-                        and file_identity(before) == qualified_metadata
-                    )
-                    or (
-                        expected_metadata is None
-                        and qualified_metadata is None
-                        and before.st_uid == self.owner_uid
-                        and stat.S_IMODE(before.st_mode)
-                        in ((0o444, 0o555) if source else (0o444,))
-                    )
-                )
-                and before.st_size == p["bytes"],
-                "store-input-protection",
-            )
-            chunks = []
-            count = 0
-            while count <= p["bytes"]:
-                self.check()
-                b = os.read(fd, min(65536, p["bytes"] + 1 - count))
-                if not b:
-                    break
-                count += len(b)
-                if interpreter:
-                    self.interpreter_consumed += len(b)
-                    require(
-                        source
-                        and maximum == 64 * 2**20
-                        and self.interpreter_consumed <= 64 * 2**20,
-                        "interpreter-byte-budget",
-                    )
-                else:
-                    self.consumed += len(b)
-                    require(self.consumed <= 32 * 2**20, "store-byte-budget")
-                chunks.append(b)
-            after = os.fstat(fd)
-        finally:
-            os.close(fd)
-        require(
-            (
-                before.st_dev,
-                before.st_ino,
-                before.st_size,
-                before.st_mtime_ns,
-                before.st_ctime_ns,
-            )
-            == (
-                after.st_dev,
-                after.st_ino,
-                after.st_size,
-                after.st_mtime_ns,
-                after.st_ctime_ns,
-            ),
-            "store-input-raced",
-        )
-        data = b"".join(chunks)
-        require(
-            len(data) == p["bytes"] and sha(data) == p["sha256"], "store-input-hash"
-        )
-        self.check()
-        return data
+        except BaseException as error:
+            if interpreter:
+                self._fail_interpreter("interpreter-verification-failed")
+                if not isinstance(error, RuntimeRefusal):
+                    raise RuntimeRefusal("interpreter-read-failed") from None
+            raise
 
     def _read_ordinary(
         self,

@@ -665,6 +665,7 @@ def test_handoff_fresh_clock_after_proof_reads_cannot_backdate_ack(monkeypatch):
 
 def test_actual_interpreter_metadata_and_deleted_image_refuse(tmp_path, monkeypatch):
     import os
+    from types import SimpleNamespace
 
     python = tmp_path / "python"
     python.write_bytes(b"ELF-image")
@@ -682,8 +683,16 @@ def test_actual_interpreter_metadata_and_deleted_image_refuse(tmp_path, monkeypa
         "metadata": r.file_identity(python.stat()),
     }
     monkeypatch.setattr(r.sys, "executable", str(python))
+    monkeypatch.setattr(r, "os", SimpleNamespace(**vars(os)))
     real_open = os.open
     monkeypatch.setattr(r.os, "readlink", lambda path: str(python))
+    monkeypatch.setattr(
+        r.os,
+        "stat",
+        lambda path, *args, **kwargs: os.stat(
+            python if path == "/proc/self/exe" else path, *args, **kwargs
+        ),
+    )
     monkeypatch.setattr(
         r.os,
         "open",
@@ -692,13 +701,25 @@ def test_actual_interpreter_metadata_and_deleted_image_refuse(tmp_path, monkeypa
         ),
     )
     r.current_interpreter(store, registered)
+    assert store.interpreter_consumed == 2 * len(b"ELF-image")
     registered["metadata"]["inode"] += 1
     with pytest.raises(r.RuntimeRefusal, match="image-identity"):
         r.current_interpreter(store, registered)
     registered["metadata"]["inode"] -= 1
+    with pytest.raises(r.RuntimeRefusal, match="interpreter-account-failed"):
+        r.current_interpreter(store, registered)
+    assert store.interpreter_consumed == 2 * len(b"ELF-image")
+    # Independent negative case, not a reset or retry on the failed owner.
+    fresh = r.ProtectedStore(
+        roots=(tmp_path,),
+        deadline_ns=100,
+        owner_uid=os.getuid(),
+        monotonic_ns=lambda: 1,
+    )
+    fresh.bind_deadline(o.Clock("boot", 0, 0), 100, 100, lambda: o.Clock("boot", 1, 1))
     monkeypatch.setattr(r.os, "readlink", lambda path: str(python) + " (deleted)")
     with pytest.raises(r.RuntimeRefusal, match="image-path"):
-        r.current_interpreter(store, registered)
+        r.current_interpreter(fresh, registered)
 
 
 def test_helper_liveness_mandatory_during_facade_polling():

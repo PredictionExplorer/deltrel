@@ -1101,3 +1101,47 @@ The separate 119-case author run is retained without adding its count. Ruff,
 formatting and Pyright passed on the frozen edits. Tests use private temporary
 files and explicit simulated authority; they establish no target launch right,
 physical-I/O bound or hostile-Python memory-integrity guarantee.
+
+The interpreter check now charges both explicit image payload streams to the
+same original 64 MiB allowance: the running image opened through the fixed
+`/proc/self/exe` path and the separately opened registered resolved image.
+Each request is clamped to 64 KiB, the literal image endpoint and the live
+remaining allowance. There is no extra-byte or EOF probe after that endpoint.
+A purpose-specific, single-use permit binds settlement to its original owner
+and pending read. Known returned bytes are fully charged before later refusal;
+unknown settlement remains incomplete without a repaired or invented count.
+
+Every failed full interpreter attempt remains terminal for that account,
+including a later hash, identity, short-read or deadline failure. The final
+metadata and origin checks follow the second stream and reject an observed
+late origin or metadata mismatch. They do not prove the absence of a transient
+change that was restored before those checks. Both descriptors
+close on failure. Unexpected interpreter errors become fixed private-safe
+refusals. The separate prelaunch metadata-only recheck reads no image payload
+and cannot clear an earlier failure or replace successful full verification.
+
+The ordinary 32 MiB allowance, nested proof reservation, pinned reader, phase
+clocks, publication and old entrypoint gates retain their prior behavior.
+Tests use private executable stand-ins and explicitly simulated process,
+resource and source premises. These payload accounting changes do not establish
+real interpreter/site/session qualification, physical I/O or RSS limits, or an
+Elo improvement. The actual observed-window launch factory remains closed.
+
+The final affected joint passed 140 local CPU/fault cases with two workers,
+zero failures/skips and 16 stable source/test pins. It covers 59 new interpreter
+cases, 75 ordinary-store cases, two existing image/counter checks, one binding
+independence check and three shared caller-loader cases. Ruff, formatting and
+Pyright passed on the frozen source. The separate 64-case author run, 61-case
+development run and three pre-correction origin failures remain distinct
+historical evidence; their counts are not added to the final joint.
+
+A separate source audit identifies the half-Muon paired strength screen as the
+next direct evidence goal. Its existing evaluator provides frozen diagnostic
+inputs, raw/EMA arms, paired openings and resume support; it does not invoke the
+R4 outer preservation stack. The actual match inputs, baseline, allocation,
+seeds and finite lifetime still need an explicit reviewed contract, alongside
+qualified exclusive GPU7 release, independent cleanup and arena recovery.
+That resource mechanism is unresolved. The evaluator is a building block, not
+an already qualified causal experiment or promotion screen; the graph-speed
+benchmark is optional. The interpreter correction remains a separate R4
+prerequisite and does not itself improve learning or authorize that experiment.

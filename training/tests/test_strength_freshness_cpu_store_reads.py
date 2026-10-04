@@ -353,11 +353,11 @@ def test_metadata_flags_do_not_create_new_ordinary_admission(
     assert not calls and store.consumed == 0
 
 
-def test_interpreter_still_uses_legacy_separate_loop(tmp_path, monkeypatch):
+def test_interpreter_uses_fixed_endpoint_and_separate_counter(tmp_path, monkeypatch):
     _, pin, store, _, calls, returned, _, _, _ = setup(tmp_path, monkeypatch, b"ELF")
     store.consumed = CAP
     assert store.read(pin, source=True, maximum=64 * 2**20, interpreter=True) == b"ELF"
-    assert calls == [4, 1] and returned == [3, 0]
+    assert calls == [3] and returned == [3]
     assert store.interpreter_consumed == 3 and store.consumed == CAP
 
 

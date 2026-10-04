@@ -691,7 +691,33 @@ def admission_fixture(tmp_path, monkeypatch, variation):
 
     k = FakeKernel()
     k.t = o.SECOND
-    store = MemoryStore()
+
+    class ImageStore(MemoryStore):
+        """Only actual interpreter image streams use this real private sidecar."""
+
+        def __init__(self):
+            super().__init__()
+            self.image = r.ProtectedStore(
+                roots=(tmp_path,),
+                deadline_ns=self.deadline_ns,
+                owner_uid=os.getuid(),
+                monotonic_ns=lambda: k.clock().monotonic_ns,
+            )
+            self._interpreter_allowance = self.image._interpreter_allowance
+            self._charge_interpreter = self.image._charge_interpreter
+            self._abort_interpreter_read = self.image._abort_interpreter_read
+            self._fail_interpreter = self.image._fail_interpreter
+
+        def bind_deadline(self, original, mono, wall, clock_source):
+            super().bind_deadline(original, mono, wall, clock_source)
+            self.image.bind_deadline(original, mono, wall, clock_source)
+
+        def read(self, expected, **kwargs):
+            if kwargs.get("interpreter") is True:
+                return self.image.read(expected, **kwargs)
+            return super().read(expected, **kwargs)
+
+    store = ImageStore()
     inputs = tmp_path / "input"
     inputs.mkdir()
     inputs.chmod(0o700)
@@ -840,6 +866,10 @@ def admission_fixture(tmp_path, monkeypatch, variation):
     auth.write_bytes(raw)
     auth.chmod(0o444)
     store.files[str(auth)] = raw
+    # Scope syscall/resource simulations to this module, never shared stdlib.
+    monkeypatch.setattr(r, "os", SimpleNamespace(**vars(os)))
+    monkeypatch.setattr(r, "sys", SimpleNamespace(**vars(r.sys)))
+    monkeypatch.setattr(r, "resource", SimpleNamespace(**vars(r.resource)))
     # Resource and process surfaces are fake, but the unchanged loader, actual
     # interpreter hash/stat routine and current site inventory validation execute.
     monkeypatch.setattr(r.sys, "platform", "linux")
@@ -854,6 +884,13 @@ def admission_fixture(tmp_path, monkeypatch, variation):
     monkeypatch.setattr(r.sys, "executable", str(python))
     real_open = os.open
     monkeypatch.setattr(r.os, "readlink", lambda path: str(python))
+    monkeypatch.setattr(
+        r.os,
+        "stat",
+        lambda path, *args, **kwargs: os.stat(
+            python if path == "/proc/self/exe" else path, *args, **kwargs
+        ),
+    )
     monkeypatch.setattr(
         r.os,
         "open",
@@ -904,6 +941,7 @@ def test_actual_shared_caller_loader_branch(tmp_path, monkeypatch, variation):
         )
         assert admitted.role == "caller" and len(calls) == 3
         assert admitted.session_pin["path"].endswith("/session.json")
+        assert store.image.interpreter_consumed == 2 * admitted.outer["python"]["bytes"]
     else:
         reason = (
             "caller-self-not-prebound"
