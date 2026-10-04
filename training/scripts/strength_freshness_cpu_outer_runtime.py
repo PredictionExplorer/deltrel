@@ -13,6 +13,7 @@ import copy
 from dataclasses import asdict, dataclass
 import fcntl
 import hashlib
+import json
 import math
 import os
 from pathlib import Path
@@ -21,6 +22,8 @@ import signal
 import stat
 import sys
 import time
+import threading
+from types import MappingProxyType
 from typing import Any
 
 from scripts import strength_freshness_cpu_completion as completion
@@ -380,6 +383,22 @@ def current_site_inventory(reader, site: dict) -> None:
             reader.check()
 
 
+@dataclass(eq=False, repr=False)
+class _MetadataView:
+    owner: Any
+    phase: str
+    window: bytes
+    sources: bytes
+    reader: Any = None
+    failed: bool = False
+
+
+@dataclass(eq=False, repr=False)
+class _StoreBlock:
+    amount: int
+    view: _MetadataView | None
+
+
 class ProtectedStore:
     """Bounded pinned reads and exact-root no-clobber publication only."""
 
@@ -401,10 +420,28 @@ class ProtectedStore:
         self.deadline_wall_ns: int | None = None
         self.clock_source = actual_clock
         self.last_clock: outer.Clock | None = None
+        self._ordinary_pid = os.getpid()
+        self._ordinary_thread = threading.get_ident()
+        self._metadata_started = False
+        self._ordinary_poisoned = False
+        self._ordinary_failure: str | None = None
+        self._metadata_capacity = 0
+        self._metadata_used = 0
+        self._metadata_views: dict[str, _MetadataView] = {}
+        self._metadata_view_keys: dict[str, tuple] = {}
+        self._metadata_failures: set[str] = set()
+        self._ordinary_block: _StoreBlock | None = None
+        self._ordinary_block_key: tuple = ()
+        self._ledger_counts = (0, 0)
+        self._ledger_context: tuple = ()
+        self._ledger_deadlines: tuple = ()
+        self._ledger_last_clock: bytes | None = None
 
     def bind_deadline(
         self, original: outer.Clock, mono: int, wall: int, clock_source
     ) -> None:
+        if self._metadata_started:
+            _STORE_METHODS["_metadata_guard"](self)
         require(
             mono > original.monotonic_ns and wall > original.wall_ns,
             "store-original-budget",
@@ -416,9 +453,334 @@ class ProtectedStore:
         self.original_clock = original
         self.deadline_ns, self.deadline_wall_ns = mono, wall
         self.clock_source = clock_source
+        if self._metadata_started:
+            self._ledger_deadlines = (mono, wall)
+            _STORE_METHODS["_metadata_guard"](self)
         self.check()
 
+    def _poison_ordinary(self, reason: str) -> None:
+        self._ordinary_poisoned = True
+        self._ordinary_failure = self._ordinary_failure or reason
+        raise RuntimeRefusal(reason)
+
+    def _metadata_context(self) -> tuple:
+        def callable_key(value):
+            return (getattr(value, "__self__", None), getattr(value, "__func__", value))
+
+        try:
+            return (
+                self.owner_uid,
+                self.roots,
+                encode(self.original_clock.__dict__) if self.original_clock else None,
+                callable_key(self.monotonic_ns),
+                callable_key(self.clock_source),
+                self._metadata_capacity,
+            )
+        except Exception:
+            self._ordinary_poisoned = True
+            self._ordinary_failure = self._ordinary_failure or "store-context-shape"
+            raise RuntimeRefusal("store-context-shape") from None
+
+    def _metadata_guard(self) -> None:
+        try:
+            valid = (
+                type(self) is ProtectedStore
+                and self._metadata_started is True
+                and not self._ordinary_poisoned
+                and self._ordinary_failure is None
+                and os.getpid() == self._ordinary_pid
+                and threading.get_ident() == self._ordinary_thread
+                and self._ledger_last_clock
+                == (encode(self.last_clock.__dict__) if self.last_clock else None)
+                and type(self.owner_uid) is int
+                and type(self.consumed) is int
+                and type(self._metadata_capacity) is int
+                and type(self._metadata_used) is int
+                and (self.consumed, self._metadata_used) == self._ledger_counts
+                and 0 <= self._metadata_used <= self._metadata_capacity <= 8 * 2**20
+                and 0 <= self.consumed <= 32 * 2**20
+                and _STORE_METHODS["_metadata_context"](self) == self._ledger_context
+                and (self.deadline_ns, self.deadline_wall_ns) == self._ledger_deadlines
+            )
+            for name, method in _STORE_METHODS.items():
+                bound = getattr(self, name, None)
+                valid = valid and getattr(bound, "__self__", None) is self
+                valid = valid and getattr(bound, "__func__", None) is method
+            if not valid:
+                _STORE_METHODS["_poison_ordinary"](self, "store-live-ledger-changed")
+            if (
+                self._ordinary_block is not None
+                and type(self._ordinary_block) is not _StoreBlock
+            ):
+                _STORE_METHODS["_poison_ordinary"](self, "store-read-permit-type")
+            if (self._ordinary_block is None and self._ordinary_block_key) or (
+                self._ordinary_block is not None
+                and self._ordinary_block_key
+                != (
+                    self._ordinary_block,
+                    self._ordinary_block.amount,
+                    self._ordinary_block.view,
+                )
+            ):
+                _STORE_METHODS["_poison_ordinary"](self, "store-read-permit-changed")
+
+        except RuntimeRefusal:
+            raise
+        except Exception:
+            self._ordinary_poisoned = True
+            self._ordinary_failure = self._ordinary_failure or "store-live-ledger-shape"
+            raise RuntimeRefusal("store-live-ledger-shape") from None
+
+    def _reserve_observed_metadata(self) -> None:
+        """Reserve only transport capacity; this does not establish admission."""
+        if self._metadata_started or self._metadata_capacity:
+            _STORE_METHODS["_metadata_guard"](self)
+            return
+        require(
+            type(self) is ProtectedStore
+            and os.getpid() == self._ordinary_pid
+            and not self._ordinary_poisoned
+            and self._ordinary_failure is None
+            and self.original_clock is not None
+            and self.deadline_wall_ns is not None
+            and type(self.consumed) is int
+            and 0 <= self.consumed < 32 * 2**20,
+            "store-reservation-context",
+        )
+        self._metadata_capacity = min(8 * 2**20, 32 * 2**20 - self.consumed)
+        self._ledger_counts = (self.consumed, 0)
+        self._ledger_context = _STORE_METHODS["_metadata_context"](self)
+        self._ledger_deadlines = (self.deadline_ns, self.deadline_wall_ns)
+        self._ledger_last_clock = (
+            encode(self.last_clock.__dict__) if self.last_clock else None
+        )
+        self._metadata_started = True
+        _STORE_METHODS["_metadata_guard"](self)
+        _STORE_METHODS["check"](self)
+
+    def _conditional_metadata_view(
+        self, phase: str, window: dict[str, Any], source_pins: list[dict[str, Any]]
+    ) -> _MetadataView:
+        """Externally supplied premises only; never actual phase/launch authority."""
+        require(
+            type(phase) is str
+            and phase in {"preflight-before", "dummy-final", "helper-frame"},
+            "store-phase",
+        )
+        shape(
+            window,
+            {
+                "started",
+                "deadline_monotonic_ns",
+                "deadline_wall_ns",
+                "metadata_bytes",
+                "runtime_bytes",
+            },
+            "store-view-window",
+        )
+        begin = completion.clock(window["started"])
+        require(
+            type(window["metadata_bytes"]) is int
+            and window["metadata_bytes"] == 8 * 2**20
+            and type(window["runtime_bytes"]) is int
+            and window["runtime_bytes"] == 24 * 2**20,
+            "store-view-budgets",
+        )
+        for axis in ("monotonic", "wall"):
+            end = window["deadline_" + axis + "_ns"]
+            require(
+                type(end) is int
+                and 0 < end - begin[axis + "_ns"] <= 105 * outer.SECOND,
+                "store-view-window",
+            )
+        require(
+            type(source_pins) is list and len(source_pins) <= 256, "store-view-sources"
+        )
+        sources = [_pin(p) for p in source_pins]
+        require(len({p["path"] for p in sources}) == len(sources), "store-view-sources")
+        raw_window, raw_sources = encode(window), encode(sources)
+        _STORE_METHODS["_reserve_observed_metadata"](self)
+        existing = self._metadata_views.get(phase)
+        if existing is not None:
+            require(
+                existing.window == raw_window and existing.sources == raw_sources,
+                "store-view-rebind",
+            )
+            _STORE_METHODS["_metadata_check"](self, existing)
+            return existing
+        require(
+            not self._metadata_failures
+            and not any(v.failed for v in self._metadata_views.values()),
+            "store-view-failed",
+        )
+        require(
+            (not self._metadata_views and phase != "dummy-final")
+            or (
+                set(self._metadata_views) == {"preflight-before"}
+                and phase == "dummy-final"
+            ),
+            "store-phase-order",
+        )
+        require(
+            self.original_clock is not None
+            and begin["boot_id"] == self.original_clock.boot_id
+            and begin["monotonic_ns"] >= self.original_clock.monotonic_ns
+            and begin["wall_ns"] >= self.original_clock.wall_ns
+            and window["deadline_monotonic_ns"] <= self.deadline_ns
+            and self.deadline_wall_ns is not None
+            and window["deadline_wall_ns"] <= self.deadline_wall_ns,
+            "store-view-original-window",
+        )
+        view = _MetadataView(self, phase, raw_window, raw_sources)
+        self._metadata_views[phase] = view
+        self._metadata_view_keys[phase] = (view, raw_window, raw_sources, None)
+        _STORE_METHODS["_metadata_check"](self, view)
+        return view
+
+    def _metadata_check(self, view: _MetadataView | None) -> None:
+        _STORE_METHODS["_metadata_guard"](self)
+        try:
+            _STORE_METHODS["check"](self)
+        except Exception:
+            self._ordinary_poisoned = True
+            self._ordinary_failure = self._ordinary_failure or "store-live-clock"
+            raise RuntimeRefusal("store-live-clock") from None
+        if view is None:
+            return
+        if (
+            type(view) is not _MetadataView
+            or view.owner is not self
+            or type(view.phase) is not str
+            or self._metadata_views.get(view.phase) is not view
+            or self._metadata_view_keys.get(view.phase)
+            != (view, view.window, view.sources, view.reader)
+        ):
+            _STORE_METHODS["_poison_ordinary"](self, "store-view-owner")
+        if view.reader is not None:
+            from scripts import strength_freshness_cpu_capture_request as requests
+
+            requests._PINNED_METHODS["_binding_identity"](view.reader)
+        require(
+            not view.failed and view.phase not in self._metadata_failures,
+            "store-view-failed",
+        )
+        window = json.loads(view.window)
+        now = self.last_clock
+        require(now is not None, "store-view-clock")
+        assert now is not None
+        completion.order(window["started"], now.__dict__)
+        if (
+            now.monotonic_ns >= window["deadline_monotonic_ns"]
+            or now.wall_ns >= window["deadline_wall_ns"]
+        ):
+            view.failed = True
+            self._metadata_failures.add(view.phase)
+            raise RuntimeRefusal("store-view-deadline")
+
+    def _attach_metadata_reader(self, view: _MetadataView, reader) -> None:
+        _STORE_METHODS["_metadata_check"](self, view)
+        from scripts import strength_freshness_cpu_capture_request as requests
+
+        require(type(reader) is requests.PinnedReader, "store-reader-type")
+        require(view.reader is None, "store-reader-already-bound")
+        view.reader = reader
+        self._metadata_view_keys[view.phase] = (view, view.window, view.sources, reader)
+
+    def _fail_metadata_view(self, view: _MetadataView) -> None:
+        if (
+            type(view) is _MetadataView
+            and view.owner is self
+            and type(view.phase) is str
+        ):
+            view.failed = True
+            self._metadata_failures.add(view.phase)
+
+    def _metadata_scope(self, view: _MetadataView, path: Path, expected=None) -> None:
+        _STORE_METHODS["_metadata_check"](self, view)
+        require(path.resolve() == path, "store-view-alias")
+        if expected is None:
+            require(path in self.roots, "store-view-directory")
+        else:
+            sources = json.loads(view.sources)
+            require(path.parent in self.roots or expected in sources, "store-view-path")
+
+    def _open_block(
+        self, view: _MetadataView | None, literal_remaining: int, requested_max: int
+    ) -> _StoreBlock:
+        _STORE_METHODS["_metadata_check"](self, view)
+        if self._ordinary_block is not None:
+            _STORE_METHODS["_poison_ordinary"](self, "store-overlapping-read")
+        reserved = self._metadata_capacity - self._metadata_used
+        remaining = (
+            reserved if view is not None else 32 * 2**20 - self.consumed - reserved
+        )
+        require(
+            type(literal_remaining) is int
+            and literal_remaining > 0
+            and type(requested_max) is int
+            and requested_max > 0,
+            "store-block-size",
+        )
+        amount = min(
+            65536,
+            literal_remaining,
+            requested_max,
+            remaining,
+            32 * 2**20 - self.consumed,
+        )
+        require(amount > 0, "store-byte-budget")
+        permit = _StoreBlock(amount, view)
+        self._ordinary_block = permit
+        self._ordinary_block_key = (permit, permit.amount, permit.view)
+        return permit
+
+    def _finish_block(self, permit: _StoreBlock, returned_bytes: int) -> None:
+        _STORE_METHODS["_metadata_guard"](self)
+        if (
+            self._ordinary_block is not permit
+            or type(permit) is not _StoreBlock
+            or type(returned_bytes) is not int
+            or not 0 <= returned_bytes <= permit.amount
+        ):
+            _STORE_METHODS["_poison_ordinary"](self, "store-read-settlement")
+        self.consumed += returned_bytes
+        if permit.view is not None:
+            self._metadata_used += returned_bytes
+        self._ledger_counts = (self.consumed, self._metadata_used)
+        self._ordinary_block = None
+        self._ordinary_block_key = ()
+
+    def _abort_block(self, permit: _StoreBlock) -> None:
+        _STORE_METHODS["_metadata_guard"](self)
+        if self._ordinary_block is not permit:
+            _STORE_METHODS["_poison_ordinary"](self, "store-read-abort")
+        self._ordinary_block = None
+        self._ordinary_block_key = ()
+
+    def _charge_metadata_names(self, view: _MetadataView, size: int) -> None:
+        """Retain logical inventory-name debits, separately from file payload."""
+        _STORE_METHODS["_metadata_check"](self, view)
+        if self._ordinary_block is not None:
+            _STORE_METHODS["_poison_ordinary"](self, "store-overlapping-read")
+        require(type(size) is int and size >= 0, "store-name-size")
+        self.consumed += size
+        self._metadata_used += size
+        self._ledger_counts = (self.consumed, self._metadata_used)
+        if self.consumed > 32 * 2**20 or self._metadata_used > self._metadata_capacity:
+            _STORE_METHODS["_poison_ordinary"](self, "store-name-budget")
+
     def check(self) -> None:
+        if self._metadata_started:
+            try:
+                previous = encode(self.last_clock.__dict__) if self.last_clock else None
+                if previous != self._ledger_last_clock:
+                    self._ordinary_poisoned = True
+                    self._ordinary_failure = (
+                        self._ordinary_failure or "store-clock-history"
+                    )
+            except Exception:
+                self._ordinary_poisoned = True
+                self._ordinary_failure = self._ordinary_failure or "store-clock-history"
         if self.original_clock is None:
             # Bootstrap can only read the approved intent under this short bound.
             require(self.monotonic_ns() < self.deadline_ns, "store-deadline")
@@ -438,6 +800,8 @@ class ProtectedStore:
             "store-deadline",
         )
         self.last_clock = now
+        if self._metadata_started:
+            self._ledger_last_clock = encode(now.__dict__)
 
     def directory(self, path: Path) -> None:
         self.check()
@@ -561,8 +925,11 @@ class ProtectedStore:
         expected_metadata: dict | None = None,
         qualified_metadata: dict | None = None,
         named: os.stat_result | None = None,
+        _view: _MetadataView | None = None,
     ) -> bytes:
         """One ordinary fixed span; interpreter reads retain their separate path."""
+        if self._metadata_started or self._metadata_capacity:
+            _STORE_METHODS["_metadata_check"](self, _view)
         self.check()
         require(path.resolve() == path, "store-input-alias")
         named = path.lstat() if named is None else named
@@ -593,14 +960,26 @@ class ProtectedStore:
             count = 0
             while count < size:
                 self.check()
-                require(
-                    type(self.consumed) is int and 0 <= self.consumed < 32 * 2**20,
-                    "store-byte-budget",
-                )
-                block = os.read(
-                    fd, min(65536, size - count, 32 * 2**20 - self.consumed)
-                )
-                self.consumed += len(block)
+                if self._metadata_started:
+                    permit = _STORE_METHODS["_open_block"](
+                        self, _view, size - count, 65536
+                    )
+                    try:
+                        block = os.read(fd, permit.amount)
+                    except BaseException:
+                        _STORE_METHODS["_abort_block"](self, permit)
+                        raise
+                    _STORE_METHODS["_finish_block"](self, permit, len(block))
+                    _STORE_METHODS["_metadata_check"](self, _view)
+                else:
+                    require(
+                        type(self.consumed) is int and 0 <= self.consumed < 32 * 2**20,
+                        "store-byte-budget",
+                    )
+                    block = os.read(
+                        fd, min(65536, size - count, 32 * 2**20 - self.consumed)
+                    )
+                    self.consumed += len(block)
                 self.check()
                 if not block:
                     break
@@ -704,6 +1083,35 @@ class ProtectedStore:
             os.close(directory)
         self.check()
         return {"path": str(path), "sha256": sha(raw), "bytes": len(raw)}
+
+
+# Fixed source identities, not a configurable callback interface.
+_STORE_METHODS = MappingProxyType(
+    {
+        name: getattr(ProtectedStore, name)
+        for name in (
+            "check",
+            "bind_deadline",
+            "directory",
+            "read",
+            "fixed",
+            "_read_ordinary",
+            "_poison_ordinary",
+            "_metadata_context",
+            "_metadata_guard",
+            "_reserve_observed_metadata",
+            "_conditional_metadata_view",
+            "_metadata_check",
+            "_metadata_scope",
+            "_open_block",
+            "_finish_block",
+            "_abort_block",
+            "_charge_metadata_names",
+            "_attach_metadata_reader",
+            "_fail_metadata_view",
+        )
+    }
+)
 
 
 def read_sealed_frame() -> dict:

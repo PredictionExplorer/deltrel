@@ -46,6 +46,8 @@ _READER_TYPE = requests.PinnedReader
 _BASE_READ = requests.PinnedReader.read
 _BASE_CHECK = requests.PinnedReader.check
 _BASE_DIRECTORY = requests.PinnedReader.directory
+_BASE_BINDING = requests.PinnedReader._binding_identity
+_BASE_CHARGE = requests.PinnedReader.charge
 
 
 class BeforeRefusal(ValueError):
@@ -180,7 +182,10 @@ class _Read:
             "read": _BASE_READ,
             "check": _BASE_CHECK,
             "directory": _BASE_DIRECTORY,
+            "_binding_identity": _BASE_BINDING,
+            "charge": _BASE_CHARGE,
         }
+        self._binding = _BASE_BINDING(reader)
         self._deadline, self._owner = reader.deadline, reader.owner_uid
         self._consumed = reader.consumed
         self.limits = deepcopy(_limits(current["limits"]))
@@ -216,6 +221,9 @@ class _Read:
                 and getattr(method, "__func__", None) is expected,
                 "before-reader-method-changed",
             )
+        require(
+            _BASE_BINDING(self.reader) == self._binding, "before-reader-binding-changed"
+        )
         require(
             type(self.reader.consumed) is int
             and type(self._consumed) is int

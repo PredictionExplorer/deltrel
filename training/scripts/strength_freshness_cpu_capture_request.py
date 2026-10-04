@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from types import MappingProxyType
 import math
 import re
 import stat
@@ -290,18 +291,128 @@ class PinnedReader:
         )
         require(integer(owner_uid), "reader-owner")
         self.deadline, self.owner_uid, self.monotonic = deadline, owner_uid, monotonic
+        self._store_origin: tuple | None = None
+        self._store_binding: _StoreReaderBinding | None = None
+        self._original_store_binding: _StoreReaderBinding | None = None
         self.consumed = 0
         self.audit: list[dict[str, Any]] = []
 
+    @property
+    def consumed(self):
+        self._binding_identity()
+        binding = self._original_store_binding
+        if binding is None:
+            return self._standalone_consumed
+        self._binding_identity()
+        return binding.owner._metadata_used
+
+    @consumed.setter
+    def consumed(self, value):
+        self._binding_identity()
+        binding = getattr(self, "_original_store_binding", None)
+        if binding is not None:
+            binding.methods["_poison_ordinary"](binding.owner, "reader-counter-reset")
+        self._standalone_consumed = value
+
+    def _binding_identity(self):
+        """Private immutable-origin bookkeeping, never an admission certificate."""
+        origin = self._store_origin
+        if origin is None:
+            active = self._original_store_binding or self._store_binding
+            if type(active) is _StoreReaderBinding:
+                active.methods["_poison_ordinary"](
+                    active.owner, "reader-binding-replaced"
+                )
+            require(active is None, "reader-binding-replaced")
+            return None
+        require(type(origin) is tuple and len(origin) == 11, "reader-binding-origin")
+        (
+            binding,
+            owner,
+            view,
+            runtime,
+            methods,
+            actual_reader,
+            deadline,
+            owner_uid,
+            monotonic,
+            window,
+            sources,
+        ) = origin
+        valid = (
+            type(self) is PinnedReader
+            and type(binding) is _StoreReaderBinding
+            and self._store_binding is binding
+            and self._original_store_binding is binding
+            and actual_reader is self
+            and binding.owner is owner
+            and binding.view is view
+            and binding.runtime is runtime
+            and binding.methods is methods
+            and binding.reader is self
+            and type(binding.deadline) is type(deadline)
+            and binding.deadline == deadline
+            and type(binding.owner_uid) is int
+            and binding.owner_uid == owner_uid
+            and binding.monotonic is monotonic
+            and binding.window == window
+            and binding.sources == sources
+            and type(self.deadline) is type(deadline)
+            and self.deadline == deadline
+            and type(self.owner_uid) is int
+            and self.owner_uid == owner_uid
+            and self.monotonic is monotonic
+            and runtime._STORE_METHODS is methods
+        )
+        for name, method in _PINNED_METHODS.items():
+            current = getattr(self, name, None)
+            valid = valid and getattr(current, "__self__", None) is self
+            valid = valid and getattr(current, "__func__", None) is method
+        valid = valid and type(self).consumed is _PINNED_CONSUMED
+        if not valid:
+            methods["_poison_ordinary"](owner, "reader-binding-changed")
+        methods["_metadata_guard"](owner)
+        if (
+            getattr(view, "owner", None) is not owner
+            or getattr(view, "reader", None) is not self
+            or type(getattr(view, "phase", None)) is not str
+            or owner._metadata_view_keys.get(view.phase)
+            != (view, window, sources, self)
+            or getattr(view, "window", None) != window
+            or getattr(view, "sources", None) != sources
+        ):
+            methods["_poison_ordinary"](owner, "reader-view-changed")
+        return origin
+
+    def _fail_bound(self):
+        origin = self._store_origin
+        if type(origin) is tuple and len(origin) == 11:
+            _, owner, view, _, methods, *_ = origin
+            methods["_fail_metadata_view"](owner, view)
+
     def check(self):
+        self._binding_identity()
+        if self._original_store_binding is not None:
+            self._binding_identity()
+            binding = self._original_store_binding
+            binding.methods["_metadata_check"](binding.owner, binding.view)
         require(self.monotonic() < self.deadline, "metadata-deadline")
 
     def charge(self, size):
+        self._binding_identity()
         require(integer(size), "metadata-size")
+        if self._original_store_binding is not None:
+            self._binding_identity()
+            binding = self._original_store_binding
+            binding.methods["_charge_metadata_names"](binding.owner, binding.view, size)
+            return
         self.consumed += size
         require(self.consumed <= METADATA_BUDGET, "metadata-budget")
 
     def read(self, expected, *, root: Path | None = None, limit=FILE_LIMIT):
+        self._binding_identity()
+        if self._original_store_binding is not None:
+            return self._read_bound(expected, root=root, limit=limit)
         expected = pin(expected, limit=limit)
         path = canonical(expected["path"])
         if root is not None:
@@ -357,45 +468,201 @@ class PinnedReader:
         )
         return raw
 
+    def _read_bound(self, expected, *, root=None, limit=FILE_LIMIT):
+        binding = self._original_store_binding
+        self._binding_identity()
+        assert binding is not None
+        try:
+            expected = pin(expected, limit=limit)
+            path = canonical(expected["path"])
+            require(root is None or path.parent == root, "proof-parent")
+            self.check()
+            binding.methods["_metadata_scope"](
+                binding.owner, binding.view, path, expected
+            )
+            first = path.lstat()
+            require(
+                stat.S_ISREG(first.st_mode)
+                and first.st_uid == self.owner_uid
+                and stat.S_IMODE(first.st_mode) == 0o444
+                and first.st_size == expected["bytes"],
+                "input-protection-or-size",
+            )
+            raw = binding.methods["_read_ordinary"](
+                binding.owner, path, expected["bytes"], named=first, _view=binding.view
+            )
+            require(digest(raw) == expected["sha256"], "input-hash")
+            self.check()
+            self.audit.append(
+                {
+                    "pin": expected,
+                    "device": first.st_dev,
+                    "inode": first.st_ino,
+                    "mode": 0o444,
+                    "uid": first.st_uid,
+                }
+            )
+            return raw
+        except BaseException:
+            _PINNED_METHODS["_fail_bound"](self)
+            raise
+
     def directory(self, root):
-        self.check()
-        st = root.lstat()
-        require(
-            stat.S_ISDIR(st.st_mode)
-            and st.st_uid == self.owner_uid
-            and stat.S_IMODE(st.st_mode) == 0o700
-            and root.resolve() == root,
-            "proof-directory-protection",
-        )
-        self.check()
-        return (st.st_dev, st.st_ino, st.st_uid, stat.S_IMODE(st.st_mode))
+        binding = self._original_store_binding
+        try:
+            self.check()
+            if self._original_store_binding is not None:
+                binding = self._original_store_binding
+                binding.methods["_metadata_scope"](binding.owner, binding.view, root)
+            st = root.lstat()
+            require(
+                stat.S_ISDIR(st.st_mode)
+                and st.st_uid == self.owner_uid
+                and stat.S_IMODE(st.st_mode) == 0o700
+                and root.resolve() == root,
+                "proof-directory-protection",
+            )
+            self.check()
+            return (st.st_dev, st.st_ino, st.st_uid, stat.S_IMODE(st.st_mode))
+
+        except BaseException:
+            if type(binding) is _StoreReaderBinding:
+                _PINNED_METHODS["_fail_bound"](self)
+            raise
 
     def inventory(self, root):
-        paths = []
-        count = 0
-        with os.scandir(root) as entries:
-            for entry in entries:
-                self.check()
-                count += 1
-                require(count <= lifecycle.MAX_LOG_FILES + 1, "proof-inventory-limit")
-                self.charge(len(entry.name.encode()))
-                require(
-                    len(entry.name) <= 128
-                    and entry.is_file(follow_symlinks=False)
-                    and not entry.is_symlink(),
-                    "proof-entry",
-                )
-                if entry.name == ".append.lock":
-                    continue
-                require(
-                    re.fullmatch(
-                        r"[a-z][a-z0-9_-]{0,47}-[0-9a-f]{32}\.json", entry.name
-                    ),
-                    "proof-inventory-name",
-                )
-                paths.append(root / entry.name)
-        self.check()
-        return sorted(paths)
+        binding = self._original_store_binding
+        try:
+            self._binding_identity()
+            if self._original_store_binding is not None:
+                self.directory(root)
+            paths = []
+            count = 0
+            with os.scandir(root) as entries:
+                for entry in entries:
+                    self.check()
+                    count += 1
+                    require(
+                        count <= lifecycle.MAX_LOG_FILES + 1, "proof-inventory-limit"
+                    )
+                    self.charge(len(entry.name.encode()))
+                    require(
+                        len(entry.name) <= 128
+                        and entry.is_file(follow_symlinks=False)
+                        and not entry.is_symlink(),
+                        "proof-entry",
+                    )
+                    if entry.name == ".append.lock":
+                        continue
+                    require(
+                        re.fullmatch(
+                            r"[a-z][a-z0-9_-]{0,47}-[0-9a-f]{32}\.json", entry.name
+                        ),
+                        "proof-inventory-name",
+                    )
+                    paths.append(root / entry.name)
+            self.check()
+            return sorted(paths)
+
+        except BaseException:
+            if type(binding) is _StoreReaderBinding:
+                _PINNED_METHODS["_fail_bound"](self)
+            raise
+
+
+@dataclass(eq=False, repr=False)
+class _StoreReaderBinding:
+    owner: Any
+    view: Any
+    runtime: Any
+    methods: Any
+    reader: PinnedReader
+    deadline: float
+    owner_uid: int
+    monotonic: Any
+    window: bytes
+    sources: bytes
+
+
+_PINNED_METHODS = MappingProxyType(
+    {
+        name: getattr(PinnedReader, name)
+        for name in (
+            "check",
+            "charge",
+            "read",
+            "_read_bound",
+            "directory",
+            "inventory",
+            "_binding_identity",
+            "_fail_bound",
+        )
+    }
+)
+_PINNED_CONSUMED = PinnedReader.consumed
+
+
+def _conditional_store_reader(store, *, phase, window, source_pins):
+    """Conditional transport only: supplied windows/sources are not qualified here.
+
+    No runtime or CLI selects this helper. It creates no Admission, phase grant,
+    launcher permission or BEFORE success. The actual factory below stays closed.
+    """
+    from scripts import strength_freshness_cpu_outer_runtime as runtime
+
+    require(type(store) is runtime.ProtectedStore, "reader-store-type")
+    methods = runtime._STORE_METHODS
+    view = methods["_conditional_metadata_view"](store, phase, window, source_pins)
+    if view.reader is not None:
+        require(type(view.reader) is PinnedReader, "reader-view-type")
+        _PINNED_METHODS["_binding_identity"](view.reader)
+        return view.reader
+    now = store.last_clock
+    require(now is not None, "reader-store-clock")
+    assert now is not None
+    deadline = min(
+        window["deadline_monotonic_ns"] / 1e9,
+        now.monotonic_ns / 1e9 + (window["deadline_wall_ns"] - now.wall_ns) / 1e9,
+    )
+    reader = PinnedReader(
+        deadline=deadline,
+        owner_uid=store.owner_uid,
+        monotonic=lambda: store.monotonic_ns() / 1e9,
+    )
+    binding = _StoreReaderBinding(
+        store,
+        view,
+        runtime,
+        methods,
+        reader,
+        deadline,
+        store.owner_uid,
+        reader.monotonic,
+        view.window,
+        view.sources,
+    )
+    reader._store_binding = reader._original_store_binding = binding
+    reader._store_origin = (
+        binding,
+        store,
+        view,
+        runtime,
+        methods,
+        reader,
+        deadline,
+        store.owner_uid,
+        reader.monotonic,
+        view.window,
+        view.sources,
+    )
+    methods["_attach_metadata_reader"](store, view, reader)
+    reader.check()
+    return reader
+
+
+def _outer_pinned_reader(admission, *, phase, window):
+    """Actual issued admission/phase authority is absent; no type/hash shortcut."""
+    raise RequestRefusal("outer-reader-authority-unavailable")
 
 
 class _IndexedRoot:

@@ -1061,3 +1061,43 @@ is not added to that count. Ruff, formatting and Pyright passed on the exact
 frozen runtime and tests; all unrelated existing functions and old admission
 gates retain their original bytes or the verified equivalent interpreter path.
 No target, service, profile, production source or GPU change occurred.
+
+Committed `f89d7206` passed all six CI jobs on attempt one: 7,284 Python/native
+cases, 1,023 web tests, Rust/WASM and all 28 coverage floors. Browser E2E had
+106 clean passes, one Firefox test that passed on its automatic retry, and five
+skips. The retry concerned play-from-here navigation; its cause is unconfirmed.
+The saved PR merge tree matches the source head. This result qualifies that
+committed source only, not subsequent edits or target execution.
+
+A private conditional binding now lets a genuine pinned metadata reader share
+its original outer store's accounting. One reservation of at most 8 MiB comes
+from the existing 32 MiB ordinary allowance. Direct ordinary reads cannot spend
+unused reserved capacity. Fixed phase views share the same cumulative reservation
+and retain their original supplied windows; reusing a view neither renews its
+deadline nor replenishes its bytes. A single in-flight read permit clamps the OS
+request and settles actual returned bytes before later validation. Uncertain
+settlement or changed ownership poisons the original account and all its views.
+
+The binding preserves the metadata reader's stricter file admission rules and
+checks retained owner, reader, method, source, process, thread and clock context.
+The BEFORE artifact reader retains this binding as well as its original byte
+counter. Standalone readers retain their existing allowance. Inventory-name
+debits remain distinct from file payload accounting. Interpreter and publication
+transport are outside this change's metering claim.
+
+This implements conditional transport under external source and window premises.
+The actual admission factory refuses unconditionally, and no runtime or CLI
+selects the binder. Mutable admission objects, hashes and local test fixtures
+cannot provide the missing phase authority. Completion-reader routing, executed
+interpreter accounting, complete AFTER and parent/consumer integration, and real
+bootstrap/site/session/resource qualification remain separate prerequisites.
+Historical birth qualification is still null; the old admission gates remain.
+
+The final affected joint passed 223 local CPU/fault cases with two workers and
+no failures or skips, with 18 stable source/test pins. It includes the 70 new
+binding cases, 49 affected BEFORE reader cases, 75 ordinary-store cases, 26
+standalone metadata cases and three existing store/interpreter regressions.
+The separate 119-case author run is retained without adding its count. Ruff,
+formatting and Pyright passed on the frozen edits. Tests use private temporary
+files and explicit simulated authority; they establish no target launch right,
+physical-I/O bound or hostile-Python memory-integrity guarantee.

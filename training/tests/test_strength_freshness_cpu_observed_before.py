@@ -33,6 +33,14 @@ class MemoryReader:
     def check(self):
         m.require(self.clock[0] < int(self.deadline * 1e9), "metadata-deadline")
 
+    def _binding_identity(self):
+        return None  # This fixture explicitly models an unbound memory transport.
+
+    def charge(self, size):
+        m.require(type(size) is int and size >= 0, "metadata-size")
+        self.consumed += size
+        m.require(self.consumed <= m.requests.METADATA_BUDGET, "metadata-budget")
+
     def directory(self, path):
         self.check()
         return (1, str(path), 0, 0o700)
@@ -62,6 +70,8 @@ def transport(monkeypatch, reader, clock):
     monkeypatch.setattr(m, "_BASE_READ", MemoryReader.read)
     monkeypatch.setattr(m, "_BASE_CHECK", MemoryReader.check)
     monkeypatch.setattr(m, "_BASE_DIRECTORY", MemoryReader.directory)
+    monkeypatch.setattr(m, "_BASE_BINDING", MemoryReader._binding_identity)
+    monkeypatch.setattr(m, "_BASE_CHARGE", MemoryReader.charge)
     monkeypatch.setattr(
         m,
         "time",
