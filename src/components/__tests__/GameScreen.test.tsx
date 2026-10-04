@@ -828,6 +828,7 @@ describe('GameScreen AI lifecycle', () => {
     render(<GameScreen />);
 
     await screen.findByText('AI is thinking…');
+    await waitFor(() => expect(requestLocalAiDecision).toHaveBeenCalledOnce());
     const [firstRequest] = vi.mocked(requestLocalAiDecision).mock.calls[0];
     first.resolve(makeDecision(firstRequest));
     const panel = await completedEstimate();

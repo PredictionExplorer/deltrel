@@ -855,3 +855,27 @@ tests, 1,023 web tests, 107 clean browser E2E tests plus five skips, all 28 cove
 floors, Rust/WASM, audits and container checks. The failed `7f279e18` run remains
 preserved as a failure; its test isolation correction was validated on this new
 head. This first registration revision requires its own exact-head CI result.
+
+Candidate 596131 completed its 320-game/160-pair allocation at a 62.8849638%
+weighted score and a 90% anytime interval of 49.8425431–76.3893410%. The frozen
+decision is `reject_max_pairs`, with `conclusive=false`; champion 572377 remains
+retained. All 320 recorded native winner histories and nine allocation boundaries
+were verified with the exact unchanged R3 helpers in 9.06 CPU seconds, with no
+CUDA initialization, search, inference or checkpoint loading. Checkpoint
+dependencies are retained through catalog-bound, same-inode hardlinks without
+copying or rehashing their payloads. The arena has advanced to candidate 601991;
+its asynchronous game count is not a complete strength decision.
+
+The `d69b559f` CI run completed with five successful jobs and one web-quality
+failure. One GameScreen test observed the thinking label before the asynchronous
+request import/call had arrived, then read an empty mock-call list. The test now
+awaits the actual request-call barrier, as neighboring tests already do. All 55
+GameScreen tests, targeted ESLint and project TypeScript checks pass. Production
+behavior, search budgets, timeouts and assertions are unchanged; the failed head
+was not retried. The corrected head requires its own CI result.
+
+That failed run still completed 6,744 Python/native tests and all 28 coverage
+floors. Its successful browser job had 106 clean passes, five skips and one
+Firefox history-review test passing on its automatic retry. The recorded first
+failure and unconfirmed cause remain preserved; it is not reported as a clean
+107-test run, and no browser assertion or timeout was changed from that evidence.
