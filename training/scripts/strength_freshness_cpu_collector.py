@@ -40,6 +40,171 @@ def _same_raw_clock(clock: Mapping[str, Any]) -> dict[str, Any]:
     return dict(clock)
 
 
+_MISSING_COORDINATOR_PID: Any = object()
+
+
+def _read_static_authority(
+    identity, *, coordinator_pid: int, verified_champions: Mapping[str, str]
+) -> tuple[dict[str, Any], dict[str, Any], str, dict[str, Any]]:
+    """Read registered static facts; this operation does not admit its caller."""
+    io, reg = identity.io, identity.reg
+    policy = reg["policy"]
+
+    def read(key: str) -> bytes:
+        raw = identity.take(io.read(reg["keys"][key]))
+        require(type(raw) is bytes, "metadata-bytes")
+        return raw
+
+    def read_json(key: str) -> dict[str, Any]:
+        return records.parse_json(read(key))
+
+    source = identity.verify_source_pins()
+    cached = identity.verify_cached_references()
+    actual_default = identity.take(io.query("default-target"))
+    expected_default = reg["boot"]["default_target"]
+    require(
+        actual_default in {expected_default, expected_default + "\n"},
+        "actual-default-target-drift",
+    )
+    targets = {
+        name: identities.properties(identity.take(io.query("registered-target", name)))
+        for name in io.scope.targets
+    }
+    for name, props in targets.items():
+        require(
+            props.get("Id") == name and props.get("LoadState") == "loaded",
+            "boot-target-not-loaded",
+        )
+    units = {name: identity.unit(name) for name in reg["units"]}
+    unit_static = {
+        name: identity.unit_static(name, props, targets)
+        for name, props in units.items()
+    }
+    runtime = policy["static"]["runtime_name"]
+    for name, static in unit_static.items():
+        if name == runtime:
+            continue
+        require(
+            {"kind": reg["units"][name]["kind"], **static} == policy["support"][name],
+            "support-static-policy",
+        )
+    require(
+        set(units) == {runtime, *policy["support"]},
+        "static-unit-policy-inventory",
+    )
+    run, continuation = read_json("run"), read_json("continuation")
+    authority = records.authority_records(
+        run,
+        continuation,
+        profile_sha256_bytes=read("profile_authority"),
+        profile_bytes=read("profile"),
+        profile_path=io.scope.files[reg["keys"]["profile"]].path,
+        source_commit_bytes=read("run_source"),
+        expected_source_commit=policy["static"]["source_commit"],
+    )
+    expected_source = policy["static"]["source_commit"]
+    require(
+        read("release_source")
+        in {expected_source.encode(), (expected_source + "\n").encode()},
+        "release-source-drift",
+    )
+    manifest = read("source_manifest")
+    require(
+        identities.sha(manifest) == policy["static"]["source_manifest_sha256"],
+        "source-manifest-drift",
+    )
+    native_keys = {
+        key for value in reg["origins"].values() for key in value["native_keys"]
+    }
+    require(
+        native_keys
+        and all(
+            cached[key]["sha256"] == policy["static"]["native_sha256"]
+            for key in native_keys
+        ),
+        "native-policy-binding",
+    )
+    # The legacy parsed-dict caller looked up this field only at this point.
+    if coordinator_pid is _MISSING_COORDINATOR_PID:
+        raise KeyError("coordinator_pid")
+    require(
+        continuation["attempts"][-1]["pid"] == coordinator_pid,
+        "continuation-coordinator-owner",
+    )
+    pointer = read_json("champion")
+    require(
+        all(pointer[k] == authority[k] for k in ("run_id", "generation_family")),
+        "champion-run-binding",
+    )
+    champion = records.champion_identity(pointer, verified_champions=verified_champions)
+    static = {
+        **authority,
+        "source_manifest_sha256": identities.sha(manifest),
+        "native_sha256": policy["static"]["native_sha256"],
+        "runtime_name": runtime,
+        "runtime_cgroup": units[runtime]["ControlGroup"],
+        "runtime_definition_sha256": unit_static[runtime]["definition_sha256"],
+        "runtime_environment_sha256": unit_static[runtime]["environment_sha256"],
+        "runtime_boot_links_sha256": unit_static[runtime]["boot_links_sha256"],
+    }
+    require(static == policy["static"], "predeclared-static-drift")
+    source_check = {
+        "source_pins": source,
+        "cached_references": cached,
+        "static_sha256": preservation.digest(static),
+        "default_target": expected_default,
+    }
+    return static, units, champion, source_check
+
+
+def _check_final_support_states(
+    policy_support, unit_specs, *, provenance, final_units
+) -> None:
+    """Refuse later unit facts contradicting the retained support observation."""
+    support_states = provenance["unit_states"]
+    require(
+        set(support_states) == set(policy_support),
+        "final-support-state-inventory",
+    )
+    for name, expected in support_states.items():
+        fields = supports.DYNAMIC + (
+            supports.SERVICE_DYNAMIC if unit_specs[name]["kind"] != "timer" else ()
+        )
+        require(
+            set(expected) == set(fields)
+            and all(
+                key in final_units[name] and final_units[name][key] == expected[key]
+                for key in fields
+            ),
+            "final-support-state-drift",
+        )
+
+
+def _project_support_at_clock(rows, observed_clock, final_clock):
+    """Extend caller-owned rows in place, preserving the legacy alias behavior.
+
+    This is the existing monotonic upper-bound projection, not an additional
+    wall-clock policy or proof that a live invocation has completed.
+    """
+    require(
+        observed_clock["boot_id"] == final_clock["boot_id"]
+        and observed_clock["monotonic_ns"] <= final_clock["monotonic_ns"],
+        "support-final-clock",
+    )
+    elapsed_ns = final_clock["monotonic_ns"] - observed_clock["monotonic_ns"]
+    age_extension = (elapsed_ns + 999_999_999) // 1_000_000_000
+    for row in rows.values():
+        if row["running_seconds"] is not None:
+            row["running_seconds"] += age_extension
+        if row["job"] is not None:
+            row["job"]["age_seconds"] += age_extension
+    return rows, {
+        "observed_clock": copy.deepcopy(observed_clock),
+        "capture_clock": dict(final_clock),
+        "added_upper_bound_seconds": age_extension,
+    }
+
+
 class _Capture:
     def __init__(
         self,
@@ -154,106 +319,14 @@ class _Capture:
         return parsed["rows"]
 
     def _static(self, coordinator) -> tuple[dict[str, Any], dict[str, Any], str]:
-        source = self.identity.verify_source_pins()
-        cached = self.identity.verify_cached_references()
-        actual_default = self.identity.take(self.io.query("default-target"))
-        expected_default = self.reg["boot"]["default_target"]
-        require(
-            actual_default in {expected_default, expected_default + "\n"},
-            "actual-default-target-drift",
-        )
-        targets = {
-            name: identities.properties(
-                self.identity.take(self.io.query("registered-target", name))
-            )
-            for name in self.io.scope.targets
-        }
-        for name, props in targets.items():
-            require(
-                props.get("Id") == name and props.get("LoadState") == "loaded",
-                "boot-target-not-loaded",
-            )
-        units = {name: self.identity.unit(name) for name in self.reg["units"]}
-        unit_static = {
-            name: self.identity.unit_static(name, props, targets)
-            for name, props in units.items()
-        }
-        runtime = self.policy["static"]["runtime_name"]
-        for name, static in unit_static.items():
-            if name == runtime:
-                continue
-            require(
-                {"kind": self.reg["units"][name]["kind"], **static}
-                == self.policy["support"][name],
-                "support-static-policy",
-            )
-        require(
-            set(units) == {runtime, *self.policy["support"]},
-            "static-unit-policy-inventory",
-        )
-        run, continuation = self._json("run"), self._json("continuation")
-        authority = records.authority_records(
-            run,
-            continuation,
-            profile_sha256_bytes=self._read("profile_authority"),
-            profile_bytes=self._read("profile"),
-            profile_path=self.io.scope.files[self.reg["keys"]["profile"]].path,
-            source_commit_bytes=self._read("run_source"),
-            expected_source_commit=self.policy["static"]["source_commit"],
-        )
-        expected_source = self.policy["static"]["source_commit"]
-        require(
-            self._read("release_source")
-            in {expected_source.encode(), (expected_source + "\n").encode()},
-            "release-source-drift",
-        )
-        manifest = self._read("source_manifest")
-        require(
-            identities.sha(manifest) == self.policy["static"]["source_manifest_sha256"],
-            "source-manifest-drift",
-        )
-        native_keys = {
-            key
-            for value in self.reg["origins"].values()
-            for key in value["native_keys"]
-        }
-        require(
-            native_keys
-            and all(
-                cached[key]["sha256"] == self.policy["static"]["native_sha256"]
-                for key in native_keys
+        static, units, champion, source_check = _read_static_authority(
+            self.identity,
+            coordinator_pid=coordinator.get(
+                "coordinator_pid", _MISSING_COORDINATOR_PID
             ),
-            "native-policy-binding",
+            verified_champions=self.verified,
         )
-        require(
-            continuation["attempts"][-1]["pid"] == coordinator["coordinator_pid"],
-            "continuation-coordinator-owner",
-        )
-        pointer = self._json("champion")
-        require(
-            all(pointer[k] == authority[k] for k in ("run_id", "generation_family")),
-            "champion-run-binding",
-        )
-        champion = records.champion_identity(pointer, verified_champions=self.verified)
-        static = {
-            **authority,
-            "source_manifest_sha256": identities.sha(manifest),
-            "native_sha256": self.policy["static"]["native_sha256"],
-            "runtime_name": runtime,
-            "runtime_cgroup": units[runtime]["ControlGroup"],
-            "runtime_definition_sha256": unit_static[runtime]["definition_sha256"],
-            "runtime_environment_sha256": unit_static[runtime]["environment_sha256"],
-            "runtime_boot_links_sha256": unit_static[runtime]["boot_links_sha256"],
-        }
-        require(static == self.policy["static"], "predeclared-static-drift")
-        self.source_checks.append(
-            {
-                "source_pins": source,
-                "cached_references": cached,
-                "static_sha256": preservation.digest(static),
-                "default_target": expected_default,
-            }
-        )
+        self.source_checks.append(source_check)
         return static, units, champion
 
     def _owners(self, units, coordinator, beats):
@@ -425,43 +498,20 @@ class _Capture:
         final_coordinator = self._json("coordinator")
         final_static, final_units, champion = self._static(final_coordinator)
         require(static == final_static, "static-changed-during-capture")
-        support_states = self.support_provenance[-1]["unit_states"]
-        require(
-            set(support_states) == set(self.policy["support"]),
-            "final-support-state-inventory",
+        _check_final_support_states(
+            self.policy["support"],
+            self.reg["units"],
+            provenance=self.support_provenance[-1],
+            final_units=final_units,
         )
-        for name, expected in support_states.items():
-            fields = supports.DYNAMIC + (
-                supports.SERVICE_DYNAMIC
-                if self.reg["units"][name]["kind"] != "timer"
-                else ()
-            )
-            require(
-                set(expected) == set(fields)
-                and all(
-                    key in final_units[name] and final_units[name][key] == expected[key]
-                    for key in fields
-                ),
-                "final-support-state-drift",
-            )
         final_beats = self._beats()
         final_owners = self._owners(final_units, final_coordinator, final_beats)
         processes.same_owners(first_owners, final_owners)
         clock_raw = self.identity.clock()
         clock = identities.capture_clock(clock_raw)
-        support_clock = self.support_provenance[-1]["clock"]
-        require(
-            support_clock["boot_id"] == clock_raw["boot_id"]
-            and support_clock["monotonic_ns"] <= clock_raw["monotonic_ns"],
-            "support-final-clock",
+        support, support_projection = _project_support_at_clock(
+            support, self.support_provenance[-1]["clock"], clock_raw
         )
-        elapsed_ns = clock_raw["monotonic_ns"] - support_clock["monotonic_ns"]
-        age_extension = (elapsed_ns + 999_999_999) // 1_000_000_000
-        for row in support.values():
-            if row["running_seconds"] is not None:
-                row["running_seconds"] += age_extension
-            if row["job"] is not None:
-                row["job"]["age_seconds"] += age_extension
         progress = self._progress(tail, final_beats, final_owners, clock)
         capture = {
             "clock": clock,
@@ -490,11 +540,7 @@ class _Capture:
         if self.phase == "after":
             preservation._physical_work(self.policy, capture, self.cleanup)
         provenance = self.provenance()
-        provenance["support_age_projection"] = {
-            "observed_clock": copy.deepcopy(support_clock),
-            "capture_clock": dict(clock_raw),
-            "added_upper_bound_seconds": age_extension,
-        }
+        provenance["support_age_projection"] = support_projection
         provenance.update(
             read_end=dict(clock_raw),
             capture_sha256=preservation.digest(capture),

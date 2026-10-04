@@ -144,8 +144,8 @@ def _attempt_window(
         )
 
 
-def _recipe(policy: Mapping[str, Any]) -> None:
-    recipe = policy["recipe"]
+def _check_recipe_values(recipe: Mapping[str, Any]) -> None:
+    """Numerical predicates only; no lifetime or phase admission."""
     rates = recipe["learning_rates"]
     require(
         isinstance(rates, list)
@@ -169,6 +169,11 @@ def _recipe(policy: Mapping[str, Any]) -> None:
         and recipe["utd_segment_target_updates_per_new_sample"] > 0,
         "numeric-recipe-credit",
     )
+
+
+def _recipe(policy: Mapping[str, Any]) -> None:
+    recipe = policy["recipe"]
+    _check_recipe_values(recipe)
     require(integer(policy["learner_birth_upper_ns"], 1), "learner-lifetime-policy")
 
 
@@ -186,6 +191,127 @@ def _process(row: Mapping[str, Any], cgroup: str) -> dict[str, Any]:
     )
     require(sha(row["origin_sha256"]), "process-origin")
     return {k: row[k] for k in PROCESS_FIELDS}
+
+
+def _check_support(
+    policy: Mapping[str, Any], rows: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Check supplied support facts, without IO or witness authentication."""
+    require(set(rows) == set(policy["support"]), "support-inventory")
+    stable_support = {}
+    for name, row in rows.items():
+        expected = policy["support"][name]
+        require({k: row[k] for k in SUPPORT_STATIC} == expected, "support-static-drift")
+        kind = row["kind"]
+        require(kind in {"long_running", "timer", "oneshot"}, "support-kind")
+        job = row["job"]
+        if job is not None:
+            require(
+                kind == "oneshot"
+                and job["kind"] == "start"
+                and finite(job["age_seconds"])
+                and 0 <= job["age_seconds"] <= policy["maximum_support_seconds"],
+                "support-job-unhealthy",
+            )
+        if kind == "long_running":
+            require(
+                row["active"] == "active" and row["result"] in {"", "success"},
+                "monitor-unhealthy",
+            )
+            stable_support[name] = _process(row["process"], "/system.slice/" + name)
+            require(
+                stable_support[name] == policy["expected_monitors"][name],
+                "monitor-owner-not-predeclared",
+            )
+        elif kind == "timer":
+            require(row["active"] == "active", "timer-inactive")
+        elif row["active"] in {"active", "activating", "deactivating"}:
+            # The displayed Result may belong to the previous invocation.
+            require(
+                finite(row["running_seconds"])
+                and 0 <= row["running_seconds"] <= policy["maximum_support_seconds"],
+                "support-overdue",
+            )
+        else:
+            require(
+                row["active"] == "inactive"
+                and row["result"] in {"", "success"}
+                and row["exit_code"] == 0,
+                "support-failed",
+            )
+    return stable_support
+
+
+def _check_metric_payload(metric: Mapping[str, Any], recipe: Mapping[str, Any]) -> int:
+    """Payload predicates only; caller must establish header, time and sequence."""
+    require(
+        metric["losses"]
+        and all(finite(v) for v in metric["losses"].values())
+        and all(
+            finite(metric[k]) and metric[k] >= 0
+            for k in (
+                "gradient_norm",
+                "gradient_pre_clip_norm",
+                "gradient_post_clip_norm",
+            )
+        ),
+        "nonfinite-update",
+    )
+    require(
+        all(
+            integer(metric[k]) and metric[k] == 0
+            for k in ("nonfinite_loss_count", "nonfinite_gradient_count")
+        ),
+        "nonfinite-counter",
+    )
+    require(
+        metric["gradient_diagnostics"]["global_norm_finite"] is True
+        and metric["gradient_diagnostics"]["nonfinite_gradient_tensors"] == 0,
+        "nonfinite-gradient-diagnostic",
+    )
+    require(
+        metric["learning_rates"] == recipe["learning_rates"]
+        and isinstance(metric["learning_rates"], list)
+        and all(finite(v) for v in metric["learning_rates"])
+        and finite(metric["ema"]["decay"])
+        and metric["ema"]["decay"] == recipe["ema_decay"]
+        and integer(metric["ema"]["num_updates"])
+        and metric["ema"]["num_updates"] == metric["step"] - recipe["bootstrap_step"],
+        "calibrated-rates-or-ema",
+    )
+    require(
+        all(
+            integer(metric[k]) and metric[k] == recipe[k]
+            for k in (
+                "replay_minimum_shard_id_exclusive",
+                "utd_segment_baseline_committed_replay_samples",
+                "utd_segment_baseline_examples_consumed",
+            )
+        )
+        and finite(metric["utd_segment_target_updates_per_new_sample"])
+        and metric["utd_segment_target_updates_per_new_sample"]
+        == recipe["utd_segment_target_updates_per_new_sample"],
+        "replay-credit-origin",
+    )
+    require(
+        finite(metric["segment_updates_per_new_sample"])
+        and 0
+        <= metric["segment_updates_per_new_sample"]
+        <= recipe["utd_segment_target_updates_per_new_sample"] + 1e-9,
+        "replay-credit-overrun",
+    )
+    batch = metric["gradient_diagnostics"]["batch"]
+    require(
+        not batch["six_mode_unknown"]
+        and metric["policy_batch_metrics"]["unknown_provenance_rows"] == 0,
+        "unknown-policy-provenance",
+    )
+    require(integer(batch["rows"], 1), "batch-rows")
+    for key in ("policy", "outcome"):
+        n = batch["label_availability"][key]
+        require(integer(n) and n <= batch["rows"], "batch-labels")
+    require(batch["label_availability"]["policy"] > 0, "missing-policy-labels")
+    return batch["label_availability"]["outcome"]
 
 
 def _snapshot(
@@ -239,48 +365,7 @@ def _snapshot(
             "gpu-process-identity",
         )
         gpu.append(dict(row))
-    require(set(snap["support"]) == set(policy["support"]), "support-inventory")
-    stable_support = {}
-    for name, row in snap["support"].items():
-        expected = policy["support"][name]
-        require({k: row[k] for k in SUPPORT_STATIC} == expected, "support-static-drift")
-        kind = row["kind"]
-        require(kind in {"long_running", "timer", "oneshot"}, "support-kind")
-        job = row["job"]
-        if job is not None:
-            require(
-                kind == "oneshot"
-                and job["kind"] == "start"
-                and finite(job["age_seconds"])
-                and 0 <= job["age_seconds"] <= policy["maximum_support_seconds"],
-                "support-job-unhealthy",
-            )
-        if kind == "long_running":
-            require(
-                row["active"] == "active" and row["result"] in {"", "success"},
-                "monitor-unhealthy",
-            )
-            stable_support[name] = _process(row["process"], "/system.slice/" + name)
-            require(
-                stable_support[name] == policy["expected_monitors"][name],
-                "monitor-owner-not-predeclared",
-            )
-        elif kind == "timer":
-            require(row["active"] == "active", "timer-inactive")
-        elif row["active"] in {"active", "activating", "deactivating"}:
-            # The displayed Result may belong to the previous invocation.
-            require(
-                finite(row["running_seconds"])
-                and 0 <= row["running_seconds"] <= policy["maximum_support_seconds"],
-                "support-overdue",
-            )
-        else:
-            require(
-                row["active"] == "inactive"
-                and row["result"] in {"", "success"}
-                and row["exit_code"] == 0,
-                "support-failed",
-            )
+    stable_support = _check_support(policy, snap["support"])
     champion = snap["champion_identity"]
     require(champion in verified and sha(verified[champion]), "unverified-champion")
     require(set(snap["cohorts"]) == set(policy["cohorts"]), "cohort-inventory")
@@ -335,75 +420,7 @@ def _snapshot(
         )
         previous = metric["step"]
         previous_stamp = metric["timestamp_ns"]
-        require(
-            metric["losses"]
-            and all(finite(v) for v in metric["losses"].values())
-            and all(
-                finite(metric[k]) and metric[k] >= 0
-                for k in (
-                    "gradient_norm",
-                    "gradient_pre_clip_norm",
-                    "gradient_post_clip_norm",
-                )
-            ),
-            "nonfinite-update",
-        )
-        require(
-            all(
-                integer(metric[k]) and metric[k] == 0
-                for k in ("nonfinite_loss_count", "nonfinite_gradient_count")
-            ),
-            "nonfinite-counter",
-        )
-        require(
-            metric["gradient_diagnostics"]["global_norm_finite"] is True
-            and metric["gradient_diagnostics"]["nonfinite_gradient_tensors"] == 0,
-            "nonfinite-gradient-diagnostic",
-        )
-        require(
-            metric["learning_rates"] == recipe["learning_rates"]
-            and isinstance(metric["learning_rates"], list)
-            and all(finite(v) for v in metric["learning_rates"])
-            and finite(metric["ema"]["decay"])
-            and metric["ema"]["decay"] == recipe["ema_decay"]
-            and integer(metric["ema"]["num_updates"])
-            and metric["ema"]["num_updates"]
-            == metric["step"] - recipe["bootstrap_step"],
-            "calibrated-rates-or-ema",
-        )
-        require(
-            all(
-                integer(metric[k]) and metric[k] == recipe[k]
-                for k in (
-                    "replay_minimum_shard_id_exclusive",
-                    "utd_segment_baseline_committed_replay_samples",
-                    "utd_segment_baseline_examples_consumed",
-                )
-            )
-            and finite(metric["utd_segment_target_updates_per_new_sample"])
-            and metric["utd_segment_target_updates_per_new_sample"]
-            == recipe["utd_segment_target_updates_per_new_sample"],
-            "replay-credit-origin",
-        )
-        require(
-            finite(metric["segment_updates_per_new_sample"])
-            and 0
-            <= metric["segment_updates_per_new_sample"]
-            <= recipe["utd_segment_target_updates_per_new_sample"] + 1e-9,
-            "replay-credit-overrun",
-        )
-        batch = metric["gradient_diagnostics"]["batch"]
-        require(
-            not batch["six_mode_unknown"]
-            and metric["policy_batch_metrics"]["unknown_provenance_rows"] == 0,
-            "unknown-policy-provenance",
-        )
-        require(integer(batch["rows"], 1), "batch-rows")
-        for key in ("policy", "outcome"):
-            n = batch["label_availability"][key]
-            require(integer(n) and n <= batch["rows"], "batch-labels")
-        require(batch["label_availability"]["policy"] > 0, "missing-policy-labels")
-        labels += batch["label_availability"]["outcome"]
+        labels += _check_metric_payload(metric, recipe)
     require(labels > 0, "missing-outcome-labels")
     return {
         "processes": processes,

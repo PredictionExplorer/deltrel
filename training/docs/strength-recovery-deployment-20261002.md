@@ -955,3 +955,25 @@ completion nor full preservation. Profile/run/continuation semantics, support
 job health and age, metric work and the complete tagged consumer path remain
 separate requirements. No target staging, runtime/profile/GPU change or R4
 activation occurred.
+
+Committed `178d0df1` passed all six CI jobs on attempt one: 6,908 Python/native
+tests, 1,023 web tests, 107 clean browser E2E passes plus five skips, all 28
+coverage floors, Rust/WASM, audits and container checks. The runners used the
+PR merge checkout, whose Git tree was independently confirmed identical to the
+head. An empty self-entry in the nested CI inventory is preserved with an
+additive corrected inventory; raw logs and qualification results are unchanged.
+
+Six existing checks are now private shared helpers: actual static authority,
+final support-state consistency, support-age projection, recipe values, metric
+payloads and support health. The old wrappers retain their birth, freshness,
+worker, timestamp, step-order and aggregate-label requirements at the same call
+sites. Physical-work and full-preservation checks remain unchanged. The helpers
+return data or predicate results; they do not authenticate a caller or create a
+new collector, BEFORE authority bridge, CLI route or execution permission.
+
+The final affected run passed 539 local CPU/fault tests with two workers, no
+failures/skips and stable source bytes, plus Ruff, formatting, Pyright and the
+966-file brand audit. Mechanical comparisons and baseline capture/refusal cases
+preserve the old check order, outputs, provenance and observable alias behavior.
+The larger observed-window collector and its authenticated BEFORE bridge remain
+separate work. No live training source, profile, service or GPU changes occurred.
