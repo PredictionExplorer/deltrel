@@ -798,8 +798,30 @@ def test_interpreter_metadata_cannot_hide_malformed_size_alias(
         doc["outer"]["python"]["metadata"]["size"] = int(size)
 
     mutate_intent(args, files, put, changed)
-    with pytest.raises(m.BeforeRefusal, match="before-python-hash"):
+    validate = m.runtime.validate_interpreter_metadata
+    observed, refusals = [], []
+
+    def validate_observed(metadata, actual_size):
+        observed.append((deepcopy(metadata), actual_size))
+        try:
+            return validate(metadata, actual_size)
+        except m.runtime.RuntimeRefusal as error:
+            refusals.append(str(error))
+            raise
+
+    monkeypatch.setattr(m.runtime, "validate_interpreter_metadata", validate_observed)
+    with pytest.raises(m.BeforeRefusal, match="^before-artifact-refused$"):
         m.read_observed_before_artifacts(**args)
+    assert len(observed) == 1
+    metadata, actual_size = observed[0]
+    assert type(actual_size) is type(size) and actual_size == size
+    assert type(metadata["size"]) is int and metadata["size"] == int(size)
+    assert refusals == ["interpreter-metadata"]
+    intent_pin = args["approved_outer"]["intent_pin"]
+    reader = args["reader"]
+    assert reader.calls == [intent_pin]
+    assert reader.audit == [{"pin": intent_pin}]
+    assert reader.consumed == len(files[intent_pin["path"]]) == intent_pin["bytes"]
 
 
 @pytest.mark.parametrize("field,value", [("sha256", "0" * 64), ("bytes", 4)])
