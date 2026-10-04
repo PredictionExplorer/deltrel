@@ -1027,3 +1027,37 @@ correction runs are retained as distinct evidence; their counts are not added.
 The preceding committed metadata-read head passed all six CI jobs, including
 7,019 Python/native tests, 1,023 web tests and 107 clean E2E passes plus five skips.
 That CI result does not qualify these later BEFORE components.
+
+Committed `0fa07987` later passed all six CI jobs on attempt one: 7,209
+Python/native tests, 1,023 web tests, 107 clean browser E2E passes plus five
+skips, all 28 coverage floors, Rust/WASM, audits and container checks. Its
+Python job took 35m59s including setup. The preceding `ca0892e0` run remains
+cancelled at its 35-minute job limit; the one-line 45-minute CI allowance did
+not change tests, assertions, worker limits or production timing.
+
+The outer store's ordinary pinned and fixed-file reads now share one charged
+read of a fixed endpoint. Every payload request is clamped to the smaller of
+64 KiB, the file bytes remaining and the original 32 MiB allowance remaining.
+Returned bytes are charged before later deadline, hash or file-race refusal;
+there is no extra-byte EOF probe. Fixed-file pin discovery no longer performs
+an uncharged first pass. Named and opened file identities, including owner,
+group, mode, size and timestamps, must agree before and after the read. A
+final deadline check also follows pin hashing.
+
+This is the ordinary-file transport prerequisite only. Existing protected and
+qualified-source admission predicates remain, including their distinct source
+metadata policies. The interpreter path, its separate accounting, constructor,
+deadline binding and publication behavior are unchanged. The shared proof
+reservation, fixed phase readers, completion-reader routing and complete tagged
+AFTER/launcher path remain unimplemented. In particular, the separate executed
+image stream is not newly covered by a global 64 MiB or physical-I/O claim.
+Legacy prebinding keeps its existing monotonic check; bound stores check their
+original dual clocks. No source hash or local test grants target qualification.
+
+The final affected joint passed 78 local CPU cases with two workers and no
+failures or skips: 75 new private-file/fault cases and three existing real-store
+and interpreter regressions. The separate 75-case author run is retained and
+is not added to that count. Ruff, formatting and Pyright passed on the exact
+frozen runtime and tests; all unrelated existing functions and old admission
+gates retain their original bytes or the verified equivalent interpreter path.
+No target, service, profile, production source or GPU change occurred.

@@ -467,6 +467,17 @@ class ProtectedStore:
         require(path.resolve() == path, "store-input-alias")
         if not source:
             self.directory(path.parent)
+        if not interpreter:
+            data = self._read_ordinary(
+                path,
+                p["bytes"],
+                source=source,
+                expected_metadata=expected_metadata,
+                qualified_metadata=qualified_metadata,
+            )
+            require(sha(data) == p["sha256"], "store-input-hash")
+            self.check()
+            return data
         fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
         try:
             before = os.fstat(fd)
@@ -541,6 +552,73 @@ class ProtectedStore:
         self.check()
         return data
 
+    def _read_ordinary(
+        self,
+        path: Path,
+        size: int,
+        *,
+        source: bool = False,
+        expected_metadata: dict | None = None,
+        qualified_metadata: dict | None = None,
+        named: os.stat_result | None = None,
+    ) -> bytes:
+        """One ordinary fixed span; interpreter reads retain their separate path."""
+        self.check()
+        require(path.resolve() == path, "store-input-alias")
+        named = path.lstat() if named is None else named
+        require(
+            stat.S_ISREG(named.st_mode)
+            and named.st_size == size
+            and (
+                (
+                    source
+                    and qualified_metadata is not None
+                    and file_identity(named) == qualified_metadata
+                )
+                or (
+                    expected_metadata is None
+                    and qualified_metadata is None
+                    and named.st_uid == self.owner_uid
+                    and stat.S_IMODE(named.st_mode)
+                    in ((0o444, 0o555) if source else (0o444,))
+                )
+            ),
+            "store-input-protection",
+        )
+        named_identity = file_identity(named)
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        try:
+            require(file_identity(os.fstat(fd)) == named_identity, "store-input-raced")
+            chunks = []
+            count = 0
+            while count < size:
+                self.check()
+                require(
+                    type(self.consumed) is int and 0 <= self.consumed < 32 * 2**20,
+                    "store-byte-budget",
+                )
+                block = os.read(
+                    fd, min(65536, size - count, 32 * 2**20 - self.consumed)
+                )
+                self.consumed += len(block)
+                self.check()
+                if not block:
+                    break
+                count += len(block)
+                chunks.append(block)
+            require(
+                named_identity
+                == file_identity(os.fstat(fd))
+                == file_identity(path.lstat()),
+                "store-input-raced",
+            )
+            data = b"".join(chunks)
+            require(len(data) == size, "store-input-hash")
+        finally:
+            os.close(fd)
+        self.check()
+        return data
+
     def fixed(self, path: Path, maximum: int = 2**20) -> tuple[dict, bytes]:
         """Only fixed producer outputs; not an arbitrary receipt-supplied path."""
         self.directory(path.parent)
@@ -552,13 +630,10 @@ class ProtectedStore:
             and stat.S_IMODE(st.st_mode) == 0o444,
             "fixed-output-protection",
         )
-        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
-        try:
-            raw = os.read(fd, maximum + 1)
-        finally:
-            os.close(fd)
+        raw = self._read_ordinary(path, st.st_size, named=st)
         p = {"path": str(path), "sha256": sha(raw), "bytes": len(raw)}
-        return p, self.read(p, maximum=maximum)
+        self.check()
+        return p, raw
 
     def ensure_directory(self, path: Path, *, parent: Path) -> None:
         self.directory(parent)
