@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Frozen, resumable raw/EMA matches against one champion; never promotes.
+"""Frozen, resumable raw/EMA matches against one baseline; never promotes.
 
 First freeze with --source-run-root, --checkpoint, --champion-checkpoint,
 --output-dir, and --plan-only. Subsequent invocations need only --output-dir.
+Baseline weights are EMA by default, or RAW with --baseline-weights raw.
 Each session runs one arm for at most --session-seconds plus the in-flight
 search. SIGTERM/SIGINT save the current game positions. CUDA execution requires
 an explicitly reserved GPU, addressed by its full CUDA_VISIBLE_DEVICES UUID.
@@ -31,6 +32,7 @@ from scripts.run_lineage_arena import load_candidate
 from deltreltrain.arena import (
     ArenaPair,
     ArenaRunner,
+    ArenaSearchBudget,
     summarize_completed_arena_pairs,
     summarize_pairs,
 )
@@ -41,6 +43,8 @@ from deltreltrain.checkpoint import (
     verify_file,
 )
 from deltreltrain.config import ArenaConfig
+from deltreltrain.config_compatibility import without_search_execution_defaults
+from deltreltrain.contracts import RULES_HASH, SEARCH_ALGORITHM_ID
 from deltreltrain.native import load_deltrel_native
 from deltreltrain.runtime import SignalLatch, atomic_json
 from deltreltrain.search_options import parse_search_execution
@@ -148,8 +152,11 @@ def freeze_plan(
     output: Path,
     config: ArenaConfig,
     precision: Literal["fp32", "bf16"] = "bf16",
+    baseline_weights: Literal["ema", "raw"] = "ema",
 ) -> dict[str, Any]:
     """Copy only immutable inputs; all writes stay in the isolated output."""
+    if type(baseline_weights) is not str or baseline_weights not in ARMS:
+        raise ValueError("baseline weights must be ema or raw")
     source = source_run_root.expanduser().resolve(strict=True)
     output = _isolated_output(source, output)
     if (output / PLAN_NAME).exists():
@@ -193,31 +200,39 @@ def freeze_plan(
             "No promotion, checkpoint publication, or learner/replay changes."
         ),
     }
+    if baseline_weights == "raw":
+        plan.update(
+            schema_version=2,
+            baseline_weights="raw",
+            interpretation=(
+                "Diagnostic only. Candidate raw and EMA arms play the same frozen "
+                "raw baseline, openings, seats, and search budget. The raw arm "
+                "is a separate result; raw-minus-EMA compares candidate averaging, "
+                "not an optimizer effect. No causal or promotion claim, checkpoint "
+                "publication, or learner/replay changes."
+            ),
+        )
     plan["plan_sha256"] = _digest(plan)
     atomic_json(output / PLAN_NAME, plan)
     (output / PLAN_NAME).chmod(0o444)
     return _read_json(output / PLAN_NAME)
 
 
-def verify_plan(output: Path) -> tuple[dict[str, Any], ArenaConfig]:
-    plan = _read_json(output / PLAN_NAME)
-    contract = {key: value for key, value in plan.items() if key != "plan_sha256"}
+def _baseline_weights(plan: Mapping[str, Any]) -> Literal["ema", "raw"]:
+    version = plan.get("schema_version")
+    if type(version) is int and version == 1 and "baseline_weights" not in plan:
+        return "ema"
     if (
-        plan.get("schema_version") != 1
-        or plan.get("result_kind") != RESULT_KIND
-        or _digest(contract) != plan.get("plan_sha256")
-        or plan.get("implementation_hashes") != _implementation_hashes()
+        type(version) is int
+        and version == 2
+        and type(plan.get("baseline_weights")) is str
+        and plan["baseline_weights"] == "raw"
     ):
-        raise ValueError("diagnostic plan or implementation hash changed")
-    _isolated_output(Path(plan["source_run_root"]), output)
-    for name in ("checkpoint", "champion"):
-        path = output / f"{name}.pt"
-        if path.is_symlink():
-            raise ValueError("frozen checkpoint must not be a symlink")
-        evidence = plan["checkpoints"][name]
-        verify_file(
-            path, expected_sha256=evidence["sha256"], expected_bytes=evidence["bytes"]
-        )
+        return "raw"
+    raise ValueError("diagnostic plan baseline weights or version changed")
+
+
+def _plan_config(plan: Mapping[str, Any]) -> ArenaConfig:
     values = dict(plan["arena"])
     for name in (
         "rings",
@@ -227,7 +242,29 @@ def verify_plan(output: Path) -> tuple[dict[str, Any], ArenaConfig]:
     ):
         values[name] = tuple(values[name])
     values["search_execution"] = parse_search_execution(values["search_execution"])
-    return plan, ArenaConfig(**values)
+    return ArenaConfig(**values)
+
+
+def verify_plan(output: Path) -> tuple[dict[str, Any], ArenaConfig]:
+    plan = _read_json(output / PLAN_NAME)
+    contract = {key: value for key, value in plan.items() if key != "plan_sha256"}
+    if (
+        plan.get("result_kind") != RESULT_KIND
+        or _digest(contract) != plan.get("plan_sha256")
+        or plan.get("implementation_hashes") != _implementation_hashes()
+    ):
+        raise ValueError("diagnostic plan or implementation hash changed")
+    _baseline_weights(plan)
+    _isolated_output(Path(plan["source_run_root"]), output)
+    for name in ("checkpoint", "champion"):
+        path = output / f"{name}.pt"
+        if path.is_symlink():
+            raise ValueError("frozen checkpoint must not be a symlink")
+        evidence = plan["checkpoints"][name]
+        verify_file(
+            path, expected_sha256=evidence["sha256"], expected_bytes=evidence["bytes"]
+        )
+    return plan, _plan_config(plan)
 
 
 def require_exclusive_device(device: torch.device, *, acknowledged: bool) -> None:
@@ -268,6 +305,92 @@ def require_exclusive_device(device: torch.device, *, acknowledged: bool) -> Non
         )
 
 
+def _selected_metadata_identity(
+    metadata: object, pin: Mapping[str, Any], weights: str, precision: str
+) -> str:
+    digest = pin["sha256"]
+    selected = (
+        digest
+        if weights == "ema"
+        else hashlib.sha256(
+            f"deltreltrain-weights:raw:{digest}".encode("ascii")
+        ).hexdigest()
+    )
+    identity = f"sha256-{selected}"
+    if (
+        not isinstance(metadata, Mapping)
+        or metadata.get("weights") != weights
+        or metadata.get("checkpoint_sha256") != digest
+        or type(metadata.get("checkpoint_bytes")) is not int
+        or metadata["checkpoint_bytes"] != pin["bytes"]
+        or metadata.get("identity") != identity
+        or metadata.get("precision") != precision
+    ):
+        raise ValueError("diagnostic selected-weight metadata changed")
+    return identity
+
+
+def _resume_config(value: object) -> object:
+    value = without_search_execution_defaults({"arena": value})["arena"]
+    if not isinstance(value, dict):
+        return value
+    enabled = value.pop("exact_clinch_termination", False)
+    if type(enabled) is not bool:
+        raise ValueError("arena resume exact clinch option is invalid")
+    return value
+
+
+def _check_raw_resume(value: Mapping[str, Any], arm: str, plan: Mapping[str, Any]):
+    if value.get("baseline_weights") != "raw":
+        raise ValueError("persisted diagnostic baseline weights changed")
+    candidate = _selected_metadata_identity(
+        value.get("candidate_metadata"),
+        plan["checkpoints"]["checkpoint"],
+        arm,
+        plan["precision"],
+    )
+    baseline = _selected_metadata_identity(
+        value.get("baseline_metadata"),
+        plan["checkpoints"]["champion"],
+        "raw",
+        plan["precision"],
+    )
+    if type(value.get("terminal")) is not bool:
+        raise ValueError("saved raw-baseline terminal state changed")
+    if value["terminal"] or "candidate" in value or "baseline" in value:
+        if value.get("candidate") != candidate or value.get("baseline") != baseline:
+            raise ValueError("saved raw-baseline output identity changed")
+    resume = value.get("resume_state")
+    if not isinstance(resume, Mapping):
+        raise ValueError("saved raw-baseline arm requires a resume_state mapping")
+    config = _plan_config(plan)
+    search = ArenaSearchBudget.from_config(config).metadata()
+    expected = json.loads(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "candidate": candidate,
+                "baseline": baseline,
+                "rules_hash": RULES_HASH,
+                "seed_stream_policy": "independent-cell-pair-seat-move-v2",
+                "config": asdict(config),
+                "search_algorithm": SEARCH_ALGORITHM_ID,
+                "candidate_search": search,
+                "baseline_search": search,
+            }
+        )
+    )
+    if any(
+        (
+            _resume_config(resume.get(key)) != _resume_config(wanted)
+            if key == "config"
+            else resume.get(key) != wanted
+        )
+        for key, wanted in expected.items()
+    ):
+        raise ValueError("saved raw-baseline resume contract changed")
+
+
 def _load_arm(output: Path, arm: str, plan: Mapping[str, Any]) -> dict[str, Any]:
     path = output / f"{arm}.json"
     if not path.exists():
@@ -275,6 +398,8 @@ def _load_arm(output: Path, arm: str, plan: Mapping[str, Any]) -> dict[str, Any]
     value = _read_json(path)
     if value.get("plan_sha256") != plan["plan_sha256"] or value.get("weights") != arm:
         raise ValueError("persisted diagnostic arm disagrees with the frozen plan")
+    if _baseline_weights(plan) == "raw":
+        _check_raw_resume(value, arm, plan)
     return value
 
 
@@ -290,6 +415,8 @@ def _summary(
         "arms": {},
         "matched_comparison": {},
     }
+    if _baseline_weights(plan) == "raw":
+        summary["baseline_weights"] = "raw"
     indexed: dict[str, dict[tuple[int, str, int], ArenaPair]] = {}
     for name, value in arms.items():
         pairs = [ArenaPair(**item) for item in value.get("pairs", [])]
@@ -354,6 +481,7 @@ def run_session(
         raise ValueError("arm must be auto, raw, or ema")
     deadline = time.monotonic() + session_seconds
     plan, config = verify_plan(output)
+    baseline_weights = _baseline_weights(plan)
     saved = {name: _load_arm(output, name, plan) for name in ARMS}
     pending = [name for name in ARMS if saved[name].get("terminal") is not True]
     if not pending or (arm != "auto" and arm not in pending):
@@ -370,7 +498,7 @@ def run_session(
     baseline, baseline_metadata = load_candidate(
         output / "champion.pt",
         device=device,
-        weights="ema",
+        weights=baseline_weights,
         precision=plan["precision"],
     )
     if (
@@ -379,6 +507,19 @@ def run_session(
         != plan["checkpoints"]["champion"]["sha256"]
     ):
         raise ValueError("loaded checkpoint differs from the diagnostic plan")
+    if baseline_weights == "raw":
+        for evaluator, selected_metadata, name, weights in (
+            (candidate, metadata, "checkpoint", arm),
+            (baseline, baseline_metadata, "champion", "raw"),
+        ):
+            selected_identity = _selected_metadata_identity(
+                selected_metadata,
+                plan["checkpoints"][name],
+                weights,
+                plan["precision"],
+            )
+            if evaluator.model_version != selected_identity:
+                raise ValueError("loaded diagnostic adapter identity changed")
     state = saved[arm]
     session_count = state.get("session_count", 0) + 1
     identity = {
@@ -389,6 +530,8 @@ def run_session(
         "baseline_metadata": baseline_metadata,
         "session_count": session_count,
     }
+    if baseline_weights == "raw":
+        identity["baseline_weights"] = "raw"
 
     def persist(resume: dict[str, object]) -> None:
         atomic_json(
@@ -408,7 +551,12 @@ def run_session(
         baseline=baseline,
         config=config,
         stable_pair_seeds=True,
-        baseline_metadata={"kind": "frozen_champion", **baseline_metadata},
+        baseline_metadata={
+            "kind": "frozen_raw_checkpoint"
+            if baseline_weights == "raw"
+            else "frozen_champion",
+            **baseline_metadata,
+        },
     )
     result = runner.run(
         resume_state=state.get("resume_state"),
@@ -439,6 +587,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-run-root", type=Path)
     parser.add_argument("--checkpoint", type=Path)
     parser.add_argument("--champion-checkpoint", type=Path)
+    parser.add_argument("--baseline-weights", choices=("ema", "raw"), default=None)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--plan-only", action="store_true")
     parser.add_argument("--device", default="cpu")
@@ -483,6 +632,7 @@ def main(argv: list[str] | None = None) -> int:
                         seed=args.seed if args.seed is not None else 17,
                     ),
                     precision=args.precision or "bf16",
+                    baseline_weights=args.baseline_weights or "ema",
                 )
             elif any(
                 value is not None
@@ -490,6 +640,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.source_run_root,
                     args.checkpoint,
                     args.champion_checkpoint,
+                    args.baseline_weights,
                     args.precision,
                     args.pairs_per_cell,
                     args.simulations,
