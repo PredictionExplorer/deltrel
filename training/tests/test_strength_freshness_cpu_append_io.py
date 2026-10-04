@@ -32,11 +32,14 @@ class LocalFiles(r.System):
     def wall_ns(self):
         return 10**18 + self.ns
 
-    def read_file(self, path, maximum, deadline, *, tail=False):
+    def read_file(self, path, maximum, deadline, *, tail=False, charge, allowance):
         assert path == "/proc/sys/kernel/random/boot_id", "no real host metadata"
         self._time(deadline)
         self.ns += 1
-        return (BOOT + "\n").encode(), {}
+        raw = (BOOT + "\n").encode()
+        r.require(len(raw) <= allowance, "capture-byte-budget")
+        charge(len(raw))
+        return raw, {}
 
 
 def make_io(

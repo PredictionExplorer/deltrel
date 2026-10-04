@@ -21,7 +21,11 @@ from test_orchestration import (
 )
 
 
-def suspension_case(tmp_path, monkeypatch):
+def suspension_case(tmp_path, monkeypatch, *, wall_clock=None):
+    if wall_clock is not None:
+        # Keep the test's lease timestamps and expiry reads on one clock without
+        # changing the process-wide time module or production freshness checks.
+        monkeypatch.setattr(orchestration, "time", SimpleNamespace(time_ns=wall_clock))
     experiment = pause_shared_experiment(tmp_path)
     control = experiment.orchestration
     experiment = replace(
@@ -77,8 +81,13 @@ def suspension_case(tmp_path, monkeypatch):
         pytest.fail("cooperative pause must not send OS process-group signals")
 
     monkeypatch.setattr(orchestration.os, "killpg", forbidden_signal)
+    wall_ns = wall_clock() if wall_clock is not None else None
     write_pause_request(
-        directories.gpu_pause, token="suspend-lease-token", owner_pid=owner.process.pid
+        directories.gpu_pause,
+        token="suspend-lease-token",
+        owner_pid=owner.process.pid,
+        requested_ns=wall_ns,
+        heartbeat_ns=wall_ns,
     )
     return SimpleNamespace(
         subject=subject,
@@ -87,12 +96,13 @@ def suspension_case(tmp_path, monkeypatch):
         signals=signals,
         clock=clock,
         directories=directories,
+        wall_clock=wall_clock or time.time_ns,
     )
 
 
 def heartbeat(case, **changes):
     lease = case.subject.pause_lease
-    now = time.time_ns()
+    now = case.wall_clock()
     payload = {
         "schema_version": 1,
         "pid": case.target.process.pid,
@@ -504,18 +514,31 @@ def test_shutdown_settles_late_unadmitted_request_only_after_owner_reaping(
     assert not any(row["event"] == "pause_lease_ready" for row in events)
 
 
+@pytest.mark.parametrize("age_ns", [0, 100_000_000, 100_000_001])
 def test_final_drain_does_not_treat_actor_shutdown_as_quiescence_escape(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, age_ns
 ):
-    case = suspension_case(tmp_path, monkeypatch)
+    real_time_ns = time.time_ns
+    wall = SimpleNamespace(ns=1_800_000_000_000_000_000)
+    case = suspension_case(tmp_path, monkeypatch, wall_clock=lambda: wall.ns)
     acknowledge(case)
     case.target.process.exit_on_terminate = False
     case.subject._begin_drain(0.02)
+    wall.ns += age_ns
     heartbeat(case, actor_quiescent=False)
     assert case.target.state == "pause_terminating"
     case.subject._reconcile_pause_lease(0.025)
-    assert case.owner.live and case.owner.process.terminate_calls == 0
+    if age_ns <= 100_000_000:
+        assert case.owner.live and case.owner.process.terminate_calls == 0
+        assert case.subject.pause_lease.failure_reason is None
+    else:
+        assert not case.owner.live and case.owner.process.terminate_calls == 1
+        assert (
+            case.subject.pause_lease.failure_reason == "pause lease heartbeat is stale"
+        )
+        assert case.owner.termination_deadline == pytest.approx(0.045)
     assert not case.subject.pause_failed
+    assert time.time_ns is real_time_ns
 
 
 def test_status_exposes_paused_live_pid_and_bounded_resume_grace(tmp_path, monkeypatch):

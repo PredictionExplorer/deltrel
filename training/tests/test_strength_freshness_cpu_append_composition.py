@@ -35,10 +35,15 @@ class ClockedFiles(readonly.System):
     def wall_ns(self):
         return BASE + self.monotonic_ns()
 
-    def read_file(self, path, maximum, deadline, *, tail=False):
+    def read_file(self, path, maximum, deadline, *, tail=False, charge, allowance):
         if path == "/proc/sys/kernel/random/boot_id":
-            return (BOOT + "\n").encode(), {}
-        return super().read_file(path, maximum, deadline, tail=tail)
+            raw = (BOOT + "\n").encode()
+            readonly.require(len(raw) <= allowance, "capture-byte-budget")
+            charge(len(raw))
+            return raw, {}
+        return super().read_file(
+            path, maximum, deadline, tail=tail, charge=charge, allowance=allowance
+        )
 
 
 def envelope(observation):

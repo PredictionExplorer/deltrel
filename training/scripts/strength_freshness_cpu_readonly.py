@@ -327,30 +327,60 @@ class System:
         require(self.monotonic_ns() / 1e9 < deadline, "absolute-read-deadline")
 
     def read_file(
-        self, path: str, maximum: int, deadline: float, *, tail: bool = False
+        self,
+        path: str,
+        maximum: int,
+        deadline: float,
+        *,
+        tail: bool = False,
+        charge: Callable[[int], None],
+        allowance: int,
     ):
         self._time(deadline)
         p = Path(path)
         require(str(p.resolve()) == path, "read-symlink-refused")
-        fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        require(
+            callable(charge) and type(allowance) is int and allowance >= 0,
+            "read-accounting-contract",
+        )
+        fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
+        remaining = allowance
         try:
             before = os.fstat(fd)
             require(stat.S_ISREG(before.st_mode), "regular-file-required")
             if tail:
                 offset = max(0, before.st_size - maximum)
-                data = os.pread(fd, min(maximum, before.st_size), offset)
-                require(
-                    len(data) == min(maximum, before.st_size),
-                    "tail-truncated-during-read",
-                )
+                total = min(maximum, before.st_size)
+                require(total <= remaining, "capture-byte-budget")
+                chunks = []
+                count = 0
+                while count < total:
+                    self._time(deadline)
+                    size = min(65536, total - count, remaining)
+                    require(size > 0, "capture-byte-budget")
+                    block = os.pread(fd, size, offset + count)
+                    charge(len(block))
+                    remaining -= len(block)
+                    require(0 < len(block) <= size, "tail-truncated-during-read")
+                    chunks.append(block)
+                    count += len(block)
+                data = b"".join(chunks)
             else:
                 offset = 0
                 require(before.st_size <= maximum, "file-size-limit")
                 chunks = []
                 count = 0
+                # Proc/sys pseudo-files can report size0 while containing data.
+                # Only the separate publication operation uses a fixed-size read.
                 while True:
                     self._time(deadline)
-                    block = os.read(fd, min(65536, maximum + 1 - count))
+                    require(remaining > 0, "capture-byte-budget")
+                    require(count < maximum, "file-output-limit")
+                    size = min(65536, maximum - count, remaining)
+                    block = os.read(fd, size)
+                    charge(len(block))
+                    remaining -= len(block)
+                    require(len(block) <= size, "file-output-limit")
                     if not block:
                         break
                     chunks.append(block)
@@ -382,6 +412,82 @@ class System:
             }
         finally:
             os.close(fd)
+
+    def publication_file(
+        self,
+        path: str,
+        maximum: int,
+        deadline: float,
+        *,
+        charge: Callable[[int], None],
+        allowance: int,
+    ) -> tuple[bytes, dict[str, Any]]:
+        """One coherent fixed-size publication; registered-key caller only."""
+        self._time(deadline)
+        require(
+            callable(charge) and type(allowance) is int and allowance >= 0,
+            "publication-accounting-contract",
+        )
+        p = Path(path)
+        require(str(p.resolve()) == path, "publication-path-alias")
+        directory = os.open(
+            p.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+        )
+        fd = None
+        try:
+            parent = os.fstat(directory)
+            named_before = os.stat(p.name, dir_fd=directory, follow_symlinks=False)
+            require(stat.S_ISREG(named_before.st_mode), "publication-regular-file")
+            fd = os.open(
+                p.name,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK,
+                dir_fd=directory,
+            )
+            before = os.fstat(fd)
+            require(
+                stat.S_ISREG(before.st_mode) and _stat(before) == _stat(named_before),
+                "publication-file-raced",
+            )
+            require(before.st_size <= maximum, "publication-file-limit")
+            require(before.st_size <= allowance, "capture-byte-budget")
+            chunks = []
+            offset = 0
+            remaining = allowance
+            while offset < before.st_size:
+                self._time(deadline)
+                size = min(65536, before.st_size - offset, remaining)
+                require(size > 0, "capture-byte-budget")
+                block = os.pread(fd, size, offset)
+                charge(len(block))
+                remaining -= len(block)
+                require(0 < len(block) <= size, "publication-short-read")
+                chunks.append(block)
+                offset += len(block)
+            after = os.fstat(fd)
+            named_after = os.stat(p.name, dir_fd=directory, follow_symlinks=False)
+            parent_now = os.stat(p.parent, follow_symlinks=False)
+            require(
+                stat.S_ISREG(after.st_mode)
+                and stat.S_ISREG(named_after.st_mode)
+                and str(p.resolve()) == path
+                and (parent.st_dev, parent.st_ino)
+                == (parent_now.st_dev, parent_now.st_ino)
+                and _stat(before) == _stat(after) == _stat(named_after),
+                "publication-file-raced",
+            )
+            self._time(deadline)
+            return b"".join(chunks), {
+                "named_before": _stat(named_before),
+                "stat_before": _stat(before),
+                "stat_after": _stat(after),
+                "named_after": _stat(named_after),
+                "offset": 0,
+                "end_offset": offset,
+            }
+        finally:
+            if fd is not None:
+                os.close(fd)
+            os.close(directory)
 
     def append_file(
         self,
@@ -504,22 +610,39 @@ class System:
         details: bool = False,
         expected: ProcessAdmission | None = None,
         maps: bool = True,
+        charge: Callable[[int], None],
+        allowance: int,
     ):
         self._time(deadline)
+        require(
+            callable(charge) and type(allowance) is int and allowance >= 0,
+            "proc-accounting-contract",
+        )
         fd = os.open(
             f"/proc/{pid}", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
         )
+        remaining = allowance
 
         def read(name, maximum):
+            nonlocal remaining
             self._time(deadline)
             source = os.open(
-                name, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW, dir_fd=fd
+                name,
+                os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK,
+                dir_fd=fd,
             )
             try:
+                require(stat.S_ISREG(os.fstat(source).st_mode), "proc-regular-file")
                 data = bytearray()
                 while True:
                     self._time(deadline)
-                    chunk = os.read(source, min(65536, maximum + 1 - len(data)))
+                    require(remaining > 0, "capture-byte-budget")
+                    require(len(data) < maximum, "proc-output-limit")
+                    size = min(65536, maximum - len(data), remaining)
+                    chunk = os.read(source, size)
+                    charge(len(chunk))
+                    remaining -= len(chunk)
+                    require(len(chunk) <= size, "proc-output-limit")
                     if not chunk:
                         break
                     data.extend(chunk)
@@ -594,8 +717,9 @@ class System:
                 while True:
                     self._time(deadline)
                     require(remaining > 0, "capture-byte-budget")
+                    require(len(data) < MAX_PROC_BYTES, "credential-proc-limit")
                     chunk = os.read(
-                        source, min(65536, MAX_PROC_BYTES + 1 - len(data), remaining)
+                        source, min(65536, MAX_PROC_BYTES - len(data), remaining)
                     )
                     charge(len(chunk))
                     remaining -= len(chunk)
@@ -646,13 +770,25 @@ class System:
         finally:
             os.close(fd)
 
-    def command(self, argv: tuple[str, ...], deadline: float):
+    def command(
+        self,
+        argv: tuple[str, ...],
+        deadline: float,
+        *,
+        charge: Callable[[int], None],
+        allowance: int,
+    ):
         """Private caller passes only closed constant query vectors.
 
         Byte caps apply while pipes are consumed; own process group is reaped
         on timeout/overflow. No arbitrary shell and no unbounded communicate().
         """
         require(_readonly_vector(argv), "command-vector-not-readonly")
+        require(
+            callable(charge) and type(allowance) is int and allowance >= 0,
+            "command-accounting-contract",
+        )
+        require(allowance > 0, "capture-byte-budget")
         self._time(deadline)
         require(
             signal.getsignal(signal.SIGCHLD) == signal.SIG_DFL, "command-child-handler"
@@ -676,6 +812,7 @@ class System:
         buffers = {"stdout": bytearray(), "stderr": bytearray()}
         selector = None
         failed = None
+        byte_remaining = allowance
         try:
             selector = selectors.DefaultSelector()
             for key, pipe in (("stdout", child.stdout), ("stderr", child.stderr)):
@@ -686,7 +823,16 @@ class System:
                 if remaining <= 0.2:
                     raise ReadRefusal("command-timeout")
                 for key, _ in selector.select(min(0.05, remaining - 0.2)):
-                    block = os.read(key.fd, 65536)
+                    require(self.monotonic_ns() / 1e9 < end - 0.2, "command-timeout")
+                    require(byte_remaining > 0, "capture-byte-budget")
+                    target = buffers[key.data]
+                    limit = MAX_FILE_BYTES if key.data == "stdout" else MAX_PROC_BYTES
+                    require(len(target) < limit, "command-output-limit")
+                    size = min(65536, limit - len(target), byte_remaining)
+                    block = os.read(key.fd, size)
+                    charge(len(block))
+                    byte_remaining -= len(block)
+                    require(len(block) <= size, "command-output-limit")
                     if not block:
                         selector.unregister(key.fileobj)
                         continue
@@ -738,6 +884,11 @@ class System:
             "stderr": bytes(buffers["stderr"]),
             "returncode": child.returncode,
         }
+        if failed is None:
+            try:
+                self._time(deadline)
+            except ReadRefusal as error:
+                failed = error
         if failed is not None:
             raise ReadRefusal(
                 str(failed) if isinstance(failed, ReadRefusal) else "command-failed",
@@ -749,7 +900,6 @@ class System:
                     "returncode": child.returncode,
                 },
             ) from failed
-        self._time(deadline)
         return value
 
 
@@ -783,12 +933,24 @@ class ReadOnlyIO:
             self._backend.monotonic_ns() / 1e9 < self.deadline, "absolute-read-deadline"
         )
 
+    def _charge(self, count: int) -> None:
+        # A block returned after its time bound is still consumed. Debit before
+        # later deadline/hash/race checks; never reset/refund on refusal.
+        require(type(count) is int and count >= 0, "read-byte-count")
+        self._consumed += count
+        require(self._consumed <= self.maximum_bytes, "capture-byte-budget")
+
     def _read(self, path: str, maximum: int, *, tail=False):
         self._check()
-        data, meta = self._backend.read_file(path, maximum, self.deadline, tail=tail)
+        data, meta = self._backend.read_file(
+            path,
+            maximum,
+            self.deadline,
+            tail=tail,
+            charge=self._charge,
+            allowance=self.maximum_bytes - self._consumed,
+        )
         require(len(data) <= maximum, "file-output-limit")
-        self._consumed += len(data)
-        require(self._consumed <= self.maximum_bytes, "capture-byte-budget")
         return data, meta
 
     def _clock(self) -> dict[str, Any]:
@@ -875,6 +1037,32 @@ class ReadOnlyIO:
         entry = self.scope.files[key]
         data, meta = self._read(entry.path, entry.maximum_bytes)
         return self._observation("read", key, start, data, data, **meta)
+
+    def read_publication(self, key: str) -> Observation[bytes]:
+        """Registered metadata key only; later renewal code selects its34 keys.
+
+        This read neither proves a writer nor admits a preservation outcome.
+        Raw bytes remain private; all four named/FD stats are actually sampled.
+        """
+        require(
+            isinstance(key, str) and key in self.scope.files,
+            "unregistered-publication-key",
+        )
+        start = self._clock()
+        entry = self.scope.files[key]
+        self._check()
+        data, metadata = self._backend.publication_file(
+            entry.path,
+            entry.maximum_bytes,
+            self.deadline,
+            charge=self._charge,
+            allowance=self.maximum_bytes - self._consumed,
+        )
+        require(
+            type(data) is bytes and len(data) <= entry.maximum_bytes,
+            "publication-output-limit",
+        )
+        return self._observation("read-publication", key, start, data, data, **metadata)
 
     def tail(self, key: str) -> Observation[bytes]:
         require(key in self.scope.tails, "unregistered-tail-key")
@@ -1050,7 +1238,12 @@ class ReadOnlyIO:
             raise ReadRefusal("query-kind-not-permitted")
         start = self._clock()
         try:
-            result = self._backend.command(argv, self.deadline)
+            result = self._backend.command(
+                argv,
+                self.deadline,
+                charge=self._charge,
+                allowance=self.maximum_bytes - self._consumed,
+            )
         except ReadRefusal as error:
             end = {
                 "boot_id": None,
@@ -1073,8 +1266,6 @@ class ReadOnlyIO:
             len(raw) <= MAX_FILE_BYTES and len(result["stderr"]) <= MAX_PROC_BYTES,
             "command-output-limit",
         )
-        self._consumed += len(raw) + len(result["stderr"])
-        require(self._consumed <= self.maximum_bytes, "capture-byte-budget")
         obs = self._observation(
             "query",
             kind + (":" + target if target else ""),
@@ -1120,10 +1311,14 @@ class ReadOnlyIO:
     ):
         self._check()
         raw = self._backend.proc(
-            pid, self.deadline, details=details, expected=expected, maps=maps
+            pid,
+            self.deadline,
+            details=details,
+            expected=expected,
+            maps=maps,
+            charge=self._charge,
+            allowance=self.maximum_bytes - self._consumed,
         )
-        self._consumed += sum(len(x) for x in raw.values() if isinstance(x, bytes))
-        require(self._consumed <= self.maximum_bytes, "capture-byte-budget")
         before = _process_identity(pid, raw["stat_before"], raw["cgroup_before"])
         after = _process_identity(pid, raw["stat_after"], raw["cgroup_after"])
         require(before == after, "process-identity-raced")

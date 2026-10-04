@@ -879,3 +879,39 @@ floors. Its successful browser job had 106 clean passes, five skips and one
 Firefox history-review test passing on its automatic retry. The recorded first
 failure and unconfirmed cause remain preserved; it is not reported as a clean
 107-test run, and no browser assertion or timeout was changed from that evidence.
+
+The `bc08b989` run passed the web job with 1,023 tests and browser E2E with 107
+clean passes plus five skips, but Python/native stopped after 2,869 passes and
+one pause-suspension fixture failure. That fixture used fake monotonic time
+while the lease still expired on real wall time after 100 ms. The traceback is
+consistent with stale-owner recovery; it does not record the original recovery
+reason. The corrected test supplies one explicit wall clock for request creation,
+heartbeat publication and the module-local coordinator observation. It leaves
+the shared time module and production freshness checks unchanged. All 33
+suspension tests pass, including the exact 100 ms valid boundary and the stale
+100 ms plus one nanosecond boundary with its actual recovery reason. The failed
+CI result remains preserved and was not retried.
+
+The checked metadata IO now debits each returned file, proc and command-output
+block before subsequent validation can refuse it. Reads respect the remaining
+original allowance and literal per-stream cap, including stderr and credential
+metadata. A late block stays charged; the next pipe read must still fit the
+original deadline and cleanup reserve. Unknown EOF at an exhausted allowance
+refuses conservatively instead of reading an extra probe byte. No retry budget,
+larger quota or command vocabulary was added.
+
+The separate registered-key publication reader uses one fixed initial file size,
+retains actual named-file and descriptor observations, and refuses observed
+parent replacement, identity drift, rewriting or truncation during that read.
+Atomic replacement between complete observations is permitted. This supplies
+private observation bytes and safe metadata, not writer qualification, renewal
+proof, inference completion or a preservation result. Generic proc/sys reads
+retain their EOF behavior for pseudo-files reporting size zero.
+
+The final combined affected check passed 388 local CPU/fault cases with two
+workers, zero failures/skips and stable source bytes, plus Ruff, formatting,
+Pyright and the full 960-file brand audit. Separate 155-case IO and 33-case
+pause-fixture author runs are not added to that count. Historical birth gates,
+the old collector/CLI admission and all target execution requirements remain
+unchanged. Current-kernel and publication-renewal composition is still pending;
+there was no target staging, service/profile/runtime change or GPU work.

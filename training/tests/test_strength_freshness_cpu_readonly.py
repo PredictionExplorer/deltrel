@@ -67,7 +67,7 @@ class Fake:
     def hertz(self):
         return 100
 
-    def read_file(self, path, maximum, deadline, *, tail=False):
+    def read_file(self, path, maximum, deadline, *, tail=False, charge, allowance):
         assert self.ns / 1e9 < deadline
         self.calls.append(("read", path))
         if path not in self.files:
@@ -77,6 +77,8 @@ class Fake:
             r.require(len(raw) <= maximum, "file-size-limit")
         offset = max(0, len(raw) - maximum) if tail else 0
         data = raw[offset:]
+        r.require(len(data) <= allowance, "capture-byte-budget")
+        charge(len(data))
         info = {"inode": 1, "bytes": len(raw)}
         return data, {
             "stat_before": info,
@@ -85,10 +87,29 @@ class Fake:
             "end_offset": len(raw),
         }
 
-    def proc(self, pid, deadline, *, details=False, expected=None, maps=True):
+    def proc(
+        self,
+        pid,
+        deadline,
+        *,
+        details=False,
+        expected=None,
+        maps=True,
+        charge,
+        allowance,
+    ):
         self.calls.append(("proc", pid, details))
         assert pid in self.proc_data, "no real/proc fallback"
         v = dict(self.proc_data[pid])
+
+        def debit(raw):
+            nonlocal allowance
+            r.require(len(raw) <= allowance, "capture-byte-budget")
+            charge(len(raw))
+            allowance -= len(raw)
+
+        for name in ("stat_before", "cgroup_before"):
+            debit(v[name])
         if details:
             actual = r._process_identity(pid, v["stat_before"], v["cgroup_before"])
             r.require(
@@ -97,9 +118,14 @@ class Fake:
                 and actual["cgroup"] == expected.cgroup,
                 "private-process-admission-drift",
             )
+        if details:
+            for name in ("cmdline", "environ", *(("maps",) if maps else ())):
+                debit(v[name])
+        for name in ("stat_after", "cgroup_after"):
+            debit(v[name])
         if not maps:
             v.pop("maps", None)
-        return (
+        result = (
             v
             if details
             else {
@@ -107,13 +133,18 @@ class Fake:
                 for k in ("stat_before", "stat_after", "cgroup_before", "cgroup_after")
             }
         )
+        return result
 
     def directory(self, path, deadline):
         self.calls.append(("directory", path))
         assert path in self.dirs, "no real directory fallback"
         return self.dirs[path]
 
-    def command(self, argv, deadline):
+    def command(self, argv, deadline, *, charge, allowance):
+        for raw in (self.stdout, self.stderr):
+            r.require(len(raw) <= allowance, "capture-byte-budget")
+            charge(len(raw))
+            allowance -= len(raw)
         self.calls.append(("command", argv))
         return {
             "stdout": self.stdout,
@@ -369,7 +400,8 @@ class Factory:
   return original([sys.executable,"-B","-S","-E","-c",{program!r}],**kwargs)
 m.subprocess.Popen=Factory()
 start=time.monotonic()
-try:m.System().command(("systemctl","get-default"),start+1)
+debited=[]
+try:m.System().command(("systemctl","get-default"),start+1,charge=debited.append,allowance=2**21)
 except m.ReadRefusal as e:
  assert str(e) in ("command-timeout","command-output-limit"),str(e)
  assert time.monotonic()-start<1.5
@@ -419,7 +451,9 @@ def test_auxiliary_origin_can_omit_maps_without_faking_empty_maps(fixture):
 def test_deadline_failure_audit_never_invents_a_boot_recheck(fixture):
     io, backend = fixture
 
-    def failed(argv, deadline):
+    def failed(argv, deadline, *, charge, allowance):
+        assert allowance >= 0
+        charge(0)
         backend.ns = 111_000_000_000
         raise r.ReadRefusal(
             "command-timeout", {"stdout_sha256": "a" * 64, "stdout_bytes": 0}
@@ -449,7 +483,12 @@ def test_syscall_boundary_itself_has_no_arbitrary_or_mutating_command():
         ("systemctl", "show", "--user", "--all", "--no-pager", "--property=Id"),
     ):
         with pytest.raises(r.ReadRefusal, match="not-readonly"):
-            r.System().command(command, 1)
+            r.System().command(
+                command,
+                1,
+                charge=lambda n: pytest.fail("unexpected debit"),
+                allowance=1,
+            )
 
 
 def manager_fake():
