@@ -977,3 +977,19 @@ failures/skips and stable source bytes, plus Ruff, formatting, Pyright and the
 preserve the old check order, outputs, provenance and observable alias behavior.
 The larger observed-window collector and its authenticated BEFORE bridge remain
 separate work. No live training source, profile, service or GPU changes occurred.
+
+The pinned metadata reader now clamps each payload read to the declared file
+endpoint and the remaining original metadata allowance. It no longer probes one
+byte past that endpoint. Returned bytes were already charged per block; the fix
+prevents a read from overshooting the remaining allowance before refusal and
+checks the original deadline immediately after charging. Final file identity,
+size, hash and protected-input checks remain mandatory.
+
+All 151 affected local cases passed with two workers and no failures/skips,
+including 26 new budget, deadline and file-race cases. Ruff, formatting, Pyright
+and independent source review passed. Two regressions were reproduced against
+the previous loop before the correction. This bounds returned pinned-file
+payloads; it does not qualify physical I/O, target execution or a new collector.
+The new BEFORE body and producer/exit bridge remain prospective designs. Their
+actual producer, source/bootstrap admission and complete tagged consumers are
+still required; old format and historical-birth gates are unchanged.

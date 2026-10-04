@@ -320,13 +320,18 @@ class PinnedReader:
             )
             chunks = []
             read_bytes = 0
-            while read_bytes <= expected["bytes"]:
+            while read_bytes < expected["bytes"]:
                 self.check()
-                data = os.read(fd, min(65536, expected["bytes"] + 1 - read_bytes))
+                remaining = METADATA_BUDGET - self.consumed
+                require(remaining > 0, "metadata-budget")
+                data = os.read(
+                    fd, min(65536, expected["bytes"] - read_bytes, remaining)
+                )
+                self.charge(len(data))
+                self.check()
                 if not data:
                     break
                 read_bytes += len(data)
-                self.charge(len(data))
                 chunks.append(data)
             last = os.fstat(fd)
             raw = b"".join(chunks)
