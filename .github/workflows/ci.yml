@@ -71,7 +71,7 @@ jobs:
   python-native:
     name: Python and native pipeline
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       # Parallel test processes own CPU slots; inner math/native pools stay
       # bounded so small model tests do not oversubscribe the shared runner.
