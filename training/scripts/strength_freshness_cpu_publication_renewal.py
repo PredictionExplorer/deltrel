@@ -220,6 +220,7 @@ class PublicationRenewalTracker:
         verified_champions: dict[str, str],
     ):
         self._registration, self._io = reg, io
+        self._original_io = io
         self._reg = reg.private_copy()
         self._window = kernel.validate_expected_window(
             expected_window, boot_id=self._reg["kernel_context"]["boot_id"]
@@ -247,6 +248,8 @@ class PublicationRenewalTracker:
         self._latest: dict[str, Any] = {}
         self._renewed: set[str] = set()
         self._history: list[dict[str, Any]] = []
+        self._io_audits: list[dict[str, Any]] = []
+        self._finished_records_digest: str | None = None
         self._safe_history: list[dict[str, Any]] = []
         self._proof_bytes = 0
         self._kernel_brackets: list[dict[str, Any]] = []
@@ -318,6 +321,7 @@ class PublicationRenewalTracker:
         spec = self._reg["publication_writers"][name]
         obs = self._io.read_publication(spec["key"])
         raw, audit = obs.value, deepcopy(dict(obs.audit))
+        self._io_audits.append(deepcopy(audit))
         # Retain hashes/stat facts even when a later payload check refuses.
         self._history.append(audit)
         require(
@@ -445,6 +449,7 @@ class PublicationRenewalTracker:
             "stamp": stamp,
             "counters": counters,
             "row": row,
+            "row_sha256": digest(row),
         }
         previous = self._latest.get(name)
         if previous is not None:
@@ -526,7 +531,9 @@ class PublicationRenewalTracker:
                 ):
                     self._renewed.add(name)
             self._latest[name] = value
-        self._clock(dict(self._io.clock().value))
+        clock_observation = self._io.clock()
+        self._io_audits.append(deepcopy(dict(clock_observation.audit)))
+        self._clock(dict(clock_observation.value))
         self._consumed = self._io._consumed
 
     def _fail(self, error: Exception) -> None:
@@ -595,7 +602,9 @@ class PublicationRenewalTracker:
             self._live()
             require(self._initial is not None, "renewal-fence-required")
             self._context(kernel_after)
-            self._clock(dict(self._io.clock().value))
+            clock_observation = self._io.clock()
+            self._io_audits.append(deepcopy(dict(clock_observation.audit)))
+            self._clock(dict(clock_observation.value))
             if len(self._renewed) != 34:
                 raise RenewalIncomplete("renewal-incomplete")
             assert self._last_clock is not None and self._fence is not None
@@ -636,6 +645,7 @@ class PublicationRenewalTracker:
             }
             raw = registration.encoded(result)
             require(len(raw) <= MAX_PROOF_BYTES, "renewal-proof-byte-bound")
+            self._finished_records_digest = digest(self._record_copy())
             self._finished = True
             return RenewalEvidence(raw)
         except (
@@ -648,3 +658,63 @@ class PublicationRenewalTracker:
         ) as error:
             self._fail(error)
             raise AssertionError("unreachable")
+
+    def _record_copy(self) -> dict[str, Any]:
+        return {
+            name: {
+                "row": deepcopy(value["row"]),
+                "row_sha256": value["row_sha256"],
+                "raw_sha256": value["sha256"],
+                "audit": deepcopy(value["audit"]),
+            }
+            for name, value in self._latest.items()
+        }
+
+    def _private_context(self) -> None:
+        require(self._failure is None, "renewal-chain-refused")
+        require(
+            self._io is self._original_io
+            and self._io.deadline == self._io_deadline
+            and self._io.maximum_bytes == self._io_maximum
+            and self._io.scope is self._io_scope
+            and self._io._consumed >= self._consumed,
+            "renewal-io-context-changed",
+        )
+        if self._last_kernel is not None:
+            kernel.require_snapshot_context(
+                self._last_kernel,
+                self._registration,
+                self._io,
+                self._window,
+                self._premises,
+            )
+
+    def private_audits(self) -> list[dict[str, Any]]:
+        """Actual prior read audits in execution order; no IO or authority grant."""
+        self._private_context()
+        require(
+            len(registration.encoded(self._io_audits)) <= MAX_PROOF_BYTES,
+            "renewal-private-audit-bound",
+        )
+        return deepcopy(self._io_audits)
+
+    def private_records(self) -> dict[str, Any]:
+        """Finished parsed rows with source-attested raw hash links, never raw replay."""
+        self._private_context()
+        require(self._finished, "renewal-private-records-before-finish")
+        value = self._record_copy()
+        require(
+            set(value) == set(STREAMS)
+            and digest(value) == self._finished_records_digest
+            and all(
+                digest(row["row"]) == row["row_sha256"]
+                and row["raw_sha256"] == row["audit"]["raw"]["sha256"]
+                for row in value.values()
+            ),
+            "renewal-private-record-drift",
+        )
+        require(
+            len(registration.encoded(value)) <= MAX_PROOF_BYTES,
+            "renewal-private-record-bound",
+        )
+        return value

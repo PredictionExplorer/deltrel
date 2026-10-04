@@ -990,6 +990,40 @@ including 26 new budget, deadline and file-race cases. Ruff, formatting, Pyright
 and independent source review passed. Two regressions were reproduced against
 the previous loop before the correction. This bounds returned pinned-file
 payloads; it does not qualify physical I/O, target execution or a new collector.
-The new BEFORE body and producer/exit bridge remain prospective designs. Their
-actual producer, source/bootstrap admission and complete tagged consumers are
-still required; old format and historical-birth gates are unchanged.
+At that milestone, the new BEFORE body and producer/exit bridge remained
+prospective designs. The actual launch path, source/bootstrap admission and
+complete tagged consumers were deferred; old format and historical-birth gates
+remained unchanged.
+
+The local BEFORE composition now owns the current-kernel observations, all 34
+publication streams, common static/support checks, the original metrics fence,
+fixed endpoint, contiguous reads and rereads, and conditional AppendProof. It
+observes naturally occurring learner appends; it has no training callback. Safe
+bodies retain complete source, owner, renewal, support and metric facts while
+keeping raw records private. Every qualifying metric is retained, and an
+incomplete window cannot select a later endpoint or extend its allowance.
+
+The separate artifact reader checks all six bodies and three process-family
+documents against independently selected intent, inputs, source and executable
+contracts. It distinguishes control-code pins from R3 runtime pins, checks actual
+import origins, retains the original metadata ledger and both clock limits, and
+rereads admitted proof bytes without its admission cache. Contradictory pins for
+one path refuse. The owner observation following B may precede E; the separate
+final owner observation must follow the later reads and fixed-end guard.
+
+These are conditional local components. The fixed executable description grants
+no permission, and its command-line entry unconditionally refuses real launch.
+The old runtime and AFTER routes remain unchanged. Actual launcher integration,
+complete tagged consumers, bootstrap/site/session/resource qualification and
+target execution remain separate gates. Opaque writer/access proof semantics
+are external premises, not independently established by matching their hashes.
+No training source, profile, service, GPU ownership or R4 activation changed.
+
+The final affected run passed 259 local CPU/fault tests with two workers, zero
+failures/skips and 45 stable source/test pins. Ruff, formatting, Pyright and the
+975-file brand audit passed. Tests use real private measurement files with
+explicitly simulated kernel, source and session authority. Separate author and
+correction runs are retained as distinct evidence; their counts are not added.
+The preceding committed metadata-read head passed all six CI jobs, including
+7,019 Python/native tests, 1,023 web tests and 107 clean E2E passes plus five skips.
+That CI result does not qualify these later BEFORE components.
