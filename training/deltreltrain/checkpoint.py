@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import math
 import os
@@ -738,6 +739,25 @@ def inspect_checkpoint(
             expected_bytes=expected_bytes,
         )
     payload = torch.load(checkpoint_path, map_location=map_location, weights_only=True)
+    return _inspect_checkpoint_payload(
+        payload,
+        expected_model_config=expected_model_config,
+        expected_game_config=expected_game_config,
+        expected_run_id=expected_run_id,
+        expected_generation_family=expected_generation_family,
+        allow_auxiliary_upgrade=allow_auxiliary_upgrade,
+    )
+
+
+def _inspect_checkpoint_payload(
+    payload: Any,
+    *,
+    expected_model_config: Mapping[str, Any] | None,
+    expected_game_config: Mapping[str, Any] | None,
+    expected_run_id: str | None,
+    expected_generation_family: str | None,
+    allow_auxiliary_upgrade: bool,
+) -> dict[str, Any]:
     _validate_checkpoint_payload(
         payload,
         expected_model_config=None
@@ -776,6 +796,47 @@ def inspect_checkpoint(
         "has_scheduler": payload["scheduler"] is not None,
         "has_ema": payload["ema"] is not None,
     }
+
+
+def inspect_checkpoint_bytes(
+    data: bytes,
+    *,
+    expected_sha256: str,
+    expected_bytes: int,
+    expected_model_config: Mapping[str, Any] | None = None,
+    expected_game_config: Mapping[str, Any] | None = None,
+    expected_run_id: str | None = None,
+    expected_generation_family: str | None = None,
+) -> dict[str, Any]:
+    """Inspect immutable bytes on CPU using caller-supplied length and hash pins.
+
+    This does not authorize payload acquisition, qualify its source, or validate
+    model state-dict loadability. Filesystem budgets remain the caller's concern.
+    """
+    if type(data) is not bytes:
+        raise TypeError("checkpoint data must be immutable bytes")
+    if type(expected_bytes) is not int or expected_bytes <= 0:
+        raise ValueError("checkpoint expected byte length must be a positive integer")
+    if (
+        type(expected_sha256) is not str
+        or len(expected_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in expected_sha256)
+    ):
+        raise ValueError("checkpoint expected SHA-256 must be lowercase hexadecimal")
+    if len(data) != expected_bytes:
+        raise ValueError("checkpoint byte length failed")
+    if hashlib.sha256(data).hexdigest() != expected_sha256:
+        raise ValueError("checkpoint SHA-256 failed")
+    with io.BytesIO(data) as stream:
+        payload = torch.load(stream, map_location="cpu", weights_only=True, mmap=False)
+    return _inspect_checkpoint_payload(
+        payload,
+        expected_model_config=expected_model_config,
+        expected_game_config=expected_game_config,
+        expected_run_id=expected_run_id,
+        expected_generation_family=expected_generation_family,
+        allow_auxiliary_upgrade=False,
+    )
 
 
 def normalize_model_config(config: Mapping[str, Any]) -> dict[str, object]:

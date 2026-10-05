@@ -50,6 +50,7 @@ const predecessorIdentifiers = [
 // compatibility files; other identifiers, prose and symbols still fail.
 const predecessorNative = `${retired}_native`;
 const collectorCompatibilityLiterals = new Map([
+  ['training/tests/test_checkpoint_inspection_bytes.py', [`${predecessorPackage}.checkpoint`]],
   ['training/scripts/strength_freshness_cpu_collect_identity.py', [predecessorNative]],
   ['training/scripts/strength_freshness_cpu_collect_records.py', [`${predecessorPackage}.model-pointer`]],
   ['training/tests/test_strength_freshness_cpu_collect_identity.py', [
