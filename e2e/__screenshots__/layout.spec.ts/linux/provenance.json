@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "workflowRun": "https://github.com/PredictionExplorer/deltrel/actions/runs/37002032268",
+  "capture": {
+    "schemaVersion": 1,
+    "commit": "67732acc69e0f83f4eac6855f9cab2de057c31d8",
+    "pullRequestHead": "98bea682da217afa580ea44a974eaf920687fa2e",
+    "platform": "linux",
+    "architecture": "x64",
+    "node": "v22.23.3",
+    "playwright": "1.63.0",
+    "layoutOutcome": "success",
+    "requiresVisualReview": true,
+    "images": [
+      {
+        "path": "e2e/__screenshots__/layout.spec.ts/linux/clinch-phone.png",
+        "sha256": "8d0969f5310cf92fee15988c7568e0c785e614db7722da1731f6a485ec31c3b2"
+      },
+      {
+        "path": "e2e/__screenshots__/layout.spec.ts/linux/clinch-proof-phone.png",
+        "sha256": "9e9c29881867b499f47549ef8a94d7a028222ae8d6d5d33cc452a070ad0c5d8c"
+      },
+      {
+        "path": "e2e/__screenshots__/layout.spec.ts/linux/game-laptop.png",
+        "sha256": "61a4ceb61ef33aa10b274bd66dd80f566bc8d35a62336b4ce22c5001795cb87e"
+      },
+      {
+        "path": "e2e/__screenshots__/layout.spec.ts/linux/game-over-phone.png",
+        "sha256": "1967678dfb37ebc926bcdced465d4517163b775a4516dd4833af1aed71492479"
+      },
+      {
+        "path": "e2e/__screenshots__/layout.spec.ts/linux/game-phone.png",
+        "sha256": "bd645455aa8c0f04d29d8ee8eeeb18ffa6685149e8dbcb74a789e94476761217"
+      },
+      {
+        "path": "e2e/__screenshots__/layout.spec.ts/linux/rules-phone.png",
+        "sha256": "940b96cf92d2f6b79cba0a729ca9bd55ada64ba63ff5ad4568f8943bf4eb67aa"
+      },
+      {
+        "path": "e2e/__screenshots__/layout.spec.ts/linux/setup-laptop.png",
+        "sha256": "658e8ade0070c0d25bd5fd51260eadde7505952943b52722d17bf381b5edd1f1"
+      },
+      {
+        "path": "e2e/__screenshots__/layout.spec.ts/linux/setup-phone.png",
+        "sha256": "9d5b00bdd0977afaeca4bb9af0acd7ae912902099a3a869d16935eff4228edff"
+      },
+      {
+        "path": "e2e/__screenshots__/layout.spec.ts/linux/thinking-laptop.png",
+        "sha256": "9b85afd6fccc9053f5cfd3893312c6a9a3f976ec7bf3937cb8ba467e2dfdb435"
+      },
+      {
+        "path": "e2e/__screenshots__/layout.spec.ts/linux/thinking-phone.png",
+        "sha256": "f43c31e38433251a08e10d217229727580d11adeac9946a7e13d6cf41b3adccf"
+      }
+    ]
+  },
+  "review": {
+    "status": "accepted",
+    "reviewedAt": "2026-10-02T11:41:27Z",
+    "imagesReviewed": 10,
+    "allImageHashesVerified": true,
+    "layoutTestsPassed": 10,
+    "layoutTestsTotal": 10,
+    "captureMode": "update-snapshots=all; normal comparison remains a separate CI gate",
+    "notes": [
+      "Reviewed all setup, thinking, gameplay, rules, result, clinch, and proof-board images at phone and laptop sizes.",
+      "Images include the existing Games/Share controls, A\u2013E polar-coordinate markers, and pearl Player 2 color.",
+      "Linux images preserve the native 15-pixel scrollbar gutter and resulting text wrapping; macOS images remain separate.",
+      "Board geometry, stable status layout, overflow limits, dialog bounds/focus, and mobile proof controls passed their unchanged assertions.",
+      "No application layout or screenshot difference threshold was changed."
+    ]
+  }
+}

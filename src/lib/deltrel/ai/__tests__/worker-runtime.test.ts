@@ -63,7 +63,7 @@ describe('local worker runtime contract', () => {
     expect(readyEvent).toEqual({ type: 'ready', protocolVersion: DELTREL_AI_WORKER_PROTOCOL_VERSION });
   });
 
-  it('rejects older WASM search behavior and versions both cached assets', () => {
+  it('rejects older WASM search behavior', () => {
     expect(runtime.hasExpectedWasmSearch({})).toBe(false);
     expect(runtime.hasExpectedWasmSearch({ search_algorithm_id: () => 'old-search' })).toBe(false);
     expect(runtime.hasExpectedWasmSearch({
@@ -72,12 +72,6 @@ describe('local worker runtime contract', () => {
     expect(runtime.hasExpectedWasmSearch({
       search_algorithm_id: () => runtime.DELTREL_LOCAL_SEARCH_ALGORITHM_ID,
     })).toBe(true);
-    for (const filename of ['deltrel_wasm.js', 'deltrel_wasm_bg.wasm']) {
-      const url = new URL(runtime.versionedWasmUrl(`/models/deltrel/${filename}`), 'https://example.test');
-      expect(url.pathname).toBe(`/models/deltrel/${filename}`);
-      expect(url.searchParams.get('search')).toBe(runtime.DELTREL_LOCAL_SEARCH_ALGORITHM_ID);
-      expect(url.searchParams.get('implementation')).toBe('search-session-v1');
-    }
   });
 
   it('decodes bitboards while rejecting overlap and off-board bits', () => {

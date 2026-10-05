@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "runtime_content_sha256": "39227fcfde78afb278467f61e50875150f8e25d52f70c5d623b637725b96816a",
+  "rules_hash": "fnv1a64:46e4fbcff4e17fd3",
+  "rules_schema": "deltrel.rules.v3",
+  "search_algorithm": "gumbel-completed-q-v3-conditional-keep",
+  "feature_schema_hash": "058eb071d77948a7",
+  "module": {
+    "path": "deltrel_wasm.js",
+    "sha256": "d7d09fe4eb474241b7ed3e091b4a9d1dd9dbcae8c8f2a1e714ad1ccecd162df8",
+    "bytes": 41872
+  },
+  "binary": {
+    "path": "deltrel_wasm_bg.wasm",
+    "sha256": "590e5f04c2697e453732f4efbc9acc3f0064e24284c61f7084553ca104fcab65",
+    "bytes": 190253
+  },
+  "legacy": {
+    "manifest": {
+      "path": "manifest.json",
+      "sha256": "f69b41eb81a5d7004bad573523c7c96c8e55222bddd8df44c1d2691efe4e7775",
+      "bytes": 4052
+    },
+    "directory": "wasm-46e4fbcff4e17fd3-champion-v1",
+    "module": {
+      "path": "deltrel_wasm.js",
+      "sha256": "4f84ed19482d833b91cb482793c3569d7729e4e470447c76ca9fa5a7c132a054",
+      "bytes": 41705
+    },
+    "binary": {
+      "path": "deltrel_wasm_bg.wasm",
+      "sha256": "47a92d1d404e0d1cd251dbdfd171bcb6543e506c73f5294d4c407191121c63e4",
+      "bytes": 189637
+    },
+    "model": {
+      "path": "deltrel-champion-566428-20f52f268869.fp32.onnx",
+      "sha256": "20f52f268869396de096ce23419ca071c69a43d0f5002e4ee2e03d984255a8bb",
+      "bytes": 72474137
+    }
+  }
+}

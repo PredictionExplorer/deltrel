@@ -148,9 +148,7 @@ def _manifest(tmp_path: Path) -> Path:
     )
     primary["protection"] = {
         "replay_backup_timer": "deltrel-deltreltrain-primary-backup.timer",
-        "disaster_backup_timer": (
-            "deltrel-deltreltrain-primary-disaster-backup.timer"
-        ),
+        "disaster_backup_timer": ("deltrel-deltreltrain-primary-disaster-backup.timer"),
         "disaster_backup_root": str(disaster_root),
         "disaster_backup_mount": str(disaster_mount),
         "telemetry_service": "deltrel-deltreltrain-primary-monitor.service",

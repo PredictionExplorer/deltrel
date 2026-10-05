@@ -1076,7 +1076,9 @@ def write_replay_shard(
         ),
         "final_networks": np.stack(
             [
-                s.final_networks if s.final_networks is not None else np.full(2, -1, np.int8)
+                s.final_networks
+                if s.final_networks is not None
+                else np.full(2, -1, np.int8)
                 for s in samples
             ]
         ),

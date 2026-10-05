@@ -109,7 +109,9 @@ def resolve_legacy_champion(pointer: str | Path) -> Path:
     source = Path(pointer).resolve()
     payload = _read_json(source, "legacy model pointer")
     if payload.get("format") != "deltreltrain.model-pointer":
-        raise LineageTransferError("legacy champion must be a deltreltrain model pointer")
+        raise LineageTransferError(
+            "legacy champion must be a deltreltrain model pointer"
+        )
     if payload.get("role") != "champion":
         raise LineageTransferError("lineage transfer requires the champion pointer")
     manifest_value = payload.get("manifest")

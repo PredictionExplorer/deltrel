@@ -419,5 +419,46 @@ The verified WASM artifacts are
 release command stages and verifies both WASM files and the ONNX model, then
 replaces the canonical `manifest.json` strictly last.
 
+### Runtime-bound browser channel
+
+The current browser application uses a separate
+`manifest-runtime-<runtime-content-sha256>.json` channel. Its model manifest
+schema remains strict and cannot supply executable URLs. The fixed execution
+descriptor is shared by the browser, publisher and build checks in
+`deltreltrain/browser_runtime.json`; its content identity binds the complete
+JavaScript wrapper and WASM binary hashes and sizes. The browser verifies both
+downloads before importing the verified JavaScript bytes and initializing WASM.
+
+Publish an already qualified model/runtime into that channel explicitly:
+
+```sh
+deltreltrain-publish-browser --channel qualified \
+  --manifest /private/browser-release/browser.json \
+  --wasm-source /private/qualified-wasm \
+  --target ../public/models/deltrel
+```
+
+This choice accepts only the fixed, qualified runtime. It refuses differing
+existing immutable assets, flushes dependencies first, and replaces only the
+runtime-bound model pointer last. Compatible champions may rotate within that
+channel. A runtime-byte change requires a newly qualified descriptor, directory
+and channel. The default `legacy` publisher behavior remains available explicitly
+for older tooling; do not use it for the new channel.
+
+Keep the deployed legacy `manifest.json`, its model, and its `champion-v1` WASM
+bytes unchanged. Already prepared pages retain their release across worker
+disposal; older pages that have not prepared yet still fetch the legacy channel.
+New pages use the new channel. Both mutable model pointers are `no-store`; the
+new runtime directory is content-addressed and immutable. Build preflight checks
+the legacy bytes against the frozen deployed inventory as well as the current
+model and full runtime hashes, rules/search IDs and seed API.
+
+`npm run build:deltrel-wasm` now **verifies** those shipped immutable assets.
+For a development build, pass `-- --out-dir /new/private/directory`; existing
+directories and all paths inside `public` are refused. Development output is
+not automatically qualified or published. Production builds never regenerate
+or overwrite the legacy runtime. Qualify browser loading, cache/pinning and
+real searches before deploying a new channel.
+
 The checked-in browser model is the verified trained champion export, not a
 placeholder. Distillation remains an optional future optimization for model size.

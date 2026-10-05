@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import itertools
 import os
 import signal
+import sys
 import threading
 import time
 from dataclasses import replace
@@ -21,7 +23,18 @@ from test_orchestration import (
 )
 
 
-def suspension_case(tmp_path, monkeypatch):
+def suspension_case(tmp_path, monkeypatch, *, wall_clock=None):
+    if wall_clock is None:
+        ticks = itertools.count(time.time_ns())
+
+        def wall_clock():
+            return next(ticks)
+
+    # Unit lifecycle tests control wall time as well as monotonic time. Real
+    # threaded integration explicitly opts into the real clock below.
+    monkeypatch.setattr(
+        orchestration, "time", SimpleNamespace(time_ns=wall_clock, time=time.time)
+    )
     experiment = pause_shared_experiment(tmp_path)
     control = experiment.orchestration
     experiment = replace(
@@ -77,8 +90,13 @@ def suspension_case(tmp_path, monkeypatch):
         pytest.fail("cooperative pause must not send OS process-group signals")
 
     monkeypatch.setattr(orchestration.os, "killpg", forbidden_signal)
+    wall_ns = wall_clock()
     write_pause_request(
-        directories.gpu_pause, token="suspend-lease-token", owner_pid=owner.process.pid
+        directories.gpu_pause,
+        token="suspend-lease-token",
+        owner_pid=owner.process.pid,
+        requested_ns=wall_ns,
+        heartbeat_ns=wall_ns,
     )
     return SimpleNamespace(
         subject=subject,
@@ -87,12 +105,25 @@ def suspension_case(tmp_path, monkeypatch):
         signals=signals,
         clock=clock,
         directories=directories,
+        wall_clock=wall_clock,
     )
+
+
+def request(case, **changes):
+    stamp = case.wall_clock()
+    fields = {
+        "token": "suspend-lease-token",
+        "owner_pid": case.owner.process.pid,
+        "requested_ns": stamp,
+        "heartbeat_ns": stamp,
+    }
+    fields.update(changes)
+    write_pause_request(case.directories.gpu_pause, **fields)
 
 
 def heartbeat(case, **changes):
     lease = case.subject.pause_lease
-    now = time.time_ns()
+    now = case.wall_clock()
     payload = {
         "schema_version": 1,
         "pid": case.target.process.pid,
@@ -129,12 +160,7 @@ def acknowledge(case):
 
 
 def release(case, state="released", now=10.0):
-    write_pause_request(
-        case.directories.gpu_pause,
-        token="suspend-lease-token",
-        owner_pid=case.owner.process.pid,
-        state=state,
-    )
+    request(case, state=state)
     case.subject._reconcile_pause_lease(now)
     assert case.subject.pause_lease.state == "resuming"
 
@@ -246,12 +272,7 @@ def test_cancel_before_first_coordinator_poll_settles_token_once_without_parking
     tmp_path, monkeypatch, state
 ):
     case = suspension_case(tmp_path, monkeypatch)
-    write_pause_request(
-        case.directories.gpu_pause,
-        token="suspend-lease-token",
-        owner_pid=case.owner.process.pid,
-        state=state,
-    )
+    request(case, state=state)
     original = case.subject._write_pause_ack
 
     def checked_ack(lease, *, state, reason=None):
@@ -282,9 +303,8 @@ def test_cancel_before_first_coordinator_poll_settles_token_once_without_parking
 
 def test_unadmitted_cancellation_still_requires_supervised_owner(tmp_path, monkeypatch):
     case = suspension_case(tmp_path, monkeypatch)
-    write_pause_request(
-        case.directories.gpu_pause,
-        token="suspend-lease-token",
+    request(
+        case,
         owner_pid=case.owner.process.pid + 1,
         state="cancelled",
     )
@@ -347,11 +367,7 @@ def test_next_request_cannot_overwrite_unobserved_release_ack(tmp_path, monkeypa
     case = suspension_case(tmp_path, monkeypatch)
     acknowledge(case)
     release(case)
-    write_pause_request(
-        case.directories.gpu_pause,
-        token="next-suspend-token",
-        owner_pid=case.owner.process.pid,
-    )
+    request(case, token="next-suspend-token")
     case.subject._reconcile_pause_lease(10.01)
     assert (
         json.loads(case.subject.pause_ack_path.read_text())["token"]
@@ -445,7 +461,7 @@ def test_enabled_measurement_survives_graceful_shutdown_and_restart(
     def observed_reap(worker):
         result = original_reap(worker)
         if worker is case.owner and result:
-            reaped.append(time.time_ns())
+            reaped.append(case.wall_clock())
         return result
 
     monkeypatch.setattr(case.subject, "_reap_worker_process_group", observed_reap)
@@ -504,18 +520,31 @@ def test_shutdown_settles_late_unadmitted_request_only_after_owner_reaping(
     assert not any(row["event"] == "pause_lease_ready" for row in events)
 
 
+@pytest.mark.parametrize("age_ns", [0, 100_000_000, 100_000_001])
 def test_final_drain_does_not_treat_actor_shutdown_as_quiescence_escape(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, age_ns
 ):
-    case = suspension_case(tmp_path, monkeypatch)
+    real_time_ns = time.time_ns
+    wall = SimpleNamespace(ns=1_800_000_000_000_000_000)
+    case = suspension_case(tmp_path, monkeypatch, wall_clock=lambda: wall.ns)
     acknowledge(case)
     case.target.process.exit_on_terminate = False
     case.subject._begin_drain(0.02)
+    wall.ns += age_ns
     heartbeat(case, actor_quiescent=False)
     assert case.target.state == "pause_terminating"
     case.subject._reconcile_pause_lease(0.025)
-    assert case.owner.live and case.owner.process.terminate_calls == 0
+    if age_ns <= 100_000_000:
+        assert case.owner.live and case.owner.process.terminate_calls == 0
+        assert case.subject.pause_lease.failure_reason is None
+    else:
+        assert not case.owner.live and case.owner.process.terminate_calls == 1
+        assert (
+            case.subject.pause_lease.failure_reason == "pause lease heartbeat is stale"
+        )
+        assert case.owner.termination_deadline == pytest.approx(0.045)
     assert not case.subject.pause_failed
+    assert time.time_ns is real_time_ns
 
 
 def test_status_exposes_paused_live_pid_and_bounded_resume_grace(tmp_path, monkeypatch):
@@ -542,6 +571,28 @@ def test_status_exposes_paused_live_pid_and_bounded_resume_grace(tmp_path, monke
             * 1_000_000_000
         )
     )
+
+
+def test_unit_pause_lifecycle_does_not_read_the_real_wall_clock_after_setup(
+    tmp_path, monkeypatch
+):
+    real_time = time
+    original_time_ns = time.time_ns
+    case = suspension_case(tmp_path, monkeypatch)
+
+    def forbidden_wall_clock():
+        pytest.fail("unit pause lifecycle escaped its explicit wall clock")
+
+    local_time = SimpleNamespace(time_ns=forbidden_wall_clock)
+    monkeypatch.setattr(sys.modules[__name__], "time", local_time)
+    monkeypatch.setitem(write_pause_request.__globals__, "time", local_time)
+    acknowledge(case)
+    release(case)
+    confirm(case)
+    request(case, token="next-suspend-token")
+    acknowledge(case)
+    assert not case.subject.pause_failed
+    assert real_time.time_ns is original_time_ns
 
 
 def test_suspend_request_path_is_only_forwarded_to_shared_actor_target(
@@ -589,7 +640,7 @@ def test_real_actor_gate_and_coordinator_preserve_release_before_next_token(
 ):
     from deltreltrain.actor_pause import ActorPauseGate
 
-    case = suspension_case(tmp_path, monkeypatch)
+    case = suspension_case(tmp_path, monkeypatch, wall_clock=time.time_ns)
     case.target.process.pid = os.getpid()
     control = case.subject.experiment.orchestration
     case.subject.experiment = replace(
@@ -650,11 +701,7 @@ def test_real_actor_gate_and_coordinator_preserve_release_before_next_token(
         time.sleep(0.02)
         assert moves == parked_moves
         release(case)
-        write_pause_request(
-            case.directories.gpu_pause,
-            token="next-suspend-token",
-            owner_pid=case.owner.process.pid,
-        )
+        request(case, token="next-suspend-token")
         deadline = time.monotonic() + 2
         while case.subject.pause_lease is not None:
             assert (

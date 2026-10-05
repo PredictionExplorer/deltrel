@@ -334,12 +334,14 @@ impl SearchSession {
                 SimulationStart::Terminal { root_edge } => self.record(root_edge)?,
                 SimulationStart::NeedsEvaluation(request) => {
                     if let Some(prediction) = self.predictions.remove(&request.state.key()) {
-                        let edge = self.tree.finish_simulation(Evaluation {
+                        let completed = self.tree.finish_simulation(Evaluation {
                             token: request.token,
                             value: prediction.value,
                             policy_logits: prediction.logits,
                         })?;
-                        self.record(edge)?;
+                        if let Some(edge) = completed {
+                            self.record(edge)?;
+                        }
                     } else {
                         self.pending = Some(PendingBatch {
                             kind: PendingKind::Leaf,
@@ -441,13 +443,15 @@ impl SearchSession {
                 debug_assert!(self.predictions.len() <= self.config.first_visit_batch_size);
             }
             PendingKind::Leaf => {
-                let edge = self.tree.finish_simulation(
+                let completed = self.tree.finish_simulation(
                     responses
                         .into_iter()
                         .next()
                         .expect("one validated response"),
                 )?;
-                self.record(edge)?;
+                if let Some(edge) = completed {
+                    self.record(edge)?;
+                }
             }
         }
         Ok(())
@@ -687,6 +691,14 @@ mod tests {
         value ^ (value >> 31)
     }
 
+    fn request_counts(states: &[StateKey]) -> HashMap<StateKey, usize> {
+        let mut counts = HashMap::new();
+        for state in states {
+            *counts.entry(*state).or_default() += 1;
+        }
+        counts
+    }
+
     #[test]
     fn fresh_sessions_match_legacy_values_visits_targets_and_requests_across_widths() {
         for rings in [4, 10] {
@@ -694,6 +706,7 @@ mod tests {
                 Variant::new(Mode::Classic, 1, false).unwrap(),
                 Variant::new(Mode::Double, 1, false).unwrap(),
                 Variant::new(Mode::Double, 3, false).unwrap(),
+                Variant::new(Mode::Classic, 1, true).unwrap(),
                 Variant::new(Mode::Double, 1, true).unwrap(),
             ] {
                 for simulations in [1, 5, 17, 64] {
@@ -725,7 +738,13 @@ mod tests {
                         let actual_evaluator = drive(&mut session, width);
                         let result = session.result().unwrap();
                         assert_eq!(result.search, expected);
-                        assert_eq!(actual_evaluator.states, reference.states);
+                        // Prefetch may evaluate another opening's policy-only
+                        // responder before the first opening's keep leaf. It
+                        // must preserve every request and all backed-up results.
+                        assert_eq!(
+                            request_counts(&actual_evaluator.states),
+                            request_counts(&reference.states)
+                        );
                         assert_eq!(result.visits.iter().sum::<u32>(), simulations);
                         assert_eq!(result.visits, result.total_visits);
                         assert!(result.inherited_visits.iter().all(|visits| *visits == 0));
@@ -737,6 +756,93 @@ mod tests {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn pie_policy_only_expansion_resumes_after_cancel_without_spending_budget() {
+        for mode in [Mode::Classic, Mode::Double] {
+            for width in [1, 8] {
+                let state = root(4, Variant::new(mode, 1, true).unwrap());
+                let mut session = SearchSession::new(
+                    state,
+                    SessionConfig {
+                        simulations: 4,
+                        max_considered: 4,
+                        first_visit_batch_size: width,
+                        ..SessionConfig::default()
+                    },
+                )
+                .unwrap();
+                let predict = |request: &EvaluationRequest| Evaluation {
+                    token: request.token,
+                    value: if request.state.swap_available() {
+                        0.8
+                    } else if request.state.to_move() == deltrel_engine::Player::One {
+                        -0.8
+                    } else {
+                        0.8
+                    },
+                    policy_logits: vec![0.0; request.legal_actions.len()],
+                };
+                let request = session.root_request().unwrap();
+                session.initialize_root(predict(&request)).unwrap();
+                let policies = session.next_requests().unwrap();
+                assert!(
+                    policies
+                        .iter()
+                        .all(|request| request.state.swap_available())
+                );
+                session
+                    .submit(policies.iter().map(predict).collect())
+                    .unwrap();
+                assert_eq!(session.simulations(), 0);
+                assert!(session.tree.root_visits().iter().all(|visits| *visits == 0));
+                let leaves = session.next_requests().unwrap();
+                assert_eq!(leaves.len(), 1);
+                assert!(!leaves[0].state.swap_available());
+                let key = leaves[0].state.key();
+                let stale = predict(&leaves[0]);
+                session.cancel_pending();
+                assert_eq!(session.simulations(), 0);
+                // Cancellation discards prefetch but retains the policy-only
+                // expansion, so the identical forced edge resumes at its keep leaf.
+                let mut retried = session.next_requests().unwrap();
+                // A wider session can first refill unrelated prefetch predictions.
+                while retried.iter().any(|request| request.state.swap_available()) {
+                    session
+                        .submit(retried.iter().map(predict).collect())
+                        .unwrap();
+                    assert_eq!(session.simulations(), 0);
+                    retried = session.next_requests().unwrap();
+                }
+                assert_eq!(retried.len(), 1);
+                assert_eq!(retried[0].state.key(), key);
+                assert_ne!(retried[0].token, stale.token);
+                assert!(session.submit(vec![stale]).is_err());
+                session
+                    .submit(retried.iter().map(predict).collect())
+                    .unwrap();
+                assert_eq!(session.simulations(), 1);
+                while !session.is_done() {
+                    let requests = session.next_requests().unwrap();
+                    if !requests.is_empty() {
+                        session
+                            .submit(requests.iter().map(predict).collect())
+                            .unwrap();
+                    }
+                }
+                let result = session.result().unwrap();
+                assert_eq!(result.visits.iter().sum::<u32>(), 4);
+                assert!(
+                    result
+                        .search
+                        .root_stats
+                        .iter()
+                        .filter(|stat| stat.visits > 0)
+                        .all(|stat| (stat.q + 0.8).abs() < 1e-6)
+                );
             }
         }
     }

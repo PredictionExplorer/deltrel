@@ -13,6 +13,8 @@ from copy import deepcopy
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
+from itertools import repeat
+from operator import add, mul, truediv
 from statistics import NormalDist
 from typing import Any, Iterator, Literal, Protocol, TypeVar, cast
 
@@ -907,10 +909,7 @@ def _bounded_log_e_value(
         else tuple(1.0 - observation for observation in observations)
     )
     log_wealths = [
-        sum(
-            math.log(1.0 - fraction + fraction * observation / denominator)
-            for observation in transformed
-        )
+        _fixed_bet_log_wealth(transformed, fraction, denominator)
         for fraction in _PAIR_BETTING_FRACTIONS
     ]
     maximum = max(log_wealths)
@@ -919,6 +918,18 @@ def _bounded_log_e_value(
         + math.log(sum(math.exp(value - maximum) for value in log_wealths))
         - math.log(len(log_wealths))
     )
+
+
+def _fixed_bet_log_wealth(
+    observations: Sequence[float], fraction: float, denominator: float
+) -> float:
+    # C-level iterators avoid a Python generator frame per observation in large
+    # arena proofs. Preserve the scalar expression's operation and summation
+    # order exactly; regrouping or vectorized reduction can change old evidence.
+    products = map(mul, repeat(fraction), observations)
+    ratios = map(truediv, products, repeat(denominator))
+    factors = map(add, repeat(1.0 - fraction), ratios)
+    return sum(map(math.log, factors))
 
 
 def _bounded_sequential_state(

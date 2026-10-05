@@ -360,3 +360,42 @@ fn wasm_state_plays_every_variant_and_exposes_history() {
     kept.apply(8).unwrap();
     assert!(!kept.swap_available());
 }
+
+#[wasm_bindgen_test]
+fn wasm_pie_policy_only_expansion_keeps_exact_budget_and_true_states() {
+    for mode in ["classic", "double"] {
+        let state = WasmState::new(4, mode, 1, true).unwrap();
+        let mut tree = WasmSearchTree::new(&state, 50.0, 1.0).unwrap();
+        let actions = tree.root_actions().unwrap();
+        tree.initialize_root(tree.root_token().unwrap(), -0.8, vec![0.0; actions.len()])
+            .unwrap();
+        assert!(tree.start(0).unwrap());
+        let option = tree.pending_state().unwrap();
+        assert!(option.swap_available());
+        let option_token = tree.pending_token().unwrap();
+        let option_actions = tree.pending_actions().unwrap();
+        assert!(
+            !tree
+                .finish(option_token, 0.8, vec![0.0; option_actions.len()])
+                .unwrap()
+        );
+        assert_eq!(tree.visits().iter().sum::<u32>(), 0);
+        assert!(tree.start(1).is_err());
+        assert!(tree.start(0).unwrap());
+        let keep = tree.pending_state().unwrap();
+        assert!(!keep.swap_available());
+        let token = tree.pending_token().unwrap();
+        let actions = tree.pending_actions().unwrap();
+        let value = if keep.to_move() == 1 { -0.8 } else { 0.8 };
+        assert!(
+            tree.finish(option_token, value, vec![0.0; actions.len()])
+                .is_err()
+        );
+        assert!(tree.finish(token, value, vec![0.0; actions.len()]).unwrap());
+        assert_eq!(tree.visits().iter().sum::<u32>(), 1);
+        assert!((tree.completed_q()[0] + 0.8).abs() < 1e-6);
+        assert!(state.pie_pending());
+        assert!(!state.swap_available());
+        assert!(state.legal_actions().contains(&0));
+    }
+}

@@ -23,7 +23,7 @@ import time
 from typing import Any
 
 from deltreltrain.checkpoint import load_model_manifest
-from deltreltrain.config import ActorInferenceConfig, load_config
+from deltreltrain.config import ActorInferenceConfig, ExperimentConfig, load_config
 from deltreltrain.contracts import (
     FEATURE_SCHEMA_VERSION,
     RULES_HASH_WIRE,
@@ -204,6 +204,7 @@ def search_position(
         "root_value": float(result.root_values[0]),
         "actions": list(result.actions),
         "policy_target": list(result.policy_target),
+        "priors": list(result.priors),
         "q_values": list(result.q_values),
         "visits": list(result.visits),
         "inference": metrics,
@@ -231,6 +232,28 @@ def compare_search(
         "reference_selected_q_minus_candidate_action_q": reference["selected_value"]
         - reference["q_values"][index],
     }
+
+
+def standalone_evaluation_config(config: ExperimentConfig) -> ExperimentConfig:
+    """Disable evaluator optimizations without invalidating unused fleet topology.
+
+    Direct GraphInferenceAdapter loading never starts the shared actor broker.
+    Its structural settings must nevertheless remain valid when reading a
+    production profile with multiple cohorts and cooperative work scheduling.
+    """
+    refresh = config.orchestration.model_refresh
+    inference = ActorInferenceConfig(
+        shared_batching=refresh.inference.shared_batching,
+        max_batch_rows=refresh.inference.max_batch_rows,
+    )
+    return replace(
+        config,
+        train=replace(config.train, compile=False),
+        orchestration=replace(
+            config.orchestration,
+            model_refresh=replace(refresh, inference=inference),
+        ),
+    )
 
 
 def _parser():
@@ -352,16 +375,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     native = load_deltrel_native(required=True)
     assert native is not None
-    benchmark_config = replace(
-        config,
-        train=replace(config.train, compile=False),
-        orchestration=replace(
-            config.orchestration,
-            model_refresh=replace(
-                config.orchestration.model_refresh, inference=ActorInferenceConfig()
-            ),
-        ),
-    )
+    benchmark_config = standalone_evaluation_config(config)
     evaluator = load_manifest_evaluator(benchmark_config, manifest, device=args.device)
     deadline = time.monotonic() + args.timeout_seconds
     records = []

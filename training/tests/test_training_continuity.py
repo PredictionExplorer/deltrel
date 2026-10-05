@@ -96,7 +96,9 @@ def _fixture(
         source_files[f"training/{relative}"] = hashlib.sha256(
             path.read_bytes()
         ).hexdigest()
-    runtime_orchestrator = runtime_training / ".venv" / "bin" / "deltreltrain-orchestrate"
+    runtime_orchestrator = (
+        runtime_training / ".venv" / "bin" / "deltreltrain-orchestrate"
+    )
     runtime_orchestrator.parent.mkdir(parents=True)
     runtime_orchestrator.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     runtime_orchestrator.chmod(0o755)

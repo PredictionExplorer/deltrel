@@ -97,9 +97,8 @@ def test_runner_restores_replay_before_state_preflight(
         return restored
 
     def preflight(_root: Path, _profile: Path, *, apply: bool):
-        assert apply is True
-        events.append("preflight")
-        return {"status": "ok", "mode": "apply"}
+        events.append("preflight" if apply else "final_integrity")
+        return {"status": "ok", "mode": "apply" if apply else "dry-run"}
 
     monkeypatch.setattr(run_module, "restore_if_corrupt", restore)
     monkeypatch.setattr(run_module, "run_state_preflight", preflight)
@@ -111,7 +110,7 @@ def test_runner_restores_replay_before_state_preflight(
     )
 
     assert report["status"] == "complete"
-    assert events == ["restore", "preflight"]
+    assert events == ["restore", "preflight", "final_integrity"]
     persisted = json.loads(metadata_path.read_text(encoding="utf-8"))
     assert persisted["replay_restore"]["latest"]["status"] == "restored"
     assert persisted["replay_restore"]["latest"]["restored_from"] == str(restored)

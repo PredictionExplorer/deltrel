@@ -103,7 +103,9 @@ def test_auxiliary_shapes_board_limits_and_action_masks():
     minimum = torch.finfo(out.final_shores_logits.dtype).min
     for row, ring in enumerate(SUPPORTED_RINGS):
         assert (out.final_shores_logits[row, :, 5 * ring + 1 :] == minimum).all()
-        assert (out.final_networks_logits[row, :, (5 * ring) // 2 + 1 :] == minimum).all()
+        assert (
+            out.final_networks_logits[row, :, (5 * ring) // 2 + 1 :] == minimum
+        ).all()
         assert (out.final_shores_logits[row, :, : 5 * ring + 1] > minimum).all()
         assert out.opponent_reply_logits[row, -1] > minimum
     illegal = ~batch.legal_action_mask
@@ -290,7 +292,9 @@ def test_count_loss_rejects_impossible_board_class_and_transfers_optional_target
     output = auxiliary_outputs()
     with torch.no_grad():
         output.final_networks_logits[:, :, 11:] = torch.finfo(torch.float32).min
-    target = replace(auxiliary_targets(), final_networks=torch.tensor([[11, 1], [-1, -1]]))
+    target = replace(
+        auxiliary_targets(), final_networks=torch.tensor([[11, 1], [-1, -1]])
+    )
     with pytest.raises(ValueError, match="impossible for the board size"):
         compute_losses(output, target, **loss_options())
     transferred = target.to("cpu")

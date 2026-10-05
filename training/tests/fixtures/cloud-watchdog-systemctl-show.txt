@@ -1,0 +1,22 @@
+Type=exec
+Restart=no
+TimeoutStopUSec=5s
+RuntimeMaxUSec=15min 10s
+MainPID=0
+Result=exit-code
+ExecMainStatus=1
+ExecStart={ path=/opt/deltrel-cloud/python/cpython-3.11.16-linux-x86_64-gnu/bin/python3.11 ; argv[]=/opt/deltrel-cloud/python/cpython-3.11.16-linux-x86_64-gnu/bin/python3.11 /opt/deltrel-cloud/operators/572377-a00cae5-01/qualify_cloud_gpu_window.py restore --watch --plan /opt/deltrel-cloud/operators/572377-a00cae5-01/execution-plan.json --plan-sha256 b596205de6199bbefbbccfa1ade4c52a44c14de27c0962404e0bb6eaba0a3dd9 --state /var/lib/deltrelserve-qualification/572377-a00cae5-01 ; ignore_errors=no ; start_time=[Fri 2026-10-02 22:57:37 UTC] ; stop_time=[Fri 2026-10-02 22:57:37 UTC] ; pid=51366 ; code=exited ; status=1 }
+WorkingDirectory=
+User=root
+Group=
+PrivateDevices=no
+KillMode=control-group
+SendSIGKILL=yes
+Id=deltrelserve-qualification-572377-a00cae5-01-watchdog.service
+LoadState=loaded
+ActiveState=failed
+SubState=failed
+FragmentPath=/run/systemd/transient/deltrelserve-qualification-572377-a00cae5-01-watchdog.service
+DropInPaths=
+Job=
+InvocationID=564975706f42402d95b700922ac80e4c

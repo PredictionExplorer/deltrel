@@ -4,8 +4,9 @@ Every cohort plays one board size and one rule variant (mode, handicap, pie).
 Inside a cohort each game may carry a playout-doubling advantage for one seat:
 that seat searches with more simulations and both networks see the advantage
 as an input, so the network learns to evaluate positions under a strength
-asymmetry (the KataGo remedy for lopsided handicap games). In pie games the
-responder swaps exactly when its selected keep value is below a small dead zone.
+asymmetry (the KataGo remedy for lopsided handicap games). Pie games use equal
+seat budgets: only then can the swap shortcut negate the keep value. The
+responder swaps when its selected keep value is below a small dead zone.
 
 Streaming publishes complete games before their siblings finish. Optional
 rolling slots refill only after publication, within one finite, pinned-model
@@ -50,6 +51,7 @@ from .native import (
     trajectory_rows_from_native,
 )
 from .replay import ReplaySample
+from .policy_targets import constrain_policy_target, validate_policy_target_settings
 from .runtime import validate_identifier
 from .search_options import (
     SearchExecutionConfig,
@@ -148,6 +150,8 @@ class VariantMixtureConfig:
     still produces informative outcomes. ``asymmetric_pda_fraction`` of the
     standard and classic games give one random seat a random advantage from
     ``pda_magnitudes`` so the network learns the input everywhere.
+    Pie games always use PDA zero because their swap shortcut requires symmetric
+    seat strength; the random advantage is restricted to non-pie even games.
     """
 
     enabled: bool = False
@@ -379,6 +383,9 @@ class SelfPlayConfig:
     ring_search_allocations: tuple[RingSearchAllocation, ...] = ()
     policy_surprise_weight: float = 0.0
     policy_surprise_max_weight: float = 4.0
+    # Target-only convex mixture with the root prior; search actions are unchanged.
+    policy_target_scale: float = 1.0
+    policy_target_max_kl: float | None = None
     c_visit: float = 50.0
     c_scale: float = 1.0
     score_utility_weight: float = 0.0
@@ -465,6 +472,9 @@ class SelfPlayConfig:
             raise ValueError("record_fast_policy_targets must be boolean")
         if not 0 <= self.fast_policy_weight <= 1:
             raise ValueError("fast_policy_weight must be in [0, 1]")
+        validate_policy_target_settings(
+            self.policy_target_scale, self.policy_target_max_kl
+        )
         if (
             not 0 <= self.policy_surprise_weight <= 1
             or not math.isfinite(self.policy_surprise_max_weight)
@@ -1363,12 +1373,15 @@ class SelfPlayActor:
         """Playout-doubling advantages ``(seat 0, seat 1)`` for every game.
 
         Handicap games hand the second player the configured advantage; a
-        configured fraction of other games hands a random seat a random
-        magnitude. The disadvantaged seat sees the negated value.
+        configured fraction of non-pie even games hands a random seat a random
+        magnitude. Pie games keep equal budgets so swapping and keeping have
+        opposite values. The disadvantaged seat sees the negated value.
         """
 
         variant = self.config.variant
         mixture = self.config.variants
+        if variant.pie:
+            return [(0, 0)] * cohort_size
         seats: list[tuple[int, int]] = []
         for row in range(cohort_size):
             if variant.handicap >= 2:
@@ -2005,6 +2018,7 @@ class SelfPlayActor:
             policy = None
             policy_entropy = None
             policy_surprise = 0.0
+            target_evidence = ""
             row_full_search = (
                 full_search_by_row[row]
                 if full_search_by_row is not None
@@ -2030,6 +2044,28 @@ class SelfPlayActor:
                 if mass <= 0:
                     raise RuntimeError("completed-Q policy has no mass")
                 policy /= mass
+                if (
+                    self.config.policy_target_scale != 1.0
+                    or self.config.policy_target_max_kl is not None
+                ):
+                    if priors.size != probabilities.size:
+                        raise RuntimeError(
+                            "policy target constraints require native priors"
+                        )
+                    constrained = constrain_policy_target(
+                        probabilities[start:end],
+                        priors[start:end],
+                        scale=self.config.policy_target_scale,
+                        max_kl=self.config.policy_target_max_kl,
+                    )
+                    policy.fill(0)
+                    policy[np.asarray(actions[start:end], dtype=np.int64)] = (
+                        constrained.probabilities
+                    )
+                    target_evidence = (
+                        f":target_mix_v1={constrained.applied_scale:.9g}"
+                        f":target_kl={constrained.kl_nats:.9g}"
+                    )
                 positive = policy[policy > 0]
                 policy_entropy = max(
                     0.0,
@@ -2096,6 +2132,8 @@ class SelfPlayActor:
                             if search_evidence_by_row is not None
                             else ""
                         )
+                        + (":pie_pda=symmetric-seats-v1" if self.config.pie else "")
+                        + target_evidence
                         + (
                             f":reused_nodes={reused_nodes[row]}"
                             f":reused_simulations={reused_simulations[row]}"

@@ -746,6 +746,8 @@ def run_elo_ablation(
             cutoff_ns=cutoff_ns,
             status="not_started",
         )
+        integrity = _post_cutoff_integrity(root, profile, cutoff_ns=cutoff_ns)
+        valid = integrity.get("valid") is True
         return _finish_attempt(
             metadata_path=metadata_path,
             metadata=metadata,
@@ -759,9 +761,12 @@ def run_elo_ablation(
             exit_code=None,
             evaluator_rows=rows,
             outcome=BUDGET_COMPLETION,
-            status="complete",
-            completion_status="complete",
-            failure=None,
+            status="complete" if valid else "failed",
+            completion_status="complete" if valid else "failed",
+            failure=None if valid else str(integrity.get("failure")),
+            integrity=integrity,
+            failure_domain=None if valid else "state_integrity",
+            failure_phase=None if valid else "post_cutoff",
         )
 
     latch = SignalLatch()
@@ -885,9 +890,18 @@ def run_elo_ablation(
     if stop_reason in {"leaf_budget", "wall_budget"} and measurement_exit_code is None:
         outcome = BUDGET_COMPLETION
         if teardown_status.get("clean") is True and resource_released_ns is not None:
-            status = "complete"
-            completion_status = "complete"
-            failure = None
+            # A clean process exit proves resource release, not that the final
+            # checkpoint and replay can be resumed. Record the same read-only
+            # state validation required by automatic recovery continuation.
+            integrity = _post_cutoff_integrity(
+                root, profile, cutoff_ns=measurement_cutoff_ns
+            )
+            valid = integrity.get("valid") is True
+            status = "complete" if valid else "failed"
+            completion_status = "complete" if valid else "failed"
+            failure = None if valid else str(integrity.get("failure"))
+            failure_domain = None if valid else "state_integrity"
+            failure_phase = None if valid else "post_cutoff"
         else:
             integrity = _post_cutoff_integrity(
                 root,

@@ -1,0 +1,53 @@
+{
+  "format": "saved-systemd255-selected-unit-lists-v1",
+  "scope": "Exact nonprivate selected dependency properties from registered existing units; no environment/argv, target mutation or qualification claim.",
+  "source": {
+    "bytes": 78318,
+    "path": "training/runs/strength-recovery-20261002/evidence/freshness-target-registration-f269d4aa-01/metadata.json",
+    "sha256": "4a10385bd14cbdc94f8a1869b8614f3bf09cd8c04d5f0b2cccc935f432c599a2"
+  },
+  "units": {
+    "edgeconnect-strength-recovery-20261002-disaster-backup.service": {
+      "After": "\"lambda-nfs-texas\\\\x2dnorth\\\\x2dfs.mount\" systemd-tmpfiles-setup.service tmp.mount basic.target remote-fs.target edgeconnect-strength-recovery-20261002-disaster-backup.timer sysinit.target -.mount systemd-journald.socket system.slice",
+      "Before": "shutdown.target",
+      "Names": "edgeconnect-strength-recovery-20261002-disaster-backup.service",
+      "Requires": "sysinit.target \"lambda-nfs-texas\\\\x2dnorth\\\\x2dfs.mount\" system.slice -.mount",
+      "Wants": "tmp.mount"
+    },
+    "edgeconnect-strength-recovery-20261002-disaster-backup.timer": {
+      "After": "time-sync.target time-set.target -.mount sysinit.target",
+      "Before": "timers.target edgeconnect-strength-recovery-20261002-disaster-backup.service shutdown.target",
+      "Names": "edgeconnect-strength-recovery-20261002-disaster-backup.timer",
+      "Requires": "sysinit.target -.mount",
+      "Wants": ""
+    },
+    "edgeconnect-strength-recovery-20261002-monitor.service": {
+      "After": "system.slice systemd-journald.socket sysinit.target basic.target systemd-tmpfiles-setup.service -.mount edgeconnect-strength-recovery-20261002.service tmp.mount",
+      "Before": "shutdown.target multi-user.target",
+      "Names": "edgeconnect-strength-recovery-20261002-monitor.service",
+      "Requires": "sysinit.target -.mount system.slice",
+      "Wants": "tmp.mount"
+    },
+    "edgeconnect-strength-recovery-20261002-report.service": {
+      "After": "basic.target systemd-journald.socket sysinit.target system.slice tmp.mount edgeconnect-strength-recovery-20261002-report.timer systemd-tmpfiles-setup.service -.mount",
+      "Before": "shutdown.target",
+      "Names": "edgeconnect-strength-recovery-20261002-report.service",
+      "Requires": "system.slice sysinit.target -.mount",
+      "Wants": "tmp.mount"
+    },
+    "edgeconnect-strength-recovery-20261002-report.timer": {
+      "After": "time-sync.target -.mount time-set.target sysinit.target",
+      "Before": "edgeconnect-strength-recovery-20261002-report.service shutdown.target timers.target",
+      "Names": "edgeconnect-strength-recovery-20261002-report.timer",
+      "Requires": "sysinit.target -.mount",
+      "Wants": ""
+    },
+    "edgeconnect-strength-recovery-20261002.service": {
+      "After": "network-online.target systemd-journald.socket basic.target -.mount system.slice sysinit.target",
+      "Before": "edgeconnect-strength-recovery-20261002-monitor.service multi-user.target shutdown.target edgeconnect-strength-recovery-20261002-completion-repair.service",
+      "Names": "edgeconnect-strength-recovery-20261002.service",
+      "Requires": "-.mount system.slice sysinit.target",
+      "Wants": "network-online.target"
+    }
+  }
+}

@@ -172,7 +172,8 @@ def test_broker_residency_is_per_adapter_json_safe_and_separate_from_numeric_met
     monkeypatch,
 ):
     monkeypatch.setattr(
-        "deltreltrain.inference.encode_native_feature_data", lambda data, **_: data.encoded
+        "deltreltrain.inference.encode_native_feature_data",
+        lambda data, **_: data.encoded,
     )
     graph = GraphInferenceAdapter(
         ObservedNetwork(),

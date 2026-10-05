@@ -200,7 +200,9 @@ def main(argv: list[str] | None = None) -> int:
                             mode=config.selfplay.mode,
                             variant=config.selfplay.variant.label,
                             checkpoint=checkpoint_record,
-                            native_threads=getattr(deltrel_native, "rayon_num_threads")(),
+                            native_threads=getattr(
+                                deltrel_native, "rayon_num_threads"
+                            )(),
                             blas_threads=torch.get_num_threads(),
                             cpu_affinity=sorted(getattr(os, "sched_getaffinity")(0)),
                             selfplay=asdict(actor.metrics_snapshot()),

@@ -86,7 +86,8 @@ def mark_committed(path: Path) -> None:
     atomic_json(path, value)
 
 
-def repair_interrupted_intent(path: Path, root: Path) -> str:
+def repair_interrupted_intent(path: Path, root: Path, *, forward: bool = False) -> str:
+    """Repair exact journal bytes; callers must separately authorize forward repair."""
     value: dict[str, Any] = json.loads(path.read_text())
     if value.get("schema_version") != 1 or value.get("run_root") != str(root):
         raise ValueError("migration repair journal belongs to another root")
@@ -145,12 +146,14 @@ def repair_interrupted_intent(path: Path, root: Path) -> str:
         or hashlib.sha256(pointer).hexdigest() != value["recovery_pointer_sha256"]
     ):
         raise ValueError("cannot repair metadata after learned state advanced")
-    for file, row, before, _, _ in rows:
-        if before is None:
+    for file, row, before, after, _ in rows:
+        desired = after if forward else before
+        mode = row["after_mode" if forward else "before_mode"]
+        if desired is None:
             file.unlink(missing_ok=True)
             _fsync_directory(file.parent)
         else:
-            _atomic_write_bytes(file, before, mode=row["before_mode"], overwrite=True)
-    value["status"] = "repaired"
+            _atomic_write_bytes(file, desired, mode=mode, overwrite=True)
+    value["status"] = "committed" if forward else "repaired"
     atomic_json(path, value)
-    return "repaired"
+    return value["status"]

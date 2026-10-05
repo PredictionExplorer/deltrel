@@ -26,15 +26,14 @@ import yaml
 from deltreltrain.worker_inventory import actor_metric_exclusion
 from deltreltrain.efficiency_telemetry import learner_efficiency
 
-from deltreltrain.config import load_config
 from deltreltrain.continuity import ContinuityError, load_continuity_manifest
 from deltreltrain.measurement_scheduling import measurement_service_status
 from deltreltrain.runtime import RunIdentity
 
 if __package__:
-    from .validate_continuous_profile import validate_continuous_config
+    from .active_profile import resolve_active_profile, validate_profile_for_monitor
 else:
-    from validate_continuous_profile import validate_continuous_config
+    from active_profile import resolve_active_profile, validate_profile_for_monitor
 
 SEVERITY = {"OK": 0, "WARN": 1, "ERROR": 2}
 CONTINUITY_STALE_SECONDS = 180.0
@@ -1697,26 +1696,51 @@ def collect_snapshot(
         if profile_path is not None
         else root / "profile.yaml"
     )
-    profile = _read_json(profile_source) if profile_source.suffix == ".json" else None
-    if profile is None:
-        try:
-            loaded = yaml.safe_load(profile_source.read_text(encoding="utf-8"))
+    selected_profile = None
+    profile_error = None
+    profile: dict[str, object] = {}
+    try:
+        selected_profile = resolve_active_profile(
+            root, profile_path, allow_missing=True
+        )
+        profile_source = selected_profile.path
+        if selected_profile.contents is not None:
+            loaded = yaml.safe_load(selected_profile.contents)
             profile = loaded if isinstance(loaded, dict) else {}
-        except (OSError, yaml.YAMLError):
-            profile = {}
+    except (OSError, ValueError, yaml.YAMLError) as error:
+        profile_error = error
     orchestration = _mapping(profile.get("orchestration"))
     training_objective = orchestration.get("training_objective", "generalist")
     objective_contract: dict[str, object] = {
         "validated": False,
         "error": None,
         "profile": str(profile_source),
+        "profile_source": selected_profile.source
+        if selected_profile is not None
+        else "invalid_authority",
+        "profile_sha256": selected_profile.sha256
+        if selected_profile is not None
+        else None,
     }
     validated_profile = None
-    if "training_objective" in orchestration:
+    if profile_error is not None:
+        objective_contract["error"] = f"{type(profile_error).__name__}: {profile_error}"
+        _add_warning(
+            warnings,
+            "ERROR",
+            "objective_profile_invalid",
+            f"training profile authority is invalid: {profile_error}",
+        )
+    elif selected_profile is not None and (
+        "training_objective" in orchestration
+        or selected_profile.expected_sha256 is not None
+        or (root / "strength-recovery-plan.json").exists()
+    ):
         try:
-            validated_profile = load_config(profile_source)
-            validate_continuous_config(validated_profile)
-        except (OSError, ValueError, yaml.YAMLError) as error:
+            validated_profile, admission = validate_profile_for_monitor(
+                root, selected_profile
+            )
+        except (OSError, ValueError, TypeError, KeyError, yaml.YAMLError) as error:
             objective_contract["error"] = f"{type(error).__name__}: {error}"
             _add_warning(
                 warnings,
@@ -1727,6 +1751,7 @@ def collect_snapshot(
         else:
             training_objective = validated_profile.orchestration.training_objective
             objective_contract["validated"] = True
+            objective_contract["admission"] = admission
     ring10_objective_active = (
         training_objective == "ring10_only" and objective_contract["validated"] is True
     )
@@ -3549,7 +3574,10 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, request_stop)
     run_monitor(
         target.run_root,
-        profile_path=target.profile_path,
+        # Resolve the authority every tick, including when the workload itself
+        # came from a continuity manifest. Only a human's explicit override is
+        # fixed to one profile path.
+        profile_path=target.profile_path if arguments.profile is not None else None,
         unit=target.unit,
         interval=arguments.interval,
         once=arguments.once,

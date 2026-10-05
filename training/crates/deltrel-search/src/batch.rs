@@ -343,15 +343,17 @@ pub fn gumbel_search_batch_with_budgets<E: BatchEvaluator>(
             let response = matched
                 .remove(&token)
                 .expect("validated response is still available");
-            let root_edge = trees[tree_index]
+            let completed = trees[tree_index]
                 .finish_simulation(response)
                 .map_err(SearchRunError::Search)?;
-            debug_assert_eq!(root_edge, candidate);
-            schedulers[tree_index]
-                .as_mut()
-                .expect("pending trees have schedulers")
-                .record_simulation(root_edge)
-                .map_err(SearchRunError::Gumbel)?;
+            if let Some(root_edge) = completed {
+                debug_assert_eq!(root_edge, candidate);
+                schedulers[tree_index]
+                    .as_mut()
+                    .expect("pending trees have schedulers")
+                    .record_simulation(root_edge)
+                    .map_err(SearchRunError::Gumbel)?;
+            }
         }
     }
 

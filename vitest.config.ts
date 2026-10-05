@@ -11,6 +11,9 @@ export default defineConfig({
     restoreMocks: true,
     unstubGlobals: true,
     testTimeout: 15_000,
+    // Full-game properties and SVG interaction tests compete for CPU under V8
+    // coverage. Bound contention without relaxing per-test deadlines.
+    maxWorkers: 2,
     projects: [
       {
         extends: true,

@@ -15,8 +15,11 @@ class ProtectedChampionReplay:
     minimum_first_published_ns: int
     maximum_first_published_ns: int
     max_fraction: float
+    champion_only_freshness: bool = False
 
     def __post_init__(self) -> None:
+        if type(self.champion_only_freshness) is not bool:
+            raise ValueError("champion-only freshness must be boolean")
         if not isinstance(self.model_identity, str) or not re.fullmatch(
             r"sha256-[0-9a-f]{64}", self.model_identity
         ):
@@ -34,12 +37,21 @@ class ProtectedChampionReplay:
             isinstance(self.max_fraction, bool)
             or not isinstance(self.max_fraction, int | float)
             or not math.isfinite(self.max_fraction)
-            or not 0 < self.max_fraction <= 0.5
+            or not (
+                self.max_fraction == 1.0
+                if self.champion_only_freshness
+                else 0 < self.max_fraction <= 0.5
+            )
         ):
-            raise ValueError("protected replay fraction must be in (0, 0.5]")
+            raise ValueError(
+                "protected replay fraction must be one for explicit champion-only "
+                "freshness, otherwise in (0, 0.5]"
+            )
 
     def capacity(self, ordinary: int, protected: int) -> int:
-        """Never let protected rows displace the required ordinary majority."""
+        """Keep the ordinary majority unless full fresh champion replay is explicit."""
+        if self.champion_only_freshness:
+            return ordinary + protected
         fraction = Fraction(str(self.max_fraction))
         limit = (
             ordinary * fraction.numerator // (fraction.denominator - fraction.numerator)

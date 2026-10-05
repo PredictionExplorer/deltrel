@@ -3,7 +3,10 @@ import { expect, test } from '@playwright/test';
 import type { DeltrelAiAnalysis } from '../src/lib/deltrel/ai/decision';
 import { selectAiStrength } from './browser-ai-helpers';
 import { installAiWorkerFixture } from './ai-worker-fixture';
-import publishedModel from '../public/models/deltrel/manifest.json';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { DELTREL_RUNTIME_CHANNEL_PATH, DELTREL_RUNTIME_ARTIFACTS } from '../src/lib/deltrel/ai/runtime-channel';
+const publishedModel = JSON.parse(readFileSync(resolve('public', DELTREL_RUNTIME_CHANNEL_PATH.slice(1)), 'utf8'));
 
 // Model inference is CPU-bound in headless Firefox. Keep these real-model
 // scenarios sequential within each browser instead of competing for its budget.
@@ -79,21 +82,56 @@ async function inspectModelCache() {
 
 // This exercises the published model, real worker, WASM search and ONNX runtime.
 // No remote inference is permitted; the browser uses the shipped model.
+// Playwright >=1.63 lets Firefox optimize worker WASM; older Juggler debuggers
+// forced its slow baseline tier. Keep the dependency fix, not a lower budget:
+// https://github.com/microsoft/playwright/blob/v1.63.0/browser_patches/firefox/juggler/content/Runtime.js#L54-L57
 test('preserves Standard strength through preparation, plays two real Mini searches locally, and reuses its verified cache', async ({ page, context, browserName }, testInfo) => {
-  // Both moves use the public Standard preset, including on the CPU fallback.
-  // The real client's 90-second inactivity timeout still detects stalled work.
-  const searchTimeout = browserName === 'firefox' ? 300_000 : 180_000;
+  // CI Chromium/WebKit were still advancing at 84–99% of the full search when
+  // 180 seconds expired. Use Firefox's existing finite completion window for
+  // every engine; the client's 90-second real-progress watchdog stays unchanged.
+  const searchTimeout = 300_000;
   test.setTimeout(2 * searchTimeout + 180_000);
+  const cpuOnly = process.env.DELTREL_E2E_CPU_ONLY === '1';
+  if (cpuOnly) {
+    // Qualification-only interception runs before any worker application code.
+    // Model/runtime bytes, search budgets and production source remain unchanged.
+    const bootstrap = `;(() => {
+      if (typeof WorkerGlobalScope === 'undefined' || !(self instanceof WorkerGlobalScope)) return;
+      let object = navigator;
+      while (object) {
+        if (Object.prototype.hasOwnProperty.call(object, 'gpu') && !Reflect.deleteProperty(object, 'gpu')) throw new Error('Could not force CPU qualification');
+        object = Object.getPrototypeOf(object);
+      }
+      if ('gpu' in navigator) throw new Error('GPU remains exposed');
+      self.__deltrelCpuOnlyQualification = true;
+    })();\n`;
+    await context.route(/\/_next\/static\/.*\.js(?:\?.*)?$/, async route => {
+      const headers = { ...route.request().headers() };
+      delete headers['if-none-match'];
+      delete headers['if-modified-since'];
+      const response = await route.fetch({ headers });
+      const outputHeaders: Record<string, string> = { ...response.headers(), 'cache-control': 'no-store' };
+      delete outputHeaders['content-length'];
+      delete outputHeaders['content-encoding'];
+      delete outputHeaders.etag;
+      await route.fulfill({ response, headers: outputHeaders, body: bootstrap + await response.text() });
+    });
+    testInfo.annotations.push({ type: 'provider-scope', description: 'CPU/WASM forced by test-side worker API interception; WebGPU/MPS not qualified.' });
+  }
   let releaseDownload!: () => void;
   const downloadGate = new Promise<void>(resolve => { releaseDownload = resolve; });
   let blockModelDownload = false;
   let modelGets = 0;
   const remoteInference: string[] = [];
   const runtimeAssets: string[] = [];
+  const modelChannels: string[] = [];
+  const engineAssets: string[] = [];
 
   context.on('request', request => {
     const path = new URL(request.url()).pathname;
     if (request.method() === 'GET' && path.startsWith('/onnxruntime/')) runtimeAssets.push(path);
+    if (request.method() === 'GET' && path.startsWith('/models/deltrel/manifest')) modelChannels.push(path);
+    if (request.method() === 'GET' && path.startsWith('/models/deltrel/wasm-')) engineAssets.push(path);
   });
   await context.route('**/v2/health', route => route.fulfill({
     status: 503,
@@ -131,10 +169,23 @@ test('preserves Standard strength through preparation, plays two real Mini searc
   await selectAiStrength(page, 'Standard');
   await expect.poll(() => modelGets).toBe(1);
   await expect(page.getByRole('progressbar', { name: 'AI preparation' })).toBeVisible();
+  if (cpuOnly) {
+    const providers = await Promise.all(page.workers().map(worker => worker.evaluate(() => ({
+      forced: Boolean((self as unknown as Record<string, unknown>).__deltrelCpuOnlyQualification),
+      gpuPresent: 'gpu' in navigator,
+    }))));
+    expect(providers.length).toBeGreaterThan(0);
+    expect(providers.every(provider => provider.forced && !provider.gpuPresent)).toBe(true);
+    await testInfo.attach('cpu-provider-scope', { contentType: 'application/json', body: JSON.stringify(providers) });
+  }
   releaseDownload();
   await expect(page.getByRole('button', { name: 'AI selected', exact: true })).toBeVisible({ timeout: 120_000 });
   expect(modelGets).toBe(1);
   expect(runtimeAssets.some(path => path.endsWith('.wasm'))).toBe(true);
+  expect(modelChannels.length).toBeGreaterThan(0);
+  expect(modelChannels.every(path => path === DELTREL_RUNTIME_CHANNEL_PATH)).toBe(true);
+  expect(engineAssets).toContain(DELTREL_RUNTIME_ARTIFACTS.module.url);
+  expect(engineAssets).toContain(DELTREL_RUNTIME_ARTIFACTS.binary.url);
   await expect(playerOneController).toHaveValue('local');
   await expect(playerTwoController).toHaveValue('local');
   await expect(page.getByRole('textbox', { name: 'Player 1 name' })).toHaveValue('Drift');
@@ -252,6 +303,19 @@ test('preserves Standard strength through preparation, plays two real Mini searc
   expect(resumedReport.analysis.simulations).toBe(544);
   expect(resumedReport.analysis.maxConsidered).toBe(16);
   expect(resumedReport.analysis.rootVisits.reduce((sum, visits) => sum + visits, 0)).toBe(544);
+  await testInfo.attach('real-standard-search-timings', {
+    contentType: 'application/json',
+    body: JSON.stringify({
+      browser: browserName,
+      providerScope: cpuOnly ? 'forced CPU/WASM' : 'automatic; provider not observed',
+      completionDeadlineMs: searchTimeout,
+      gameSeed,
+      first: { modelVersion: report.analysis.modelVersion, simulations: report.analysis.simulations,
+        maxConsidered: report.analysis.maxConsidered, timingMs: report.analysis.timingMs },
+      resumed: { modelVersion: resumedReport.analysis.modelVersion, simulations: resumedReport.analysis.simulations,
+        maxConsidered: resumedReport.analysis.maxConsidered, timingMs: resumedReport.analysis.timingMs },
+    }, null, 2),
+  });
   await expect(page.getByText('Human versus AI', { exact: true })).toHaveCount(0);
   expect(modelGets).toBe(expectedModelGets);
   expect(remoteInference).toEqual([]);

@@ -9,7 +9,11 @@ import pytest
 import torch
 
 from scripts import benchmark_learner_batches as benchmark
-from deltreltrain.checkpoint import ExponentialMovingAverage, save_checkpoint, sha256_file
+from deltreltrain.checkpoint import (
+    ExponentialMovingAverage,
+    save_checkpoint,
+    sha256_file,
+)
 from deltreltrain.config import load_config
 from deltreltrain.contracts import FEATURE_SCHEMA_HASH, RULES_HASH, RULES_HASH_WIRE
 from deltreltrain.features import DoubleDeltrelPosition

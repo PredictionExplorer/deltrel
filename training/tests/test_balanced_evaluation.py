@@ -386,16 +386,28 @@ def test_balanced_promotion_persists_and_recovers_all_cell_pairs(
 
 
 @pytest.mark.native
+# The multi-ring case plays 48 complete games through the real network/search;
+# keep that integration coverage within a bounded budget on instrumented CPUs.
+@pytest.mark.timeout(180)
 @pytest.mark.parametrize("rings", [(4, 6, 8, 10), (10,)])
 def test_native_balanced_runner_plays_configured_cells_with_role_reversal(
     rings,
 ) -> None:
+    import torch
+
     from deltreltrain.inference import GraphInferenceAdapter, InferenceConfig
     from deltreltrain.model import GraphResTNet, ModelConfig
 
     native = pytest.importorskip("deltrel_native")
+    # Test ordering must not change the policy or how long its complete games
+    # take. Restore the caller's RNG and seed only the CPU model initializer.
+    with torch.random.fork_rng(devices=[]):
+        torch.set_rng_state(torch.Generator().manual_seed(17).get_state())
+        model = GraphResTNet(
+            ModelConfig(width=8, rrt_groups=1, attention_heads=2, kv_heads=1)
+        )
     evaluator = GraphInferenceAdapter(
-        GraphResTNet(ModelConfig(width=8, rrt_groups=1, attention_heads=2, kv_heads=1)),
+        model,
         config=InferenceConfig(precision="fp32"),
         model_version="sha256-" + "c" * 64,
         model_step=0,

@@ -757,7 +757,9 @@ def main(argv: list[str] | None = None) -> int:
     deadline = time.monotonic() + args.timeout_seconds
     if args.output and (not args.output.parent.is_dir() or args.output.exists()):
         argument_parser.error("output parent must exist and output must be new")
-    with tempfile.TemporaryDirectory(prefix="deltreltrain-shared-geometry-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix="deltreltrain-shared-geometry-"
+    ) as directory:
         for index, case in enumerate(cases):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
